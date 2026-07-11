@@ -1,0 +1,1 @@
+/Users/mohammedameen/conductor/repos/faida/.claude/skills/gstack/design-html/SKILL.md

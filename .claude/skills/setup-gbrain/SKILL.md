@@ -1,0 +1,1 @@
+/Users/mohammedameen/conductor/repos/faida/.claude/skills/gstack/setup-gbrain/SKILL.md
