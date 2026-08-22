@@ -172,7 +172,9 @@ plan (§7).
 ### M0 — Channel live (Day 1–2)
 - [ ] Meta developer app + WhatsApp Cloud API test number; register 2 demo phones
       *(founder, ~1 h — step-by-step in README §M0)*
-- [ ] Deploy the API to Railway/Fly + create the Supabase project & `documents` bucket
+- [x] Supabase project `Faida MVP` (ap-south-1): schema migrated, private `documents` bucket,
+      demo tenant/branch seeded (branch phone still the `971500000000` placeholder)
+- [ ] Deploy the API to Railway/Fly
       *(founder, ~30 min — README §M0; Dockerfile ready)*
 - [x] FastAPI service code: webhook GET verification + POST signature check (fails closed
       without app secret), `/health`
@@ -195,7 +197,7 @@ plan (§7).
 - [x] Provider interface + Claude Opus 5 structured extraction (layer 1); classification
       (invoice / z_report / other, polite decline for memes) happens inside the same structured
       call - a separate classifier call adds cost and latency for nothing at demo volume (C3, WP-10)
-- [ ] Arithmetic reconciliation + targeted repair pass (layers 2–3) (C4, WP-11, WP-12)
+- [x] Arithmetic reconciliation + targeted repair pass (layers 2–3) (C4, WP-11, WP-12)
 - [ ] Pipeline orchestration + persistence: `extract_document` job, status transitions, draft
       invoices + lines + checks, run metadata, failure + meme decline paths (C1, C2, WP-13)
 - [ ] Eval corpus ≥15 invoices with hand-verified ground truth (currently <10 - F6, F8, WP-15);
@@ -268,7 +270,7 @@ and the accuracy loop (WP-16). Everything else is predictable engineering.
 
 | ID | Task | Time | Unblocks |
 |---|---|---|---|
-| F1-F4 | The four unticked M0 founder boxes in §6, in order (Meta app + demo phones, Supabase project + bucket, deploy, prove M0 on a real phone) | one ~2.5 h sitting | end-to-end reality for everything |
+| F1-F4 | The unticked M0 founder boxes in §6, in order (Meta app + demo phones, deploy, prove M0 on a real phone). F2 (Supabase project + bucket) done 2026-08-22 | one ~2 h sitting | end-to-end reality for everything |
 | F5 | Anthropic API key with billing enabled | ~10 min | running extraction (WP-16); building it needs nothing |
 | F6 | Corpus growth: photograph the invoices in hand (flat + angled + crumpled variants of each); keep collecting toward 20-25 real ones from pilot contacts | ongoing | WP-15, WP-16 |
 | F7 | Pilot logistics: pick the target chain; ask the central-purchasing question (§11) before any onboarding talk; schedule the demo only after the M4 gate passes | ongoing | M4 |
@@ -506,11 +508,22 @@ pilot volume. Meta utility template cost applies only from M9 (verify live UAE r
 | 2026-08-22 | Price alerts computed in the extraction reply; `last_price`/`prev_price` update only on confirm | The demo's money moment; unconfirmed invoices must not move the baseline |
 | 2026-08-22 | Confirmations resolved by derivation (newest awaiting-confirm per sender), no pending-confirmations table; CI eval smoke = recorded provider responses, live eval on demand | Keep the schema and CI lean until real usage demands more |
 | 2026-08-22 | C4 document check is line-sum primary (Σ line_totals + tax vs total; extracted subtotal is a cross-check). C3 note: `RepairResult` keeps its dict-keyed patch shape; providers using strict structured outputs translate via private wire models | §5 was always line-sum, and a subtotal must not masquerade as reconciliation. The Anthropic strict-schema transform silently empties open dicts (verified empirically in WP-10) |
+| 2026-08-22 | Deny-all RLS (`enable row level security`, zero policies) on all ten public tables, in `0001_init.sql` | Supabase serves the `public` schema over PostgREST, so the anon key would have granted the internet full read/write. Owner role + `service_role` bypass RLS, so the backend is untouched; M6 still owns real tenant policies |
 
 ## 13. Progress Log
 
 *(newest first — one line per session: date, what shipped, what's next)*
 
+- 2026-08-22 - Wave 2: WP-12 targeted repair integrated (targets from FAILED checks only,
+  indeterminate stays amber for the question flow; one-round cap owned by MAX_REPAIR_ROUNDS;
+  RepairOutcome shape ready for WP-13). 52 tests green vs real Postgres including the founder
+  session's RLS migration, which this commit also carries. Next: Wave 3 (WP-13 pipeline +
+  persistence).
+- 2026-08-22 - Supabase live (F2): project `Faida MVP` (`wiirrenkpgyrghmclayf`, ap-south-1)
+  migrated from `0001_init.sql`, private `documents` bucket created, demo tenant/branch seeded.
+  Added deny-all RLS to `0001_init.sql` and applied it: 10 advisor ERRORs cleared, verified
+  `anon` sees 0 rows while the owner role still reads. Next: set the real branch phone, then
+  F1/F3/F4 (Meta app, deploy, prove M0 on a real phone).
 - 2026-08-22 - Wave 1 integrated: WP-10 Anthropic provider (`claude-opus-5` structured outputs
   behind the seam, adaptive thinking, PDF + image blocks, mocked-SDK tests), WP-11 deterministic
   validation (`validate.py`, checks shape ready for WP-13, wrong-never-green invariant), WP-14
