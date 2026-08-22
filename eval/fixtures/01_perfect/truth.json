@@ -1,0 +1,39 @@
+{
+  "classification": "invoice",
+  "invoice": {
+    "supplier_name": "Gulf Fresh Vegetables Trading",
+    "invoice_no": "GFV-10231",
+    "invoice_date": "2026-08-10",
+    "currency": "AED",
+    "payment_kind": "credit",
+    "lines": [
+      {
+        "raw_name": "Tomato Local Box 5kg",
+        "qty": "4",
+        "unit": "box",
+        "pack_size": "5kg",
+        "unit_price": "18.50",
+        "line_total": "74.00"
+      },
+      {
+        "raw_name": "Cucumber 5kg",
+        "qty": "2",
+        "unit": "box",
+        "pack_size": "5kg",
+        "unit_price": "12.00",
+        "line_total": "24.00"
+      },
+      {
+        "raw_name": "Onion Red 10kg",
+        "qty": "1",
+        "unit": "bag",
+        "pack_size": "10kg",
+        "unit_price": "22.00",
+        "line_total": "22.00"
+      }
+    ],
+    "subtotal": "120.00",
+    "tax": "6.00",
+    "total": "126.00"
+  }
+}

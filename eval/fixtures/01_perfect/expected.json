@@ -1,0 +1,61 @@
+{
+  "classification": {
+    "truth": "invoice",
+    "extracted": "invoice",
+    "correct": true
+  },
+  "header_fields": {
+    "supplier_name": true,
+    "invoice_no": true,
+    "invoice_date": true,
+    "currency": true,
+    "payment_kind": true,
+    "subtotal": true,
+    "tax": true,
+    "total": true
+  },
+  "lines": {
+    "truth_count": 3,
+    "extracted_count": 3,
+    "matched": 3,
+    "recall": 1.0,
+    "precision": 1.0,
+    "fields": {
+      "raw_name": {
+        "correct": 3,
+        "total": 3
+      },
+      "qty": {
+        "correct": 3,
+        "total": 3
+      },
+      "unit": {
+        "correct": 3,
+        "total": 3
+      },
+      "pack_size": {
+        "correct": 3,
+        "total": 3
+      },
+      "unit_price": {
+        "correct": 3,
+        "total": 3
+      },
+      "line_total": {
+        "correct": 3,
+        "total": 3
+      }
+    }
+  },
+  "reconciliation": {
+    "applicable": true,
+    "reconciled": true
+  },
+  "usage": {
+    "model_id": "claude-opus-5",
+    "prompt_version": "fixture-v0",
+    "input_tokens": 1998,
+    "output_tokens": 412,
+    "latency_ms": 5900
+  }
+}

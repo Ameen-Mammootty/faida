@@ -1,0 +1,105 @@
+{
+  "cases": 3,
+  "classification": {
+    "correct": 2,
+    "total": 3,
+    "accuracy": 0.6667
+  },
+  "header_fields": {
+    "supplier_name": {
+      "correct": 2,
+      "total": 3,
+      "accuracy": 0.6667
+    },
+    "invoice_no": {
+      "correct": 2,
+      "total": 3,
+      "accuracy": 0.6667
+    },
+    "invoice_date": {
+      "correct": 2,
+      "total": 3,
+      "accuracy": 0.6667
+    },
+    "currency": {
+      "correct": 2,
+      "total": 3,
+      "accuracy": 0.6667
+    },
+    "payment_kind": {
+      "correct": 2,
+      "total": 3,
+      "accuracy": 0.6667
+    },
+    "subtotal": {
+      "correct": 2,
+      "total": 3,
+      "accuracy": 0.6667
+    },
+    "tax": {
+      "correct": 2,
+      "total": 3,
+      "accuracy": 0.6667
+    },
+    "total": {
+      "correct": 2,
+      "total": 3,
+      "accuracy": 0.6667
+    }
+  },
+  "lines": {
+    "matched": 5,
+    "truth_count": 8,
+    "extracted_count": 5,
+    "recall": 0.625,
+    "precision": 1.0,
+    "fields": {
+      "raw_name": {
+        "correct": 5,
+        "total": 5,
+        "accuracy": 1.0
+      },
+      "qty": {
+        "correct": 5,
+        "total": 5,
+        "accuracy": 1.0
+      },
+      "unit": {
+        "correct": 5,
+        "total": 5,
+        "accuracy": 1.0
+      },
+      "pack_size": {
+        "correct": 5,
+        "total": 5,
+        "accuracy": 1.0
+      },
+      "unit_price": {
+        "correct": 5,
+        "total": 5,
+        "accuracy": 1.0
+      },
+      "line_total": {
+        "correct": 4,
+        "total": 5,
+        "accuracy": 0.8
+      }
+    }
+  },
+  "reconciliation": {
+    "reconciled": 1,
+    "applicable": 2,
+    "rate": 0.5
+  },
+  "usage": {
+    "cases_with_usage": 3,
+    "avg_input_tokens": 1850.0,
+    "avg_output_tokens": 280.0,
+    "avg_latency_ms": 4800.0,
+    "avg_cost_usd": null
+  },
+  "repair_lift": {
+    "reconciliation_rate_before_repair": null,
+    "reconciliation_rate_after_repair": null
+  }
+}

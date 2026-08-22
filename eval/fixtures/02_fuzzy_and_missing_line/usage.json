@@ -1,0 +1,7 @@
+{
+  "model_id": "claude-opus-5",
+  "prompt_version": "fixture-v0",
+  "input_tokens": 2102,
+  "output_tokens": 388,
+  "latency_ms": 6400
+}

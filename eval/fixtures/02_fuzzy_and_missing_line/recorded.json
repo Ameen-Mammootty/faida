@@ -1,0 +1,31 @@
+{
+  "classification": "invoice",
+  "invoice": {
+    "supplier_name": "Al Madina Foodstuff Trading L.L.C",
+    "invoice_no": "AMF-2214",
+    "invoice_date": "2026-08-12",
+    "currency": "AED",
+    "payment_kind": "cash",
+    "lines": [
+      {
+        "raw_name": "Chicken Whole 1000g",
+        "qty": "10",
+        "unit": "pc",
+        "pack_size": "1000g",
+        "unit_price": "9.50",
+        "line_total": "50.00"
+      },
+      {
+        "raw_name": "Eggs White Tray 30",
+        "qty": "5",
+        "unit": "tray",
+        "pack_size": "30",
+        "unit_price": "13.00",
+        "line_total": "65.00"
+      }
+    ],
+    "subtotal": "182.50",
+    "tax": "9.13",
+    "total": "191.63"
+  }
+}

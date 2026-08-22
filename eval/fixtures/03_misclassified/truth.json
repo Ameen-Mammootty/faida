@@ -1,0 +1,31 @@
+{
+  "classification": "invoice",
+  "invoice": {
+    "supplier_name": "Karak Corner Tea Supplies",
+    "invoice_no": "KC-88",
+    "invoice_date": "2026-08-15",
+    "currency": "AED",
+    "payment_kind": "cash",
+    "lines": [
+      {
+        "raw_name": "Karak Tea Premix 1kg",
+        "qty": "6",
+        "unit": "pkt",
+        "pack_size": "1kg",
+        "unit_price": "14.00",
+        "line_total": "84.00"
+      },
+      {
+        "raw_name": "Evaporated Milk 170g",
+        "qty": "24",
+        "unit": "tin",
+        "pack_size": "170g",
+        "unit_price": "2.25",
+        "line_total": "54.00"
+      }
+    ],
+    "subtotal": "138.00",
+    "tax": "6.90",
+    "total": "144.90"
+  }
+}

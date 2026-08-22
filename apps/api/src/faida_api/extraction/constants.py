@@ -11,7 +11,8 @@ from decimal import Decimal
 #                                              LINE_TOLERANCE_PCT * line_total)
 LINE_TOLERANCE_ABS = Decimal("0.05")
 LINE_TOLERANCE_PCT = Decimal("0.005")
-# Document: |subtotal + tax - total| <= DOC_TOLERANCE_ABS
+# Document: |sum(line_totals) + tax - total| <= DOC_TOLERANCE_ABS, with the
+# extracted subtotal cross-checked against the line sum when present.
 DOC_TOLERANCE_ABS = Decimal("0.10")
 
 # Repair pass (plan.md §5 layer 3): one scoped round, never more.

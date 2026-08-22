@@ -192,7 +192,7 @@ plan (§7).
 ### M1 — Extraction pipeline + eval harness (Day 3–6)
 - [ ] Anthropic API key with billing enabled *(founder, ~10 min - gates running the pipeline, not
       building it)* (F5)
-- [ ] Provider interface + Claude Opus 5 structured extraction (layer 1); classification
+- [x] Provider interface + Claude Opus 5 structured extraction (layer 1); classification
       (invoice / z_report / other, polite decline for memes) happens inside the same structured
       call - a separate classifier call adds cost and latency for nothing at demo volume (C3, WP-10)
 - [ ] Arithmetic reconciliation + targeted repair pass (layers 2–3) (C4, WP-11, WP-12)
@@ -296,7 +296,8 @@ Log; a sub-agent never changes one unilaterally.
   on every run.
 - **C4 - Money + tolerances.** `Decimal` in Python, `numeric` in Postgres, never float. Line
   check: |qty × unit_price - line_total| ≤ max(0.05, 0.5% of line_total). Document check:
-  |subtotal + tax - total| ≤ 0.10. Constants live in one module; the eval scores against the
+  |Σ line_totals + tax - total| ≤ 0.10, with the extracted subtotal cross-checked against the
+  line sum when present (§5 layer 2). Constants live in one module; the eval scores against the
   same constants.
 - **C5 - Confirmation resolution (no new table).** An inbound text from phone P resolves against
   the newest `awaiting_confirm` invoice whose document traces back to sender P. None pending →
@@ -504,11 +505,18 @@ pilot volume. Meta utility template cost applies only from M9 (verify live UAE r
 | 2026-08-22 | Execution decomposition (founder track, contracts, work packages, delegation protocol) lives in this file as §7; no separate BUILD.md | One live file; this plan stays the single sequencing document |
 | 2026-08-22 | Price alerts computed in the extraction reply; `last_price`/`prev_price` update only on confirm | The demo's money moment; unconfirmed invoices must not move the baseline |
 | 2026-08-22 | Confirmations resolved by derivation (newest awaiting-confirm per sender), no pending-confirmations table; CI eval smoke = recorded provider responses, live eval on demand | Keep the schema and CI lean until real usage demands more |
+| 2026-08-22 | C4 document check is line-sum primary (Σ line_totals + tax vs total; extracted subtotal is a cross-check). C3 note: `RepairResult` keeps its dict-keyed patch shape; providers using strict structured outputs translate via private wire models | §5 was always line-sum, and a subtotal must not masquerade as reconciliation. The Anthropic strict-schema transform silently empties open dicts (verified empirically in WP-10) |
 
 ## 13. Progress Log
 
 *(newest first — one line per session: date, what shipped, what's next)*
 
+- 2026-08-22 - Wave 1 integrated: WP-10 Anthropic provider (`claude-opus-5` structured outputs
+  behind the seam, adaptive thinking, PDF + image blocks, mocked-SDK tests), WP-11 deterministic
+  validation (`validate.py`, checks shape ready for WP-13, wrong-never-green invariant), WP-14
+  eval harness (scorer, recorded provider, 3 fixtures, CI smoke steps). 41 API tests green vs
+  real Postgres + 12 eval tests + smoke OK. Next: Wave 2 (WP-12 repair); WP-15/WP-16 wait on
+  founder F5 (API key) + F6 (corpus photos).
 - 2026-08-22 - Wave 0 shipped: contracts pinned in code (`contracts.py`: C1 status machines +
   C2 job kinds; `extraction/schema.py` + `provider.py`: C3; `extraction/constants.py`: C4
   tolerances + alert thresholds); webhook/worker wired to them; 17 tests green (13 existing +
