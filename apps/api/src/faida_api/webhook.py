@@ -10,10 +10,10 @@ from typing import Any
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import PlainTextResponse
 
+from .contracts import MEDIA_TYPES, JobKind
+
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
-MEDIA_TYPES = {"image", "document"}
 
 
 def verify_signature(raw_body: bytes, signature_header: str | None, app_secret: str) -> bool:
@@ -82,7 +82,7 @@ async def receive_webhook(request: Request) -> Response:
             continue
         fresh = await db.record_inbound_message(msg["id"], msg["from"], msg["type"], msg["raw"])
         if fresh:
-            await db.enqueue("process_wa_message", {"message_id": msg["id"]})
+            await db.enqueue(JobKind.PROCESS_WA_MESSAGE, {"message_id": msg["id"]})
         else:
             logger.info("duplicate wa message skipped: %s", msg["id"])
     return Response(status_code=200)

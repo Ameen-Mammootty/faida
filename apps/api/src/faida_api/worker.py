@@ -6,10 +6,10 @@ import asyncio
 import hashlib
 import logging
 
+from .contracts import MEDIA_TYPES, JobKind
 from .db import Database
 from .storage import Storage
 from .wa import WhatsAppClient
-from .webhook import MEDIA_TYPES
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +86,7 @@ async def _ingest_media(
 
 
 HANDLERS = {
-    "process_wa_message": process_wa_message,
+    JobKind.PROCESS_WA_MESSAGE: process_wa_message,
 }
 
 

@@ -509,6 +509,11 @@ pilot volume. Meta utility template cost applies only from M9 (verify live UAE r
 
 *(newest first — one line per session: date, what shipped, what's next)*
 
+- 2026-08-22 - Wave 0 shipped: contracts pinned in code (`contracts.py`: C1 status machines +
+  C2 job kinds; `extraction/schema.py` + `provider.py`: C3; `extraction/constants.py`: C4
+  tolerances + alert thresholds); webhook/worker wired to them; 17 tests green (13 existing +
+  4 new contract tests) against real Postgres. Next: Wave 1 fan-out (WP-10 + WP-11 + WP-14 in
+  parallel) on the agent side; F1-F4 founder sitting + F5 API key on the founder side.
 - 2026-08-22 - Execution plan added as §7 (founder track F1-F8, contracts C1-C7, work packages
   WP-10 through WP-43, delegation waves + protocol); M1-M3 checklists tied to WPs; M3 backend
   gap closed; price-alert timing, confirmation rule, CI eval policy, and English-only demo
