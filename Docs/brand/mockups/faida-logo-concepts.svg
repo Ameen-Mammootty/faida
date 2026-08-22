@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1120" role="img" aria-labelledby="title desc">
+  <title id="title">Faida logo concept board</title>
+  <desc id="desc">Five geometric logo directions for Faida, with Margin Fold marked as recommended.</desc>
+  <rect width="1600" height="1120" fill="#F4F0E7"/>
+  <text x="72" y="82" fill="#153E35" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="22" font-weight="700" letter-spacing="4">FAIDA / BRAND DIRECTIONS</text>
+  <text x="72" y="150" fill="#172421" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="52" font-weight="600" letter-spacing="-2">Five clean routes. One focused identity.</text>
+  <text x="72" y="198" fill="#52625D" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="24">Hospitality warmth  ·  financial clarity  ·  operational trust</text>
+
+  <g transform="translate(72 250)">
+    <rect width="456" height="354" rx="28" fill="#FBF6EC" stroke="#E3A13B" stroke-width="4"/>
+    <rect x="24" y="24" width="156" height="34" rx="17" fill="#E3A13B"/>
+    <text x="102" y="48" text-anchor="middle" fill="#172421" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="16" font-weight="700" letter-spacing="1.5">RECOMMENDED</text>
+    <g transform="translate(42 106) scale(1.14)">
+      <path fill="#153E35" d="M8 61c0-8 4-14 11-18l27-16v30L20 72c-6 4-12 0-12-7z"/>
+      <path fill="#E3A13B" d="M37 47c0-8 4-14 11-18l26-15v30L48 59c-6 4-11 0-11-7z"/>
+      <path fill="#153E35" d="M66 32c0-8 4-14 11-18L104 0v70L78 85c-6 4-12 0-12-7z"/>
+    </g>
+    <text x="184" y="184" fill="#172421" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="78" font-weight="600" letter-spacing="-4">faida</text>
+    <line x1="28" y1="250" x2="428" y2="250" stroke="#DDD7CA"/>
+    <text x="28" y="288" fill="#153E35" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="22" font-weight="700">01  Margin Fold</text>
+    <text x="28" y="320" fill="#52625D" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="18">Invoice fold + branch rhythm + upward progress</text>
+  </g>
+
+  <g transform="translate(572 250)">
+    <rect width="456" height="354" rx="28" fill="#FBF6EC"/>
+    <g transform="translate(52 103) scale(1.15)">
+      <rect x="0" y="0" width="42" height="42" rx="11" fill="#153E35"/>
+      <rect x="0" y="52" width="42" height="42" rx="11" fill="#153E35"/>
+      <rect x="52" y="52" width="42" height="42" rx="11" fill="#153E35"/>
+      <path fill="#E3A13B" d="M52 42C52 19 71 0 94 0v12c0 17-13 30-30 30z"/>
+    </g>
+    <text x="184" y="184" fill="#172421" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="78" font-weight="600" letter-spacing="-4">faida</text>
+    <line x1="28" y1="250" x2="428" y2="250" stroke="#DDD7CA"/>
+    <text x="28" y="288" fill="#153E35" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="22" font-weight="700">02  Branch Table</text>
+    <text x="28" y="320" fill="#52625D" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="18">A multi-branch grid with one outcome moving up</text>
+  </g>
+
+  <g transform="translate(1072 250)">
+    <rect width="456" height="354" rx="28" fill="#FBF6EC"/>
+    <g transform="translate(48 99) scale(1.05)">
+      <circle cx="51" cy="51" r="48" fill="#153E35"/>
+      <path d="M20 53h62L51 91z" fill="#E3A13B"/>
+      <path d="M31 22h40v28l-7-6-7 6-6-6-7 6-6-6-7 6z" fill="#FBF6EC"/>
+      <rect x="39" y="30" width="24" height="5" rx="2.5" fill="#153E35"/>
+      <rect x="39" y="39" width="18" height="5" rx="2.5" fill="#153E35"/>
+      <path d="m39 66 8 8 17-18" fill="none" stroke="#153E35" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <text x="184" y="184" fill="#172421" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="78" font-weight="600" letter-spacing="-4">faida</text>
+    <line x1="28" y1="250" x2="428" y2="250" stroke="#DDD7CA"/>
+    <text x="28" y="288" fill="#153E35" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="22" font-weight="700">03  Proof Mark</text>
+    <text x="28" y="320" fill="#52625D" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="18">Trusted evidence, confirmed before it becomes fact</text>
+  </g>
+
+  <g transform="translate(322 650)">
+    <rect width="456" height="354" rx="28" fill="#FBF6EC"/>
+    <g transform="translate(58 94)">
+      <rect x="0" y="0" width="28" height="108" rx="14" fill="#153E35"/>
+      <rect x="18" y="0" width="76" height="28" rx="14" fill="#153E35"/>
+      <path d="M18 46h64c8 0 14 6 14 14s-6 14-14 14H18z" fill="#E3A13B"/>
+    </g>
+    <text x="184" y="184" fill="#172421" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="78" font-weight="600" letter-spacing="-4">faida</text>
+    <line x1="28" y1="250" x2="428" y2="250" stroke="#DDD7CA"/>
+    <text x="28" y="288" fill="#153E35" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="22" font-weight="700">04  Ledger F</text>
+    <text x="28" y="320" fill="#52625D" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="18">The clearest, most utilitarian monogram route</text>
+  </g>
+
+  <g transform="translate(822 650)">
+    <rect width="456" height="354" rx="28" fill="#FBF6EC"/>
+    <g transform="translate(49 98)">
+      <circle cx="51" cy="51" r="43" fill="none" stroke="#153E35" stroke-width="15"/>
+      <rect x="31" y="52" width="15" height="26" rx="7.5" fill="#E3A13B"/>
+      <rect x="55" y="34" width="15" height="44" rx="7.5" fill="#153E35"/>
+    </g>
+    <text x="184" y="184" fill="#172421" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="78" font-weight="600" letter-spacing="-4">faida</text>
+    <line x1="28" y1="250" x2="428" y2="250" stroke="#DDD7CA"/>
+    <text x="28" y="288" fill="#153E35" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="22" font-weight="700">05  Karak Halo</text>
+    <text x="28" y="320" fill="#52625D" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="18">Hospitality warmth with a subtle performance cue</text>
+  </g>
+
+  <text x="800" y="1080" text-anchor="middle" fill="#7A857F" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="17">Flat color only  ·  no red  ·  no AI motifs  ·  built to scale from WhatsApp icon to dashboard header</text>
+</svg>

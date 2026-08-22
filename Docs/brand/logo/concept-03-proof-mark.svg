@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 200" role="img" aria-labelledby="title desc">
+  <title id="title">Concept 3 - Proof Mark</title>
+  <desc id="desc">A circular proof seal combining a receipt and confirmed result.</desc>
+  <rect width="640" height="200" rx="24" fill="#FBF6EC"/>
+  <g transform="translate(44 38)">
+    <circle cx="51" cy="51" r="48" fill="#153E35"/>
+    <path d="M20 53h62L51 91z" fill="#E3A13B"/>
+    <path d="M31 22h40v28l-7-6-7 6-6-6-7 6-6-6-7 6z" fill="#FBF6EC"/>
+    <rect x="39" y="30" width="24" height="5" rx="2.5" fill="#153E35"/>
+    <rect x="39" y="39" width="18" height="5" rx="2.5" fill="#153E35"/>
+    <path d="m39 66 8 8 17-18" fill="none" stroke="#153E35" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text x="190" y="133" fill="#172421" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="96" font-weight="600" letter-spacing="-4">faida</text>
+</svg>

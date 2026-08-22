@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 220" role="img" aria-labelledby="title desc">
+  <title id="title">Faida one-color horizontal logo</title>
+  <desc id="desc">The Faida logo rendered in one ink color.</desc>
+  <g transform="translate(44 58) scale(1.02)" fill="#172421">
+    <path d="M8 61c0-8 4-14 11-18l27-16v30L20 72c-6 4-12 0-12-7z"/>
+    <path d="M37 47c0-8 4-14 11-18l26-15v30L48 59c-6 4-11 0-11-7z"/>
+    <path d="M66 32c0-8 4-14 11-18L104 0v70L78 85c-6 4-12 0-12-7z"/>
+  </g>
+  <text x="182" y="150" fill="#172421" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="112" font-weight="600" letter-spacing="-5">faida</text>
+</svg>

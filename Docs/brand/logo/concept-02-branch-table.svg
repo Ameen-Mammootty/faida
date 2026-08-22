@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 200" role="img" aria-labelledby="title desc">
+  <title id="title">Concept 2 - Branch Table</title>
+  <desc id="desc">Three rounded branch tiles and one rising gold quarter.</desc>
+  <rect width="640" height="200" rx="24" fill="#FBF6EC"/>
+  <g transform="translate(45 42)">
+    <rect x="0" y="0" width="42" height="42" rx="11" fill="#153E35"/>
+    <rect x="0" y="52" width="42" height="42" rx="11" fill="#153E35"/>
+    <rect x="52" y="52" width="42" height="42" rx="11" fill="#153E35"/>
+    <path fill="#E3A13B" d="M52 42C52 19 71 0 94 0v12c0 17-13 30-30 30z"/>
+  </g>
+  <text x="190" y="133" fill="#172421" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="96" font-weight="600" letter-spacing="-4">faida</text>
+</svg>

@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1120" role="img" aria-labelledby="title desc">
+  <title id="title">Faida brand application mockups</title>
+  <desc id="desc">The Faida identity shown on a dashboard, app icon, WhatsApp reply, and proposal cover.</desc>
+  <rect width="1600" height="1120" fill="#F4F0E7"/>
+  <text x="72" y="78" fill="#153E35" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="22" font-weight="700" letter-spacing="4">FAIDA / BRAND IN USE</text>
+  <text x="72" y="148" fill="#172421" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="54" font-weight="600" letter-spacing="-2">Profit, in plain sight.</text>
+  <text x="72" y="194" fill="#52625D" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="23">Restaurant warmth on the surface. Evidence and control underneath.</text>
+
+  <g transform="translate(72 246)">
+    <rect width="952" height="774" rx="34" fill="#FFFFFF"/>
+    <rect width="220" height="774" rx="34" fill="#153E35"/>
+    <path d="M186 0h34v774h-34z" fill="#153E35"/>
+    <g transform="translate(28 34) scale(.52)">
+      <path fill="#FBF6EC" d="M8 61c0-8 4-14 11-18l27-16v30L20 72c-6 4-12 0-12-7z"/>
+      <path fill="#E3A13B" d="M37 47c0-8 4-14 11-18l26-15v30L48 59c-6 4-11 0-11-7z"/>
+      <path fill="#FBF6EC" d="M66 32c0-8 4-14 11-18L104 0v70L78 85c-6 4-12 0-12-7z"/>
+    </g>
+    <text x="94" y="80" fill="#FBF6EC" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="38" font-weight="600" letter-spacing="-2">faida</text>
+    <rect x="18" y="130" width="184" height="52" rx="14" fill="#285A4F"/>
+    <circle cx="45" cy="156" r="7" fill="#E3A13B"/>
+    <text x="64" y="163" fill="#FBF6EC" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="17" font-weight="600">Overview</text>
+    <text x="64" y="222" fill="#B9D2C7" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="17">Invoices</text>
+    <text x="64" y="272" fill="#B9D2C7" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="17">Branches</text>
+    <text x="64" y="322" fill="#B9D2C7" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="17">Suppliers</text>
+    <rect x="20" y="674" width="180" height="76" rx="16" fill="#0E332C"/>
+    <text x="38" y="704" fill="#9CC8B3" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="14">DATA STATUS</text>
+    <text x="38" y="730" fill="#FBF6EC" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="16" font-weight="600">✓  Verified today</text>
+
+    <text x="266" y="74" fill="#172421" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="34" font-weight="600">Good morning, Ameen</text>
+    <text x="266" y="108" fill="#65736E" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="17">Here is yesterday across all three branches.</text>
+    <rect x="790" y="44" width="122" height="42" rx="21" fill="#E7EFEA"/>
+    <text x="851" y="71" text-anchor="middle" fill="#153E35" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="15" font-weight="700">21 AUG</text>
+
+    <g transform="translate(266 148)">
+      <rect width="198" height="138" rx="20" fill="#FBF6EC"/>
+      <text x="18" y="34" fill="#65736E" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="15">NET SALES</text>
+      <text x="18" y="82" fill="#172421" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="35" font-weight="600">AED 18,420</text>
+      <text x="18" y="112" fill="#1D6D50" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="15" font-weight="600">↑  6% vs last Thu</text>
+    </g>
+    <g transform="translate(482 148)">
+      <rect width="198" height="138" rx="20" fill="#FBF6EC"/>
+      <text x="18" y="34" fill="#65736E" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="15">PURCHASES / SALES</text>
+      <text x="18" y="82" fill="#172421" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="39" font-weight="600">31%</text>
+      <text x="18" y="112" fill="#65736E" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="15">Cash-basis view</text>
+    </g>
+    <g transform="translate(698 148)">
+      <rect width="214" height="138" rx="20" fill="#FFF1D4"/>
+      <text x="18" y="34" fill="#80520A" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="15">PRICE ATTENTION</text>
+      <text x="18" y="78" fill="#172421" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="29" font-weight="600">1 item moved</text>
+      <text x="18" y="111" fill="#80520A" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="15" font-weight="600">!  Review supplier</text>
+    </g>
+
+    <rect x="266" y="322" width="646" height="206" rx="22" fill="#FFFFFF" stroke="#DDE5E1"/>
+    <text x="288" y="360" fill="#172421" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="20" font-weight="700">Branch contribution estimate</text>
+    <text x="790" y="360" fill="#65736E" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="14">RELIABLE WITH LIMITATIONS</text>
+    <text x="288" y="406" fill="#52625D" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="16">Al Nahda</text>
+    <rect x="410" y="390" width="386" height="18" rx="9" fill="#E7EFEA"/>
+    <rect x="410" y="390" width="312" height="18" rx="9" fill="#153E35"/>
+    <text x="858" y="406" text-anchor="end" fill="#172421" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="16" font-weight="700">AED 4,920</text>
+    <text x="288" y="454" fill="#52625D" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="16">Muweilah</text>
+    <rect x="410" y="438" width="386" height="18" rx="9" fill="#E7EFEA"/>
+    <rect x="410" y="438" width="252" height="18" rx="9" fill="#528879"/>
+    <text x="858" y="454" text-anchor="end" fill="#172421" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="16" font-weight="700">AED 3,980</text>
+    <text x="288" y="502" fill="#52625D" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="16">Industrial Area</text>
+    <rect x="410" y="486" width="386" height="18" rx="9" fill="#E7EFEA"/>
+    <rect x="410" y="486" width="196" height="18" rx="9" fill="#9CC8B3"/>
+    <text x="858" y="502" text-anchor="end" fill="#172421" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="16" font-weight="700">AED 3,110</text>
+
+    <rect x="266" y="550" width="646" height="176" rx="22" fill="#153E35"/>
+    <circle cx="310" cy="598" r="22" fill="#E3A13B"/>
+    <text x="310" y="605" text-anchor="middle" fill="#172421" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="22" font-weight="700">!</text>
+    <text x="350" y="590" fill="#9CC8B3" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="14" font-weight="700" letter-spacing="1">SUPPLIER PRICE MOVE</text>
+    <text x="350" y="626" fill="#FBF6EC" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="25" font-weight="600">Milk powder is up AED 4.00</text>
+    <text x="350" y="657" fill="#C9DBD4" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="16">Al Baraka Foods  ·  latest confirmed invoice</text>
+    <rect x="734" y="668" width="146" height="38" rx="19" fill="#FBF6EC"/>
+    <text x="807" y="693" text-anchor="middle" fill="#153E35" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="15" font-weight="700">View invoice</text>
+  </g>
+
+  <g transform="translate(1062 246)">
+    <rect width="466" height="238" rx="34" fill="#153E35"/>
+    <text x="30" y="44" fill="#9CC8B3" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="15" font-weight="700" letter-spacing="2">APP ICON</text>
+    <rect x="32" y="76" width="128" height="128" rx="30" fill="#FBF6EC"/>
+    <g transform="translate(42 109) scale(.82)">
+      <path fill="#153E35" d="M8 61c0-8 4-14 11-18l27-16v30L20 72c-6 4-12 0-12-7z"/>
+      <path fill="#E3A13B" d="M37 47c0-8 4-14 11-18l26-15v30L48 59c-6 4-11 0-11-7z"/>
+      <path fill="#153E35" d="M66 32c0-8 4-14 11-18L104 0v70L78 85c-6 4-12 0-12-7z"/>
+    </g>
+    <text x="196" y="130" fill="#FBF6EC" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="48" font-weight="600" letter-spacing="-2">faida</text>
+    <text x="196" y="163" fill="#C9DBD4" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="17">Profit visibility</text>
+    <text x="196" y="188" fill="#C9DBD4" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="17">for every branch.</text>
+  </g>
+
+  <g transform="translate(1062 516)">
+    <rect width="466" height="278" rx="34" fill="#FFFFFF"/>
+    <text x="30" y="44" fill="#7A857F" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="15" font-weight="700" letter-spacing="2">WHATSAPP REPLY</text>
+    <rect x="30" y="70" width="406" height="176" rx="18" fill="#E7EFEA"/>
+    <g transform="translate(48 88) scale(.32)">
+      <path fill="#153E35" d="M8 61c0-8 4-14 11-18l27-16v30L20 72c-6 4-12 0-12-7z"/>
+      <path fill="#E3A13B" d="M37 47c0-8 4-14 11-18l26-15v30L48 59c-6 4-11 0-11-7z"/>
+      <path fill="#153E35" d="M66 32c0-8 4-14 11-18L104 0v70L78 85c-6 4-12 0-12-7z"/>
+    </g>
+    <text x="94" y="112" fill="#153E35" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="18" font-weight="700">Faida</text>
+    <text x="48" y="148" fill="#172421" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="17" font-weight="600">Al Baraka Foods  ·  AED 684.00</text>
+    <text x="48" y="178" fill="#80520A" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="16">! Milk powder up AED 4.00</text>
+    <text x="48" y="212" fill="#52625D" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="15">Reply OK to confirm.</text>
+  </g>
+
+  <g transform="translate(1062 826)">
+    <rect width="466" height="194" rx="34" fill="#E3A13B"/>
+    <text x="30" y="44" fill="#5C3A05" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="15" font-weight="700" letter-spacing="2">PROPOSAL COVER</text>
+    <g transform="translate(32 80) scale(.5)">
+      <path fill="#153E35" d="M8 61c0-8 4-14 11-18l27-16v30L20 72c-6 4-12 0-12-7z"/>
+      <path fill="#FBF6EC" d="M37 47c0-8 4-14 11-18l26-15v30L48 59c-6 4-11 0-11-7z"/>
+      <path fill="#153E35" d="M66 32c0-8 4-14 11-18L104 0v70L78 85c-6 4-12 0-12-7z"/>
+    </g>
+    <text x="110" y="128" fill="#172421" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="38" font-weight="600" letter-spacing="-2">faida</text>
+    <text x="312" y="105" fill="#5C3A05" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="13" font-weight="700" letter-spacing="1.4">CLIENT PROPOSAL</text>
+    <text x="312" y="133" fill="#172421" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="18" font-weight="600">Profit visibility</text>
+    <text x="312" y="158" fill="#172421" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="18" font-weight="600">for every branch</text>
+  </g>
+</svg>

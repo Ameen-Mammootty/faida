@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 200" role="img" aria-labelledby="title desc">
+  <title id="title">Concept 5 - Karak Halo</title>
+  <desc id="desc">A warm circular hospitality symbol with two rising interior forms.</desc>
+  <rect width="640" height="200" rx="24" fill="#FBF6EC"/>
+  <g transform="translate(44 38)">
+    <circle cx="51" cy="51" r="43" fill="none" stroke="#153E35" stroke-width="15"/>
+    <rect x="31" y="52" width="15" height="26" rx="7.5" fill="#E3A13B"/>
+    <rect x="55" y="34" width="15" height="44" rx="7.5" fill="#153E35"/>
+  </g>
+  <text x="190" y="133" fill="#172421" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="96" font-weight="600" letter-spacing="-4">faida</text>
+</svg>

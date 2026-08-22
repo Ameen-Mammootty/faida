@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 420" role="img" aria-labelledby="title desc">
+  <title id="title">Faida primary stacked logo</title>
+  <desc id="desc">The Margin Fold mark above the lowercase Faida wordmark.</desc>
+  <g transform="translate(154 70)">
+    <path fill="#153E35" d="M8 61c0-8 4-14 11-18l27-16v30L20 72c-6 4-12 0-12-7z"/>
+    <path fill="#E3A13B" d="M37 47c0-8 4-14 11-18l26-15v30L48 59c-6 4-11 0-11-7z"/>
+    <path fill="#153E35" d="M66 32c0-8 4-14 11-18L104 0v70L78 85c-6 4-12 0-12-7z"/>
+  </g>
+  <text x="210" y="300" text-anchor="middle" fill="#172421" font-family="Avenir Next, Manrope, Inter, Arial, sans-serif" font-size="104" font-weight="600" letter-spacing="-5">faida</text>
+</svg>

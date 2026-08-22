@@ -173,7 +173,7 @@ plan (§7).
 - [ ] Meta developer app + WhatsApp Cloud API test number; register 2 demo phones
       *(founder, ~1 h — step-by-step in README §M0)*
 - [x] Supabase project `Faida MVP` (ap-south-1): schema migrated, private `documents` bucket,
-      demo tenant/branch seeded (branch phone still the `971500000000` placeholder)
+      demo tenant/branch seeded, live branch phone set to the founder's demo handset
 - [ ] Deploy the API to Railway/Fly
       *(founder, ~30 min — README §M0; Dockerfile ready)*
 - [x] FastAPI service code: webhook GET verification + POST signature check (fails closed
@@ -498,6 +498,7 @@ pilot volume. Meta utility template cost applies only from M9 (verify live UAE r
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-08-22 | Brand direction selected: Margin Fold mark, Date Palm and Karak Gold palette, and "Profit, in plain sight." positioning line | Connects invoice flow, multi-branch operations, and profit visibility without red, literal currency marks, or generic AI motifs |
 | 2026-08-22 | Fresh build; previous restaurant-profit-platform is reference-only, no code carried over | Over-engineering post-mortem; schema *ideas* only |
 | 2026-08-22 | Deleted `Docs/DESIGN.md`; this plan is the single sequencing document alongside `Docs/PRD.md` | Founder call |
 | 2026-08-22 | Demo-first sequencing (M0–M4) ahead of full MVP phases | WhatsApp accuracy is the wedge and the sale |
@@ -514,6 +515,10 @@ pilot volume. Meta utility template cost applies only from M9 (verify live UAE r
 
 *(newest first — one line per session: date, what shipped, what's next)*
 
+- 2026-08-22 - Brand handover shipped under `Docs/brand/`: five geometric logo concepts,
+  recommended Margin Fold system, professional color and typography guidance, positioning copy,
+  SVG masters, rendered application mockups, and an image-generation exploration record. Next:
+  founder approval, similarity search, and custom outlined wordmark refinement before launch.
 - 2026-08-22 - Wave 2: WP-12 targeted repair integrated (targets from FAILED checks only,
   indeterminate stays amber for the question flow; one-round cap owned by MAX_REPAIR_ROUNDS;
   RepairOutcome shape ready for WP-13). 52 tests green vs real Postgres including the founder
@@ -522,8 +527,9 @@ pilot volume. Meta utility template cost applies only from M9 (verify live UAE r
 - 2026-08-22 - Supabase live (F2): project `Faida MVP` (`wiirrenkpgyrghmclayf`, ap-south-1)
   migrated from `0001_init.sql`, private `documents` bucket created, demo tenant/branch seeded.
   Added deny-all RLS to `0001_init.sql` and applied it: 10 advisor ERRORs cleared, verified
-  `anon` sees 0 rows while the owner role still reads. Next: set the real branch phone, then
-  F1/F3/F4 (Meta app, deploy, prove M0 on a real phone).
+  `anon` sees 0 rows while the owner role still reads. Live branch phone set to the founder's
+  demo handset (kept out of `seed.sql`, which stays on the placeholder that CI and the tests
+  pin). Next: F1/F3/F4 (Meta app, deploy, prove M0 on a real phone).
 - 2026-08-22 - Wave 1 integrated: WP-10 Anthropic provider (`claude-opus-5` structured outputs
   behind the seam, adaptive thinking, PDF + image blocks, mocked-SDK tests), WP-11 deterministic
   validation (`validate.py`, checks shape ready for WP-13, wrong-never-green invariant), WP-14
