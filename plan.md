@@ -79,6 +79,7 @@ Settled now so we never relitigate them mid-build. Changes go through the Decisi
 | Repo layout | Single repo: `apps/api` (FastAPI), `apps/web` (Next.js), `supabase/` (migrations), `eval/` (invoice eval harness), `plan.md` (this file) | |
 | CI | GitHub Actions: lint, typecheck, unit tests, eval smoke (3 fixture invoices) on every PR | Keep it under 5 minutes. |
 | Money display | Rounded AED headline numbers, exact figures only in invoice detail. No jargon. Colour never carries meaning alone. | Inherited from the old DESIGN.md's four rules — the one part of the old build worth keeping verbatim. |
+| Language (demo scope) | **English-only** WhatsApp replies and review-screen UI. Invoices themselves stay mixed Arabic/English; extraction handles both. | Smallest template/parsing surface for the demo; bilingual revisited with pilot feedback. |
 
 **Explicitly out of the MVP** (PRD §2.4, plus this plan's deferrals): POS replacement, payments,
 payroll, GL, autonomous actions, conversational AI, khata, delivery-aggregator reconciliation,
@@ -145,12 +146,16 @@ Migration policy: plain SQL files in `supabase/migrations/`, squashed freely unt
 ### The eval harness (`eval/`) — built before polishing anything
 
 - **Corpus:** 20–25 *real* invoices from the target segment — crumpled thermal paper, handwritten
-  Arabic/English mixes, karak-supplier delivery notes. Owner: collect from the pilot contacts.
-  (Blocker if we can't get real ones: start with 10 photographed from local suppliers, keep growing.)
+  Arabic/English mixes, karak-supplier delivery notes. Currently in hand: a handful (<10).
+  Founder task F6 (§7.1): photograph these properly (flat + angled + crumpled variants of each)
+  and keep collecting from pilot contacts; every later pilot failure joins the corpus.
 - **Ground truth:** one JSON per invoice, hand-verified, same schema as extraction output.
 - **Runner:** `python -m eval.run` → scores field-level accuracy (exact for numbers/dates, fuzzy
   ≥0.9 for names), line recall/precision, reconciliation rate, repair-pass lift, cost and latency
   per invoice. Prints a table; writes `eval/results/<date>.json` so runs are comparable.
+- **CI policy:** the CI smoke runs 3 fixture invoices against *recorded* provider responses - no
+  API key, no spend, no flakiness in CI. The full live eval runs on demand before any pipeline
+  change merges; recorded fixtures are regenerated whenever the prompt version bumps.
 - **Targets (demo gate):** totals and amounts ≥98% field accuracy; line-item fields ≥95%;
   100% of confirmed invoices arithmetically reconciled; zero silent wrong numbers (a wrong value
   must be amber, never green).
@@ -161,7 +166,8 @@ Migration policy: plain SQL files in `supabase/migrations/`, squashed freely unt
 ## 6. Milestones — demo track (M0–M4)
 
 Sized for focused build days with CC assistance. Each has a **Done when** that is demonstrable,
-not documentary.
+not documentary. The WP-, F-, and C-identifiers in the checklists are defined in the execution
+plan (§7).
 
 ### M0 — Channel live (Day 1–2)
 - [ ] Meta developer app + WhatsApp Cloud API test number; register 2 demo phones
@@ -184,32 +190,50 @@ not documentary.
   steps above, then the README §M0 "Prove M0" checklist.*
 
 ### M1 — Extraction pipeline + eval harness (Day 3–6)
-- [ ] Provider interface + Claude Opus 5 structured extraction (layer 1)
-- [ ] Classifier step: invoice / not-an-invoice (polite decline for memes)
-- [ ] Arithmetic reconciliation + targeted repair pass (layers 2–3)
-- [ ] Eval corpus ≥15 invoices with ground truth; runner + scores wired into CI (3-invoice smoke)
-- [ ] Iterate prompt/pipeline until targets in §5 are met on the corpus
+- [ ] Anthropic API key with billing enabled *(founder, ~10 min - gates running the pipeline, not
+      building it)* (F5)
+- [ ] Provider interface + Claude Opus 5 structured extraction (layer 1); classification
+      (invoice / z_report / other, polite decline for memes) happens inside the same structured
+      call - a separate classifier call adds cost and latency for nothing at demo volume (C3, WP-10)
+- [ ] Arithmetic reconciliation + targeted repair pass (layers 2–3) (C4, WP-11, WP-12)
+- [ ] Pipeline orchestration + persistence: `extract_document` job, status transitions, draft
+      invoices + lines + checks, run metadata, failure + meme decline paths (C1, C2, WP-13)
+- [ ] Eval corpus ≥15 invoices with hand-verified ground truth (currently <10 - F6, F8, WP-15);
+      runner + scores (WP-14); CI smoke = 3 recorded fixtures (§5 CI policy)
+- [ ] Iterate prompt/pipeline until targets in §5 are met on the corpus (WP-16)
 - **Done when:** eval report hits the accuracy targets, and a forwarded photo produces a stored
   draft invoice with per-field checks.
 
 ### M2 — Confirm flow, supplier memory, price alerts (Day 7–9)
-- [ ] WhatsApp reply template: supplier, line count, total, amber-field question(s), price alerts,
-      "Reply OK to confirm"
+- [ ] WhatsApp reply composer: supplier, line count, total, amber-field question(s), price alerts,
+      "Reply OK to confirm", plus cash-hold, failure, and decline messages - deterministic English
+      templates, zero generation (WP-20)
 - [ ] "OK" / correction parsing (OK, or "line 4 qty 16"-style fix, or numbered options) → status
-      `confirmed`; corrections re-run validation
+      `confirmed`; corrections re-run validation; inbound texts resolve to the newest
+      awaiting-confirm invoice for that sender per C5 - no pending-confirmations table (WP-21)
 - [ ] Supplier matching + item snapping + `last_price`/`prev_price` update on confirm (layer 4)
-- [ ] Price alert fires when confirmed price differs from `last_price` beyond threshold
+      (WP-22)
+- [ ] Price alert computed in the *extraction reply* (the demo's money moment) when the extracted
+      unit price differs from the snapped item's `last_price` by ≥5% and ≥ AED 0.25;
+      `last_price`/`prev_price` update only on confirm, so an unconfirmed invoice never pollutes
+      the baseline (WP-23)
 - [ ] Cash invoices (`payment_kind = 'cash'`) marked and held as `needs_review` — approval UI comes
-      later (M6); the distinction is captured now, per PRD §21
+      later (M6); the distinction is captured now, per PRD §21 (WP-24)
 - **Done when:** two invoices from the same supplier a week apart produce a correct
-  "X up AED Y" alert in chat, and "OK" records the invoice.
+  "X up AED Y" alert in chat, and "OK" records the invoice. This gate becomes a permanent e2e
+  test in CI from the moment it first passes.
 
 ### M3 — Review screen (Day 10–12)
+- [ ] Backend API for the screen (C6): invoice list/detail with signed image URLs, field patch
+      (re-validates), confirm, manual upload, price history; demo access via one shared-secret
+      bearer token, real auth arrives in M6 (WP-30)
 - [ ] Next.js app with the one screen: invoice photo left, extracted fields right, green/amber per
-      field, edit-in-place for amber fields, confirm button
-- [ ] Invoice list (by branch, by supplier) with status chips
-- [ ] Price-trend sparkline per supplier item (from `supplier_item_prices`)
-- [ ] Manual invoice entry form (`source = 'manual'`) — the vision-outage fallback
+      field (with an icon or label, never colour alone), edit-in-place for amber fields, confirm
+      button (WP-31)
+- [ ] Invoice list (by branch, by supplier) with status chips (WP-32)
+- [ ] Price-trend sparkline per supplier item (from `supplier_item_prices`) (WP-33)
+- [ ] Manual invoice entry form (`source = 'manual'`) — the vision-outage fallback (WP-34)
+- [ ] Web CI job: lint + typecheck + build; total CI stays under 5 minutes (WP-35)
 - **Done when:** every number on the screen traces to the photo beside it; an amber field can be
   fixed and confirmed in the browser; with the Anthropic key revoked, upload + manual entry +
   all screens still work.
@@ -230,7 +254,136 @@ knows how to do this."
 
 ---
 
-## 7. Milestones — from demo to MVP (M5–M9)
+## 7. Execution plan (contracts, work packages, delegation)
+
+§6 owns *what* each demo-track milestone delivers; this section owns *how* the work is decomposed
+and delegated. The build runs as a manager + sub-agent model: the session manager pins the
+contracts, delegates one work package (WP) per sub-agent, integrates the results, and is the only
+writer of this file. M5+ gets its own WP decomposition at the M4 retro, not before.
+
+### 7.1 Founder track (human-only)
+
+Agents cannot create Meta apps or collect invoices. Two clocks govern the schedule: this track,
+and the accuracy loop (WP-16). Everything else is predictable engineering.
+
+| ID | Task | Time | Unblocks |
+|---|---|---|---|
+| F1-F4 | The four unticked M0 founder boxes in §6, in order (Meta app + demo phones, Supabase project + bucket, deploy, prove M0 on a real phone) | one ~2.5 h sitting | end-to-end reality for everything |
+| F5 | Anthropic API key with billing enabled | ~10 min | running extraction (WP-16); building it needs nothing |
+| F6 | Corpus growth: photograph the invoices in hand (flat + angled + crumpled variants of each); keep collecting toward 20-25 real ones from pilot contacts | ongoing | WP-15, WP-16 |
+| F7 | Pilot logistics: pick the target chain; ask the central-purchasing question (§11) before any onboarding talk; schedule the demo only after the M4 gate passes | ongoing | M4 |
+| F8 | Hand-verify every ground-truth file the labeling agent produces. Truth no human checked is not truth | per batch | eval validity |
+
+### 7.2 Pinned contracts (C1-C7)
+
+Frozen before parallel delegation. A contract change goes through the manager and the Decision
+Log; a sub-agent never changes one unilaterally.
+
+- **C1 - Status machines.** `documents.status`: received → processing → extracted | failed
+  (worker-owned). `invoices.status`: draft → awaiting_confirm → confirmed | needs_review
+  (confirm-flow-owned). `extracted` means a draft invoice with checks exists; `failed` only after
+  the repair round also fails or the image is unreadable. Memes: document `failed` with the
+  classification recorded, polite decline sent, no invoice row.
+- **C2 - Job kinds.** `process_wa_message` (ingest + immediate "Got it" ack) enqueues
+  `extract_document` (payload `{document_id}`), which runs the pipeline and sends the parsed
+  summary as a second message.
+- **C3 - Extraction schema + provider.** One strict Pydantic schema (`Decimal` money) shared by
+  provider, validation, persistence, and eval ground truth: supplier block, invoice_no, date,
+  currency, payment_kind, lines (raw_name, qty, unit, pack_size, unit_price, line_total),
+  subtotal, tax, total, plus a top-level classification (invoice / z_report / other). One
+  structured vision call classifies and extracts together. Provider protocol:
+  `extract(image, mime)` and `repair(image, mime, targets)`; model id + prompt version recorded
+  on every run.
+- **C4 - Money + tolerances.** `Decimal` in Python, `numeric` in Postgres, never float. Line
+  check: |qty × unit_price - line_total| ≤ max(0.05, 0.5% of line_total). Document check:
+  |subtotal + tax - total| ≤ 0.10. Constants live in one module; the eval scores against the
+  same constants.
+- **C5 - Confirmation resolution (no new table).** An inbound text from phone P resolves against
+  the newest `awaiting_confirm` invoice whose document traces back to sender P. None pending →
+  onboarding reply. Several pending → numbered list; a bare "OK" then asks which. Derived from
+  existing tables until real usage demands more.
+- **C6 - Web API surface.** `GET /api/invoices` (branch/supplier/status filters),
+  `GET /api/invoices/{id}` (fields, checks, confidence, signed image URL),
+  `PATCH /api/invoices/{id}/fields`, `POST /api/invoices/{id}/confirm`, `POST /api/documents`
+  (manual upload), `GET /api/supplier-items/{id}/prices`. Demo access: one shared-secret bearer
+  token from an env var; real auth is M6. Pinned now so web work can start against a mock.
+- **C7 - Migrations.** Each WP appends its own numbered SQL file; the manager squashes
+  periodically (§4 policy). No two parallel agents touch the same migration file.
+
+### 7.3 Work packages
+
+Sizes: S ≤ half an agent-day, M ≈ one, L = multi-day or iterative. Acceptance must be
+demonstrable, not documentary.
+
+**M1 (extraction + eval)**
+
+| WP | What | Size | Depends | Acceptance |
+|---|---|---|---|---|
+| 10 | Extraction schema + provider interface + Anthropic implementation (`extraction/`): structured outputs, usage (tokens, cost, latency) captured | M | C3 | corpus ground truth round-trips the schema; the SDK is imported nowhere outside `extraction/` |
+| 11 | Deterministic validation (`validate.py`): C4 checks, green/amber derivation (snapping hook stubbed until WP-22) | S/M | C3, C4 | pure functions, no I/O; rounding-edge unit tests; a wrong value can never be green |
+| 12 | Targeted repair (`repair.py`): scoped targets from failed checks, one round max, merge + re-validate | S | 10, 11 | merge semantics + round cap proven; passing fields untouched |
+| 13 | Pipeline + persistence: `extract_document` job, status transitions, draft invoices + lines + checks, run metadata, failure + meme paths | M/L | 10-12 | e2e vs real Postgres with mocked provider; idempotent under job retry |
+| 14 | Eval harness (`eval/`): scoring per §5, results JSON, CI smoke on 3 recorded fixtures | M | C3 | `python -m eval.run` green on fixtures; alignment scorer unit-tested (extra / missing / reordered lines) |
+| 15 | Ground truth for the current corpus: agent transcribes, founder verifies (F8); 3 become the CI fixtures | S | 14, F6 | founder sign-off on every file |
+| 16 | Accuracy loop: live eval → inspect failures → one change per round → re-eval, until §5 targets hold | L | 13-15, F5, F6 | the eval report, not opinion |
+
+**M2 (confirm flow, supplier memory, alerts)**
+
+| WP | What | Size | Depends | Acceptance |
+|---|---|---|---|---|
+| 20 | Reply composer (`replies.py`): English templates for summary, alerts, amber questions, cash hold, failure, decline | S/M | 13 | pure functions, every message shape unit-tested, zero generation |
+| 21 | Confirm/correction flow: C5 routing; "OK", "line 4 qty 16", numbered answers; corrections re-validate and re-reply | M/L | C5, 13, 20 | e2e: confirm; correct-then-confirm; OK with nothing pending; two-pending disambiguation |
+| 22 | Supplier memory (`matching.py`): alias match, fuzzy snap (single tunable threshold), on-confirm item create + price update + history append | M | schema | messy real corpus names snap correctly; history append idempotent per invoice |
+| 23 | Price alerts per the §6 M2 rule (thresholds as constants in one module) | S | 20, 22 | alert shows in the extraction reply; baseline untouched until confirm |
+| 24 | Cash hold: `payment_kind = 'cash'` → `needs_review` + reply notes approval pending | S | 13, 20 | e2e test |
+
+**M3 (review screen)**
+
+| WP | What | Size | Depends | Acceptance |
+|---|---|---|---|---|
+| 30 | Backend API per C6 + signed URLs + shared-secret auth + CORS | M | M2 data | e2e: patch an amber field, confirm, status flips; unauthorized rejected |
+| 31 | Next.js scaffold (App Router, TypeScript, Tailwind, Vercel) + the review screen | L | C6 (mock until 30 lands) | §3 money-display rules hold; amber/green carry an icon or label, never colour alone |
+| 32 | Invoice list + status chips + filters | S/M | 31 | |
+| 33 | Price-trend sparkline per supplier item | S | 30 | |
+| 34 | Manual entry + upload fallback (`source = 'upload' / 'manual'`) | M | 30 | revoked-key drill: with no Anthropic key, upload + manual entry + every screen still work |
+| 35 | Web CI job (lint + typecheck + build) | S | 31 | total CI stays under 5 minutes |
+
+**M4 (demo gate)**
+
+| WP | What | Size |
+|---|---|---|
+| 40 | Demo seed script: 1 chain, 3 branches, 2 suppliers, 3 weeks of price history; idempotent, targets the real project | S/M |
+| 41 | Hardening: per-stage latency logs (webhook, download, extract, repair, reply); forward → reply under ~20 s; each demo invoice through the loop 5×; every flake fixed, never retried around | M |
+| 42 | Meme decline path, word-perfect | S |
+| 43 | Demo runbook with reset steps between rehearsals; founder rehearses twice (F7) | S |
+
+### 7.4 Delegation waves
+
+```
+Wave 0  (manager)  pin C1-C7 in one small change      | founder: F1-F4 sitting
+Wave 1  WP-10 + WP-11 + WP-14 in parallel             | founder: F5, F6
+Wave 2  WP-12 + WP-15
+Wave 3  WP-13, then WP-16 accuracy loop (needs F5+F6)
+Wave 4  WP-20 + WP-22, then WP-21 + WP-23 + WP-24     (overlaps WP-16: product code does not wait on prompt tuning)
+Wave 5  WP-30 + WP-31, then WP-32-35                  (web starts against the C6 mock)
+Wave 6  WP-40-43 → M4 gate → demo                     | founder: F7 rehearsals
+```
+
+### 7.5 Delegation protocol
+
+Every sub-agent brief contains: the WP goal and acceptance from §7.3; the contracts it must not
+change (a needed change escalates to the manager); the file scope (touching files outside it is a
+bug); "run `pytest` and `ruff check . && ruff format --check .` before returning, and report the
+real output"; and what NOT to build, quoting §2.
+
+Manager rules: parallel agents with overlapping code run in isolated worktrees and the manager
+integrates; schema changes follow C7; only the manager edits this file, in the same commit as the
+integrated change; every milestone close re-runs the previous milestone's gate test (a regression
+on the demo path is a P0).
+
+---
+
+## 8. Milestones — from demo to MVP (M5–M9)
 
 Sequenced so each milestone ships something a pilot customer uses that week. Re-estimate at M4.
 
@@ -305,7 +458,7 @@ multi-brand layer, item-level menu engineering as self-serve, moving-average cos
 
 ---
 
-## 8. Testing strategy
+## 9. Testing strategy
 
 | Layer | What | Gate |
 |---|---|---|
@@ -317,14 +470,14 @@ multi-brand layer, item-level menu engineering as self-serve, moving-average cos
 Banned: tests that assert on code text, tests of framework behavior, coverage targets for their
 own sake.
 
-## 9. Costs (demo through pilot)
+## 10. Costs (demo through pilot)
 
 Supabase free tier → $25/mo; Railway/Fly ~$5–10/mo; Vercel free; WhatsApp in-window replies free,
 test number free; extraction ≈ $0.05–0.15/invoice (Opus 5, incl. repair pass) → a 75-branch chain
 at ~10 invoices/branch/day is ~$40–110/day at scale pricing — fine at AED 99/branch, trivial at
 pilot volume. Meta utility template cost applies only from M9 (verify live UAE rate then).
 
-## 10. Risks
+## 11. Risks
 
 | Risk | Mitigation |
 |---|---|
@@ -333,8 +486,12 @@ pilot volume. Meta utility template cost applies only from M9 (verify live UAE r
 | Invoice forwarding doesn't become a habit (the behavioral risk) | Pilot gate in M10 measures *unprompted* forwards; if the habit doesn't form, that's a product finding to face, not to engineer around |
 | Central purchasing at target chains (no per-branch invoices) | First question asked of any pilot chain, before onboarding them |
 | Scope creep back toward the old build | §2 rules; anything not in a milestone needs a customer quote and a Decision Log entry |
+| Founder track stalls (Meta setup, corpus) while agents sprint ahead | F1-F4 scheduled as one sitting now; F6 corpus growth checked at every milestone close |
+| Parallel agents drift on interfaces | C-contracts (§7.2) pinned before fan-out; contract changes are manager-only, through the Decision Log |
+| Accuracy loop burns days on a too-small corpus | Targets phase in as the corpus grows; every failure joins the corpus; escalate to the founder if it is under 15 invoices when WP-16 starts |
+| CI eval fixtures silently diverge from live behaviour | Recorded fixtures regenerated on every prompt-version bump, checked each WP-16 round |
 
-## 11. Decision Log
+## 12. Decision Log
 
 | Date | Decision | Why |
 |---|---|---|
@@ -343,11 +500,20 @@ pilot volume. Meta utility template cost applies only from M9 (verify live UAE r
 | 2026-08-22 | Demo-first sequencing (M0–M4) ahead of full MVP phases | WhatsApp accuracy is the wedge and the sale |
 | 2026-08-22 | Meta Cloud API direct for the demo; Twilio only as an unblock fallback | Free, production-shaped |
 | 2026-08-22 | Inventory ledger / stock counts / goods receipts deferred beyond MVP | Needs recipes + proven data habit first; schema keeps the door open |
+| 2026-08-22 | English-only WhatsApp replies + review-screen UI for the demo scope | Smallest surface; invoices stay mixed-language; bilingual revisited with pilot feedback |
+| 2026-08-22 | Execution decomposition (founder track, contracts, work packages, delegation protocol) lives in this file as §7; no separate BUILD.md | One live file; this plan stays the single sequencing document |
+| 2026-08-22 | Price alerts computed in the extraction reply; `last_price`/`prev_price` update only on confirm | The demo's money moment; unconfirmed invoices must not move the baseline |
+| 2026-08-22 | Confirmations resolved by derivation (newest awaiting-confirm per sender), no pending-confirmations table; CI eval smoke = recorded provider responses, live eval on demand | Keep the schema and CI lean until real usage demands more |
 
-## 12. Progress Log
+## 13. Progress Log
 
 *(newest first — one line per session: date, what shipped, what's next)*
 
+- 2026-08-22 - Execution plan added as §7 (founder track F1-F8, contracts C1-C7, work packages
+  WP-10 through WP-43, delegation waves + protocol); M1-M3 checklists tied to WPs; M3 backend
+  gap closed; price-alert timing, confirmation rule, CI eval policy, and English-only demo
+  language pinned; later sections renumbered §8-13. Next: Wave 0 contract pinning (agents) +
+  F1-F4 founder sitting (~2.5 h).
 - 2026-08-22 — M0 code complete: repo scaffold (`apps/api`, `apps/web` stub, `supabase/`,
   `eval/` stub), migration 0001 + seed, FastAPI webhook + Postgres-job worker + canned replies,
   13 tests green (incl. e2e flow vs real Postgres), CI + Dockerfile + README setup guide.
