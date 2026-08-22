@@ -1,7 +1,9 @@
 """Thin asyncpg layer. Plain SQL, no ORM — the database holds data and constraints,
 the application holds the logic (plan §2 rule 3)."""
 
+import datetime
 import json
+from decimal import Decimal
 from typing import Any
 
 import asyncpg
@@ -111,6 +113,129 @@ class Database:
     async def set_document_storage_path(self, document_id: str, storage_path: str) -> None:
         await self.pool.execute(
             "update documents set storage_path = $2 where id = $1", document_id, storage_path
+        )
+
+    async def get_document(self, document_id: str) -> asyncpg.Record | None:
+        return await self.pool.fetchrow("select * from documents where id = $1", document_id)
+
+    async def set_document_status(
+        self, document_id: str, status: str, classification: str | None = None
+    ) -> None:
+        """C1 transition, worker-owned. A classification (invoice/z_report/other)
+        sticks once recorded; passing None leaves it untouched."""
+        await self.pool.execute(
+            "update documents set status = $2, classification = coalesce($3, classification) "
+            "where id = $1",
+            document_id,
+            status,
+            classification,
+        )
+
+    # -- Invoices (WP-13) ----------------------------------------------------
+
+    async def get_invoice_by_document(self, document_id: str) -> asyncpg.Record | None:
+        return await self.pool.fetchrow(
+            "select * from invoices where document_id = $1", document_id
+        )
+
+    async def insert_draft_invoice(
+        self,
+        *,
+        tenant_id: str,
+        branch_id: str | None,
+        document_id: str,
+        invoice_no: str | None,
+        invoice_date: datetime.date | None,
+        currency: str,
+        subtotal: Decimal | None,
+        tax: Decimal | None,
+        total: Decimal | None,
+        payment_kind: str | None,
+        status: str,
+        confidence: dict,
+        lines: list[dict],
+    ) -> str:
+        """Draft invoice + lines + the document transition, one transaction:
+        C1 says 'extracted' means a draft invoice with checks exists, so the
+        two can never be observed apart."""
+        async with self.pool.acquire() as conn, conn.transaction():
+            invoice_id = await conn.fetchval(
+                """
+                insert into invoices (tenant_id, branch_id, document_id, invoice_no,
+                                      invoice_date, currency, subtotal, tax, total,
+                                      payment_kind, status, confidence)
+                values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                returning id::text
+                """,
+                tenant_id,
+                branch_id,
+                document_id,
+                invoice_no,
+                invoice_date,
+                currency,
+                subtotal,
+                tax,
+                total,
+                payment_kind,
+                status,
+                confidence,
+            )
+            await conn.executemany(
+                """
+                insert into invoice_lines (invoice_id, position, raw_name, qty, unit,
+                                           unit_price, line_total, pack_size, checks)
+                values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                """,
+                [
+                    (
+                        invoice_id,
+                        line["position"],
+                        line["raw_name"],
+                        line["qty"],
+                        line["unit"],
+                        line["unit_price"],
+                        line["line_total"],
+                        line["pack_size"],
+                        line["checks"],
+                    )
+                    for line in lines
+                ],
+            )
+            await conn.execute(
+                "update documents set status = 'extracted', classification = 'invoice' "
+                "where id = $1",
+                document_id,
+            )
+        return invoice_id
+
+    # -- Extraction runs (WP-13) ---------------------------------------------
+
+    async def insert_extraction_run(
+        self,
+        document_id: str,
+        *,
+        model_id: str,
+        prompt_version: str,
+        input_tokens: int | None,
+        output_tokens: int | None,
+        latency_ms: int | None,
+        repair_applied: bool,
+        outcome: str,
+    ) -> None:
+        await self.pool.execute(
+            """
+            insert into extraction_runs (document_id, model_id, prompt_version, input_tokens,
+                                         output_tokens, latency_ms, repair_applied, outcome)
+            values ($1, $2, $3, $4, $5, $6, $7, $8)
+            """,
+            document_id,
+            model_id,
+            prompt_version,
+            input_tokens,
+            output_tokens,
+            latency_ms,
+            repair_applied,
+            outcome,
         )
 
     # -- Jobs ----------------------------------------------------------------

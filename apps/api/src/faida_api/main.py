@@ -6,6 +6,7 @@ from fastapi import FastAPI
 
 from .config import get_settings
 from .db import Database
+from .extraction.pipeline import build_provider
 from .storage import Storage
 from .wa import WhatsAppClient
 from .webhook import router as webhook_router
@@ -22,6 +23,9 @@ async def lifespan(app: FastAPI):
     await app.state.db.connect()
     app.state.wa = WhatsAppClient(settings)
     app.state.storage = Storage(settings)
+    # None without a key: extract jobs then fail into plan.md §5 layer 6 while
+    # ingest and (from M3) upload + manual entry keep working.
+    app.state.provider = build_provider(settings.anthropic_api_key)
 
     stop = asyncio.Event()
     worker_task: asyncio.Task | None = None
@@ -31,6 +35,7 @@ async def lifespan(app: FastAPI):
                 app.state.db,
                 app.state.wa,
                 app.state.storage,
+                app.state.provider,
                 stop,
                 settings.worker_poll_seconds,
             )

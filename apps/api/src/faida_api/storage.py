@@ -30,3 +30,9 @@ class Storage:
         )
         resp.raise_for_status()
         return path
+
+    async def get(self, path: str) -> bytes:
+        """Fetch a stored original (the extraction pipeline re-reads it)."""
+        resp = await self._http.get(f"/object/{self._bucket}/{path}")
+        resp.raise_for_status()
+        return resp.content

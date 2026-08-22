@@ -8,6 +8,8 @@ import logging
 
 from .contracts import MEDIA_TYPES, JobKind
 from .db import Database
+from .extraction.pipeline import extract_document
+from .extraction.provider import ExtractionProvider
 from .storage import Storage
 from .wa import WhatsAppClient
 
@@ -40,7 +42,11 @@ async def process_wa_message(
         raise RuntimeError("no tenant seeded; run supabase/seed.sql")
 
     if msg_type in MEDIA_TYPES:
-        await _ingest_media(db, wa, storage, raw, msg_row["message_id"], tenant_id, branch_id)
+        document_id = await _ingest_media(
+            db, wa, storage, raw, msg_row["message_id"], tenant_id, branch_id
+        )
+        # C2: the pipeline runs as a second job; the ack below stays immediate.
+        await db.enqueue(JobKind.EXTRACT_DOCUMENT, {"document_id": document_id})
         reply = REPLY_MEDIA_RECEIVED
     elif msg_type == "text":
         reply = REPLY_TEXT
@@ -60,12 +66,13 @@ async def _ingest_media(
     wa_message_id: str,
     tenant_id: str,
     branch_id: str | None,
-) -> None:
+) -> str:
     """Download media (URLs expire — do it promptly), hash it, store the immutable
-    original, record the document. Idempotent so job retries are safe."""
+    original, record the document. Idempotent so job retries are safe. Returns
+    the document id."""
     existing = await db.get_document_by_wa_message(wa_message_id)
     if existing is not None and existing["storage_path"] is not None:
-        return  # fully ingested on a previous attempt
+        return str(existing["id"])  # fully ingested on a previous attempt
 
     msg_type = raw_msg["type"]
     media_id = raw_msg.get(msg_type, {}).get("id")
@@ -83,14 +90,21 @@ async def _ingest_media(
     path = f"{tenant_id}/documents/{document_id}/original"
     await storage.put(path, data, mime)
     await db.set_document_storage_path(document_id, path)
+    return document_id
 
 
 HANDLERS = {
     JobKind.PROCESS_WA_MESSAGE: process_wa_message,
+    JobKind.EXTRACT_DOCUMENT: extract_document,
 }
 
 
-async def run_one_job(db: Database, wa: WhatsAppClient, storage: Storage) -> bool:
+async def run_one_job(
+    db: Database,
+    wa: WhatsAppClient,
+    storage: Storage,
+    provider: ExtractionProvider | None = None,
+) -> bool:
     """Claim and run a single job. Returns False when the queue is empty."""
     job = await db.claim_job()
     if job is None:
@@ -99,7 +113,11 @@ async def run_one_job(db: Database, wa: WhatsAppClient, storage: Storage) -> boo
     try:
         if handler is None:
             raise ValueError(f"unknown job kind: {job['kind']}")
-        await handler(db, wa, storage, job["payload"])
+        if job["kind"] == JobKind.EXTRACT_DOCUMENT:
+            # claim_job returns the pre-claim row: this attempt is attempts + 1.
+            await handler(db, wa, storage, provider, job["payload"], attempts=job["attempts"] + 1)
+        else:
+            await handler(db, wa, storage, job["payload"])
         await db.finish_job(job["id"], ok=True)
     except Exception as exc:
         logger.exception("job %s (%s) failed", job["id"], job["kind"])
@@ -111,13 +129,14 @@ async def worker_loop(
     db: Database,
     wa: WhatsAppClient,
     storage: Storage,
+    provider: ExtractionProvider | None,
     stop: asyncio.Event,
     poll_seconds: float,
 ) -> None:
     logger.info("worker loop started")
     while not stop.is_set():
         try:
-            worked = await run_one_job(db, wa, storage)
+            worked = await run_one_job(db, wa, storage, provider)
         except Exception:
             logger.exception("worker loop error")
             worked = False

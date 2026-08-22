@@ -7,6 +7,8 @@ import pytest
 
 from faida_api.config import Settings
 from faida_api.db import Database
+from faida_api.extraction.provider import ProviderUsage
+from faida_api.extraction.schema import ExtractionResult, RepairResult, RepairTarget
 
 MIGRATIONS_DIR = pathlib.Path(__file__).resolve().parents[3] / "supabase" / "migrations"
 SEED_FILE = pathlib.Path(__file__).resolve().parents[3] / "supabase" / "seed.sql"
@@ -86,12 +88,56 @@ class FakeStorage:
         def handle(request: httpx.Request) -> httpx.Response:
             # Path shape: /storage/v1/object/{bucket}/{path...} -> key is {path...}
             key = request.url.path.removeprefix("/storage/v1/object/").split("/", 1)[1]
+            if request.method == "GET":
+                if key in self.objects:
+                    return httpx.Response(200, content=self.objects[key])
+                return httpx.Response(404, json={"error": "Object not found"})
             if key in self.objects:
                 return httpx.Response(409, json={"error": "Duplicate"})
             self.objects[key] = request.content
             return httpx.Response(200, json={"Key": key})
 
         return httpx.MockTransport(handle)
+
+
+class FakeExtraction:
+    """Scriptable ExtractionProvider: canned results, recorded calls. Tests
+    always inject one; the real provider never runs in the suite."""
+
+    def __init__(
+        self,
+        result: ExtractionResult | None = None,
+        repair_patch: RepairResult | None = None,
+        extract_error: Exception | None = None,
+    ):
+        self.result = result
+        self.repair_patch = repair_patch if repair_patch is not None else RepairResult()
+        self.extract_error = extract_error
+        self.extract_calls: list[tuple[bytes, str]] = []
+        self.repair_calls: list[list[RepairTarget]] = []
+
+    @staticmethod
+    def usage() -> ProviderUsage:
+        return ProviderUsage(
+            model_id="fake-model",
+            prompt_version="v0",
+            input_tokens=100,
+            output_tokens=50,
+            latency_ms=7,
+        )
+
+    async def extract(self, image: bytes, mime: str) -> tuple[ExtractionResult, ProviderUsage]:
+        self.extract_calls.append((image, mime))
+        if self.extract_error is not None:
+            raise self.extract_error
+        assert self.result is not None, "FakeExtraction needs a canned result"
+        return self.result, self.usage()
+
+    async def repair(
+        self, image: bytes, mime: str, targets: list[RepairTarget]
+    ) -> tuple[RepairResult, ProviderUsage]:
+        self.repair_calls.append(targets)
+        return self.repair_patch, self.usage()
 
 
 def wa_image_payload(message_id: str = "wamid.in1", from_phone: str = DEMO_PHONE) -> dict:

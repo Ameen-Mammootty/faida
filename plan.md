@@ -8,7 +8,7 @@
 - **Product:** Faida — profit visibility for GCC cafeterias and multi-branch karak/paratha chains, fed through WhatsApp.
 - **Reference:** `Docs/PRD.md` (v2). This plan sequences the build; the PRD owns product intent. Where they conflict on *scope timing*, this plan wins.
 - **Start date:** 2026-08-22
-- **Current milestone:** M0 (not started)
+- **Current milestone:** M1 (code complete through WP-13; M0 awaits founder proof on a real phone)
 
 ---
 
@@ -198,7 +198,7 @@ plan (§7).
       (invoice / z_report / other, polite decline for memes) happens inside the same structured
       call - a separate classifier call adds cost and latency for nothing at demo volume (C3, WP-10)
 - [x] Arithmetic reconciliation + targeted repair pass (layers 2–3) (C4, WP-11, WP-12)
-- [ ] Pipeline orchestration + persistence: `extract_document` job, status transitions, draft
+- [x] Pipeline orchestration + persistence: `extract_document` job, status transitions, draft
       invoices + lines + checks, run metadata, failure + meme decline paths (C1, C2, WP-13)
 - [ ] Eval corpus ≥15 invoices with hand-verified ground truth (currently <10 - F6, F8, WP-15);
       runner + scores (WP-14); CI smoke = 3 recorded fixtures (§5 CI policy)
@@ -515,6 +515,13 @@ pilot volume. Meta utility template cost applies only from M9 (verify live UAE r
 
 *(newest first — one line per session: date, what shipped, what's next)*
 
+- 2026-08-22 - Wave 3: WP-13 integrated - the full M1 loop is code-complete. extract_document
+  job chained after ingest (ack stays immediate), pipeline extract -> validate -> one-round
+  repair -> draft invoice + lines + checks + confidence in one transaction, extraction_runs
+  telemetry (migration 0002, RLS kept), plain M1 replies incl. meme/z-report declines and the
+  layer-6 failure message on final retry. 58 API tests + 12 eval tests green, smoke OK. Noted
+  for WP-22: persist extracted supplier_name (0003) for matching and the review screen. Next:
+  Wave 4 (WP-20 reply composer + WP-22 supplier memory in parallel).
 - 2026-08-22 - Brand handover shipped under `Docs/brand/`: five geometric logo concepts,
   recommended Margin Fold system, professional color and typography guidance, positioning copy,
   SVG masters, rendered application mockups, and an image-generation exploration record. Next:
