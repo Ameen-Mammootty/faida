@@ -165,13 +165,23 @@ not documentary.
 
 ### M0 — Channel live (Day 1–2)
 - [ ] Meta developer app + WhatsApp Cloud API test number; register 2 demo phones
-- [ ] FastAPI service deployed (Railway/Fly) with public webhook URL; signature verification
-- [ ] Webhook: verify → dedupe on `message_id` → store raw payload (`wa_messages`) → download +
-      store media in Supabase Storage (`documents`, sha256, immutable) → enqueue job → return 200 fast
-- [ ] Canned reply loop working ("Got it — reading your invoice…")
-- [ ] Supabase project + initial migration (the 8 tables + `wa_messages` + `jobs`)
+      *(founder, ~1 h — step-by-step in README §M0)*
+- [ ] Deploy the API to Railway/Fly + create the Supabase project & `documents` bucket
+      *(founder, ~30 min — README §M0; Dockerfile ready)*
+- [x] FastAPI service code: webhook GET verification + POST signature check (fails closed
+      without app secret), `/health`
+- [x] Webhook: verify → dedupe on `message_id` → store raw payload (`wa_messages`) → enqueue →
+      return 200 fast; worker downloads media promptly, sha256-hashes, stores immutably
+      (`x-upsert: false`), records `documents` row — idempotent under retries
+- [x] Canned reply loop (media received / text onboarding / unsupported type), outbound
+      messages recorded
+- [x] Initial migration `0001_init.sql` (plan §4 tables + `wa_messages` + `jobs`) + demo seed
+- [x] Tests: 13 (pure signature/parse + end-to-end flow vs real Postgres with Meta/storage
+      mocked at transport: full ingest, duplicate delivery, unknown sender, retry/backoff);
+      CI (ruff + pytest + Postgres service) green locally
 - **Done when:** a real phone forwards a photo and gets a reply within seconds; the image is in
-  storage; sending the same message twice creates one document.
+  storage; sending the same message twice creates one document. ← *needs the two founder
+  steps above, then the README §M0 "Prove M0" checklist.*
 
 ### M1 — Extraction pipeline + eval harness (Day 3–6)
 - [ ] Provider interface + Claude Opus 5 structured extraction (layer 1)
@@ -338,4 +348,9 @@ pilot volume. Meta utility template cost applies only from M9 (verify live UAE r
 
 *(newest first — one line per session: date, what shipped, what's next)*
 
+- 2026-08-22 — M0 code complete: repo scaffold (`apps/api`, `apps/web` stub, `supabase/`,
+  `eval/` stub), migration 0001 + seed, FastAPI webhook + Postgres-job worker + canned replies,
+  13 tests green (incl. e2e flow vs real Postgres), CI + Dockerfile + README setup guide.
+  Next: founder does README §M0 (Meta app, Supabase project, deploy), then prove M0 on a real
+  phone and tick the last boxes.
 - 2026-08-22 — Plan created. Next: M0 — Meta app + webhook service live.
