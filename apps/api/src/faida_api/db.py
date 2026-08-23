@@ -85,6 +85,26 @@ class Database:
     async def default_tenant_id(self) -> str | None:
         return await self.pool.fetchval("select id::text from tenants order by created_at limit 1")
 
+    async def get_branch(self, branch_id: str) -> asyncpg.Record | None:
+        return await self.pool.fetchrow(
+            "select id, tenant_id, name from branches where id = $1", branch_id
+        )
+
+    # -- Public waitlist -----------------------------------------------------
+
+    async def insert_waitlist_signup(self, email: str) -> bool:
+        """Store one normalized address; duplicates are a successful no-op."""
+        row = await self.pool.fetchrow(
+            """
+            insert into waitlist_signups (email)
+            values ($1)
+            on conflict (email) do nothing
+            returning id
+            """,
+            email,
+        )
+        return row is not None
+
     # -- Documents -----------------------------------------------------------
 
     async def get_document_by_wa_message(self, wa_message_id: str) -> asyncpg.Record | None:
@@ -109,6 +129,23 @@ class Database:
             tenant_id,
             branch_id,
             wa_message_id,
+            mime,
+            sha256,
+        )
+
+    async def insert_uploaded_document(
+        self, tenant_id: str, branch_id: str | None, mime: str, sha256: str
+    ) -> str:
+        """A manually uploaded original (C6 POST /api/documents): same document
+        row as the WhatsApp path minus the message, source 'upload'."""
+        return await self.pool.fetchval(
+            """
+            insert into documents (tenant_id, branch_id, source, mime, sha256)
+            values ($1, $2, 'upload', $3, $4)
+            returning id::text
+            """,
+            tenant_id,
+            branch_id,
             mime,
             sha256,
         )
@@ -217,6 +254,53 @@ class Database:
                 document_id,
             )
         return invoice_id
+
+    # -- Review screen API (WP-30, C6) ---------------------------------------
+
+    async def list_invoices(
+        self,
+        *,
+        branch_id: str | None = None,
+        supplier_id: str | None = None,
+        status: str | None = None,
+    ) -> list[asyncpg.Record]:
+        """C6 invoice list, newest first; every filter optional."""
+        return await self.pool.fetch(
+            """
+            select id, supplier_name, supplier_id, invoice_no, invoice_date, currency,
+                   total, status, created_at, branch_id, document_id
+            from invoices
+            where ($1::uuid is null or branch_id = $1)
+              and ($2::uuid is null or supplier_id = $2)
+              and ($3::text is null or status = $3)
+            order by created_at desc, id desc
+            """,
+            branch_id,
+            supplier_id,
+            status,
+        )
+
+    async def get_supplier_item(self, item_id: str) -> asyncpg.Record | None:
+        return await self.pool.fetchrow(
+            """
+            select id, canonical_name, unit, pack_size, last_price, prev_price, last_price_at
+            from supplier_items where id = $1
+            """,
+            item_id,
+        )
+
+    async def list_item_prices(self, item_id: str) -> list[asyncpg.Record]:
+        """One item's confirmed price history, oldest first (the C6 sparkline
+        draws left to right)."""
+        return await self.pool.fetch(
+            """
+            select price, observed_at, invoice_id
+            from supplier_item_prices
+            where supplier_item_id = $1
+            order by observed_at, id
+            """,
+            item_id,
+        )
 
     # -- Supplier memory (WP-22, plan.md §5 layer 4) -------------------------
 
@@ -396,6 +480,28 @@ class Database:
                 """
                 update invoices set status = 'confirmed', confirmed_at = now()
                 where id = $1 and status = 'awaiting_confirm'
+                returning document_id
+                """,
+                invoice_id,
+            )
+            if row is None:
+                return False
+            await conn.execute(
+                "update documents set status = 'confirmed' where id = $1", row["document_id"]
+            )
+            return True
+
+    async def confirm_reviewed_invoice(self, invoice_id: str) -> bool:
+        """C1, the review-screen path (WP-30): invoice needs_review ->
+        confirmed (stamping confirmed_at) and its document extracted ->
+        confirmed, one transaction. The review screen is the cash approval
+        path until M6 (plan.md §6 M2). Returns False without touching
+        anything when the invoice was not needs_review - safe to re-run."""
+        async with self.pool.acquire() as conn, conn.transaction():
+            row = await conn.fetchrow(
+                """
+                update invoices set status = 'confirmed', confirmed_at = now()
+                where id = $1 and status = 'needs_review'
                 returning document_id
                 """,
                 invoice_id,

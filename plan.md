@@ -228,10 +228,10 @@ plan (§7).
   test in CI from the moment it first passes.
 
 ### M3 — Review screen (Day 10–12)
-- [ ] Backend API for the screen (C6): invoice list/detail with signed image URLs, field patch
+- [x] Backend API for the screen (C6): invoice list/detail with signed image URLs, field patch
       (re-validates), confirm, manual upload, price history; demo access via one shared-secret
       bearer token, real auth arrives in M6 (WP-30)
-- [ ] Next.js app with the one screen: invoice photo left, extracted fields right, green/amber per
+- [x] Next.js app with the one screen: invoice photo left, extracted fields right, green/amber per
       field (with an icon or label, never colour alone), edit-in-place for amber fields, confirm
       button (WP-31)
 - [ ] Invoice list (by branch, by supplier) with status chips (WP-32)
@@ -510,6 +510,7 @@ pilot volume. Meta utility template cost applies only from M9 (verify live UAE r
 | 2026-08-22 | Execution decomposition (founder track, contracts, work packages, delegation protocol) lives in this file as §7; no separate BUILD.md | One live file; this plan stays the single sequencing document |
 | 2026-08-22 | Price alerts computed in the extraction reply; `last_price`/`prev_price` update only on confirm | The demo's money moment; unconfirmed invoices must not move the baseline |
 | 2026-08-22 | Confirmations resolved by derivation (newest awaiting-confirm per sender), no pending-confirmations table; CI eval smoke = recorded provider responses, live eval on demand | Keep the schema and CI lean until real usage demands more |
+| 2026-08-23 | C6 pinned in implementation: PATCH and confirm return the full updated detail payload; list = {"invoices": [...]}; money serialized as strings, never JSON numbers; confirm also clears needs_review (the review screen is the cash path until M6) | Saves the screen a round trip; float money is banned everywhere |
 | 2026-08-22 | C4 document check is line-sum primary (Σ line_totals + tax vs total; extracted subtotal is a cross-check). C3 note: `RepairResult` keeps its dict-keyed patch shape; providers using strict structured outputs translate via private wire models | §5 was always line-sum, and a subtotal must not masquerade as reconciliation. The Anthropic strict-schema transform silently empties open dicts (verified empirically in WP-10) |
 | 2026-08-22 | Deny-all RLS (`enable row level security`, zero policies) on all ten public tables, in `0001_init.sql` | Supabase serves the `public` schema over PostgREST, so the anon key would have granted the internet full read/write. Owner role + `service_role` bypass RLS, so the backend is untouched; M6 still owns real tenant policies |
 
@@ -517,6 +518,14 @@ pilot volume. Meta utility template cost applies only from M9 (verify live UAE r
 
 *(newest first — one line per session: date, what shipped, what's next)*
 
+- 2026-08-23 - Wave 6 integrated (WP-30 + WP-31): C6 API live (six routes, fail-closed bearer
+  token, signed image URLs degrading to null, upload with type/size caps, confirm doubles as
+  the cash-review path; 16 tests) and the Next.js review screen (photo + zoom left, green/amber
+  fields with icons, edit-in-place, totals reconciliation strip, cash approve; brand system
+  applied; mock mode default until wired). Landing stream's waitlist (web form + FastAPI
+  endpoint + migration 0005) rode along cleanly. 156 API tests green, web lint/tsc/build clean.
+  Known follow-up: web real-mode client shapes (PATCH body, prices envelope, branch_name)
+  drifted from the implemented C6 - alignment is Wave 7a with WP-32/33.
 - 2026-08-23 - Founder session: Meta credentials complete (app secret, system-user token,
   phone number ID) by reusing the restaurant-profit-platform app; Graph base bumped v21 -> v26
   after probing which versions are live. Webhook proven locally against the live DB with the

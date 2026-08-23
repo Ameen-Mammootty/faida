@@ -26,6 +26,13 @@ class Settings(BaseSettings):
     # fail into the §5 layer 6 path; upload + manual entry keep working (M3).
     anthropic_api_key: str = ""
 
+    # C6 web API (M3). One shared-secret bearer token for the review screen;
+    # empty refuses every /api request (fail closed, like the webhook secret).
+    # Real auth arrives in M6.
+    api_token: str = ""
+    # The review screen's origin (apps/web), allowed through CORS.
+    web_origin: str = "http://localhost:3000"
+
     worker_enabled: bool = True
     worker_poll_seconds: float = 2.0
 

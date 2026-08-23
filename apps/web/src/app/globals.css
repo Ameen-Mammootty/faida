@@ -1,0 +1,67 @@
+@import "tailwindcss";
+
+/*
+ * Faida brand tokens (Docs/brand/faida-brand-guidelines.md).
+ * Light theme only for the demo: warm cream ground, white evidence surfaces,
+ * Date Palm actions, Karak Gold held to accents. Colour never carries meaning
+ * alone - every status pairs with an icon and a label.
+ */
+@theme {
+  --color-cream: #fbf6ec; /* Warm Cream: page ground */
+  --color-paper: #ffffff; /* White: evidence surfaces */
+  --color-ink: #172421; /* Service Ink: headlines, body */
+  --color-palm: #153e35; /* Date Palm: primary actions, nav */
+  --color-palm-deep: #0e2b25; /* Date Palm hover */
+  --color-gold: #e3a13b; /* Karak Gold: accents only */
+  --color-gold-soft: #f8eed9; /* pale gold: review-required surfaces */
+  --color-sage: #9cc8b3;
+  --color-mist: #e7efea; /* quiet status backgrounds, panels */
+  --color-stone: #52625d; /* Slate: secondary text */
+  --color-verified: #1d6d50; /* Confirmed Green */
+  --color-caution: #80520a; /* Attention Amber text */
+  --color-plum: #65415f; /* Critical Plum: errors, blocked */
+
+  --font-sans:
+    var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+  --font-display:
+    var(--font-manrope), var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+  background: var(--color-cream);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+::selection {
+  background: var(--color-gold-soft);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-palm);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

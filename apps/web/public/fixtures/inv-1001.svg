@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 800" role="img" aria-label="Tax invoice INV-10482 from Al Madina Foodstuff Trading LLC">
+  <rect width="620" height="800" fill="#fffdf7"/>
+  <rect x="0.5" y="0.5" width="619" height="799" fill="none" stroke="#e2ddd0"/>
+  <g font-family="Helvetica, Arial, sans-serif" fill="#1d2320">
+    <text x="40" y="58" font-size="21" font-weight="bold" letter-spacing="0.5">AL MADINA FOODSTUFF TRADING LLC</text>
+    <text x="40" y="80" font-size="12" fill="#4c534e">Al Quoz Industrial Area 3, Dubai, UAE &#183; Tel 04 338 2214</text>
+    <text x="40" y="97" font-size="12" fill="#4c534e">TRN 100234567800003</text>
+
+    <text x="310" y="140" font-size="15" font-weight="bold" letter-spacing="3" text-anchor="middle">TAX INVOICE</text>
+    <line x1="240" y1="148" x2="380" y2="148" stroke="#1d2320" stroke-width="1"/>
+
+    <text x="40" y="180" font-size="13">Invoice No: <tspan font-weight="bold">INV-10482</tspan></text>
+    <text x="40" y="200" font-size="13">Date: 21/08/2026</text>
+    <text x="420" y="180" font-size="13">Payment: CREDIT</text>
+    <text x="420" y="200" font-size="13">Customer: Karak House</text>
+
+    <line x1="40" y1="228" x2="580" y2="228" stroke="#1d2320" stroke-width="1.2"/>
+    <g font-size="11.5" font-weight="bold" fill="#3a413d">
+      <text x="46" y="248">SL</text>
+      <text x="80" y="248">DESCRIPTION</text>
+      <text x="388" y="248" text-anchor="end">QTY</text>
+      <text x="470" y="248" text-anchor="end">RATE</text>
+      <text x="574" y="248" text-anchor="end">AMOUNT</text>
+    </g>
+    <line x1="40" y1="258" x2="580" y2="258" stroke="#1d2320" stroke-width="0.8"/>
+
+    <g font-size="13">
+      <text x="46" y="284">1</text>
+      <text x="80" y="284">Rainbow Milk Powder 2.25kg</text>
+      <text x="388" y="284" text-anchor="end">6</text>
+      <text x="470" y="284" text-anchor="end">54.50</text>
+      <text x="574" y="284" text-anchor="end">327.00</text>
+
+      <text x="46" y="316">2</text>
+      <text x="80" y="316">Karak Tea Dust 5kg</text>
+      <text x="388" y="316" text-anchor="end">2</text>
+      <text x="470" y="316" text-anchor="end">49.00</text>
+      <text x="574" y="316" text-anchor="end">98.00</text>
+
+      <text x="46" y="348">3</text>
+      <text x="80" y="348">Sugar 50kg</text>
+      <text x="388" y="348" text-anchor="end">1</text>
+      <text x="470" y="348" text-anchor="end">118.75</text>
+      <text x="574" y="348" text-anchor="end">118.75</text>
+
+      <text x="46" y="380">4</text>
+      <text x="80" y="380">Cardamom Powder 500g</text>
+      <text x="388" y="380" text-anchor="end">3</text>
+      <text x="470" y="380" text-anchor="end">24.00</text>
+      <text x="574" y="380" text-anchor="end">72.00</text>
+
+      <text x="46" y="412">5</text>
+      <text x="80" y="412">Paper Cups 8oz x1000</text>
+      <text x="388" y="412" text-anchor="end">2</text>
+      <text x="470" y="412" text-anchor="end">33.50</text>
+      <text x="574" y="412" text-anchor="end">67.00</text>
+    </g>
+
+    <line x1="40" y1="436" x2="580" y2="436" stroke="#1d2320" stroke-width="0.8"/>
+
+    <g font-size="13">
+      <text x="470" y="466" text-anchor="end">SUBTOTAL</text>
+      <text x="574" y="466" text-anchor="end">682.75</text>
+      <text x="470" y="492" text-anchor="end">VAT 5%</text>
+      <text x="574" y="492" text-anchor="end">34.14</text>
+    </g>
+    <line x1="380" y1="506" x2="580" y2="506" stroke="#1d2320" stroke-width="0.8"/>
+    <text x="470" y="532" font-size="15" font-weight="bold" text-anchor="end">TOTAL AED</text>
+    <text x="574" y="532" font-size="15" font-weight="bold" text-anchor="end">716.89</text>
+    <line x1="380" y1="546" x2="580" y2="546" stroke="#1d2320" stroke-width="1.4"/>
+
+    <text x="40" y="640" font-size="12" fill="#4c534e">Received the above goods in good condition.</text>
+    <path d="M60 700 q18 -26 34 -6 q12 16 26 -8 q10 -14 24 2" fill="none" stroke="#2c3a63" stroke-width="1.6" stroke-linecap="round"/>
+    <text x="40" y="726" font-size="11" fill="#4c534e">Receiver signature</text>
+    <text x="420" y="726" font-size="11" fill="#4c534e">Salesman: R. Kumar</text>
+  </g>
+</svg>

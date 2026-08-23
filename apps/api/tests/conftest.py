@@ -87,6 +87,17 @@ class FakeStorage:
 
     def transport(self) -> httpx.MockTransport:
         def handle(request: httpx.Request) -> httpx.Response:
+            # Sign endpoint: POST /storage/v1/object/sign/{bucket}/{path...}
+            # answers with a relative signed path, like the real Supabase API.
+            if request.url.path.startswith("/storage/v1/object/sign/"):
+                bucket, _, key = request.url.path.removeprefix(
+                    "/storage/v1/object/sign/"
+                ).partition("/")
+                if key not in self.objects:
+                    return httpx.Response(404, json={"error": "Object not found"})
+                return httpx.Response(
+                    200, json={"signedURL": f"/object/sign/{bucket}/{key}?token=fake-signed-token"}
+                )
             # Path shape: /storage/v1/object/{bucket}/{path...} -> key is {path...}
             key = request.url.path.removeprefix("/storage/v1/object/").split("/", 1)[1]
             if request.method == "GET":

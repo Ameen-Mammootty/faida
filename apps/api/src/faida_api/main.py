@@ -3,12 +3,15 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
+from .api import router as api_router
 from .config import get_settings
 from .db import Database
 from .extraction.pipeline import build_provider
 from .storage import Storage
 from .wa import WhatsAppClient
+from .waitlist import router as waitlist_router
 from .webhook import router as webhook_router
 from .worker import worker_loop
 
@@ -53,7 +56,16 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Faida API", lifespan=lifespan)
+# CORS for the review screen (C6): exactly one allowed origin, the web app's.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[get_settings().web_origin],
+    allow_methods=["*"],
+    allow_headers=["Authorization", "Content-Type"],
+)
 app.include_router(webhook_router)
+app.include_router(api_router)
+app.include_router(waitlist_router)
 
 
 @app.get("/health")
