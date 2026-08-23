@@ -42,11 +42,70 @@ ruff check . && ruff format --check .
 4. Collect: the database connection string (Settings → Database) and the
    `service_role` key + project URL (Settings → API).
 
-### 2. Deploy the API (Railway or Fly)
-1. New service from this repo, root `apps/api` (the Dockerfile is picked up automatically).
-2. Set every variable from `.env.example`.
-3. Note the public URL — you need `https://<host>/webhook` for Meta.
-4. Check `https://<host>/health` returns `{"ok": true, "db": true}`.
+### 2. Deploy the API (Railway)
+
+Do this before the Meta step: the webhook configuration needs the deployed URL.
+The Dockerfile is the deploy artifact and has been verified to build and boot against the live
+Supabase project.
+
+**Create the service.**
+Push your branch first, since Railway deploys from the remote, not your working tree.
+At railway.app: New Project → Deploy from GitHub repo → pick this repo.
+Then open the service's Settings → Source and set **Root Directory** to `apps/api`.
+Railway auto-detects the Dockerfile there; you do not need a build command or a start command.
+Under Settings → Region, pick the one closest to your Supabase project (Singapore for
+`ap-south-1`), so worker-to-Postgres round trips stay short.
+
+**Set the variables.**
+Open the Variables tab and use the Raw Editor to paste your local `apps/api/.env` in one go,
+then fix up three things:
+
+| Variable | Value |
+|---|---|
+| `WORKER_ENABLED` | `true` — locally it is often `false`; in production the worker must run |
+| `DATABASE_URL` | the session-pooler URI with the real password and **no `[ ]` brackets** |
+| `PORT` | do not set it — Railway injects it and the container's CMD already honours it |
+
+Everything else (`SUPABASE_*`, `META_*`, `ANTHROPIC_API_KEY`, `STORAGE_BUCKET`) carries over
+from `.env` unchanged.
+Keep the service at a single replica for the demo.
+
+**Expose it.**
+Settings → Networking → Generate Domain.
+That public hostname is what Meta will call.
+
+**Verify before touching Meta.**
+
+```bash
+curl https://<host>/health
+# {"ok":true,"db":true}   <- db:true means the pooler URI and password are right
+
+curl "https://<host>/webhook?hub.mode=subscribe&hub.verify_token=<META_VERIFY_TOKEN>&hub.challenge=ping"
+# ping                    <- echoes the challenge; this is exactly what Meta does on Verify and save
+```
+
+If `/health` returns `{"ok":true,"db":false}` the service is up but Postgres is not reachable:
+re-check `DATABASE_URL` for leftover brackets, a wrong password, or the transaction pooler
+(port 6543) instead of the session pooler.
+
+**Startup timing.**
+The container needs 6-10 seconds to bind — pip-installed app plus the asyncpg pool handshake to
+Supabase both run before uvicorn listens.
+If you configure a health-check path, leave the timeout generous; a check that fires inside that
+window will mark a healthy service dead and restart-loop it, which looks exactly like a broken
+build.
+
+**Troubleshooting.**
+
+| Symptom | Cause |
+|---|---|
+| Deploy log stops after `Started server process` | normal — the next line arrives once the DB pool connects |
+| Log pane empty | needs `PYTHONUNBUFFERED=1`, already set in the Dockerfile |
+| Restart loop, service otherwise fine | health check firing before the 6-10 s bind |
+| Meta shows deliveries sent, nothing in `wa_messages` | signature rejected — re-copy `META_APP_SECRET` |
+| `{"ok":true,"db":false}` | `DATABASE_URL` wrong: brackets, password, or transaction pooler |
+
+Cost is roughly $5/month for an always-on service.
 
 ### 3. Meta WhatsApp Cloud API (free test number)
 1. developers.facebook.com → Create app → type **Business** → add the **WhatsApp** product.

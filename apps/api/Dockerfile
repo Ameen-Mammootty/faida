@@ -1,6 +1,10 @@
 FROM python:3.12-slim
 
 WORKDIR /app
+
+# Stream logs instead of buffering them: without this, Python holds stdout in a
+# pipe buffer and a crash on the host shows an empty log pane.
+ENV PYTHONUNBUFFERED=1
 COPY pyproject.toml ./
 COPY src ./src
 RUN pip install --no-cache-dir .

@@ -175,7 +175,9 @@ plan (§7).
 - [x] Supabase project `Faida MVP` (ap-south-1): schema migrated, private `documents` bucket,
       demo tenant/branch seeded, live branch phone set to the founder's demo handset
 - [ ] Deploy the API to Railway/Fly
-      *(founder, ~30 min — README §M0; Dockerfile ready)*
+      *(founder, ~30 min — README §M0; Dockerfile ready. Boot takes 6-10 s (pip-installed app
+      + asyncpg pool to Supabase), so give the platform health check a grace period of 30 s or
+      it will restart-loop a service that is actually fine.)*
 - [x] FastAPI service code: webhook GET verification + POST signature check (fails closed
       without app secret), `/health`
 - [x] Webhook: verify → dedupe on `message_id` → store raw payload (`wa_messages`) → enqueue →
@@ -515,6 +517,15 @@ pilot volume. Meta utility template cost applies only from M9 (verify live UAE r
 
 *(newest first — one line per session: date, what shipped, what's next)*
 
+- 2026-08-23 - Founder session: Meta credentials complete (app secret, system-user token,
+  phone number ID) by reusing the restaurant-profit-platform app; Graph base bumped v21 -> v26
+  after probing which versions are live. Webhook proven locally against the live DB with the
+  real secret: verify handshake, fail-closed on bad/absent signature, dedupe on redelivery,
+  job enqueued, test rows cleaned up. Live project brought up to migrations 0002-0003 (it was
+  three behind); 0004 held until the confirm-flow session commits it. Docker image built and
+  booted against live config: /health 200, `PYTHONUNBUFFERED=1` added so host log panes are not
+  empty. Next: F3 deploy, repoint the Meta webhook (this takes the old tool off the wire),
+  F4 prove M0, and F6 corpus, which now gates M1 alone.
 - 2026-08-23 - Wave 5b integrated (WP-21): confirm/correction flow live - "OK"/"okay" with
   punctuation tolerance, "line N field value" and totals corrections (all-or-nothing multi-edit),
   stateless disambiguation with leading-integer selection, clarify message that never dead-ends,
