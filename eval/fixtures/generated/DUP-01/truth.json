@@ -1,0 +1,49 @@
+{
+  "classification": "invoice",
+  "invoice": {
+    "supplier_name": "Cafe Beverage Supply LLC",
+    "invoice_no": "CBS-INV-260702-1188",
+    "invoice_date": "2026-07-02",
+    "currency": "AED",
+    "payment_kind": null,
+    "lines": [
+      {
+        "raw_name": "Food-Grade Ice",
+        "qty": "4",
+        "unit": "bag",
+        "pack_size": "10000",
+        "unit_price": "8.00",
+        "line_total": "32.00"
+      },
+      {
+        "raw_name": "Lemon Juice",
+        "qty": "10",
+        "unit": "bottle",
+        "pack_size": "1000",
+        "unit_price": "12.00",
+        "line_total": "120.00"
+      },
+      {
+        "raw_name": "Soda Water",
+        "qty": "24",
+        "unit": "bottle",
+        "pack_size": "1000",
+        "unit_price": "4.00",
+        "line_total": "96.00"
+      },
+      {
+        "raw_name": "Simple Syrup",
+        "qty": "6",
+        "unit": "bottle",
+        "pack_size": "1000",
+        "unit_price": "8.00",
+        "line_total": "48.00"
+      }
+    ],
+    "subtotal": "296.00",
+    "tax": "14.80",
+    "total": "310.80",
+    "tax_treatment": "exclusive",
+    "vat_rate": null
+  }
+}

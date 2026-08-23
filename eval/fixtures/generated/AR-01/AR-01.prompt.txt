@@ -1,0 +1,53 @@
+Produce one photorealistic image of a single real-world paper document. The image contains nothing but that document and the surface it rests on. Do not add captions, arrows, labels, borders, mock-up frames, logos of real companies, or any text of your own invention.
+
+PHYSICAL ARTEFACT
+A crisp A4 laser-printed business document, flat, evenly lit, no shadow, no skew, pure white paper, as if produced by a flatbed scanner at 300 dpi. Whole page in frame with a thin white margin.
+Arabic headings sit on the right of each header cell and English on the left. The table itself reads left to right.
+
+LANGUAGE
+Bilingual layout: each column heading shows the Arabic term on the right of the cell and the English term on the left. Each item row shows the Arabic name on one line and the English name directly under it, exactly as given below. Numbers are western digits and the table reads left to right.
+
+EXACT CONTENT. Reproduce every character and every digit exactly as written below. Do not round, recalculate, reorder, translate, abbreviate, expand, add or omit anything. The arithmetic below is already correct.
+
+-- Header --
+SUPPLIER NAME (top of the document): Dairy House Foodstuff LLC
+SUPPLIER NAME IN ARABIC (beside or under the English): بيت الألبان للمواد الغذائية ذ.م.م
+SUPPLIER ADDRESS: Store 22, Al Quoz Industrial 3, Dubai, UAE
+SUPPLIER PHONE: +971 4 555 3303
+SUPPLIER TRN: 100000000000103
+DOCUMENT TITLE: TAX INVOICE
+Invoice number: DHF-INV-260705-0688
+Date: 2026-07-05
+PO reference: CS-DT-PO-20260701-004
+Delivery note: DHF-DN-260705-0688
+Bill to: Cedar & Spice Hospitality LLC
+Customer TRN: 100000000000001
+Deliver to: Downtown Branch, Unit 12, Creekside Avenue, Downtown, Dubai, UAE
+Payment terms: 14 days
+Currency: AED
+Small grey footer line at the very bottom of the page: SYNTHETIC TEST DOCUMENT - CEDAR & SPICE QA - NOT A COMMERCIAL RECORD
+
+-- Line items, all 8 of them, in this exact order --
+COLUMNS, left to right: # | Item code | Description | Qty | Unit | Pack size | Unit price AED | Amount AED
+
+1 | DHF-BUT-1KG | Unsalted Butter  (Arabic line directly under it: زبدة غير مملحة) | 2 | block | 1 kg | 36.00 | 72.00
+2 | DHF-CHD-2KG | Mature Cheddar  (Arabic line directly under it: جبنة شيدر) | 2 | block | 2 kg | 58.00 | 116.00
+3 | DHF-CML-1KG | Condensed Milk  (Arabic line directly under it: حليب مكثف) | 2 | can | 1 kg | 18.00 | 36.00
+4 | DHF-CRM-1L | Whipping Cream  (Arabic line directly under it: كريمة خفق) | 2 | carton | 1 L | 18.00 | 36.00
+5 | DHF-FET-1KG | Feta Cheese  (Arabic line directly under it: جبنة فيتا) | 8 | tub | 1 kg | 32.00 | 256.00
+6 | DHF-HAL-1KG | Halloumi Cheese  (Arabic line directly under it: جبنة حلوم) | 12 | block | 1 kg | 36.00 | 432.00
+7 | DHF-LAB-2KG | Labneh  (Arabic line directly under it: لبنة) | 3 | tub | 2 kg | 40.00 | 120.00
+8 | DHF-MLK-12L | Whole Milk  (Arabic line directly under it: حليب كامل الدسم) | 1 | case | 12 L | 60.00 | 60.00
+
+-- Totals block, lower right --
+Subtotal: AED 1,128.00
+Net before VAT: AED 1,128.00
+VAT 5%: AED 56.40
+TOTAL: AED 1,184.40
+
+RULES
+- All 8 item rows must appear on the document, in the order given, none merged, none dropped, none repeated.
+- Every figure must be readable at full resolution. Prefer a slightly tighter row height over shrinking the digits.
+- Keep the whole document inside the frame, including all four corners.
+- Do not add sample, specimen, draft, void or watermark text, and do not add any row, column, tax line or charge that is not listed above.
+- The physical damage and lighting described above must never make any digit unreadable. Degrade the paper, not the data.

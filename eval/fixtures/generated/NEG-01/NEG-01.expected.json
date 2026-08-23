@@ -1,0 +1,42 @@
+{
+  "case_id": "NEG-01",
+  "title": "Handwritten kitchen prep list, not an invoice",
+  "what_this_tests": "The negative control. A photo of handwriting with quantities and food words on it is not a purchase. Anything that classifies this as an invoice will happily invent stock movements.",
+  "hazards": [
+    "not_a_document_of_record",
+    "food_words_without_prices",
+    "handwriting"
+  ],
+  "medium": "handwritten_prep_list",
+  "language": "en",
+  "naming_style": "canonical",
+  "expected_document_type": "unknown",
+  "expected_invoice_kind": "unknown",
+  "supplier": {
+    "name": "Fresh Fields Produce LLC",
+    "trn": "100000000000101",
+    "present_in_supplier_master": true
+  },
+  "header": {
+    "supplier_name": "Fresh Fields Produce LLC",
+    "invoice_number": null,
+    "invoice_date": "2026-07-06",
+    "currency": null,
+    "subtotal_before_discount": null,
+    "discount_total": null,
+    "net_before_tax": null,
+    "tax_total": null,
+    "non_tax_charge_total": null,
+    "rounding_amount": null,
+    "invoice_total": null,
+    "purchase_reference": null
+  },
+  "lines": [],
+  "line_count": 0,
+  "stock_line_count": 0,
+  "duplicate_of": null,
+  "notes": [
+    "unknown or unsupported both pass. Classifying this as an invoice is the failure, because everything downstream will then post stock."
+  ],
+  "synthetic": true
+}

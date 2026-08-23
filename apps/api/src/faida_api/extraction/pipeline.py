@@ -250,6 +250,11 @@ async def _persist_extracted(
         tax=invoice.tax,
         total=invoice.total,
         payment_kind=invoice.payment_kind,
+        # Derived by C4 from the arithmetic, not read off the document. Money
+        # itself stays exactly as printed; these say how to read it, and the
+        # confirm path uses them to record price memory net of VAT.
+        tax_treatment=validation.document.tax_treatment,
+        vat_rate=validation.document.vat_rate,
         status=status,
         confidence=confidence,
         lines=lines,

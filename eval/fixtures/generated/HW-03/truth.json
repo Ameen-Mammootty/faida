@@ -1,0 +1,65 @@
+{
+  "classification": "invoice",
+  "invoice": {
+    "supplier_name": "Al Aweer Fresh Vegetable Trading",
+    "invoice_no": null,
+    "invoice_date": "2026-07-04",
+    "currency": "AED",
+    "payment_kind": "cash",
+    "lines": [
+      {
+        "raw_name": "Tomato Plum Roma",
+        "qty": "10",
+        "unit": "kg",
+        "pack_size": null,
+        "unit_price": "5.50",
+        "line_total": "55.00"
+      },
+      {
+        "raw_name": "Cucumber Local Short",
+        "qty": "6",
+        "unit": "kg",
+        "pack_size": null,
+        "unit_price": "4.75",
+        "line_total": "28.50"
+      },
+      {
+        "raw_name": "Onion Brown Holland",
+        "qty": "8",
+        "unit": "kg",
+        "pack_size": null,
+        "unit_price": "3.20",
+        "line_total": "25.60"
+      },
+      {
+        "raw_name": "Lemon Yellow Turkey",
+        "qty": "4",
+        "unit": "kg",
+        "pack_size": null,
+        "unit_price": "6.00",
+        "line_total": "24.00"
+      },
+      {
+        "raw_name": "Parsley Baqdounis Bunch",
+        "qty": "10",
+        "unit": "bunch",
+        "pack_size": null,
+        "unit_price": "1.50",
+        "line_total": "15.00"
+      },
+      {
+        "raw_name": "Mint Na'ana Bunch",
+        "qty": "10",
+        "unit": "bunch",
+        "pack_size": null,
+        "unit_price": "1.50",
+        "line_total": "15.00"
+      }
+    ],
+    "subtotal": "163.10",
+    "tax": null,
+    "total": "163.10",
+    "tax_treatment": null,
+    "vat_rate": null
+  }
+}

@@ -1,0 +1,78 @@
+Produce one photorealistic image of a single real-world paper document. The image contains nothing but that document and the surface it rests on. Do not add captions, arrows, labels, borders, mock-up frames, logos of real companies, or any text of your own invention.
+
+PHYSICAL ARTEFACT
+A phone camera photo of an A4 laser-printed document lying on a stainless steel prep counter, shot from above at roughly 20 degrees off square so the page is visibly keystoned. Whole page in frame including all four corners. A hard overhead kitchen light lays a bright glare band across part of the page without erasing any figure. Slight barrel distortion, realistic phone camera sharpness.
+Held flat on a stainless prep counter and photographed from above at roughly 20 degrees off square, with a hard overhead kitchen light putting a bright band across the upper third.
+
+LANGUAGE
+All text is in English with western digits.
+
+EXACT CONTENT. Reproduce every character and every digit exactly as written below. Do not round, recalculate, reorder, translate, abbreviate, expand, add or omit anything. The arithmetic below is already correct.
+
+-- Header --
+SUPPLIER NAME (top of the document): Gulf Pantry Supply LLC
+SUPPLIER ADDRESS: Warehouse 5, Dubai Investment Park 1, Dubai, UAE
+SUPPLIER PHONE: +971 4 555 4404
+SUPPLIER TRN: 100000000000104
+DOCUMENT TITLE: TAX INVOICE
+Invoice number: GPS-INV-260706-2231
+Date: 2026-07-06
+PO reference: CS-DT-PO-20260702-005
+Delivery note: GPS-DN-260706-2231
+Bill to: Cedar & Spice Hospitality LLC
+Customer TRN: 100000000000001
+Deliver to: Downtown Branch, Unit 12, Creekside Avenue, Downtown, Dubai, UAE
+Payment terms: 14 days
+Currency: AED
+Small grey footer line at the very bottom of the page: SYNTHETIC TEST DOCUMENT - CEDAR & SPICE QA - NOT A COMMERCIAL RECORD
+
+-- Line items, all 34 of them, in this exact order --
+COLUMNS, left to right: # | Item code | Description | Qty | Unit | Pack size | Unit price AED | Amount AED
+
+1 | GPS-BRC-1KG | Fine Breadcrumb | 1 | bag | 1 kg | 8.00 | 8.00
+2 | GPS-CHK-2500 | Cooked Chickpeas | 13 | can | 2.5 kg | 20.00 | 260.00
+3 | GPS-CHR-1KG | Chilli Relish | 3 | jar | 1 kg | 20.00 | 60.00
+4 | GPS-CON-1KG | Caramelised Onion | 5 | tub | 1 kg | 18.00 | 90.00
+5 | GPS-COU-5KG | Dry Couscous | 1 | bag | 5 kg | 30.00 | 30.00
+6 | GPS-FLR-5KG | Plain Flour | 1 | bag | 5 kg | 12.00 | 12.00
+7 | GPS-FRE-5KG | Dry Freekeh | 2 | bag | 5 kg | 38.00 | 76.00
+8 | GPS-FRY-10KG | Frozen French Fries | 3 | carton | 10 kg | 90.00 | 270.00
+9 | GPS-HAR-1KG | Harissa Paste | 2 | jar | 1 kg | 32.00 | 64.00
+10 | GPS-KET-2KG | Tomato Ketchup | 1 | bottle | 2 kg | 14.00 | 14.00
+11 | GPS-MAY-3KG | Mayonnaise | 1 | tub | 3 kg | 36.00 | 36.00
+12 | GPS-MUS-1KG | Dijon Mustard | 1 | jar | 1 kg | 16.00 | 16.00
+13 | GPS-OIL-5L | Extra Virgin Olive Oil | 2 | tin | 5 L | 78.00 | 156.00
+14 | GPS-OLV-2KG | Mixed Olives | 2 | tub | 2 kg | 26.00 | 52.00
+15 | GPS-PIC-2KG | Cucumber Pickles | 8 | jar | 2 kg | 20.00 | 160.00
+16 | GPS-PIK-1KG | Pistachio Kernels | 2 | bag | 1 kg | 72.00 | 144.00
+17 | GPS-PMM-1L | Pomegranate Molasses | 1 | bottle | 1 L | 22.00 | 22.00
+18 | GPS-PRL-1KG | Preserved Lemon | 1 | jar | 1 kg | 24.00 | 24.00
+19 | GPS-PST-1KG | Pistachio Paste | 3 | tub | 1 kg | 95.00 | 285.00
+20 | GPS-QUI-5KG | Dry Quinoa | 2 | bag | 5 kg | 55.00 | 110.00
+21 | GPS-REL-1KG | Pickle Relish | 1 | jar | 1 kg | 18.00 | 18.00
+22 | GPS-RIC-5KG | Basmati Rice | 2 | bag | 5 kg | 32.00 | 64.00
+23 | GPS-ROS-50G | Dried Rose Petals | 2 | jar | 50 g | 20.00 | 40.00
+24 | GPS-SAF-10G | Saffron Threads | 1 | jar | 10 g | 30.00 | 30.00
+25 | GPS-SAL-5KG | Fine Sea Salt | 1 | bag | 5 kg | 7.00 | 7.00
+26 | GPS-SES-1KG | Sesame Seeds | 1 | pack | 1 kg | 18.00 | 18.00
+27 | GPS-SFO-5L | Sunflower Frying Oil | 2 | tin | 5 L | 45.00 | 90.00
+28 | GPS-SPC-500 | House Spice Blend | 2 | pack | 500 g | 18.00 | 36.00
+29 | GPS-SUM-500 | Ground Sumac | 2 | pack | 500 g | 16.00 | 32.00
+30 | GPS-TAH-2KG | Tahini | 4 | tub | 2 kg | 46.00 | 184.00
+31 | GPS-TOM-2500 | Crushed Tomato | 9 | can | 2.5 kg | 18.00 | 162.00
+32 | GPS-WAL-1KG | Walnut Kernels | 1 | bag | 1 kg | 52.00 | 52.00
+33 | GPS-WCH-1KG | White Chocolate | 2 | bag | 1 kg | 40.00 | 80.00
+34 | GPS-ZAT-500 | Za'atar Blend | 1 | pack | 500 g | 18.00 | 18.00
+
+-- Totals block, lower right --
+Subtotal: AED 2,720.00
+Net before VAT: AED 2,720.00
+VAT 5%: AED 136.00
+TOTAL: AED 2,856.00
+
+RULES
+- All 34 item rows must appear on the document, in the order given, none merged, none dropped, none repeated.
+- Every figure must be readable at full resolution. Prefer a slightly tighter row height over shrinking the digits.
+- Keep the whole document inside the frame, including all four corners.
+- Do not add sample, specimen, draft, void or watermark text, and do not add any row, column, tax line or charge that is not listed above.
+- The physical damage and lighting described above must never make any digit unreadable. Degrade the paper, not the data.

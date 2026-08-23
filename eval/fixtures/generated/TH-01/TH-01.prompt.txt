@@ -1,0 +1,60 @@
+Produce one photorealistic image of a single real-world paper document. The image contains nothing but that document and the surface it rests on. Do not add captions, arrows, labels, borders, mock-up frames, logos of real companies, or any text of your own invention.
+
+PHYSICAL ARTEFACT
+A 58 mm thermal till roll receipt, about 30 cm long, printed in a grey dot matrix thermal font that has already begun to fade. The paper curls at the top and bottom edges and has a slight sheen. Photographed from directly above on a stainless steel counter, whole receipt in frame end to end, cool overhead light.
+A 58 mm thermal till roll photographed on a stainless steel counter. The paper curls at both ends and the print is grey rather than black.
+
+LANGUAGE
+All text is in English with western digits.
+
+EXACT CONTENT. Reproduce every character and every digit exactly as written below. Do not round, recalculate, reorder, translate, abbreviate, expand, add or omit anything. The arithmetic below is already correct.
+
+-- Header --
+Centred at the top: Deira Cold Store & General Trading
+Centred under it: Naif Road, Deira, Dubai
+Centred under that: Tel 04 271 8890
+Centred under that: TRN 100000000000411
+Centred, in bold: TAX INVOICE (SIMPLIFIED)
+Receipt No: T-0084417
+Date: 2026-07-05    Time: 07:42
+Till: 03    Cashier: 118
+Customer: Cedar & Spice Hospitality LLC
+Customer TRN: 100000000000001
+
+-- Line items, all 10 of them, in this exact order --
+Each item prints as two lines: the item name on its own line, then underneath it the quantity, an x, the unit price, and the amount pushed to the right margin. No table borders, no column headings, no line numbers.
+
+RICE BASM 5KG
+    2 x 33.60                67.20
+FRY OIL SUN 5L
+    2 x 47.25                94.50
+TOM CRUSH 2.5K
+    6 x 18.90                113.40
+CHICKPEA TIN 2.5K
+    8 x 21.00                168.00
+SALT FINE 5KG
+    1 x 7.35                7.35
+FLOUR AP 5KG
+    2 x 12.60                25.20
+SODA 1L
+    24 x 4.20                100.80
+KETCHUP 2KG
+    2 x 14.70                29.40
+MAYO 3KG
+    1 x 37.80                37.80
+PICKLE CUC 2KG
+    3 x 21.00                63.00
+
+-- Totals, centred across the full width at the foot of the roll --
+Subtotal (VAT inclusive): AED 706.65
+Of which VAT 5% (already included above): AED 33.65
+Net of VAT: AED 673.00
+TOTAL: AED 706.65
+
+RULES
+- All 10 item rows must appear on the document, in the order given, none merged, none dropped, none repeated.
+- Every figure must be readable at full resolution. Prefer a slightly tighter row height over shrinking the digits.
+- Keep the whole document inside the frame, including all four corners.
+- Do not add sample, specimen, draft, void or watermark text, and do not add any row, column, tax line or charge that is not listed above.
+- Thermal receipts have no ruled table. Each item is its own block: the name on one line, then quantity, unit price and amount on the line under it, right aligned. Long names wrap rather than truncate.
+- The physical damage and lighting described above must never make any digit unreadable. Degrade the paper, not the data.

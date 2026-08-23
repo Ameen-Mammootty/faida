@@ -1,0 +1,57 @@
+{
+  "classification": "invoice",
+  "invoice": {
+    "supplier_name": "Prime Protein Trading LLC",
+    "invoice_no": "PPT/26/0913",
+    "invoice_date": "2026-07-03",
+    "currency": "AED",
+    "payment_kind": null,
+    "lines": [
+      {
+        "raw_name": "Beef Mince Angus 80/20",
+        "qty": "12.4",
+        "unit": "kg",
+        "pack_size": null,
+        "unit_price": "29.00",
+        "line_total": "359.60"
+      },
+      {
+        "raw_name": "Chicken Breast Fillet Skinless",
+        "qty": "18.6",
+        "unit": "kg",
+        "pack_size": null,
+        "unit_price": "22.00",
+        "line_total": "409.20"
+      },
+      {
+        "raw_name": "Lamb Mince Fresh Australian",
+        "qty": "6.2",
+        "unit": "kg",
+        "pack_size": null,
+        "unit_price": "32.00",
+        "line_total": "198.40"
+      },
+      {
+        "raw_name": "Salmon Fillet Trim D Norway",
+        "qty": "4.35",
+        "unit": "kg",
+        "pack_size": null,
+        "unit_price": "52.00",
+        "line_total": "226.20"
+      },
+      {
+        "raw_name": "Eggs Free Range Large Tray 30",
+        "qty": "6",
+        "unit": "tray",
+        "pack_size": null,
+        "unit_price": "28.00",
+        "line_total": "168.00"
+      }
+    ],
+    "subtotal": "1361.40",
+    "tax": "68.07",
+    "total": "1429.47",
+    "tax_treatment": "exclusive",
+    "vat_rate": null
+  }
+}

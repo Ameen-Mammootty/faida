@@ -1,0 +1,289 @@
+{
+  "classification": "invoice",
+  "invoice": {
+    "supplier_name": "Gulf Pantry Supply LLC",
+    "invoice_no": "GPS-INV-260706-2231",
+    "invoice_date": "2026-07-06",
+    "currency": "AED",
+    "payment_kind": null,
+    "lines": [
+      {
+        "raw_name": "Fine Breadcrumb",
+        "qty": "1",
+        "unit": "bag",
+        "pack_size": "1000",
+        "unit_price": "8.00",
+        "line_total": "8.00"
+      },
+      {
+        "raw_name": "Cooked Chickpeas",
+        "qty": "13",
+        "unit": "can",
+        "pack_size": "2500",
+        "unit_price": "20.00",
+        "line_total": "260.00"
+      },
+      {
+        "raw_name": "Chilli Relish",
+        "qty": "3",
+        "unit": "jar",
+        "pack_size": "1000",
+        "unit_price": "20.00",
+        "line_total": "60.00"
+      },
+      {
+        "raw_name": "Caramelised Onion",
+        "qty": "5",
+        "unit": "tub",
+        "pack_size": "1000",
+        "unit_price": "18.00",
+        "line_total": "90.00"
+      },
+      {
+        "raw_name": "Dry Couscous",
+        "qty": "1",
+        "unit": "bag",
+        "pack_size": "5000",
+        "unit_price": "30.00",
+        "line_total": "30.00"
+      },
+      {
+        "raw_name": "Plain Flour",
+        "qty": "1",
+        "unit": "bag",
+        "pack_size": "5000",
+        "unit_price": "12.00",
+        "line_total": "12.00"
+      },
+      {
+        "raw_name": "Dry Freekeh",
+        "qty": "2",
+        "unit": "bag",
+        "pack_size": "5000",
+        "unit_price": "38.00",
+        "line_total": "76.00"
+      },
+      {
+        "raw_name": "Frozen French Fries",
+        "qty": "3",
+        "unit": "carton",
+        "pack_size": "10000",
+        "unit_price": "90.00",
+        "line_total": "270.00"
+      },
+      {
+        "raw_name": "Harissa Paste",
+        "qty": "2",
+        "unit": "jar",
+        "pack_size": "1000",
+        "unit_price": "32.00",
+        "line_total": "64.00"
+      },
+      {
+        "raw_name": "Tomato Ketchup",
+        "qty": "1",
+        "unit": "bottle",
+        "pack_size": "2000",
+        "unit_price": "14.00",
+        "line_total": "14.00"
+      },
+      {
+        "raw_name": "Mayonnaise",
+        "qty": "1",
+        "unit": "tub",
+        "pack_size": "3000",
+        "unit_price": "36.00",
+        "line_total": "36.00"
+      },
+      {
+        "raw_name": "Dijon Mustard",
+        "qty": "1",
+        "unit": "jar",
+        "pack_size": "1000",
+        "unit_price": "16.00",
+        "line_total": "16.00"
+      },
+      {
+        "raw_name": "Extra Virgin Olive Oil",
+        "qty": "2",
+        "unit": "tin",
+        "pack_size": "5000",
+        "unit_price": "78.00",
+        "line_total": "156.00"
+      },
+      {
+        "raw_name": "Mixed Olives",
+        "qty": "2",
+        "unit": "tub",
+        "pack_size": "2000",
+        "unit_price": "26.00",
+        "line_total": "52.00"
+      },
+      {
+        "raw_name": "Cucumber Pickles",
+        "qty": "8",
+        "unit": "jar",
+        "pack_size": "2000",
+        "unit_price": "20.00",
+        "line_total": "160.00"
+      },
+      {
+        "raw_name": "Pistachio Kernels",
+        "qty": "2",
+        "unit": "bag",
+        "pack_size": "1000",
+        "unit_price": "72.00",
+        "line_total": "144.00"
+      },
+      {
+        "raw_name": "Pomegranate Molasses",
+        "qty": "1",
+        "unit": "bottle",
+        "pack_size": "1000",
+        "unit_price": "22.00",
+        "line_total": "22.00"
+      },
+      {
+        "raw_name": "Preserved Lemon",
+        "qty": "1",
+        "unit": "jar",
+        "pack_size": "1000",
+        "unit_price": "24.00",
+        "line_total": "24.00"
+      },
+      {
+        "raw_name": "Pistachio Paste",
+        "qty": "3",
+        "unit": "tub",
+        "pack_size": "1000",
+        "unit_price": "95.00",
+        "line_total": "285.00"
+      },
+      {
+        "raw_name": "Dry Quinoa",
+        "qty": "2",
+        "unit": "bag",
+        "pack_size": "5000",
+        "unit_price": "55.00",
+        "line_total": "110.00"
+      },
+      {
+        "raw_name": "Pickle Relish",
+        "qty": "1",
+        "unit": "jar",
+        "pack_size": "1000",
+        "unit_price": "18.00",
+        "line_total": "18.00"
+      },
+      {
+        "raw_name": "Basmati Rice",
+        "qty": "2",
+        "unit": "bag",
+        "pack_size": "5000",
+        "unit_price": "32.00",
+        "line_total": "64.00"
+      },
+      {
+        "raw_name": "Dried Rose Petals",
+        "qty": "2",
+        "unit": "jar",
+        "pack_size": "50",
+        "unit_price": "20.00",
+        "line_total": "40.00"
+      },
+      {
+        "raw_name": "Saffron Threads",
+        "qty": "1",
+        "unit": "jar",
+        "pack_size": "10",
+        "unit_price": "30.00",
+        "line_total": "30.00"
+      },
+      {
+        "raw_name": "Fine Sea Salt",
+        "qty": "1",
+        "unit": "bag",
+        "pack_size": "5000",
+        "unit_price": "7.00",
+        "line_total": "7.00"
+      },
+      {
+        "raw_name": "Sesame Seeds",
+        "qty": "1",
+        "unit": "pack",
+        "pack_size": "1000",
+        "unit_price": "18.00",
+        "line_total": "18.00"
+      },
+      {
+        "raw_name": "Sunflower Frying Oil",
+        "qty": "2",
+        "unit": "tin",
+        "pack_size": "5000",
+        "unit_price": "45.00",
+        "line_total": "90.00"
+      },
+      {
+        "raw_name": "House Spice Blend",
+        "qty": "2",
+        "unit": "pack",
+        "pack_size": "500",
+        "unit_price": "18.00",
+        "line_total": "36.00"
+      },
+      {
+        "raw_name": "Ground Sumac",
+        "qty": "2",
+        "unit": "pack",
+        "pack_size": "500",
+        "unit_price": "16.00",
+        "line_total": "32.00"
+      },
+      {
+        "raw_name": "Tahini",
+        "qty": "4",
+        "unit": "tub",
+        "pack_size": "2000",
+        "unit_price": "46.00",
+        "line_total": "184.00"
+      },
+      {
+        "raw_name": "Crushed Tomato",
+        "qty": "9",
+        "unit": "can",
+        "pack_size": "2500",
+        "unit_price": "18.00",
+        "line_total": "162.00"
+      },
+      {
+        "raw_name": "Walnut Kernels",
+        "qty": "1",
+        "unit": "bag",
+        "pack_size": "1000",
+        "unit_price": "52.00",
+        "line_total": "52.00"
+      },
+      {
+        "raw_name": "White Chocolate",
+        "qty": "2",
+        "unit": "bag",
+        "pack_size": "1000",
+        "unit_price": "40.00",
+        "line_total": "80.00"
+      },
+      {
+        "raw_name": "Za'atar Blend",
+        "qty": "1",
+        "unit": "pack",
+        "pack_size": "500",
+        "unit_price": "18.00",
+        "line_total": "18.00"
+      }
+    ],
+    "subtotal": "2720.00",
+    "tax": "136.00",
+    "total": "2856.00",
+    "tax_treatment": "exclusive",
+    "vat_rate": null
+  }
+}

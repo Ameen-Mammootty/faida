@@ -182,7 +182,14 @@ async def _seed_item(
 
 
 async def _seed_invoice(
-    db, *, supplier_id: str | None = None, supplier_name: str | None = None, lines: list[dict]
+    db,
+    *,
+    supplier_id: str | None = None,
+    supplier_name: str | None = None,
+    lines: list[dict],
+    tax_treatment: str | None = None,
+    tax: Decimal | None = None,
+    total: Decimal | None = None,
 ) -> str:
     document_id = await db.pool.fetchval(
         "insert into documents (tenant_id, source, status) values ($1, 'manual', 'extracted') "
@@ -191,14 +198,18 @@ async def _seed_invoice(
     )
     invoice_id = await db.pool.fetchval(
         """
-        insert into invoices (tenant_id, document_id, supplier_id, supplier_name, status)
-        values ($1, $2, $3, $4, 'confirmed')
+        insert into invoices (tenant_id, document_id, supplier_id, supplier_name, status,
+                              tax_treatment, tax, total)
+        values ($1, $2, $3, $4, 'confirmed', $5, $6, $7)
         returning id::text
         """,
         DEMO_TENANT_ID,
         document_id,
         supplier_id,
         supplier_name,
+        tax_treatment,
+        tax,
+        total,
     )
     for position, line in enumerate(lines):
         await db.pool.execute(
@@ -404,3 +415,87 @@ async def test_confirm_without_supplier_or_name_does_nothing(db):
     assert await db.pool.fetchval("select count(*) from suppliers") == 0
     assert await db.pool.fetchval("select count(*) from supplier_items") == 0
     assert await _history(db) == []
+
+
+# -- C4 net-canonical price memory (WP-17) -------------------------------------
+
+
+@requires_db
+async def test_inclusive_invoice_records_price_net_of_vat(db):
+    """An inclusive invoice's unit prices are gross. Price memory is
+    net-canonical, so what lands in the catalog is ex-VAT."""
+    supplier_id = await _seed_supplier(db, "Deira Cold Store & General Trading")
+    invoice_id = await _seed_invoice(
+        db,
+        supplier_id=supplier_id,
+        lines=[{"raw_name": "RICE BASM 5KG", "qty": Decimal("2"), "unit_price": Decimal("33.600")}],
+        tax_treatment="inclusive",
+        tax=Decimal("33.65"),
+        total=Decimal("706.65"),
+    )
+
+    await db.record_confirmed_prices(invoice_id)
+
+    items = await db.pool.fetch("select * from supplier_items")
+    assert len(items) == 1
+    # 33.600 / 1.05 = 32.000 exactly, at the real invoice's rate.
+    assert items[0]["last_price"] == Decimal("32.000")
+    history = await _history(db)
+    assert [row["price"] for row in history] == [Decimal("32.000")]
+    # The as-printed price is untouched: the review screen still traces to the photo.
+    line = await db.pool.fetchrow(
+        "select unit_price from invoice_lines where invoice_id = $1", invoice_id
+    )
+    assert line["unit_price"] == Decimal("33.600")
+
+
+@requires_db
+async def test_supplier_switching_vat_format_fires_no_price_alert(db):
+    """The reason net-canonical exists. PRICE_ALERT_MIN_PCT is 5% and UAE VAT
+    is 5%, so a supplier moving from VAT-exclusive to VAT-inclusive invoicing
+    would otherwise look exactly like a full-threshold price rise on an item
+    whose price never moved."""
+    supplier_id = await _seed_supplier(db, "Gulf Foods Trading LLC")
+    item_id = await _seed_item(db, supplier_id, "Milk Powder 2.5kg")
+
+    # Week 1: exclusive invoice, net 100.00 on the page.
+    first = await _seed_invoice(
+        db,
+        supplier_id=supplier_id,
+        lines=[
+            {
+                "raw_name": "Milk Powder 2.5kg",
+                "supplier_item_id": item_id,
+                "qty": Decimal("1"),
+                "unit_price": Decimal("100.000"),
+            }
+        ],
+        tax_treatment="exclusive",
+        tax=Decimal("5.00"),
+        total=Decimal("105.00"),
+    )
+    await db.record_confirmed_prices(first)
+
+    # Week 2: same real price, now invoiced inclusive - 105.00 on the page.
+    second = await _seed_invoice(
+        db,
+        supplier_id=supplier_id,
+        lines=[
+            {
+                "raw_name": "Milk Powder 2.5kg",
+                "supplier_item_id": item_id,
+                "qty": Decimal("1"),
+                "unit_price": Decimal("105.000"),
+            }
+        ],
+        tax_treatment="inclusive",
+        tax=Decimal("5.00"),
+        total=Decimal("105.00"),
+    )
+    await db.record_confirmed_prices(second)
+
+    item = await _item_row(db, item_id)
+    assert item["last_price"] == Decimal("100.000")
+    # prev_price never shifted, because nothing changed: no alert can fire.
+    assert item["prev_price"] is None
+    assert [row["price"] for row in await _history(db)] == [Decimal("100.000")] * 2

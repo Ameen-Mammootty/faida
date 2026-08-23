@@ -1,0 +1,241 @@
+{
+  "cases": [
+    {
+      "case_id": "HW-01",
+      "title": "Handwritten produce delivery book, carbon copy",
+      "medium": "handwritten_duplicate_book",
+      "hazards": [
+        "handwriting",
+        "no_vat_line",
+        "carbon_copy_contrast",
+        "no_supplier_sku"
+      ],
+      "line_count": 8,
+      "expected_json": "HW-01/HW-01.expected.json",
+      "prompt": "HW-01/HW-01.prompt.txt",
+      "status": "verified",
+      "image": "HW-01/HW-01.jpg",
+      "verify_report": "HW-01/HW-01.verify.json"
+    },
+    {
+      "case_id": "HW-02",
+      "title": "Handwritten butcher's bill, weights in kilograms",
+      "medium": "handwritten_letterhead_pad",
+      "hazards": [
+        "handwriting",
+        "decimal_weights",
+        "unit_mismatch_vs_master",
+        "grease_stain"
+      ],
+      "line_count": 5,
+      "expected_json": "HW-02/HW-02.expected.json",
+      "prompt": "HW-02/HW-02.prompt.txt",
+      "status": "verified",
+      "image": "HW-02/HW-02.jpg",
+      "verify_report": "HW-02/HW-02.verify.json"
+    },
+    {
+      "case_id": "HW-03",
+      "title": "Handwritten market chit from an off-contract stall",
+      "medium": "handwritten_market_chit",
+      "hazards": [
+        "handwriting",
+        "unknown_supplier",
+        "no_invoice_number",
+        "no_trn",
+        "torn_paper"
+      ],
+      "line_count": 6,
+      "expected_json": "HW-03/HW-03.expected.json",
+      "prompt": "HW-03/HW-03.prompt.txt",
+      "status": "dry-run"
+    },
+    {
+      "case_id": "HW-04",
+      "title": "Handwritten dairy delivery note, Arabic and English mixed",
+      "medium": "handwritten_duplicate_book",
+      "hazards": [
+        "handwriting",
+        "arabic_script",
+        "rtl_column_order",
+        "no_vat_line"
+      ],
+      "line_count": 6,
+      "expected_json": "HW-04/HW-04.expected.json",
+      "prompt": "HW-04/HW-04.prompt.txt",
+      "status": "verified",
+      "image": "HW-04/HW-04.jpg",
+      "verify_report": "HW-04/HW-04.verify.json"
+    },
+    {
+      "case_id": "TH-01",
+      "title": "Thermal cash-and-carry receipt, abbreviated item names",
+      "medium": "thermal_receipt",
+      "hazards": [
+        "thermal_fade",
+        "abbreviated_names",
+        "vat_inclusive_prices",
+        "unknown_supplier",
+        "curled_paper",
+        "narrow_column_wrap"
+      ],
+      "line_count": 10,
+      "expected_json": "TH-01/TH-01.expected.json",
+      "prompt": "TH-01/TH-01.prompt.txt",
+      "status": "verified",
+      "image": "TH-01/TH-01.jpg",
+      "verify_report": "TH-01/TH-01.verify.json"
+    },
+    {
+      "case_id": "PR-01",
+      "title": "Clean printed A4 tax invoice, control case",
+      "medium": "printed_a4_scan",
+      "hazards": [],
+      "line_count": 4,
+      "expected_json": "PR-01/PR-01.expected.json",
+      "prompt": "PR-01/PR-01.prompt.txt",
+      "status": "verified",
+      "image": "PR-01/PR-01.jpg",
+      "verify_report": "PR-01/PR-01.verify.json"
+    },
+    {
+      "case_id": "PH-01",
+      "title": "Phone photo of a 34-line invoice at an angle",
+      "medium": "phone_photo_angled",
+      "hazards": [
+        "perspective_skew",
+        "counter_glare",
+        "long_line_table",
+        "page_break_risk"
+      ],
+      "line_count": 34,
+      "expected_json": "PH-01/PH-01.expected.json",
+      "prompt": "PH-01/PH-01.prompt.txt",
+      "status": "verified",
+      "image": "PH-01/PH-01.jpg",
+      "verify_report": "PH-01/PH-01.verify.json"
+    },
+    {
+      "case_id": "PH-02",
+      "title": "Crumpled and stained invoice, phone photo",
+      "medium": "phone_photo_damaged",
+      "hazards": [
+        "crumple_creases",
+        "coffee_stain",
+        "motion_blur",
+        "shadow"
+      ],
+      "line_count": 6,
+      "expected_json": "PH-02/PH-02.expected.json",
+      "prompt": "PH-02/PH-02.prompt.txt",
+      "status": "verified",
+      "image": "PH-02/PH-02.jpg",
+      "verify_report": "PH-02/PH-02.verify.json"
+    },
+    {
+      "case_id": "AR-01",
+      "title": "Bilingual Arabic and English UAE tax invoice",
+      "medium": "printed_a4_scan",
+      "hazards": [
+        "bilingual_rows",
+        "rtl_headers",
+        "duplicate_description_risk"
+      ],
+      "line_count": 8,
+      "expected_json": "AR-01/AR-01.expected.json",
+      "prompt": "AR-01/AR-01.prompt.txt",
+      "status": "verified",
+      "image": "AR-01/AR-01.jpg",
+      "verify_report": "AR-01/AR-01.verify.json"
+    },
+    {
+      "case_id": "ALT-01",
+      "title": "Supplier's own product names, none matching the master",
+      "medium": "printed_a4_scan",
+      "hazards": [
+        "supplier_trade_names",
+        "transliteration_variants",
+        "mapping_required"
+      ],
+      "line_count": 12,
+      "expected_json": "ALT-01/ALT-01.expected.json",
+      "prompt": "ALT-01/ALT-01.prompt.txt",
+      "status": "verified",
+      "image": "ALT-01/ALT-01.jpg",
+      "verify_report": "ALT-01/ALT-01.verify.json"
+    },
+    {
+      "case_id": "EDGE-01",
+      "title": "Credit line, delivery charge and a trade discount",
+      "medium": "printed_a4_scan",
+      "hazards": [
+        "negative_line",
+        "non_stock_charge",
+        "percentage_discount"
+      ],
+      "line_count": 7,
+      "expected_json": "EDGE-01/EDGE-01.expected.json",
+      "prompt": "EDGE-01/EDGE-01.prompt.txt",
+      "status": "verified",
+      "image": "EDGE-01/EDGE-01.jpg",
+      "verify_report": "EDGE-01/EDGE-01.verify.json"
+    },
+    {
+      "case_id": "EDGE-02",
+      "title": "VAT-inclusive prices, comma thousands and a rounding line",
+      "medium": "printed_a4_scan",
+      "hazards": [
+        "comma_thousands",
+        "vat_inclusive_prices",
+        "rounding_line"
+      ],
+      "line_count": 5,
+      "expected_json": "EDGE-02/EDGE-02.expected.json",
+      "prompt": "EDGE-02/EDGE-02.prompt.txt",
+      "status": "dry-run"
+    },
+    {
+      "case_id": "EDGE-03",
+      "title": "Delivery note with quantities and no prices",
+      "medium": "printed_a4_scan",
+      "hazards": [
+        "no_prices",
+        "classification_risk",
+        "signature_block"
+      ],
+      "line_count": 9,
+      "expected_json": "EDGE-03/EDGE-03.expected.json",
+      "prompt": "EDGE-03/EDGE-03.prompt.txt",
+      "status": "dry-run"
+    },
+    {
+      "case_id": "NEG-01",
+      "title": "Handwritten kitchen prep list, not an invoice",
+      "medium": "handwritten_prep_list",
+      "hazards": [
+        "not_a_document_of_record",
+        "food_words_without_prices",
+        "handwriting"
+      ],
+      "line_count": 0,
+      "expected_json": "NEG-01/NEG-01.expected.json",
+      "prompt": "NEG-01/NEG-01.prompt.txt",
+      "status": "dry-run"
+    },
+    {
+      "case_id": "DUP-01",
+      "title": "Second photo of an invoice already submitted",
+      "medium": "phone_photo_angled",
+      "hazards": [
+        "duplicate_submission",
+        "warm_indoor_light",
+        "hand_holding_page"
+      ],
+      "line_count": 4,
+      "expected_json": "DUP-01/DUP-01.expected.json",
+      "prompt": "DUP-01/DUP-01.prompt.txt",
+      "status": "dry-run"
+    }
+  ],
+  "generated_by": "scripts/receipt_fixtures"
+}

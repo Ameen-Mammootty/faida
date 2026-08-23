@@ -1,0 +1,46 @@
+Produce one photorealistic image of a single real-world paper document. The image contains nothing but that document and the surface it rests on. Do not add captions, arrows, labels, borders, mock-up frames, logos of real companies, or any text of your own invention.
+
+PHYSICAL ARTEFACT
+A page torn from a carbonless duplicate invoice book, roughly A5, with a pre-printed blue grid and column headings and everything else filled in by hand in blue ballpoint. One consistent adult handwriting throughout, fast Gulf-trade print-cursive, digits clear but sitting slightly off the ruled baseline. Small ink blots where the pen paused. Photographed flat from directly above on a laminated worktop, even daylight, whole page in frame with a little of the worktop showing at the edges.
+The page is the yellow carbon second copy from a duplicate book, so the ink is slightly smudged and the impression is uneven in places.
+
+LANGUAGE
+All text is in English with western digits.
+
+EXACT CONTENT. Reproduce every character and every digit exactly as written below. Do not round, recalculate, reorder, translate, abbreviate, expand, add or omit anything. The arithmetic below is already correct.
+
+-- Header --
+SUPPLIER NAME (top of the document): Fresh Fields Produce LLC
+SUPPLIER ADDRESS: Warehouse 14, Fruit & Vegetable Market, Al Aweer, Dubai, UAE
+SUPPLIER PHONE: +971 4 555 1101
+SUPPLIER TRN: 100000000000101
+DOCUMENT TITLE: INVOICE / CASH BILL
+Bill No.: 1487
+Date: 2026-07-02
+Customer (written by hand): M/s Cedar & Spice Hospitality LLC - Downtown Branch
+Payment terms: Cash on delivery
+
+-- Line items, all 8 of them, in this exact order --
+COLUMNS, left to right: # | Description | Qty | Unit | Unit price AED | Amount AED
+
+1 | Tomato Plum Roma | 3 | box | 28.00 | 84.00
+2 | Cucumber Local Short | 2 | box | 24.00 | 48.00
+3 | Cos Lettuce Romaine | 2 | box | 28.00 | 56.00
+4 | Onion Brown Holland | 2 | bag | 16.00 | 32.00
+5 | Parsley Baqdounis Bunch | 6 | bunch | 4.00 | 24.00
+6 | Mint Na'ana Bunch | 6 | bunch | 5.00 | 30.00
+7 | Lemon Yellow Turkey | 1 | box | 30.00 | 30.00
+8 | Garlic Whole Peeled Free | 2 | bag | 14.00 | 28.00
+
+-- Totals block, lower right --
+Subtotal: AED 332.00
+No VAT line appears anywhere on this document.
+TOTAL: AED 332.00
+
+RULES
+- All 8 item rows must appear on the document, in the order given, none merged, none dropped, none repeated.
+- Every figure must be readable at full resolution. Prefer a slightly tighter row height over shrinking the digits.
+- Keep the whole document inside the frame, including all four corners.
+- Do not add sample, specimen, draft, void or watermark text, and do not add any row, column, tax line or charge that is not listed above.
+- All handwriting is by one person in one sitting. Digits stay legible even where the writing is fast.
+- The physical damage and lighting described above must never make any digit unreadable. Degrade the paper, not the data.

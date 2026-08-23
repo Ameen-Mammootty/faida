@@ -174,9 +174,13 @@ def _document_question(invoice: ExtractedInvoice, validation: ValidationResult) 
     if invoice.total is None:
         return "I couldn't read the invoice total - what does it say?"
     if doc.arith is CheckStatus.FAILED and doc.expected is not None and doc.extracted is not None:
+        # C4 tries both a VAT-exclusive and a VAT-inclusive reading before
+        # reaching here, so neither fits and we must not assert which one the
+        # invoice meant. State the two figures and let the sender arbitrate.
+        line_sum = doc.line_sum if doc.line_sum is not None else doc.expected
         return (
-            f"The totals don't add up (lines plus tax come to {_money(doc.expected)} "
-            f"but the invoice says {_money(doc.extracted)}) - which is right?"
+            f"The totals don't add up (the lines come to {_money(line_sum)} "
+            f"but the invoice total says {_money(doc.extracted)}) - which is right?"
         )
     if (
         doc.subtotal_check is CheckStatus.FAILED

@@ -221,8 +221,8 @@ def test_amber_ordering_doc_first_then_lines_by_materiality_with_cap_and_overflo
     reply = _reply(invoice)
     assert reply.splitlines() == [
         "Read it: Gulf Foods Trading, 4 lines, total AED 800.00.",
-        "The totals don't add up (lines plus tax come to 770.00 "
-        "but the invoice says 800.00) - which is right?",
+        "The totals don't add up (the lines come to 770.00 "
+        "but the invoice total says 800.00) - which is right?",
         "Line 2: the math doesn't add up (10 x 45.00 = 450.00 "
         "but the line says 500.00) - which is right?",
         "Line 4: I couldn't read the quantity - how many were delivered?",

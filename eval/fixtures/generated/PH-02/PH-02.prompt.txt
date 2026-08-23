@@ -1,0 +1,50 @@
+Produce one photorealistic image of a single real-world paper document. The image contains nothing but that document and the surface it rests on. Do not add captions, arrows, labels, borders, mock-up frames, logos of real companies, or any text of your own invention.
+
+PHYSICAL ARTEFACT
+A phone camera photo of an A4 laser-printed document that has been folded into quarters and flattened out again, so four creases cross it and the paper does not lie flat. A brown coffee ring stains one area. Slight handheld motion blur and a soft shadow along one edge. Whole page in frame.
+The sheet has been folded into quarters and flattened again, so four creases cross the table. A brown coffee ring overlaps the right edge of the totals box without hiding the figures completely.
+
+LANGUAGE
+All text is in English with western digits.
+
+EXACT CONTENT. Reproduce every character and every digit exactly as written below. Do not round, recalculate, reorder, translate, abbreviate, expand, add or omit anything. The arithmetic below is already correct.
+
+-- Header --
+SUPPLIER NAME (top of the document): Artisan Bakehouse LLC
+SUPPLIER ADDRESS: Unit 3, Al Khabaisi, Deira, Dubai, UAE
+SUPPLIER PHONE: +971 4 555 5505
+SUPPLIER TRN: 100000000000105
+DOCUMENT TITLE: TAX INVOICE
+Invoice number: ABL-INV-260703-0451
+Date: 2026-07-03
+PO reference: CS-DT-PO-20260630-003
+Delivery note: ABL-DN-260703-0451
+Bill to: Cedar & Spice Hospitality LLC
+Customer TRN: 100000000000001
+Deliver to: Downtown Branch, Unit 12, Creekside Avenue, Downtown, Dubai, UAE
+Payment terms: 14 days
+Currency: AED
+Small grey footer line at the very bottom of the page: SYNTHETIC TEST DOCUMENT - CEDAR & SPICE QA - NOT A COMMERCIAL RECORD
+
+-- Line items, all 6 of them, in this exact order --
+COLUMNS, left to right: # | Item code | Description | Qty | Unit | Pack size | Unit price AED | Amount AED
+
+1 | ABL-BRI-12 | Brioche Burger Bun | 10 | pack | 12 pcs | 22.00 | 220.00
+2 | ABL-CIA-8 | Ciabatta Roll | 15 | pack | 8 pcs | 18.00 | 270.00
+3 | ABL-PIT-10 | Arabic Pita Bread | 14 | pack | 10 pcs | 12.00 | 168.00
+4 | ABL-SAJ-10 | Saj Bread | 10 | pack | 10 pcs | 10.00 | 100.00
+5 | ABL-SOU-20 | Sourdough Slice | 20 | loaf | 20 pcs | 18.00 | 360.00
+6 | ABL-VSP-2KG | Vanilla Sponge Slab | 6 | tray | 2 kg | 60.00 | 360.00
+
+-- Totals block, lower right --
+Subtotal: AED 1,478.00
+Net before VAT: AED 1,478.00
+VAT 5%: AED 73.90
+TOTAL: AED 1,551.90
+
+RULES
+- All 6 item rows must appear on the document, in the order given, none merged, none dropped, none repeated.
+- Every figure must be readable at full resolution. Prefer a slightly tighter row height over shrinking the digits.
+- Keep the whole document inside the frame, including all four corners.
+- Do not add sample, specimen, draft, void or watermark text, and do not add any row, column, tax line or charge that is not listed above.
+- The physical damage and lighting described above must never make any digit unreadable. Degrade the paper, not the data.

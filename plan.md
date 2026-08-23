@@ -262,6 +262,11 @@ plan (§7).
 - [x] Seed demo tenant: 1 chain, 3 branches, 2 suppliers with 3 weeks of price history (so the
       live alert fires on stage) - `supabase/demo_seed.sql`, idempotent, doubles as the
       one-command rehearsal reset (WP-40)
+- [ ] **Review screen deployed and wired:** `apps/web` deployed (Vercel), `API_TOKEN` +
+      `WEB_ORIGIN` set on Railway, `NEXT_PUBLIC_MOCK_API=false` with the API base and token on the
+      web side, and the screen loading live data for the demo chain. M3 ticked the *code*; none of
+      it has ever been deployed, and `api_token` defaults to `""` which fail-closes every `/api`
+      request. Demo script steps 11-12 have nothing to open until this is done
 - [ ] Curate the 3 demo invoices; run each through the full loop 5× — flakiness is a bug
 - [ ] Latency pass: forward → reply under ~20s (stream nothing; the reply is one message)
 - [ ] Failure demo path: forward a meme, get the polite decline (shows discipline, sells trust)
@@ -370,7 +375,9 @@ demonstrable, not documentary.
 | 14 | Eval harness (`eval/`): scoring per §5, results JSON, CI smoke on 3 recorded fixtures | M | C3 | `python -m eval.run` green on fixtures; alignment scorer unit-tested (extra / missing / reordered lines) |
 | 15 | Ground truth for the current corpus: agent transcribes, founder verifies (F8); 3 become the CI fixtures | S | 14, F6 | founder sign-off on every file |
 | 16 | Accuracy loop: live eval → inspect failures → one change per round → re-eval, until §5 targets hold | L | 13-15, F5, F6 | the eval report, not opinion |
-| 17 | **VAT treatment, inclusive + exclusive** (C3/C4 as amended 2026-08-23): both identities in `validate.py` anchored on the line sum, GCC rate table in `constants.py`, `tax_treatment` + `vat_rate` through schema → persistence → eval ground truth (migration 0006), net-canonical price memory converted inside the confirm transaction, and no totals question when a treatment resolves. **Not blocked on the corpus** - deterministic money math with a real invoice already in hand, so it runs in parallel with F6 | M | C3, C4 | Deira T-0084417 (inclusive, UAE 5%) reconciles green with no question; an exclusive invoice still reconciles green; an inclusive invoice printing a *net* subtotal is not misread as exclusive; a supplier switching format produces **no** price alert |
+| 17 | ~~**VAT treatment, inclusive + exclusive**~~ **done 2026-08-23** (C3/C4 as amended 2026-08-23): both identities in `validate.py` anchored on the line sum, GCC rate table in `constants.py`, `tax_treatment` + `vat_rate` through schema → persistence → eval ground truth (migration 0006), net-canonical price memory converted inside the confirm transaction, and no totals question when a treatment resolves. **Not blocked on the corpus** - deterministic money math with a real invoice already in hand, so it runs in parallel with F6 | M | C3, C4 | Deira T-0084417 (inclusive, UAE 5%) reconciles green with no question; an exclusive invoice still reconciles green; an inclusive invoice printing a *net* subtotal is not misread as exclusive; a supplier switching format produces **no** price alert |
+
+| 18 | **Discounts and non-stock charges break C4 the same way VAT did.** Found by running the generated fixtures through the amended validator: `EDGE-01` reads perfectly and still fails, because the line sum misses the trade discount exactly (834.00 - 41.70 + 25.00 delivery + 40.87 tax = 858.17, but C3 models only subtotal/tax/total). Trade discounts are routine in GCC food supply, so this fails correct invoices into amber. Needs a C3 decision like the VAT one, not a prompt tweak | M | C3, C4 | `EDGE-01` reconciles green; a discounted invoice's price memory records the *post-discount* unit price, since that is what was paid |
 
 **M2 (confirm flow, supplier memory, alerts)**
 
@@ -561,6 +568,29 @@ pilot volume. Meta utility template cost applies only from M9 (verify live UAE r
 
 *(newest first — one line per session: date, what shipped, what's next)*
 
+- 2026-08-23 - **WP-17 shipped: C4 now reconciles both VAT treatments.** `check_document` tries
+  the exclusive identity (L + T = G) then the inclusive one (L = G with T inside), anchored on
+  the line sum so an inclusive invoice printing a *net* subtotal cannot masquerade as exclusive;
+  the subtotal cross-check accepts either the gross or the net figure, since both are legitimate
+  printings; a GCC rate table names the rate but never gates the result, so an invoice at an
+  unlisted rate that adds up still passes with a note. Migration 0006 carries `tax_treatment` +
+  `vat_rate`; price memory is net-canonical, converted inside the confirm transaction from the
+  invoice's own totals rather than the stored rate, so no rounding can move a recorded price.
+  The today's-invoice shape now reconciles green with no question asked. 172 tests green against
+  real Postgres, including one that proves a supplier switching VAT format fires **no** price
+  alert - the 5%-VAT-versus-5%-threshold collision that made this net-canonical.
+  Two tests had encoded the old contract and were rewritten rather than deleted: the one named
+  `test_tax_inclusive_mismatch_fails_document_check` asserted precisely the behaviour that was
+  the bug.
+  The generated receipt set moved to `eval/fixtures/generated/` with a README stating plainly
+  that it is synthetic, excluded from the §5 targets, and no substitute for F6, plus
+  `eval/convert_generated.py` translating its ground truth into C3 `truth.json`. All 15 convert;
+  running them through the validator puts 13 of 14 invoices green.
+  The two that do not are both informative: `EDGE-03` (a delivery note with no prices) is
+  correctly indeterminate and should ask, and `EDGE-01` exposed **WP-18** - discounts and
+  non-stock charges break C4 exactly the way VAT did, on a perfectly-read invoice.
+  Next: F6 real photos (still zero); WP-18; the permanent access token; `demo_seed.sql` + branch
+  mapping; `API_TOKEN` + `WEB_ORIGIN` and a deployed review screen for the M4 gate.
 - 2026-08-23 - **M0 PROVEN ON A REAL PHONE (F1-F4 closed)**, and the same forward carried
   through M1 and M2 live. Root cause of the earlier silence found by querying
   `GET /{waba-id}/subscribed_apps`: the WABA's only subscriber was Meta's own `WA DevX Webhook
@@ -588,8 +618,15 @@ pilot volume. Meta utility template cost applies only from M9 (verify live UAE r
   job of not dead-ending, but on stage that is a bad beat.
   (3) **Latency 28.43 s against the ~20 s M4 target** (WP-41's flagged risk, confirmed). Better
   than F5's ~27 s for extraction alone, and this run included a repair round.
-  That first invoice - Deira Cold Store & General Trading, T-0084417 - is corpus item #1 once its
-  true total is hand-verified (F8).
+  **Correction (same day):** that invoice was *not* real. It was `TH-01` from a set of
+  prompt-generated receipts, byte-identical in supplier, invoice number, date, totals and all ten
+  lines, and its ground truth carries `"synthetic": true`. It was briefly written up here as
+  "corpus item #1"; **F6 is still at zero real invoices.** Two things survive the correction:
+  M0's proof stands, since the channel, storage, dedupe, worker, reply and confirm all ran for
+  real and only the document was generated; and extraction scored *perfectly* against that ground
+  truth (all ten lines, supplier, invoice_no, date, totals exact), which is a real measurement on
+  a synthetic document. A generated receipt arriving through the same door as a real one is
+  indistinguishable downstream - nothing in the database says which it was.
   Next: permanent access token; F6 corpus; the C4 VAT decision; `demo_seed.sql` + branch mapping;
   `API_TOKEN` + `WEB_ORIGIN` on Railway for the review screen.
 - 2026-08-23 - Webhook repointed to the Railway host (founder): callback URL set, handshake

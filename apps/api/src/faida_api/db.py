@@ -19,6 +19,37 @@ async def _init_conn(conn: asyncpg.Connection) -> None:
     await conn.set_type_codec("jsonb", encoder=json.dumps, decoder=json.loads, schema="pg_catalog")
 
 
+PRICE_QUANTUM = Decimal("0.001")  # supplier_items.last_price is numeric(12,3)
+
+
+def _net_price_factor(
+    tax_treatment: str | None, tax: Decimal | None, total: Decimal | None
+) -> Decimal | None:
+    """C4 net-canonical price memory: the multiplier that turns this invoice's
+    as-printed unit prices into ex-VAT ones.
+
+    None means "already net, leave it alone" - which covers every exclusive
+    invoice and anything we could not resolve. The factor is derived from the
+    invoice's own totals, not from the stored vat_rate, so a rounded rate can
+    never shift a recorded price.
+
+    This exists because PRICE_ALERT_MIN_PCT is 5% and UAE VAT is 5%: mixing
+    gross and net in the same item's history makes a supplier changing invoice
+    format fire a full-threshold alert when no price moved.
+    """
+    if tax_treatment != "inclusive" or tax is None or total is None:
+        return None
+    if total <= 0 or tax <= 0 or tax >= total:
+        return None
+    return (total - tax) / total
+
+
+def _to_net_price(unit_price: Decimal | None, factor: Decimal | None) -> Decimal | None:
+    if unit_price is None or factor is None:
+        return unit_price
+    return (unit_price * factor).quantize(PRICE_QUANTUM)
+
+
 class Database:
     def __init__(self, dsn: str):
         self._dsn = dsn
@@ -207,6 +238,8 @@ class Database:
         tax: Decimal | None,
         total: Decimal | None,
         payment_kind: str | None,
+        tax_treatment: str | None = None,
+        vat_rate: Decimal | None = None,
         status: str = InvoiceStatus.AWAITING_CONFIRM,
         confidence: dict,
         lines: list[dict],
@@ -228,8 +261,9 @@ class Database:
                 """
                 insert into invoices (tenant_id, branch_id, document_id, supplier_id,
                                       supplier_name, invoice_no, invoice_date, currency,
-                                      subtotal, tax, total, payment_kind, status, confidence)
-                values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                                      subtotal, tax, total, payment_kind, status, confidence,
+                                      tax_treatment, vat_rate)
+                values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
                 returning id::text
                 """,
                 tenant_id,
@@ -246,6 +280,8 @@ class Database:
                 payment_kind,
                 status,
                 confidence,
+                tax_treatment,
+                vat_rate,
             )
             await conn.executemany(
                 """
@@ -356,7 +392,10 @@ class Database:
         re-running for the same invoice is a no-op."""
         async with self.pool.acquire() as conn, conn.transaction():
             invoice = await conn.fetchrow(
-                "select tenant_id, supplier_id, supplier_name from invoices where id = $1",
+                """
+                select tenant_id, supplier_id, supplier_name, tax_treatment, tax, total
+                from invoices where id = $1
+                """,
                 invoice_id,
             )
             if invoice is None:
@@ -379,6 +418,14 @@ class Database:
                 await conn.execute(
                     "update invoices set supplier_id = $2 where id = $1", invoice_id, supplier_id
                 )
+
+            # C4 net-canonical price memory: an inclusive invoice's unit prices
+            # are gross, so they are converted once here before they reach the
+            # catalog. The factor comes from this invoice's own totals rather
+            # than from vat_rate, so no rounding of the rate can move a price.
+            net_factor = _net_price_factor(
+                invoice["tax_treatment"], invoice["tax"], invoice["total"]
+            )
 
             lines = await conn.fetch(
                 """
@@ -418,6 +465,7 @@ class Database:
                 # The history append doubles as the idempotency marker: when
                 # this (item, invoice) observation already exists, a re-run
                 # must not shuffle prev_price either.
+                net_price = _to_net_price(line["unit_price"], net_factor)
                 observed = await conn.fetchval(
                     """
                     insert into supplier_item_prices (supplier_item_id, price, invoice_id)
@@ -427,7 +475,7 @@ class Database:
                     returning id
                     """,
                     item_id,
-                    line["unit_price"],
+                    net_price,
                     invoice_id,
                 )
                 if observed is None:
@@ -439,7 +487,7 @@ class Database:
                     where id = $1 and last_price is distinct from $2
                     """,
                     item_id,
-                    line["unit_price"],
+                    net_price,
                 )
 
     # -- Confirm flow (WP-21, C5) --------------------------------------------

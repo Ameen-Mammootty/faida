@@ -1,0 +1,89 @@
+{
+  "classification": "invoice",
+  "invoice": {
+    "supplier_name": "Fresh Fields Produce LLC",
+    "invoice_no": null,
+    "invoice_date": "2026-07-08",
+    "currency": null,
+    "payment_kind": null,
+    "lines": [
+      {
+        "raw_name": "Plum Tomato",
+        "qty": "4",
+        "unit": "box",
+        "pack_size": "5000",
+        "unit_price": null,
+        "line_total": null
+      },
+      {
+        "raw_name": "Cherry Tomato",
+        "qty": "2",
+        "unit": "box",
+        "pack_size": "3000",
+        "unit_price": null,
+        "line_total": null
+      },
+      {
+        "raw_name": "Cucumber",
+        "qty": "2",
+        "unit": "box",
+        "pack_size": "5000",
+        "unit_price": null,
+        "line_total": null
+      },
+      {
+        "raw_name": "Romaine Lettuce",
+        "qty": "3",
+        "unit": "box",
+        "pack_size": "3000",
+        "unit_price": null,
+        "line_total": null
+      },
+      {
+        "raw_name": "Chopped Salad Mix",
+        "qty": "3",
+        "unit": "box",
+        "pack_size": "3000",
+        "unit_price": null,
+        "line_total": null
+      },
+      {
+        "raw_name": "Red Bell Pepper",
+        "qty": "1",
+        "unit": "box",
+        "pack_size": "5000",
+        "unit_price": null,
+        "line_total": null
+      },
+      {
+        "raw_name": "Butternut Pumpkin",
+        "qty": "3",
+        "unit": "box",
+        "pack_size": "5000",
+        "unit_price": null,
+        "line_total": null
+      },
+      {
+        "raw_name": "Roasting Vegetable Mix",
+        "qty": "3",
+        "unit": "box",
+        "pack_size": "5000",
+        "unit_price": null,
+        "line_total": null
+      },
+      {
+        "raw_name": "Mixed Fresh Herbs",
+        "qty": "6",
+        "unit": "box",
+        "pack_size": "500",
+        "unit_price": null,
+        "line_total": null
+      }
+    ],
+    "subtotal": null,
+    "tax": null,
+    "total": null,
+    "tax_treatment": null,
+    "vat_rate": null
+  }
+}

@@ -8,7 +8,7 @@ from decimal import Decimal
 
 import pytest
 
-from faida_api.extraction.schema import ExtractedInvoice, ExtractedLine
+from faida_api.extraction.schema import ExtractedInvoice, ExtractedLine, TaxTreatment
 from faida_api.extraction.validate import CheckStatus, FieldStatus, validate_invoice
 
 
@@ -135,15 +135,91 @@ def test_missing_tax_treated_as_zero_with_note():
     assert any("tax" in note for note in doc.notes)
 
 
-def test_tax_inclusive_mismatch_fails_document_check():
-    # Total copied tax-inclusive style: equals the line sum, ignoring tax.
+# --- C4 two identities: VAT-inclusive and VAT-exclusive (WP-17) -------------
+#
+# The first real invoice through the live pipeline (Deira Cold Store T-0084417,
+# 2026-08-23) was VAT-inclusive at UAE 5% and reconciled to the fil. Extraction
+# was correct; the single `subtotal + tax = total` identity was wrong, and it
+# was marking correct invoices amber. These lock in both readings.
+
+
+def _deira() -> ExtractedInvoice:
+    """The real invoice, to the fil: 10 lines summing to 706.65, tax 33.65
+    already inside them, total 706.65. 706.65 / 1.05 = 673.00 exactly, and
+    706.65 - 673.00 = 33.65, the printed tax."""
+    priced = [
+        ("2", "33.60"),
+        ("2", "47.25"),
+        ("6", "18.90"),
+        ("8", "21.00"),
+        ("1", "7.35"),
+        ("2", "12.60"),
+        ("24", "4.20"),
+        ("2", "14.70"),
+        ("1", "37.80"),
+        ("3", "21.00"),
+    ]
+    lines = [_line(qty, price, str(Decimal(qty) * Decimal(price))) for qty, price in priced]
+    return _invoice(lines, subtotal="706.65", tax="33.65", total="706.65")
+
+
+def test_vat_inclusive_invoice_reconciles_green():
+    doc = validate_invoice(_deira()).document
+    assert doc.arith == CheckStatus.PASSED
+    assert doc.status == FieldStatus.GREEN
+    assert doc.tax_treatment == TaxTreatment.INCLUSIVE
+    assert doc.vat_rate == Decimal("0.0500")
+    # Nothing to ask about: the amber question this used to raise was the bug.
+    assert doc.expected is None and doc.extracted is None
+
+
+def test_vat_exclusive_invoice_still_reconciles_green():
+    lines = [_line("2", "50.00", "100.00"), _line("1", "100.00", "100.00")]
+    doc = validate_invoice(_invoice(lines, subtotal="200.00", tax="10.00", total="210.00")).document
+    assert doc.arith == CheckStatus.PASSED
+    assert doc.tax_treatment == TaxTreatment.EXCLUSIVE
+    assert doc.status == FieldStatus.GREEN
+
+
+def test_inclusive_invoice_printing_a_net_subtotal_is_not_read_as_exclusive():
+    """The trap C4 calls out: such an invoice satisfies S + T = G and looks
+    exclusive. Anchoring on the line sum - the only total verified line by
+    line - is what keeps it honest."""
+    lines = [_line("1", "105.00", "105.00"), _line("1", "105.00", "105.00")]
+    doc = validate_invoice(_invoice(lines, subtotal="200.00", tax="10.00", total="210.00")).document
+    assert doc.tax_treatment == TaxTreatment.INCLUSIVE
+    assert doc.arith == CheckStatus.PASSED
+    # The printed subtotal is the net figure, which is legitimate, not amber.
+    assert doc.subtotal_check == CheckStatus.PASSED
+    assert doc.status == FieldStatus.GREEN
+
+
+def test_zero_tax_resolves_exclusive_and_stays_green():
+    lines = [_line("1", "50.00", "50.00"), _line("1", "50.00", "50.00")]
+    doc = validate_invoice(_invoice(lines, subtotal="100.00", tax="0.00", total="100.00")).document
+    assert doc.arith == CheckStatus.PASSED
+    assert doc.tax_treatment == TaxTreatment.EXCLUSIVE
+    assert doc.vat_rate is None
+
+
+def test_inclusive_at_an_unlisted_rate_still_reconciles_but_is_noted():
+    """Lines summing to the total is the proof; matching a published rate is
+    confirmation. An unfamiliar rate must not fail an invoice that adds up."""
+    lines = [_line("1", "107.00", "107.00"), _line("1", "107.00", "107.00")]
+    doc = validate_invoice(_invoice(lines, subtotal="214.00", tax="14.00", total="214.00")).document
+    assert doc.arith == CheckStatus.PASSED
+    assert doc.tax_treatment == TaxTreatment.INCLUSIVE
+    assert any("unlisted rate" in note for note in doc.notes)
+
+
+def test_totals_fitting_neither_identity_stay_amber():
     lines = [_line("2", "30.00", "60.00"), _line("4", "10.00", "40.00")]
-    res = validate_invoice(_invoice(lines, tax="5.00", total="100.00"))
-    doc = res.document
+    doc = validate_invoice(_invoice(lines, tax="5.00", total="120.00")).document
     assert doc.arith == CheckStatus.FAILED
     assert doc.status == FieldStatus.AMBER
+    assert doc.tax_treatment is None
     assert doc.expected == Decimal("105.00")
-    assert doc.extracted == Decimal("100.00")
+    assert doc.extracted == Decimal("120.00")
 
 
 def test_subtotal_disagreeing_with_line_sum_is_never_green():

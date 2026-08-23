@@ -95,8 +95,12 @@ def test_line_target_reason_quotes_the_arithmetic():
 
 
 def test_document_failure_yields_totals_target():
+    # Total 120.00 fits neither C4 identity: exclusive wants 105.00 (line sum
+    # + tax), inclusive wants 100.00 (line sum, tax inside). The old fixture
+    # here used 100.00, which the amended C4 correctly reads as a valid
+    # VAT-inclusive invoice - it is no longer a failure to repair.
     lines = [_line("2", "30.00", "60.00"), _line("4", "10.00", "40.00")]
-    invoice = _invoice(lines, tax="5.00", total="100.00")
+    invoice = _invoice(lines, tax="5.00", total="120.00")
     targets = build_repair_targets(invoice, validate_invoice(invoice))
     assert len(targets) == 1
     target = targets[0]

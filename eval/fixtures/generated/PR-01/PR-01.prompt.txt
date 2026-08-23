@@ -1,0 +1,47 @@
+Produce one photorealistic image of a single real-world paper document. The image contains nothing but that document and the surface it rests on. Do not add captions, arrows, labels, borders, mock-up frames, logos of real companies, or any text of your own invention.
+
+PHYSICAL ARTEFACT
+A crisp A4 laser-printed business document, flat, evenly lit, no shadow, no skew, pure white paper, as if produced by a flatbed scanner at 300 dpi. Whole page in frame with a thin white margin.
+A flat, evenly lit desktop scan with no shadow and no skew.
+
+LANGUAGE
+All text is in English with western digits.
+
+EXACT CONTENT. Reproduce every character and every digit exactly as written below. Do not round, recalculate, reorder, translate, abbreviate, expand, add or omit anything. The arithmetic below is already correct.
+
+-- Header --
+SUPPLIER NAME (top of the document): Cafe Beverage Supply LLC
+SUPPLIER ADDRESS: Shop 12, Al Barsha 1, Dubai, UAE
+SUPPLIER PHONE: +971 4 555 6606
+SUPPLIER TRN: 100000000000106
+DOCUMENT TITLE: TAX INVOICE
+Invoice number: CBS-INV-260702-1188
+Date: 2026-07-02
+PO reference: CS-DT-PO-20260629-006
+Delivery note: CBS-DN-260702-1188
+Bill to: Cedar & Spice Hospitality LLC
+Customer TRN: 100000000000001
+Deliver to: Downtown Branch, Unit 12, Creekside Avenue, Downtown, Dubai, UAE
+Payment terms: 14 days
+Currency: AED
+Small grey footer line at the very bottom of the page: SYNTHETIC TEST DOCUMENT - CEDAR & SPICE QA - NOT A COMMERCIAL RECORD
+
+-- Line items, all 4 of them, in this exact order --
+COLUMNS, left to right: # | Item code | Description | Qty | Unit | Pack size | Unit price AED | Amount AED
+
+1 | CBS-ICE-10KG | Food-Grade Ice | 4 | bag | 10 kg | 8.00 | 32.00
+2 | CBS-LEM-1L | Lemon Juice | 10 | bottle | 1 L | 12.00 | 120.00
+3 | CBS-SOD-1L | Soda Water | 24 | bottle | 1 L | 4.00 | 96.00
+4 | CBS-SYR-1L | Simple Syrup | 6 | bottle | 1 L | 8.00 | 48.00
+
+-- Totals block, lower right --
+Subtotal: AED 296.00
+Net before VAT: AED 296.00
+VAT 5%: AED 14.80
+TOTAL: AED 310.80
+
+RULES
+- All 4 item rows must appear on the document, in the order given, none merged, none dropped, none repeated.
+- Every figure must be readable at full resolution. Prefer a slightly tighter row height over shrinking the digits.
+- Keep the whole document inside the frame, including all four corners.
+- Do not add sample, specimen, draft, void or watermark text, and do not add any row, column, tax line or charge that is not listed above.

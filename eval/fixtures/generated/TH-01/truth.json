@@ -1,0 +1,97 @@
+{
+  "classification": "invoice",
+  "invoice": {
+    "supplier_name": "Deira Cold Store & General Trading",
+    "invoice_no": "T-0084417",
+    "invoice_date": "2026-07-05",
+    "currency": "AED",
+    "payment_kind": "cash",
+    "lines": [
+      {
+        "raw_name": "RICE BASM 5KG",
+        "qty": "2",
+        "unit": "bag",
+        "pack_size": null,
+        "unit_price": "33.60",
+        "line_total": "67.20"
+      },
+      {
+        "raw_name": "FRY OIL SUN 5L",
+        "qty": "2",
+        "unit": "tin",
+        "pack_size": null,
+        "unit_price": "47.25",
+        "line_total": "94.50"
+      },
+      {
+        "raw_name": "TOM CRUSH 2.5K",
+        "qty": "6",
+        "unit": "can",
+        "pack_size": null,
+        "unit_price": "18.90",
+        "line_total": "113.40"
+      },
+      {
+        "raw_name": "CHICKPEA TIN 2.5K",
+        "qty": "8",
+        "unit": "can",
+        "pack_size": null,
+        "unit_price": "21.00",
+        "line_total": "168.00"
+      },
+      {
+        "raw_name": "SALT FINE 5KG",
+        "qty": "1",
+        "unit": "bag",
+        "pack_size": null,
+        "unit_price": "7.35",
+        "line_total": "7.35"
+      },
+      {
+        "raw_name": "FLOUR AP 5KG",
+        "qty": "2",
+        "unit": "bag",
+        "pack_size": null,
+        "unit_price": "12.60",
+        "line_total": "25.20"
+      },
+      {
+        "raw_name": "SODA 1L",
+        "qty": "24",
+        "unit": "bottle",
+        "pack_size": null,
+        "unit_price": "4.20",
+        "line_total": "100.80"
+      },
+      {
+        "raw_name": "KETCHUP 2KG",
+        "qty": "2",
+        "unit": "bottle",
+        "pack_size": null,
+        "unit_price": "14.70",
+        "line_total": "29.40"
+      },
+      {
+        "raw_name": "MAYO 3KG",
+        "qty": "1",
+        "unit": "tub",
+        "pack_size": null,
+        "unit_price": "37.80",
+        "line_total": "37.80"
+      },
+      {
+        "raw_name": "PICKLE CUC 2KG",
+        "qty": "3",
+        "unit": "jar",
+        "pack_size": null,
+        "unit_price": "21.00",
+        "line_total": "63.00"
+      }
+    ],
+    "subtotal": "706.65",
+    "tax": "33.65",
+    "total": "706.65",
+    "tax_treatment": "inclusive",
+    "vat_rate": null
+  }
+}

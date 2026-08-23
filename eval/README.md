@@ -13,6 +13,10 @@ eval/
   corpus/<id>/usage.json     matching ProviderUsage dump (tokens, latency)
   fixtures/<id>/             3 synthetic CI smoke cases: truth.json, recorded.json,
                              usage.json, expected.json (the case's expected score)
+  fixtures/generated/        15 prompt-generated receipts across a hazard matrix, with
+                             ground truth and provenance. SYNTHETIC: development and CI
+                             material, never scored against the §5 targets, and no
+                             substitute for F6. See its README.
   fixtures/expected_aggregate.json   expected corpus-level score for the fixtures
   score.py                   scoring + aggregation, pure functions
   recorded.py                provider replaying recorded.json/usage.json (the CI provider)
@@ -30,6 +34,7 @@ Money values are strings ("18.50") so they parse as exact Decimals; dates are IS
 apps/api/.venv/bin/python -m eval.run             # score eval/corpus against recorded responses
 apps/api/.venv/bin/python -m eval.run --smoke     # CI smoke: fixtures vs their expected scores
 apps/api/.venv/bin/python -m pytest eval/tests -q # scorer unit tests
+apps/api/.venv/bin/python -m eval.convert_generated  # generated fixtures -> C3 truth.json
 ```
 
 `--live` (real provider calls) arrives with WP-16.

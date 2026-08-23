@@ -1,0 +1,44 @@
+Produce one photorealistic image of a single real-world paper document. The image contains nothing but that document and the surface it rests on. Do not add captions, arrows, labels, borders, mock-up frames, logos of real companies, or any text of your own invention.
+
+PHYSICAL ARTEFACT
+A small torn-off pad slip about 10 cm wide and 15 cm tall, unlined, with everything including the stall name written by hand in blue biro, fast and cramped, the last lines running downhill. One corner torn away. The paper is slightly creased from a pocket. Photographed from above, held flat on a wooden crate, daylight.
+A small torn-off pad slip about 10 cm wide, written fast in blue biro on a market stall counter. One corner is torn away. The stall name and mobile number are written by hand at the top, not printed.
+
+LANGUAGE
+All text is in English with western digits.
+
+EXACT CONTENT. Reproduce every character and every digit exactly as written below. Do not round, recalculate, reorder, translate, abbreviate, expand, add or omit anything. The arithmetic below is already correct.
+
+-- Header --
+SUPPLIER NAME (top of the document): Al Aweer Fresh Vegetable Trading
+SUPPLIER ADDRESS: Stall 118, Central Vegetable Market, Al Aweer, Dubai
+SUPPLIER PHONE: 050 733 2914
+SUPPLIER TRN: none, this stall is not VAT registered, print no TRN at all
+DOCUMENT TITLE: INVOICE / CASH BILL
+There is NO invoice number anywhere on this document. Do not invent one.
+Date: 2026-07-04
+Customer (written by hand): M/s Cedar & Spice Hospitality LLC - Downtown Branch
+Payment terms: Cash
+
+-- Line items, all 6 of them, in this exact order --
+COLUMNS, left to right: # | Description | Qty | Unit | Unit price AED | Amount AED
+
+1 | Tomato Plum Roma | 10 | kg | 5.50 | 55.00
+2 | Cucumber Local Short | 6 | kg | 4.75 | 28.50
+3 | Onion Brown Holland | 8 | kg | 3.20 | 25.60
+4 | Lemon Yellow Turkey | 4 | kg | 6.00 | 24.00
+5 | Parsley Baqdounis Bunch | 10 | bunch | 1.50 | 15.00
+6 | Mint Na'ana Bunch | 10 | bunch | 1.50 | 15.00
+
+-- Totals block, lower right --
+Subtotal: AED 163.10
+No VAT line appears anywhere on this document.
+TOTAL: AED 163.10
+
+RULES
+- All 6 item rows must appear on the document, in the order given, none merged, none dropped, none repeated.
+- Every figure must be readable at full resolution. Prefer a slightly tighter row height over shrinking the digits.
+- Keep the whole document inside the frame, including all four corners.
+- Do not add sample, specimen, draft, void or watermark text, and do not add any row, column, tax line or charge that is not listed above.
+- All handwriting is by one person in one sitting. Digits stay legible even where the writing is fast.
+- The physical damage and lighting described above must never make any digit unreadable. Degrade the paper, not the data.

@@ -1,0 +1,49 @@
+Produce one photorealistic image of a single real-world paper document. The image contains nothing but that document and the surface it rests on. Do not add captions, arrows, labels, borders, mock-up frames, logos of real companies, or any text of your own invention.
+
+PHYSICAL ARTEFACT
+A crisp A4 laser-printed business document, flat, evenly lit, no shadow, no skew, pure white paper, as if produced by a flatbed scanner at 300 dpi. Whole page in frame with a thin white margin.
+A driver's delivery note with a signature box at the foot, signed and dated by hand, and a handwritten temperature reading in the margin.
+
+LANGUAGE
+All text is in English with western digits.
+
+EXACT CONTENT. Reproduce every character and every digit exactly as written below. Do not round, recalculate, reorder, translate, abbreviate, expand, add or omit anything. The arithmetic below is already correct.
+
+-- Header --
+SUPPLIER NAME (top of the document): Fresh Fields Produce LLC
+SUPPLIER ADDRESS: Warehouse 14, Fruit & Vegetable Market, Al Aweer, Dubai, UAE
+SUPPLIER PHONE: +971 4 555 1101
+SUPPLIER TRN: 100000000000101
+DOCUMENT TITLE: DELIVERY NOTE
+There is NO invoice number anywhere on this document. Do not invent one.
+Date: 2026-07-08
+PO reference: CS-DT-PO-20260704-001
+Delivery note: FFP-DN-260708-0233
+Bill to: Cedar & Spice Hospitality LLC
+Customer TRN: 100000000000001
+Deliver to: Downtown Branch, Unit 12, Creekside Avenue, Downtown, Dubai, UAE
+Payment terms: 14 days
+Small grey footer line at the very bottom of the page: SYNTHETIC TEST DOCUMENT - CEDAR & SPICE QA - NOT A COMMERCIAL RECORD
+
+-- Line items, all 9 of them, in this exact order --
+COLUMNS, left to right: # | Item code | Description | Qty | Unit | Pack size
+
+1 | FFP-TOM-5KG | Plum Tomato | 4 | box | 5 kg
+2 | FFP-CTO-3KG | Cherry Tomato | 2 | box | 3 kg
+3 | FFP-CUC-5KG | Cucumber | 2 | box | 5 kg
+4 | FFP-LET-3KG | Romaine Lettuce | 3 | box | 3 kg
+5 | FFP-CSM-3KG | Chopped Salad Mix | 3 | box | 3 kg
+6 | FFP-PEP-5KG | Red Bell Pepper | 1 | box | 5 kg
+7 | FFP-PUM-5KG | Butternut Pumpkin | 3 | box | 5 kg
+8 | FFP-RVM-5KG | Roasting Vegetable Mix | 3 | box | 5 kg
+9 | FFP-HER-500 | Mixed Fresh Herbs | 6 | box | 500 g
+
+-- Totals block, lower right --
+There is NO money anywhere on this document. No prices, no subtotal, no VAT, no total. Instead the foot of the page carries a received-by line, a hand-written signature, the date, and a hand-written temperature reading.
+
+RULES
+- All 9 item rows must appear on the document, in the order given, none merged, none dropped, none repeated.
+- Every figure must be readable at full resolution. Prefer a slightly tighter row height over shrinking the digits.
+- Keep the whole document inside the frame, including all four corners.
+- Do not add sample, specimen, draft, void or watermark text, and do not add any row, column, tax line or charge that is not listed above.
+- The physical damage and lighting described above must never make any digit unreadable. Degrade the paper, not the data.

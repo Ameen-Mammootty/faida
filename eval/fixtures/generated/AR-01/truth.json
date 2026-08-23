@@ -1,0 +1,81 @@
+{
+  "classification": "invoice",
+  "invoice": {
+    "supplier_name": "Dairy House Foodstuff LLC",
+    "invoice_no": "DHF-INV-260705-0688",
+    "invoice_date": "2026-07-05",
+    "currency": "AED",
+    "payment_kind": null,
+    "lines": [
+      {
+        "raw_name": "Unsalted Butter",
+        "qty": "2",
+        "unit": "block",
+        "pack_size": "1000",
+        "unit_price": "36.00",
+        "line_total": "72.00"
+      },
+      {
+        "raw_name": "Mature Cheddar",
+        "qty": "2",
+        "unit": "block",
+        "pack_size": "2000",
+        "unit_price": "58.00",
+        "line_total": "116.00"
+      },
+      {
+        "raw_name": "Condensed Milk",
+        "qty": "2",
+        "unit": "can",
+        "pack_size": "1000",
+        "unit_price": "18.00",
+        "line_total": "36.00"
+      },
+      {
+        "raw_name": "Whipping Cream",
+        "qty": "2",
+        "unit": "carton",
+        "pack_size": "1000",
+        "unit_price": "18.00",
+        "line_total": "36.00"
+      },
+      {
+        "raw_name": "Feta Cheese",
+        "qty": "8",
+        "unit": "tub",
+        "pack_size": "1000",
+        "unit_price": "32.00",
+        "line_total": "256.00"
+      },
+      {
+        "raw_name": "Halloumi Cheese",
+        "qty": "12",
+        "unit": "block",
+        "pack_size": "1000",
+        "unit_price": "36.00",
+        "line_total": "432.00"
+      },
+      {
+        "raw_name": "Labneh",
+        "qty": "3",
+        "unit": "tub",
+        "pack_size": "2000",
+        "unit_price": "40.00",
+        "line_total": "120.00"
+      },
+      {
+        "raw_name": "Whole Milk",
+        "qty": "1",
+        "unit": "case",
+        "pack_size": "12000",
+        "unit_price": "60.00",
+        "line_total": "60.00"
+      }
+    ],
+    "subtotal": "1128.00",
+    "tax": "56.40",
+    "total": "1184.40",
+    "tax_treatment": "exclusive",
+    "vat_rate": null
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "classification": "invoice",
+  "invoice": {
+    "supplier_name": "Artisan Bakehouse LLC",
+    "invoice_no": "ABL-INV-260703-0451",
+    "invoice_date": "2026-07-03",
+    "currency": "AED",
+    "payment_kind": null,
+    "lines": [
+      {
+        "raw_name": "Brioche Burger Bun",
+        "qty": "10",
+        "unit": "pack",
+        "pack_size": "12",
+        "unit_price": "22.00",
+        "line_total": "220.00"
+      },
+      {
+        "raw_name": "Ciabatta Roll",
+        "qty": "15",
+        "unit": "pack",
+        "pack_size": "8",
+        "unit_price": "18.00",
+        "line_total": "270.00"
+      },
+      {
+        "raw_name": "Arabic Pita Bread",
+        "qty": "14",
+        "unit": "pack",
+        "pack_size": "10",
+        "unit_price": "12.00",
+        "line_total": "168.00"
+      },
+      {
+        "raw_name": "Saj Bread",
+        "qty": "10",
+        "unit": "pack",
+        "pack_size": "10",
+        "unit_price": "10.00",
+        "line_total": "100.00"
+      },
+      {
+        "raw_name": "Sourdough Slice",
+        "qty": "20",
+        "unit": "loaf",
+        "pack_size": "20",
+        "unit_price": "18.00",
+        "line_total": "360.00"
+      },
+      {
+        "raw_name": "Vanilla Sponge Slab",
+        "qty": "6",
+        "unit": "tray",
+        "pack_size": "2000",
+        "unit_price": "60.00",
+        "line_total": "360.00"
+      }
+    ],
+    "subtotal": "1478.00",
+    "tax": "73.90",
+    "total": "1551.90",
+    "tax_treatment": "exclusive",
+    "vat_rate": null
+  }
+}

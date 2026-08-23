@@ -1,0 +1,113 @@
+{
+  "classification": "invoice",
+  "invoice": {
+    "supplier_name": "Gulf Pantry Supply LLC",
+    "invoice_no": "GPS-INV-260707-2266",
+    "invoice_date": "2026-07-07",
+    "currency": "AED",
+    "payment_kind": null,
+    "lines": [
+      {
+        "raw_name": "Tahina Sesame Paste",
+        "qty": "4",
+        "unit": "tub",
+        "pack_size": "2000",
+        "unit_price": "46.00",
+        "line_total": "184.00"
+      },
+      {
+        "raw_name": "Frikeh Green Cracked Wheat",
+        "qty": "2",
+        "unit": "bag",
+        "pack_size": "5000",
+        "unit_price": "38.00",
+        "line_total": "76.00"
+      },
+      {
+        "raw_name": "Dibs Rumman Pomegranate Molasses",
+        "qty": "3",
+        "unit": "bottle",
+        "pack_size": "1000",
+        "unit_price": "22.00",
+        "line_total": "66.00"
+      },
+      {
+        "raw_name": "Zatar Green Blend Lebanese",
+        "qty": "4",
+        "unit": "pack",
+        "pack_size": "500",
+        "unit_price": "18.00",
+        "line_total": "72.00"
+      },
+      {
+        "raw_name": "Summaq Ground Red",
+        "qty": "3",
+        "unit": "pack",
+        "pack_size": "500",
+        "unit_price": "16.00",
+        "line_total": "48.00"
+      },
+      {
+        "raw_name": "Chick Peas Boiled Tin",
+        "qty": "6",
+        "unit": "can",
+        "pack_size": "2500",
+        "unit_price": "20.00",
+        "line_total": "120.00"
+      },
+      {
+        "raw_name": "EVOO Extra Virgin Olive Oil",
+        "qty": "2",
+        "unit": "tin",
+        "pack_size": "5000",
+        "unit_price": "78.00",
+        "line_total": "156.00"
+      },
+      {
+        "raw_name": "Pistachio Kernel Raw Green",
+        "qty": "2",
+        "unit": "bag",
+        "pack_size": "1000",
+        "unit_price": "72.00",
+        "line_total": "144.00"
+      },
+      {
+        "raw_name": "Pistachio Paste 100% Pure",
+        "qty": "2",
+        "unit": "tub",
+        "pack_size": "1000",
+        "unit_price": "95.00",
+        "line_total": "190.00"
+      },
+      {
+        "raw_name": "Rose Petals Dried Edible",
+        "qty": "2",
+        "unit": "jar",
+        "pack_size": "50",
+        "unit_price": "20.00",
+        "line_total": "40.00"
+      },
+      {
+        "raw_name": "Saffron Negin Threads",
+        "qty": "1",
+        "unit": "jar",
+        "pack_size": "10",
+        "unit_price": "30.00",
+        "line_total": "30.00"
+      },
+      {
+        "raw_name": "French Fries 9mm Frozen",
+        "qty": "3",
+        "unit": "carton",
+        "pack_size": "10000",
+        "unit_price": "90.00",
+        "line_total": "270.00"
+      }
+    ],
+    "subtotal": "1396.00",
+    "tax": "69.80",
+    "total": "1465.80",
+    "tax_treatment": "exclusive",
+    "vat_rate": null
+  }
+}

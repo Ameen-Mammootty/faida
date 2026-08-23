@@ -1,0 +1,73 @@
+{
+  "classification": "invoice",
+  "invoice": {
+    "supplier_name": "Fresh Fields Produce LLC",
+    "invoice_no": "FFP-INV-260706-0209",
+    "invoice_date": "2026-07-06",
+    "currency": "AED",
+    "payment_kind": null,
+    "lines": [
+      {
+        "raw_name": "Avocado",
+        "qty": "5",
+        "unit": "box",
+        "pack_size": "4000",
+        "unit_price": "92.00",
+        "line_total": "460.00"
+      },
+      {
+        "raw_name": "Pomegranate Arils",
+        "qty": "2",
+        "unit": "box",
+        "pack_size": "2000",
+        "unit_price": "44.00",
+        "line_total": "88.00"
+      },
+      {
+        "raw_name": "Broccolini",
+        "qty": "4",
+        "unit": "box",
+        "pack_size": "2000",
+        "unit_price": "42.00",
+        "line_total": "168.00"
+      },
+      {
+        "raw_name": "Kale",
+        "qty": "5",
+        "unit": "box",
+        "pack_size": "1000",
+        "unit_price": "18.00",
+        "line_total": "90.00"
+      },
+      {
+        "raw_name": "Mixed Fresh Herbs",
+        "qty": "6",
+        "unit": "box",
+        "pack_size": "500",
+        "unit_price": "20.00",
+        "line_total": "120.00"
+      },
+      {
+        "raw_name": "Avocado",
+        "qty": "-1",
+        "unit": "box",
+        "pack_size": "4000",
+        "unit_price": "92.00",
+        "line_total": "-92.00"
+      },
+      {
+        "raw_name": "Chilled delivery and cool box hire",
+        "qty": "1",
+        "unit": "service",
+        "pack_size": null,
+        "unit_price": "25.00",
+        "line_total": "25.00"
+      }
+    ],
+    "subtotal": "834.00",
+    "tax": "40.87",
+    "total": "858.17",
+    "tax_treatment": "exclusive",
+    "vat_rate": null
+  }
+}

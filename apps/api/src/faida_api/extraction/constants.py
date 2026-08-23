@@ -11,9 +11,21 @@ from decimal import Decimal
 #                                              LINE_TOLERANCE_PCT * line_total)
 LINE_TOLERANCE_ABS = Decimal("0.05")
 LINE_TOLERANCE_PCT = Decimal("0.005")
-# Document: |sum(line_totals) + tax - total| <= DOC_TOLERANCE_ABS, with the
-# extracted subtotal cross-checked against the line sum when present.
+# Document: two identities, because GCC invoices come both ways (C4, amended
+# 2026-08-23). With L = sum(line_totals), T = tax, G = total:
+#   exclusive (lines net)   |L + T - G| <= DOC_TOLERANCE_ABS
+#   inclusive (lines gross) |L - G|     <= DOC_TOLERANCE_ABS  and T > 0
+# They cannot both hold while T is material, so there is no ambiguity to break.
 DOC_TOLERANCE_ABS = Decimal("0.10")
+
+# GCC VAT rates, used to name the rate on an invoice whose arithmetic already
+# reconciled - confirmation, never a gate. An inclusive invoice at an unlisted
+# rate still reconciles; we derive the effective rate from the totals instead.
+GCC_VAT_RATES = (
+    Decimal("0.05"),  # UAE, Oman
+    Decimal("0.10"),  # Bahrain
+    Decimal("0.15"),  # Saudi Arabia
+)
 
 # Repair pass (plan.md §5 layer 3): one scoped round, never more.
 MAX_REPAIR_ROUNDS = 1

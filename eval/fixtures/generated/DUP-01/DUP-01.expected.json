@@ -1,0 +1,111 @@
+{
+  "case_id": "DUP-01",
+  "title": "Second photo of an invoice already submitted",
+  "what_this_tests": "Duplicate control. Same supplier, same invoice number and same totals as PR-01, photographed again in different light. Posting it twice would double the stock.",
+  "hazards": [
+    "duplicate_submission",
+    "warm_indoor_light",
+    "hand_holding_page"
+  ],
+  "medium": "phone_photo_angled",
+  "language": "en",
+  "naming_style": "canonical",
+  "expected_document_type": "invoice",
+  "expected_invoice_kind": "purchase_invoice",
+  "supplier": {
+    "name": "Cafe Beverage Supply LLC",
+    "trn": "100000000000106",
+    "present_in_supplier_master": true
+  },
+  "header": {
+    "supplier_name": "Cafe Beverage Supply LLC",
+    "invoice_number": "CBS-INV-260702-1188",
+    "invoice_date": "2026-07-02",
+    "currency": "AED",
+    "subtotal_before_discount": "296.00",
+    "discount_total": null,
+    "net_before_tax": "296.00",
+    "tax_total": "14.80",
+    "non_tax_charge_total": null,
+    "rounding_amount": null,
+    "invoice_total": "310.80",
+    "purchase_reference": "CS-DT-PO-20260629-006"
+  },
+  "lines": [
+    {
+      "line_number": 1,
+      "line_kind": "stock_item",
+      "description_raw": "Food-Grade Ice",
+      "supplier_sku_raw": "CBS-ICE-10KG",
+      "purchase_quantity": "4",
+      "purchase_unit_text": "bag",
+      "pack_quantity": "10000",
+      "unit_price": "8.00",
+      "line_total": "32.00",
+      "expected_inventory_code": "INV-ICE",
+      "expected_inventory_name": "Food-Grade Ice",
+      "expected_base_quantity": "40000",
+      "expected_base_unit": "gram",
+      "is_credit": false,
+      "alternate_description": null
+    },
+    {
+      "line_number": 2,
+      "line_kind": "stock_item",
+      "description_raw": "Lemon Juice",
+      "supplier_sku_raw": "CBS-LEM-1L",
+      "purchase_quantity": "10",
+      "purchase_unit_text": "bottle",
+      "pack_quantity": "1000",
+      "unit_price": "12.00",
+      "line_total": "120.00",
+      "expected_inventory_code": "INV-LEMON-JUICE",
+      "expected_inventory_name": "Lemon Juice",
+      "expected_base_quantity": "10000",
+      "expected_base_unit": "millilitre",
+      "is_credit": false,
+      "alternate_description": null
+    },
+    {
+      "line_number": 3,
+      "line_kind": "stock_item",
+      "description_raw": "Soda Water",
+      "supplier_sku_raw": "CBS-SOD-1L",
+      "purchase_quantity": "24",
+      "purchase_unit_text": "bottle",
+      "pack_quantity": "1000",
+      "unit_price": "4.00",
+      "line_total": "96.00",
+      "expected_inventory_code": "INV-SODA",
+      "expected_inventory_name": "Soda Water",
+      "expected_base_quantity": "24000",
+      "expected_base_unit": "millilitre",
+      "is_credit": false,
+      "alternate_description": null
+    },
+    {
+      "line_number": 4,
+      "line_kind": "stock_item",
+      "description_raw": "Simple Syrup",
+      "supplier_sku_raw": "CBS-SYR-1L",
+      "purchase_quantity": "6",
+      "purchase_unit_text": "bottle",
+      "pack_quantity": "1000",
+      "unit_price": "8.00",
+      "line_total": "48.00",
+      "expected_inventory_code": "INV-SIMPLE-SYRUP",
+      "expected_inventory_name": "Simple Syrup",
+      "expected_base_quantity": "6000",
+      "expected_base_unit": "millilitre",
+      "is_credit": false,
+      "alternate_description": null
+    }
+  ],
+  "line_count": 4,
+  "stock_line_count": 4,
+  "duplicate_of": "PR-01",
+  "notes": [
+    "Same invoice number and totals as PR-01. Expected outcome is a duplicate hold, not a second posting."
+  ],
+  "synthetic": true
+}

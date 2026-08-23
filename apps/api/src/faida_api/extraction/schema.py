@@ -18,6 +18,15 @@ class Classification(StrEnum):
     OTHER = "other"  # memes, chat screenshots, anything else
 
 
+class TaxTreatment(StrEnum):
+    """Whether the line prices already contain VAT. Both shapes are normal in
+    the GCC (C4): a UAE cash-and-carry receipt usually prints tax-inclusive
+    prices, a trade delivery note usually does not."""
+
+    EXCLUSIVE = "exclusive"  # lines are net; total = subtotal + tax
+    INCLUSIVE = "inclusive"  # lines are gross; total = sum(lines), tax inside
+
+
 class ExtractedLine(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -41,6 +50,12 @@ class ExtractedInvoice(BaseModel):
     subtotal: Decimal | None = None
     tax: Decimal | None = None
     total: Decimal | None = None
+    # Printed facts, read like any other field: many GCC invoices state
+    # "prices inclusive of VAT" or "VAT 5%". C4 makes these a TIE-BREAKER
+    # ONLY - the treatment is derived from the arithmetic, never taken on the
+    # document's word (plan.md §5 layer 5: derived, not self-reported).
+    tax_treatment: TaxTreatment | None = None
+    vat_rate: Decimal | None = None
 
 
 class ExtractionResult(BaseModel):

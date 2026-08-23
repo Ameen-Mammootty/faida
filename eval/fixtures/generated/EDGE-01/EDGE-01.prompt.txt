@@ -1,0 +1,53 @@
+Produce one photorealistic image of a single real-world paper document. The image contains nothing but that document and the surface it rests on. Do not add captions, arrows, labels, borders, mock-up frames, logos of real companies, or any text of your own invention.
+
+PHYSICAL ARTEFACT
+A crisp A4 laser-printed business document, flat, evenly lit, no shadow, no skew, pure white paper, as if produced by a flatbed scanner at 300 dpi. Whole page in frame with a thin white margin.
+A clean laser print. The credit line is shown in brackets.
+
+LANGUAGE
+All text is in English with western digits.
+
+EXACT CONTENT. Reproduce every character and every digit exactly as written below. Do not round, recalculate, reorder, translate, abbreviate, expand, add or omit anything. The arithmetic below is already correct.
+
+-- Header --
+SUPPLIER NAME (top of the document): Fresh Fields Produce LLC
+SUPPLIER ADDRESS: Warehouse 14, Fruit & Vegetable Market, Al Aweer, Dubai, UAE
+SUPPLIER PHONE: +971 4 555 1101
+SUPPLIER TRN: 100000000000101
+DOCUMENT TITLE: TAX INVOICE
+Invoice number: FFP-INV-260706-0209
+Date: 2026-07-06
+PO reference: CS-DT-PO-20260702-001
+Delivery note: FFP-DN-260706-0209
+Bill to: Cedar & Spice Hospitality LLC
+Customer TRN: 100000000000001
+Deliver to: Downtown Branch, Unit 12, Creekside Avenue, Downtown, Dubai, UAE
+Payment terms: 14 days
+Currency: AED
+Small grey footer line at the very bottom of the page: SYNTHETIC TEST DOCUMENT - CEDAR & SPICE QA - NOT A COMMERCIAL RECORD
+
+-- Line items, all 7 of them, in this exact order --
+COLUMNS, left to right: # | Item code | Description | Qty | Unit | Pack size | Unit price AED | Amount AED
+
+1 | FFP-AVO-4KG | Avocado | 5 | box | 4 kg | 92.00 | 460.00
+2 | FFP-POM-2KG | Pomegranate Arils | 2 | box | 2 kg | 44.00 | 88.00
+3 | FFP-BRO-2KG | Broccolini | 4 | box | 2 kg | 42.00 | 168.00
+4 | FFP-KAL-1KG | Kale | 5 | box | 1 kg | 18.00 | 90.00
+5 | FFP-HER-500 | Mixed Fresh Herbs | 6 | box | 500 g | 20.00 | 120.00
+6 | FFP-AVO-4KG | Avocado | -1 | box | 4 kg | 92.00 | (92.00)    [handwritten note in the margin of this row: Credit: one box returned, soft fruit]
+7 | - | Chilled delivery and cool box hire | 1 | service | - | 25.00 | 25.00
+
+-- Totals block, lower right --
+Subtotal: AED 834.00
+Trade discount 5%: AED -41.70
+Delivery charge: AED 25.00
+Net before VAT: AED 817.30
+VAT 5%: AED 40.87
+TOTAL: AED 858.17
+
+RULES
+- All 7 item rows must appear on the document, in the order given, none merged, none dropped, none repeated.
+- Every figure must be readable at full resolution. Prefer a slightly tighter row height over shrinking the digits.
+- Keep the whole document inside the frame, including all four corners.
+- Do not add sample, specimen, draft, void or watermark text, and do not add any row, column, tax line or charge that is not listed above.
+- The physical damage and lighting described above must never make any digit unreadable. Degrade the paper, not the data.

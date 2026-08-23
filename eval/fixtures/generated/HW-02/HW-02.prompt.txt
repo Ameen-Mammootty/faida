@@ -1,0 +1,44 @@
+Produce one photorealistic image of a single real-world paper document. The image contains nothing but that document and the surface it rests on. Do not add captions, arrows, labels, borders, mock-up frames, logos of real companies, or any text of your own invention.
+
+PHYSICAL ARTEFACT
+An A5 pad sheet with a simple pre-printed company letterhead at the top and a pre-printed ruled table below it, all the entries written by hand in black ballpoint with firm pressure. One consistent adult handwriting. Photographed from directly above on a stainless steel counter under kitchen lighting.
+Printed letterhead at the top, everything below it filled in by hand in black ballpoint. A faint grease thumbprint sits at the lower right.
+
+LANGUAGE
+All text is in English with western digits.
+
+EXACT CONTENT. Reproduce every character and every digit exactly as written below. Do not round, recalculate, reorder, translate, abbreviate, expand, add or omit anything. The arithmetic below is already correct.
+
+-- Header --
+SUPPLIER NAME (top of the document): Prime Protein Trading LLC
+SUPPLIER ADDRESS: Unit 7, Ras Al Khor Industrial 2, Dubai, UAE
+SUPPLIER PHONE: +971 4 555 2202
+SUPPLIER TRN: 100000000000102
+DOCUMENT TITLE: TAX INVOICE
+Bill No.: PPT/26/0913
+Date: 2026-07-03
+Customer (written by hand): M/s Cedar & Spice Hospitality LLC - Downtown Branch
+Payment terms: 14 days
+
+-- Line items, all 5 of them, in this exact order --
+COLUMNS, left to right: # | Description | Qty | Unit | Unit price AED | Amount AED
+
+1 | Beef Mince Angus 80/20 | 12.4 | kg | 29.00 | 359.60
+2 | Chicken Breast Fillet Skinless | 18.6 | kg | 22.00 | 409.20
+3 | Lamb Mince Fresh Australian | 6.2 | kg | 32.00 | 198.40
+4 | Salmon Fillet Trim D Norway | 4.35 | kg | 52.00 | 226.20
+5 | Eggs Free Range Large Tray 30 | 6 | tray | 28.00 | 168.00
+
+-- Totals block, lower right --
+Subtotal: AED 1,361.40
+Net before VAT: AED 1,361.40
+VAT 5%: AED 68.07
+TOTAL: AED 1,429.47
+
+RULES
+- All 5 item rows must appear on the document, in the order given, none merged, none dropped, none repeated.
+- Every figure must be readable at full resolution. Prefer a slightly tighter row height over shrinking the digits.
+- Keep the whole document inside the frame, including all four corners.
+- Do not add sample, specimen, draft, void or watermark text, and do not add any row, column, tax line or charge that is not listed above.
+- All handwriting is by one person in one sitting. Digits stay legible even where the writing is fast.
+- The physical damage and lighting described above must never make any digit unreadable. Degrade the paper, not the data.
