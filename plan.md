@@ -8,7 +8,7 @@
 - **Product:** Faida — profit visibility for GCC cafeterias and multi-branch karak/paratha chains, fed through WhatsApp.
 - **Reference:** `Docs/PRD.md` (v2). This plan sequences the build; the PRD owns product intent. Where they conflict on *scope timing*, this plan wins.
 - **Start date:** 2026-08-22
-- **Current milestone:** M0-M4 agent-side code complete; webhook repointed 2026-08-23. Founder-gated: a fresh system-user token + migrations 0004/0005 on the live project, then the M0 phone proof (F4); corpus photos (F6) for the accuracy loop (WP-15/16); demo rehearsals (M4 gate)
+- **Current milestone:** **M0 proven on real hardware 2026-08-23 (F1-F4 done)** - the live chain carried through M1 extraction and M2 confirm on the first real invoice. Founder-gated: a permanent access token (today's expires 19:00), corpus photos (F6) for the accuracy loop (WP-15/16), demo rehearsals (M4 gate). Known gaps before the demo: VAT-inclusive reconciliation, forward-to-reply at 28.4 s vs the ~20 s target, `demo_seed.sql` + branch mapping, `API_TOKEN`/`WEB_ORIGIN` on Railway
 
 ---
 
@@ -170,8 +170,13 @@ not documentary. The WP-, F-, and C-identifiers in the checklists are defined in
 plan (§7).
 
 ### M0 — Channel live (Day 1–2)
-- [ ] Meta developer app + WhatsApp Cloud API test number; register 2 demo phones
-      *(founder, ~1 h — step-by-step in README §M0)*
+- [x] Meta developer app + WhatsApp Cloud API test number (F1, 2026-08-23): app `Faida`
+      (28510773781859548), WABA 1472656894879364, test number +1 555-668-2519, 3 demo phones
+      registered as recipients. Webhook repointed at the Railway host, `messages` subscribed at
+      v26.0. The step nobody had documented: configuring the callback URL is *not* the same as
+      subscribing the app to the WABA - until `POST /{waba-id}/subscribed_apps` ran, the only
+      subscriber was Meta's own `WA DevX Webhook Events 1P App`, so real forwards were recorded
+      in the dashboard and never delivered to us. Publishing the app is *not* required
 - [x] Supabase project `Faida MVP` (ap-south-1): schema migrated, private `documents` bucket,
       demo tenant/branch seeded, live branch phone set to the founder's demo handset
 - [x] Deployed to Railway (F3, 2026-08-23): `faida-production-3b60.up.railway.app`, Singapore,
@@ -191,8 +196,11 @@ plan (§7).
       mocked at transport: full ingest, duplicate delivery, unknown sender, retry/backoff);
       CI (ruff + pytest + Postgres service) green locally
 - **Done when:** a real phone forwards a photo and gets a reply within seconds; the image is in
-  storage; sending the same message twice creates one document. ← *needs the two founder
-  steps above, then the README §M0 "Prove M0" checklist.*
+  storage; sending the same message twice creates one document. ✅ **PROVEN 2026-08-23 (F4)**
+  from +971509772702 against the live Railway service: ack in **6.70 s**, document stored with
+  sha256 + immutable path, branch resolved from the sender; dedupe proven in production the same
+  afternoon (`duplicate wa message skipped`, 200 OK). The run carried straight through M1 and M2
+  live - see the Progress Log entry for the extraction, amber-question and confirm results.
 
 ### M1 — Extraction pipeline + eval harness (Day 3–6)
 - [x] Anthropic API key with billing enabled (F5, 2026-08-23); verified live against
@@ -205,7 +213,14 @@ plan (§7).
       invoices + lines + checks, run metadata, failure + meme decline paths (C1, C2, WP-13)
 - [ ] Eval corpus ≥15 invoices with hand-verified ground truth (currently <10 - F6, F8, WP-15);
       runner + scores (WP-14); CI smoke = 3 recorded fixtures (§5 CI policy)
-- [ ] Iterate prompt/pipeline until targets in §5 are met on the corpus (WP-16)
+- [ ] Iterate prompt/pipeline until targets in §5 are met on the corpus (WP-16). Two concrete
+      defects already found live on 2026-08-23, both ahead of any eval run: (a) **VAT-inclusive
+      invoices fail C4 reconciliation** - the GCC norm is line prices inclusive of VAT, so
+      `subtotal + tax = total` is the wrong identity and every such invoice goes spuriously amber
+      even when extraction was perfect (C4 amended 2026-08-23; the fix is **WP-17**, which does
+      not wait on the corpus); (b) **the amber question invites an answer it cannot
+      parse** - it asks "which is right?", the founder answered "It's correct, the lines are
+      inclusive of vat", and got "Sorry, I didn't get that"
 - **Done when:** eval report hits the accuracy targets, and a forwarded photo produces a stored
   draft invoice with per-field checks.
 
@@ -274,9 +289,9 @@ and the accuracy loop (WP-16). Everything else is predictable engineering.
 
 | ID | Task | Time | Unblocks |
 |---|---|---|---|
-| F1-F4 | The unticked M0 founder boxes in §6, in order (Meta app + demo phones, deploy, prove M0 on a real phone). F2 (Supabase project + bucket) done 2026-08-22 | one ~2 h sitting | end-to-end reality for everything |
+| F1-F4 | ~~Meta app + demo phones, deploy, prove M0 on a real phone~~ **all done 2026-08-23**. F2 2026-08-22, F3 2026-08-23, F1+F4 2026-08-23 (see M0 §6 and the Progress Log) | done | end-to-end reality for everything |
 | F5 | ~~Anthropic API key with billing enabled~~ done 2026-08-23, verified live | ~10 min | running extraction (WP-16); building it needs nothing |
-| F6 | Corpus growth: photograph the invoices in hand (flat + angled + crumpled variants of each); keep collecting toward 20-25 real ones from pilot contacts | ongoing | WP-15, WP-16 |
+| F6 | Corpus growth: photograph the invoices in hand (flat + angled + crumpled variants of each); keep collecting toward 20-25 real ones from pilot contacts. **Deliberately collect both VAT-inclusive and VAT-exclusive invoices** - the first real one was inclusive and broke C4 (WP-17), so a corpus of one kind would hide the other | ongoing | WP-15, WP-16, WP-17 |
 | F7 | Pilot logistics: pick the target chain; ask the central-purchasing question (§11) before any onboarding talk; schedule the demo only after the M4 gate passes | ongoing | M4 |
 | F8 | Hand-verify every ground-truth file the labeling agent produces. Truth no human checked is not truth | per batch | eval validity |
 
@@ -296,15 +311,37 @@ Log; a sub-agent never changes one unilaterally.
 - **C3 - Extraction schema + provider.** One strict Pydantic schema (`Decimal` money) shared by
   provider, validation, persistence, and eval ground truth: supplier block, invoice_no, date,
   currency, payment_kind, lines (raw_name, qty, unit, pack_size, unit_price, line_total),
-  subtotal, tax, total, plus a top-level classification (invoice / z_report / other). One
+  subtotal, tax, total, `tax_treatment` (inclusive / exclusive / null) and `vat_rate`, plus a
+  top-level classification (invoice / z_report / other). `tax_treatment` and `vat_rate` are
+  *printed facts* - most GCC invoices state "prices inclusive of VAT" or "VAT 5%" - and are read
+  like any other field. They are a **tie-breaker only**: the treatment is derived arithmetically
+  per C4, never taken on the document's word (§5 layer 5, derived not self-reported). One
   structured vision call classifies and extracts together. Provider protocol:
   `extract(image, mime)` and `repair(image, mime, targets)`; model id + prompt version recorded
   on every run.
 - **C4 - Money + tolerances.** `Decimal` in Python, `numeric` in Postgres, never float. Line
-  check: |qty × unit_price - line_total| ≤ max(0.05, 0.5% of line_total). Document check:
-  |Σ line_totals + tax - total| ≤ 0.10, with the extracted subtotal cross-checked against the
-  line sum when present (§5 layer 2). Constants live in one module; the eval scores against the
-  same constants.
+  check: |qty × unit_price - line_total| ≤ max(0.05, 0.5% of line_total).
+  **Document check - two identities, because GCC invoices come both ways** (amended 2026-08-23,
+  see the Decision Log). With L = Σ line_totals, S = printed subtotal, T = tax, G = total:
+  *exclusive* (lines net) holds when |L - S| ≤ 0.10 **and** |L + T - G| ≤ 0.10; *inclusive*
+  (lines gross) holds when |L - G| ≤ 0.10 **and** |T - G × r/(1+r)| ≤ 0.10 for a rate r in the
+  GCC table (UAE 5%, KSA 15%, Bahrain 10%, Oman 5%, Qatar 0%, Kuwait 0%). Exactly one holds →
+  that is the treatment, and the totals are green. Neither holds → amber and the totals question.
+  Both hold → only reachable when T ≈ 0, where the distinction does not matter.
+  **Anchor on L, never on S.** An inclusive invoice that prints S as the *net* figure satisfies
+  S + T ≈ G and masquerades as exclusive; the line sum is the only total we verify independently
+  (qty × unit_price per line), so it is the arbiter.
+  **Money is stored exactly as printed.** `subtotal`/`tax`/`total` are what the photo shows, with
+  the resolved `tax_treatment` and `vat_rate` recorded beside them; net is derived where
+  analytics need it. Storing a normalized figure would break the §3 rule that every number on the
+  screen traces to the photo next to it.
+  **Price memory is net-canonical.** `supplier_items.last_price`, `prev_price` and
+  `supplier_item_prices` store the *ex-VAT* unit price, converted once inside the existing
+  confirm transaction; `invoice_lines.unit_price` keeps the as-printed value for display. This is
+  not tidiness: `PRICE_ALERT_MIN_PCT` is 5% and UAE VAT is 5%, so mixing bases makes a supplier
+  changing invoice format fire a full-threshold price alert when nothing moved - the demo's money
+  moment lying in the one moment it asks to be trusted.
+  Constants live in one module; the eval scores against the same constants.
 - **C5 - Confirmation resolution (no new table).** An inbound text from phone P resolves against
   the newest `awaiting_confirm` invoice whose document traces back to sender P. None pending →
   onboarding reply. Several pending → numbered list; a bare "OK" then asks which. Derived from
@@ -333,6 +370,7 @@ demonstrable, not documentary.
 | 14 | Eval harness (`eval/`): scoring per §5, results JSON, CI smoke on 3 recorded fixtures | M | C3 | `python -m eval.run` green on fixtures; alignment scorer unit-tested (extra / missing / reordered lines) |
 | 15 | Ground truth for the current corpus: agent transcribes, founder verifies (F8); 3 become the CI fixtures | S | 14, F6 | founder sign-off on every file |
 | 16 | Accuracy loop: live eval → inspect failures → one change per round → re-eval, until §5 targets hold | L | 13-15, F5, F6 | the eval report, not opinion |
+| 17 | **VAT treatment, inclusive + exclusive** (C3/C4 as amended 2026-08-23): both identities in `validate.py` anchored on the line sum, GCC rate table in `constants.py`, `tax_treatment` + `vat_rate` through schema → persistence → eval ground truth (migration 0006), net-canonical price memory converted inside the confirm transaction, and no totals question when a treatment resolves. **Not blocked on the corpus** - deterministic money math with a real invoice already in hand, so it runs in parallel with F6 | M | C3, C4 | Deira T-0084417 (inclusive, UAE 5%) reconciles green with no question; an exclusive invoice still reconciles green; an inclusive invoice printing a *net* subtotal is not misread as exclusive; a supplier switching format produces **no** price alert |
 
 **M2 (confirm flow, supplier memory, alerts)**
 
@@ -374,6 +412,7 @@ Wave 3  WP-13, then WP-16 accuracy loop (needs F5+F6)
 Wave 4  WP-20 + WP-22, then WP-21 + WP-23 + WP-24     (overlaps WP-16: product code does not wait on prompt tuning)
 Wave 5  WP-30 + WP-31, then WP-32-35                  (web starts against the C6 mock)
 Wave 6  WP-40-43 → M4 gate → demo                     | founder: F7 rehearsals
+Wave 7  WP-17 VAT treatment (both identities)         (parallel with F6; blocks the demo)
 ```
 
 ### 7.5 Delegation protocol
@@ -502,6 +541,7 @@ pilot volume. Meta utility template cost applies only from M9 (verify live UAE r
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-08-23 | **C4 amended to reconcile both VAT-inclusive and VAT-exclusive invoices**, anchored on the line sum; money stored exactly as printed with `tax_treatment` + `vat_rate` beside it; price memory normalized to ex-VAT. C3 gains `tax_treatment` and `vat_rate` as printed facts used only as a tie-breaker | The first real invoice through the live pipeline (Deira Cold Store T-0084417) was VAT-inclusive at UAE 5% and reconciled to the fil - 706.65 / 1.05 = 673.00, and 706.65 - 673.00 = 33.65 exactly matched the printed tax. Extraction was correct; `subtotal + tax = total` was the wrong identity, so correct invoices were going spuriously amber. Storing as printed keeps the §3 photo-traceability rule; net-canonical price memory prevents a 5% VAT basis change from firing the 5% price alert |
 | 2026-08-22 | Brand direction selected: Margin Fold mark, Date Palm and Karak Gold palette, and "Profit, in plain sight." positioning line | Connects invoice flow, multi-branch operations, and profit visibility without red, literal currency marks, or generic AI motifs |
 | 2026-08-22 | Fresh build; previous restaurant-profit-platform is reference-only, no code carried over | Over-engineering post-mortem; schema *ideas* only |
 | 2026-08-22 | Deleted `Docs/DESIGN.md`; this plan is the single sequencing document alongside `Docs/PRD.md` | Founder call |
@@ -521,6 +561,37 @@ pilot volume. Meta utility template cost applies only from M9 (verify live UAE r
 
 *(newest first — one line per session: date, what shipped, what's next)*
 
+- 2026-08-23 - **M0 PROVEN ON A REAL PHONE (F1-F4 closed)**, and the same forward carried
+  through M1 and M2 live. Root cause of the earlier silence found by querying
+  `GET /{waba-id}/subscribed_apps`: the WABA's only subscriber was Meta's own `WA DevX Webhook
+  Events 1P App`, so Meta recorded each real forward in the dashboard's test-webhook panel and
+  delivered nothing to us. Configuring the callback URL in the app dashboard does *not* subscribe
+  the app to the WABA - that needs `POST /{waba-id}/subscribed_apps`. Publishing the app was
+  **not** required, which spared the business-verification chain the plan defers to M5.
+  Also fixed on the way: an expired 24-hour token (regenerated), and the token never having been
+  applied to Railway (a variable change without a redeploy). Migrations 0004 + 0005 applied to
+  the live project; the deployed `/api/waitlist` was exercised end to end (202, row written, row
+  deleted).
+  The run, from +971509772702 at 13:58:01 UTC: ack **6.70 s**; document stored with sha256 and an
+  immutable path, branch resolved from the sender; `claude-opus-5` prompt v1 extracted 10 lines
+  in **17.97 s** with a repair round, 7045/843 tokens; every line arithmetically green and summing
+  exactly to the stated subtotal; the document-level check correctly went amber because the total
+  (706.65) did not equal subtotal + tax (740.30); parsed reply at **28.43 s**; `OK` confirmed,
+  `confirmed_at` written, catalog self-built to 1 supplier + 10 items + 10 price-history rows.
+  Three findings, none of them infrastructure:
+  (1) **VAT-inclusive invoices break C4.** The founder's answer - "the lines are inclusive of
+  vat" - means extraction was *correct* and our identity is wrong. `subtotal + tax = total` does
+  not hold for the GCC norm, so correct invoices go spuriously amber. This needs a C4 decision,
+  not a prompt tweak, and it will hit the curated demo invoices.
+  (2) **The amber question invites an answer it cannot parse.** It asks "which is right?"; the
+  founder answered in plain English and got "Sorry, I didn't get that." The clarify path did its
+  job of not dead-ending, but on stage that is a bad beat.
+  (3) **Latency 28.43 s against the ~20 s M4 target** (WP-41's flagged risk, confirmed). Better
+  than F5's ~27 s for extraction alone, and this run included a repair round.
+  That first invoice - Deira Cold Store & General Trading, T-0084417 - is corpus item #1 once its
+  true total is hand-verified (F8).
+  Next: permanent access token; F6 corpus; the C4 VAT decision; `demo_seed.sql` + branch mapping;
+  `API_TOKEN` + `WEB_ORIGIN` on Railway for the review screen.
 - 2026-08-23 - Webhook repointed to the Railway host (founder): callback URL set, handshake
   verified, `messages` subscribed at v26.0, which matches the `config.py` default. Meta's
   dashboard Test returned success, and since a signature mismatch is a 403 at `webhook.py:71`

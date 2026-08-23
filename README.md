@@ -102,20 +102,54 @@ build.
 | Deploy log stops after `Started server process` | normal — the next line arrives once the DB pool connects |
 | Log pane empty | needs `PYTHONUNBUFFERED=1`, already set in the Dockerfile |
 | Restart loop, service otherwise fine | health check firing before the 6-10 s bind |
-| Meta shows deliveries sent, nothing in `wa_messages` | signature rejected — re-copy `META_APP_SECRET` |
+| Meta logs the event but nothing reaches the service at all | the app is not subscribed to the WABA - see Meta step 6 |
+| A `POST /webhook` appears in the logs with **403** | signature rejected - re-copy `META_APP_SECRET` |
+| Ack never arrives, no error on the phone | access token expired - check `expires_at` per Meta step 3 |
 | `{"ok":true,"db":false}` | `DATABASE_URL` wrong: brackets, password, or transaction pooler |
 
 Cost is roughly $5/month for an always-on service.
 
 ### 3. Meta WhatsApp Cloud API (free test number)
 1. developers.facebook.com → Create app → type **Business** → add the **WhatsApp** product.
-2. WhatsApp → API setup: note the **Phone number ID** and a **temporary access token**
-   (24 h — fine for day one; create a system-user token before the demo so it doesn't expire mid-run).
-3. App settings → Basic: copy the **App secret** (signature verification fails closed without it).
-4. WhatsApp → Configuration → Webhook: callback URL `https://<host>/webhook`,
+2. WhatsApp → API setup: note the **Phone number ID** and the **WhatsApp Business Account (WABA) ID**.
+3. Generate a **permanent** access token, not the temporary one.
+   Use *Step 2. Production setup → Send message → Generate token*, or Business settings → Users →
+   System users with expiration **Never** and scopes `whatsapp_business_messaging` +
+   `whatsapp_business_management`.
+   The dashboard's *Step 1 → Generate token* button issues a **24-hour** token that expires on a
+   fixed boundary - it can die in under two hours, and every symptom of an expired token is
+   silence on the phone rather than an error anywhere you would think to look.
+   Verify with `expires_at: 0`:
+
+   ```bash
+   curl -s "https://graph.facebook.com/v26.0/debug_token?input_token=$TOKEN&access_token=$TOKEN" \
+     | python3 -m json.tool     # expires_at: 0  means never expires
+   ```
+4. App settings → Basic: copy the **App secret** (signature verification fails closed without it).
+5. WhatsApp → Configuration → Webhook: callback URL `https://<host>/webhook`,
    verify token = your `META_VERIFY_TOKEN` value → Verify and save → subscribe to the
    **messages** webhook field.
-5. API setup → add the demo phone(s) as recipients (up to 5) and confirm the code sent to them.
+6. **Subscribe the app to the WABA. This is a separate step and the dashboard never mentions it.**
+
+   ```bash
+   curl -X POST "https://graph.facebook.com/v26.0/<WABA_ID>/subscribed_apps" \
+     -H "Authorization: Bearer $META_ACCESS_TOKEN"          # -> {"success": true}
+
+   curl -s "https://graph.facebook.com/v26.0/<WABA_ID>/subscribed_apps" \
+     -H "Authorization: Bearer $META_ACCESS_TOKEN"          # your app must appear here
+   ```
+
+   Configuring the callback URL in step 5 tells the *app* where to deliver. It does not tell the
+   *WhatsApp Business Account* to route anything to your app. Until this POST runs, the only
+   subscriber is Meta's own `WA DevX Webhook Events 1P App`, so real forwards are recorded in the
+   dashboard's "Check test webhooks" panel and delivered nowhere. The dashboard's **Test** button
+   still works, because that is a direct app-level delivery that bypasses WABA routing - which
+   makes this failure look like a signature or deploy problem for as long as you are willing to
+   chase it.
+
+   You do **not** need to publish the app or complete business verification for this. Publishing
+   is an M5 concern (plan.md §11).
+7. API setup → add the demo phone(s) as recipients (up to 5) and confirm the code sent to them.
 
 ### 4. Prove M0 (the "done when")
 From a demo phone, send any photo to the test number. Within seconds you should get
@@ -126,5 +160,10 @@ In Supabase: one row in `wa_messages` (in),
 one `documents` row with `sha256` + `storage_path`, the image in the `documents` bucket,
 one `jobs` row `done`, one `wa_messages` (out). Send the same message content again —
 count stays the same. Send a text — you get the onboarding reply.
+
+Note on the dashboard **Test** button: Meta's sample payload carries a **fixed** message id, so the
+first press stores a row and every later press is correctly skipped as a duplicate. A success
+notification with no new row therefore proves dedupe, not delivery. Use it once, then trust only a
+real forward.
 
 Then tick the M0 boxes in `plan.md` and commit.

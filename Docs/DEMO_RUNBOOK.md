@@ -11,7 +11,22 @@ Run through this list the day before, and again 30 minutes before going on.
 - [ ] The API is deployed and healthy: `curl https://<host>/health` returns `{"ok":true,"db":true}` (README §M0 has the troubleshooting table).
 - [ ] The worker is on: Railway variable `WORKER_ENABLED=true` (without it the ack and extraction never run).
 - [ ] The Meta webhook points at the Railway host: WhatsApp → Configuration → Webhook shows `https://<host>/webhook`, verified, subscribed to the `messages` field.
-- [ ] The Meta access token is a system-user token, not the 24-hour temporary one (a mid-demo expiry looks like total silence).
+- [ ] **The app is subscribed to the WABA.** This is separate from the webhook config above and the dashboard never mentions it; without it Meta records forwards and delivers nothing.
+
+      ```bash
+      curl -s "https://graph.facebook.com/v26.0/<WABA_ID>/subscribed_apps" \
+        -H "Authorization: Bearer $META_ACCESS_TOKEN"
+      ```
+
+      Your app must appear in the list, not only Meta's `WA DevX Webhook Events 1P App`. Re-subscribe with the same URL and `-X POST`.
+- [ ] **The access token does not expire**, verified rather than assumed. A mid-demo expiry looks like total silence on the phone, with no error visible anywhere on stage.
+
+      ```bash
+      curl -s "https://graph.facebook.com/v26.0/debug_token?input_token=$TOKEN&access_token=$TOKEN" \
+        | python3 -m json.tool     # expires_at: 0
+      ```
+
+      Anything other than `0` is a clock running against the demo. The dashboard's Step 1 button issues 24-hour tokens that expire on a fixed boundary, so a token generated in the afternoon can die the same evening.
 - [ ] The demo phone(s) are registered as recipients on the Meta test number and have confirmed the code.
 - [ ] `ANTHROPIC_API_KEY` is set on Railway (with it missing, every invoice gets the failure reply).
 - [ ] The demo seed is applied: `psql "$DATABASE_URL" -f supabase/demo_seed.sql` (see section C).
@@ -97,7 +112,9 @@ If `last_price` is already 54.50, the previous run was confirmed and not reset.
 
 **WhatsApp is silent (no ack at all).**
 No ack within 10 seconds means the message never reached the worker.
-Check in this order, per the README §M0 troubleshooting table: `/health` returns `db:true`; Meta shows the webhook delivery attempt; `META_APP_SECRET` matches (deliveries sent but nothing in `wa_messages` means the signature is being rejected); the access token has not expired; `WORKER_ENABLED` is true.
+Check in this order, per the README §M0 troubleshooting table: `/health` returns `db:true`; the Railway logs show a `POST /webhook` at all; `META_APP_SECRET` matches (a logged POST returning 403 means the signature is being rejected); the access token has not expired; `WORKER_ENABLED` is true.
+If the Railway logs show **no POST whatsoever** while Meta's dashboard shows the event, the app has come unsubscribed from the WABA - re-run the POST in section A.
+That failure mode presents as a completely dead system while every dashboard screen looks correctly configured, so check it early rather than late.
 On stage, switch to the backup demo phone first and debug later.
 
 **The review screen shows no image.**
