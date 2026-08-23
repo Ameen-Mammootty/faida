@@ -11,6 +11,7 @@ worker.py for the exports here. WP-21 parses the replies these questions
 invite; WP-23 constructs the PriceAlert values this module only renders.
 """
 
+import datetime
 from decimal import Decimal
 from typing import Literal
 
@@ -229,3 +230,75 @@ def _money(amount: Decimal) -> str:
 def _qty(qty: Decimal) -> str:
     """Quantities are not money: '12' stays '12', '2.5' stays '2.5'."""
     return format(qty.normalize(), "f")
+
+
+# --- WP-21: confirm-flow messages ------------------------------------------
+# Appended for the confirm flow (confirm.py); everything above is WP-20 and
+# frozen. Same rules apply: deterministic English templates, zero generation,
+# money always rendered with exactly two decimals.
+
+# The one clarify for anything the parser rejects (plan.md §6 M2: never a
+# dead end, never silence) - it teaches every accepted form.
+REPLY_CLARIFY = (
+    "Sorry, I didn't get that. Reply OK to confirm, or send fixes like: "
+    "line 1 qty 16, line 2 price 4.50, line 1 name Basmati Rice, or total 745.76."
+)
+
+DISAMBIGUATION_FOOTER = "Reply with the number first, like: 1 OK, or 1 line 2 qty 16."
+
+_MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+
+class PendingInvoice(BaseModel):
+    """One row of the C5 disambiguation list (newest first). received_at is
+    already in the branch's local timezone - this module renders, it never
+    converts."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    supplier_name: str | None
+    currency: str | None
+    total: Decimal | None
+    received_at: datetime.datetime
+
+
+def compose_confirmation_ack(
+    supplier_name: str | None, currency: str | None, total: Decimal | None
+) -> str:
+    """The receipt moment: what the "OK" bought. Supplier and total when
+    readable, with the same fallbacks the summary line uses."""
+    supplier = supplier_name or "supplier unknown"
+    if total is None:
+        return f"Confirmed - {supplier} invoice recorded. I'll watch these prices for you."
+    money = f"{currency or DEFAULT_CURRENCY} {_money(total)}"
+    return f"Confirmed - {supplier}, {money} recorded. I'll watch these prices for you."
+
+
+def compose_disambiguation_reply(pending: list[PendingInvoice]) -> str:
+    """C5: several invoices awaiting one sender's confirm - a numbered list
+    (1 = newest); the sender resends with the number in front. Stateless by
+    design: the numbering re-derives from the invoices on every message."""
+    count = len(pending)
+    invoice_word = "invoice" if count == 1 else "invoices"
+    parts = [f"You have {count} {invoice_word} waiting - which one?"]
+    for number, invoice in enumerate(pending, start=1):
+        supplier = invoice.supplier_name or "supplier unknown"
+        if invoice.total is None:
+            total_part = "total unreadable"
+        else:
+            total_part = f"{invoice.currency or DEFAULT_CURRENCY} {_money(invoice.total)}"
+        received = invoice.received_at
+        stamp = f"{received.day} {_MONTHS[received.month - 1]} {received:%H:%M}"
+        parts.append(f"{number}. {supplier}, {total_part}, {stamp}")
+    parts.append(DISAMBIGUATION_FOOTER)
+    return "\n".join(parts)
+
+
+def compose_line_out_of_range(n: int, line_count: int) -> str:
+    """A correction named a line the invoice doesn't have - point at the real
+    count instead of a dead end."""
+    line_word = "line" if line_count == 1 else "lines"
+    return (
+        f"This invoice has {line_count} {line_word}, so I can't fix line {n} - "
+        "check the line number and resend."
+    )

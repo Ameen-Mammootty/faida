@@ -334,6 +334,127 @@ class Database:
                     line["unit_price"],
                 )
 
+    # -- Confirm flow (WP-21, C5) --------------------------------------------
+
+    async def awaiting_confirm_invoices_for_phone(self, phone: str) -> list[asyncpg.Record]:
+        """C5: the awaiting_confirm invoices whose document traces back to
+        sender phone, newest first (the flow's default target and the
+        disambiguation list order). Cash invoices are needs_review and never
+        appear here - chat cannot confirm them (M6 owns approvals)."""
+        return await self.pool.fetch(
+            """
+            select i.id, i.supplier_name, i.currency, i.total, i.created_at, b.timezone
+            from invoices i
+            join documents d on d.id = i.document_id
+            join wa_messages m on m.message_id = d.wa_message_id and m.direction = 'in'
+            left join branches b on b.id = i.branch_id
+            where m.from_phone = $1 and i.status = 'awaiting_confirm'
+            order by i.created_at desc, i.id desc
+            """,
+            phone,
+        )
+
+    async def latest_confirmed_invoice_for_phone(
+        self, phone: str, confirmed_after: datetime.datetime | None = None
+    ) -> asyncpg.Record | None:
+        """The newest confirmed invoice traced to sender phone, optionally
+        only when confirmed at/after a moment. With the inbound message's
+        arrival time, that answers 'did this text already confirm something?'
+        - the confirm flow's retry guard (job re-runs must not double-confirm)
+        and its duplicate-OK re-ack."""
+        return await self.pool.fetchrow(
+            """
+            select i.id, i.supplier_name, i.currency, i.total, i.confirmed_at
+            from invoices i
+            join documents d on d.id = i.document_id
+            join wa_messages m on m.message_id = d.wa_message_id and m.direction = 'in'
+            where m.from_phone = $1
+              and i.status = 'confirmed'
+              and ($2::timestamptz is null or i.confirmed_at >= $2)
+            order by i.confirmed_at desc nulls last, i.id desc
+            limit 1
+            """,
+            phone,
+            confirmed_after,
+        )
+
+    async def get_invoice(self, invoice_id: str) -> asyncpg.Record | None:
+        return await self.pool.fetchrow("select * from invoices where id = $1", invoice_id)
+
+    async def get_invoice_lines(self, invoice_id: str) -> list[asyncpg.Record]:
+        return await self.pool.fetch(
+            "select * from invoice_lines where invoice_id = $1 order by position", invoice_id
+        )
+
+    async def confirm_invoice(self, invoice_id: str) -> bool:
+        """C1, one transaction: invoice awaiting_confirm -> confirmed (stamping
+        confirmed_at) and its document extracted -> confirmed. Returns False
+        without touching anything when the invoice was not awaiting_confirm
+        (already confirmed, or held needs_review) - safe to re-run."""
+        async with self.pool.acquire() as conn, conn.transaction():
+            row = await conn.fetchrow(
+                """
+                update invoices set status = 'confirmed', confirmed_at = now()
+                where id = $1 and status = 'awaiting_confirm'
+                returning document_id
+                """,
+                invoice_id,
+            )
+            if row is None:
+                return False
+            await conn.execute(
+                "update documents set status = 'confirmed' where id = $1", row["document_id"]
+            )
+            return True
+
+    async def apply_invoice_correction(
+        self,
+        invoice_id: str,
+        *,
+        subtotal: Decimal | None,
+        tax: Decimal | None,
+        total: Decimal | None,
+        confidence: dict,
+        lines: list[dict],
+    ) -> None:
+        """Persist a chat correction (WP-21), one transaction: header money
+        fields + refreshed confidence on the invoice, and per line the fields
+        the grammar can change plus the re-derived checks. Status is not
+        touched - corrections keep the invoice awaiting_confirm (C1)."""
+        async with self.pool.acquire() as conn, conn.transaction():
+            await conn.execute(
+                """
+                update invoices set subtotal = $2, tax = $3, total = $4, confidence = $5
+                where id = $1
+                """,
+                invoice_id,
+                subtotal,
+                tax,
+                total,
+                confidence,
+            )
+            await conn.executemany(
+                """
+                update invoice_lines
+                set raw_name = $3, supplier_item_id = $4, qty = $5, unit_price = $6,
+                    line_total = $7, checks = $8
+                where invoice_id = $1 and position = $2
+                """,
+                [
+                    (
+                        invoice_id,
+                        line["position"],
+                        line["raw_name"],
+                        line["supplier_item_id"],
+                        line["qty"],
+                        line["unit_price"],
+                        line["line_total"],
+                        line["checks"],
+                    )
+                    for line in lines
+                ],
+            )
+
     # -- Extraction runs (WP-13) ---------------------------------------------
 
     async def insert_extraction_run(

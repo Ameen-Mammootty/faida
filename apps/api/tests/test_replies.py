@@ -5,6 +5,7 @@ for the fixed set, structure plus exact money formatting for the composed
 ones. Pure functions, no DB, no network.
 """
 
+import datetime
 from decimal import Decimal
 
 from faida_api.extraction.schema import ExtractedInvoice, ExtractedLine
@@ -20,16 +21,22 @@ from faida_api.replies import (
     CASH_HOLD_NOTE,
     CLOSING_ALL_GREEN,
     CLOSING_WITH_AMBERS,
+    DISAMBIGUATION_FOOTER,
     OVERFLOW_LINE,
+    REPLY_CLARIFY,
     REPLY_EXTRACTION_FAILED,
     REPLY_MEDIA_RECEIVED,
     REPLY_NOT_INVOICE,
     REPLY_TEXT_ONBOARDING,
     REPLY_UNSUPPORTED_TYPE,
     REPLY_Z_REPORT,
+    PendingInvoice,
     PriceAlert,
     compose_cash_hold_reply,
+    compose_confirmation_ack,
+    compose_disambiguation_reply,
     compose_invoice_reply,
+    compose_line_out_of_range,
     render_price_alert,
     summary_line,
 )
@@ -355,3 +362,97 @@ def test_same_inputs_same_bytes():
     first = compose_invoice_reply(invoice, validate_invoice(invoice), alerts)
     second = compose_invoice_reply(invoice, validate_invoice(invoice), alerts)
     assert first == second
+
+
+# --- WP-21 appends: confirm-flow messages (the flow itself is confirm.py) ---
+
+
+def test_confirmation_ack_exact():
+    ack = compose_confirmation_ack("Gulf Foods Trading LLC", "AED", Decimal("745.76"))
+    assert ack == (
+        "Confirmed - Gulf Foods Trading LLC, AED 745.76 recorded. I'll watch these prices for you."
+    )
+
+
+def test_confirmation_ack_fallbacks():
+    # One-decimal totals still render two; missing pieces use the summary
+    # line's vocabulary and default currency.
+    assert compose_confirmation_ack(None, None, Decimal("50.5")) == (
+        "Confirmed - supplier unknown, AED 50.50 recorded. I'll watch these prices for you."
+    )
+    assert compose_confirmation_ack("Gulf Foods Trading", "AED", None) == (
+        "Confirmed - Gulf Foods Trading invoice recorded. I'll watch these prices for you."
+    )
+
+
+def test_disambiguation_reply_exact():
+    pending = [
+        PendingInvoice(
+            supplier_name="Al Madina Trading",
+            currency="AED",
+            total=Decimal("120.00"),
+            received_at=datetime.datetime(2026, 8, 22, 11, 30),
+        ),
+        PendingInvoice(
+            supplier_name=None,
+            currency=None,
+            total=None,
+            received_at=datetime.datetime(2026, 8, 22, 10, 5),
+        ),
+    ]
+    assert compose_disambiguation_reply(pending) == (
+        "You have 2 invoices waiting - which one?\n"
+        "1. Al Madina Trading, AED 120.00, 22 Aug 11:30\n"
+        "2. supplier unknown, total unreadable, 22 Aug 10:05\n"
+        "Reply with the number first, like: 1 OK, or 1 line 2 qty 16."
+    )
+
+
+def test_disambiguation_single_row_uses_singular_invoice_word():
+    # Reached via an out-of-range number ("9 OK") with one invoice pending.
+    pending = [
+        PendingInvoice(
+            supplier_name="Gulf Foods Trading",
+            currency="AED",
+            total=Decimal("10"),
+            received_at=datetime.datetime(2026, 1, 5, 9, 0),
+        )
+    ]
+    lines = compose_disambiguation_reply(pending).splitlines()
+    assert lines[0] == "You have 1 invoice waiting - which one?"
+    assert lines[1] == "1. Gulf Foods Trading, AED 10.00, 5 Jan 09:00"
+    assert lines[2] == DISAMBIGUATION_FOOTER
+
+
+def test_line_out_of_range_message():
+    assert compose_line_out_of_range(4, 2) == (
+        "This invoice has 2 lines, so I can't fix line 4 - check the line number and resend."
+    )
+    assert compose_line_out_of_range(2, 1) == (
+        "This invoice has 1 line, so I can't fix line 2 - check the line number and resend."
+    )
+
+
+def test_clarify_exact_and_confirm_flow_messages_have_no_em_dashes():
+    assert REPLY_CLARIFY == (
+        "Sorry, I didn't get that. Reply OK to confirm, or send fixes like: "
+        "line 1 qty 16, line 2 price 4.50, line 1 name Basmati Rice, or total 745.76."
+    )
+    samples = [
+        REPLY_CLARIFY,
+        DISAMBIGUATION_FOOTER,
+        compose_confirmation_ack(None, None, None),
+        compose_line_out_of_range(3, 1),
+        compose_disambiguation_reply(
+            [
+                PendingInvoice(
+                    supplier_name=None,
+                    currency=None,
+                    total=None,
+                    received_at=datetime.datetime(2026, 8, 22, 10, 5),
+                )
+            ]
+        ),
+    ]
+    for text in samples:
+        assert "—" not in text and "–" not in text

@@ -154,7 +154,7 @@ async def _persist_extracted(
         # The composer sees exactly what persists, snapped flags included.
         validation = validation.model_copy(update={"lines": line_checks})
 
-    alerts = _price_alerts(invoice, snapped_items)
+    alerts = price_alerts(invoice, snapped_items)
 
     # Derived confidence, never self-reported (plan.md §5 layer 5): the
     # document-level check plus the per-line green/amber statuses.
@@ -218,7 +218,7 @@ async def _persist_extracted(
     return reply
 
 
-def _price_alerts(invoice: ExtractedInvoice, snapped_items: list[Row | None]) -> list[PriceAlert]:
+def price_alerts(invoice: ExtractedInvoice, snapped_items: list[Row | None]) -> list[PriceAlert]:
     """WP-23 (plan.md §6 M2, the demo's money moment): one alert per snapped
     line whose extracted unit_price moved from the item's last_price by both
     >= PRICE_ALERT_MIN_ABS and >= PRICE_ALERT_MIN_PCT of it - either

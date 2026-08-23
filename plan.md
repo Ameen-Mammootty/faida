@@ -8,7 +8,7 @@
 - **Product:** Faida — profit visibility for GCC cafeterias and multi-branch karak/paratha chains, fed through WhatsApp.
 - **Reference:** `Docs/PRD.md` (v2). This plan sequences the build; the PRD owns product intent. Where they conflict on *scope timing*, this plan wins.
 - **Start date:** 2026-08-22
-- **Current milestone:** M1 (code complete through WP-13; M0 awaits founder proof on a real phone)
+- **Current milestone:** M2 code complete (gate e2e green); M0 proof + M1 accuracy loop await founder steps (Meta/deploy, corpus)
 
 ---
 
@@ -210,10 +210,10 @@ plan (§7).
 - [x] WhatsApp reply composer: supplier, line count, total, amber-field question(s), price alerts,
       "Reply OK to confirm", plus cash-hold, failure, and decline messages - deterministic English
       templates, zero generation (WP-20)
-- [ ] "OK" / correction parsing (OK, or "line 4 qty 16"-style fix, or numbered options) → status
+- [x] "OK" / correction parsing (OK, or "line 4 qty 16"-style fix, or numbered options) → status
       `confirmed`; corrections re-run validation; inbound texts resolve to the newest
       awaiting-confirm invoice for that sender per C5 - no pending-confirmations table (WP-21)
-- [ ] Supplier matching + item snapping + `last_price`/`prev_price` update on confirm (layer 4)
+- [x] Supplier matching + item snapping + `last_price`/`prev_price` update on confirm (layer 4)
       (WP-22)
 - [x] Price alert computed in the *extraction reply* (the demo's money moment) when the extracted
       unit price differs from the snapped item's `last_price` by ≥5% and ≥ AED 0.25;
@@ -515,6 +515,14 @@ pilot volume. Meta utility template cost applies only from M9 (verify live UAE r
 
 *(newest first — one line per session: date, what shipped, what's next)*
 
+- 2026-08-23 - Wave 5b integrated (WP-21): confirm/correction flow live - "OK"/"okay" with
+  punctuation tolerance, "line N field value" and totals corrections (all-or-nothing multi-edit),
+  stateless disambiguation with leading-integer selection, clarify message that never dead-ends,
+  line-out-of-range guard. Confirm = invoice + document CONFIRMED + record_confirmed_prices in
+  one transaction; migration 0004 adds invoices.confirmed_at so worker retries re-ack instead of
+  double-confirming. M2 gate test is a permanent e2e (alert "up AED 4.00" -> OK -> history
+  [50.50, 54.50]). 136 API tests green. M2 chat side is code-complete; demo-phone proof still
+  founder-gated. Next: M3 (WP-30 backend API + WP-31 review screen vs the C6 mock, in parallel).
 - 2026-08-23 - Wave 5a integrated (WP-23 + WP-24 + composer wiring): price alerts computed in
   the extraction reply (both thresholds, multiplication form so zero baselines are safe, sorted
   by delta, falling prices included), baseline provably untouched until confirm; cash invoices

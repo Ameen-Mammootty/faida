@@ -6,11 +6,12 @@ import asyncio
 import hashlib
 import logging
 
+from .confirm import handle_inbound_text
 from .contracts import MEDIA_TYPES, JobKind
 from .db import Database
 from .extraction.pipeline import extract_document
 from .extraction.provider import ExtractionProvider
-from .replies import REPLY_MEDIA_RECEIVED, REPLY_TEXT_ONBOARDING, REPLY_UNSUPPORTED_TYPE
+from .replies import REPLY_MEDIA_RECEIVED, REPLY_UNSUPPORTED_TYPE
 from .storage import Storage
 from .wa import WhatsAppClient
 
@@ -44,7 +45,10 @@ async def process_wa_message(
         await db.enqueue(JobKind.EXTRACT_DOCUMENT, {"document_id": document_id})
         reply = REPLY_MEDIA_RECEIVED
     elif msg_type == "text":
-        reply = REPLY_TEXT_ONBOARDING
+        # WP-21 (C5): the text may confirm or correct an awaiting invoice;
+        # onboarding stays the fallback when nothing is pending.
+        text = (raw.get("text") or {}).get("body") or ""
+        reply = await handle_inbound_text(db, from_phone, text, msg_row["created_at"])
     else:
         reply = REPLY_UNSUPPORTED_TYPE
 
