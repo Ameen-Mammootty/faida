@@ -590,6 +590,23 @@ pilot volume. Meta utility template cost applies only from M9 (verify live UAE r
 
 *(newest first — one line per session: date, what shipped, what's next)*
 
+- 2026-08-23 - **Oversized invoice photos were failing extraction outright; fixed.** Found by
+  measuring token cost on the fixture images rather than by any test: the Messages API rejects a
+  base64 image over 10 MB (`400 ... 13588412 bytes > 10485760 bytes`), nothing in the pipeline
+  resized, and a phone at full resolution clears that ceiling routinely. `PH-01` (9.7 MB) sits in
+  our own fixture set and would have failed every live eval run. The failure was the quiet kind:
+  document stored, deterministic 400 retried three times to no purpose, generic failure reply a
+  minute later, nothing anywhere saying the photo was too big.
+  `extraction/images.py` now fits an image to the limit before the vision call, and deliberately
+  **only when it would otherwise be rejected** - anything already inside passes through
+  byte-identical, so there is no accuracy trade to argue about (the status quo for these was not
+  a worse read, it was no read). `PH-01` goes 10.2 MB -> 2.6 MB and is accepted at 4,730 input
+  tokens. Whether a *lower* ceiling also helps latency and cost trades against reading small
+  print on faded thermal paper, so it belongs to WP-16 with the eval to measure it. Pillow is now
+  a dependency. 186 API tests, 12 eval tests.
+  Next, in order: `--live` mode in `eval/run.py` (does not exist, and WP-16 needs it), then the
+  accuracy loop on the phase-1 corpus, then the amber question that dead-ends on a plain-English
+  answer, then the worker's 2-second poll (two job hops, so up to ~4s of the 28.43s is idle).
 - 2026-08-23 - **WP-18 shipped: discounts, rounding and non-stock charges.** The C4 identities
   are now stated against `line sum - discount + rounding`, so a trade discount no longer fails a
   correct invoice; C3 gains `discount_total`, `rounding_amount` and a per-line `line_kind`

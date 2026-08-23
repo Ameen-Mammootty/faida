@@ -14,6 +14,7 @@ from typing import TypeVar
 import anthropic
 from pydantic import BaseModel, ConfigDict, Field
 
+from .images import fit_for_vision
 from .prompts import EXTRACT_PROMPT, PROMPT_VERSION, SYSTEM_PROMPT, build_repair_prompt
 from .provider import ProviderUsage
 from .schema import ExtractedLine, ExtractionResult, RepairResult, RepairTarget
@@ -71,6 +72,9 @@ class AnthropicExtractionProvider:
         self, image: bytes, mime: str, prompt: str, output_format: type[T]
     ) -> tuple[T, ProviderUsage]:
         # The ingest path accepts "document" media too (C2); PDFs go in a document block.
+        # A phone photo can exceed the API's 10 MB base64 ceiling outright;
+        # resize only when it would otherwise be rejected (see images.py).
+        image, mime = fit_for_vision(image, mime)
         block_type = "document" if mime == "application/pdf" else "image"
         media_block = {
             "type": block_type,
