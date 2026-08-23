@@ -17,9 +17,18 @@
  * falling - plus catalog items with no confirmed observations yet (the real
  * endpoint's header + empty prices case). The open invoices' extracted
  * prices are deliberately absent: the baseline moves only on confirm.
+ *
+ * WP-34 adds the branch options and the invoice a simulated upload
+ * "extracts"; the store assembles both into the same shapes at runtime.
  */
 
-import type { DocumentSource, InvoiceStatus, PaymentKind, PriceHistory } from "../types";
+import type {
+  DocumentClassification,
+  DocumentSource,
+  InvoiceStatus,
+  PaymentKind,
+  PriceHistory,
+} from "../types";
 
 export interface FixtureLine {
   raw_name: string;
@@ -48,10 +57,83 @@ export interface Fixture {
   payment_kind: PaymentKind | null;
   status: InvoiceStatus;
   source: DocumentSource;
+  /** Omitted means "invoice" (the pipeline classified it); manual entries
+   * pass null - no model looked at anything (WP-34). */
+  classification?: DocumentClassification | null;
   image_url: string | null;
   created_at: string;
   lines: FixtureLine[];
 }
+
+/**
+ * The two mock branches, for pages that offer a branch choice. C6 has no
+ * branches endpoint; against the real API those pages derive options from
+ * the invoice list, and these ids match the fixtures' branch_id values so
+ * both modes behave alike.
+ */
+export const MOCK_BRANCHES: { id: string; name: string }[] = [
+  { id: "br-01", name: "Al Quoz" },
+  { id: "br-02", name: "Karama" },
+];
+
+/**
+ * What a simulated upload "extracts" (WP-34): the mock store lands this as
+ * an invoice a few seconds after POST /api/documents, so the upload page's
+ * polling finds it exactly like it would against the real pipeline. The
+ * numbers reconcile, so the review screen opens all green.
+ */
+export const UPLOADED_INVOICE_TEMPLATE = {
+  supplier_name: "Barakat Vegetables & Fruits",
+  invoice_no: "BV-3327",
+  invoice_date: "2026-08-23",
+  currency: "AED",
+  subtotal: "196.50",
+  tax: "9.83",
+  total: "206.33",
+  payment_kind: "credit" as PaymentKind,
+  lines: [
+    {
+      raw_name: "Cucumber Box 4kg",
+      qty: "3",
+      unit: "box",
+      pack_size: "4kg",
+      unit_price: "12.50",
+      line_total: "37.50",
+      supplier_item_id: null,
+      snapped: null,
+    },
+    {
+      raw_name: "Lemon Bag 3kg",
+      qty: "2",
+      unit: "bag",
+      pack_size: "3kg",
+      unit_price: "16.00",
+      line_total: "32.00",
+      supplier_item_id: null,
+      snapped: null,
+    },
+    {
+      raw_name: "Fresh Mint Bunches",
+      qty: "20",
+      unit: "bunch",
+      pack_size: null,
+      unit_price: "1.25",
+      line_total: "25.00",
+      supplier_item_id: null,
+      snapped: null,
+    },
+    {
+      raw_name: "Potato Bag 10kg",
+      qty: "4",
+      unit: "bag",
+      pack_size: "10kg",
+      unit_price: "25.50",
+      line_total: "102.00",
+      supplier_item_id: null,
+      snapped: null,
+    },
+  ] satisfies FixtureLine[],
+};
 
 export const FIXTURES: Fixture[] = [
   {

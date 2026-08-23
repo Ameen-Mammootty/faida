@@ -11,7 +11,14 @@
  * surfaces them.
  */
 
-import { FIXTURES, PRICE_HISTORIES, type Fixture } from "./fixtures";
+import {
+  FIXTURES,
+  MOCK_BRANCHES,
+  PRICE_HISTORIES,
+  UPLOADED_INVOICE_TEMPLATE,
+  type Fixture,
+  type FixtureLine,
+} from "./fixtures";
 import { checkDocument, checkLine, deriveConfidence } from "./validate";
 import { ApiError } from "../errors";
 import type {
@@ -22,6 +29,7 @@ import type {
   InvoiceLine,
   InvoiceStatus,
   InvoiceSummary,
+  ManualInvoiceInput,
   PriceHistory,
   UploadResult,
 } from "../types";
@@ -70,7 +78,8 @@ function buildDetail(fixture: Fixture): InvoiceDetail {
     document: {
       id: fixture.document_id,
       status: documentStatus(fixture.status),
-      classification: "invoice",
+      // Manual entries pass null explicitly: no model classified anything.
+      classification: fixture.classification === undefined ? "invoice" : fixture.classification,
       source: fixture.source,
       created_at: fixture.created_at,
     },
@@ -297,10 +306,142 @@ export async function mockConfirmInvoice(id: string): Promise<InvoiceDetail> {
   return respond(confirmed);
 }
 
-export async function mockUploadDocument(file: File): Promise<UploadResult> {
-  void file;
+const UPLOAD_EXTRACTION_MS = 4000;
+
+function branchName(branchId: string | null): string | null {
+  return MOCK_BRANCHES.find((branch) => branch.id === branchId)?.name ?? null;
+}
+
+/** A blob URL for the just-uploaded photo, so the review screen shows the
+ * real image beside the "extracted" fields; null outside a browser. */
+function objectUrl(file: File): string | null {
+  try {
+    return typeof URL !== "undefined" && typeof URL.createObjectURL === "function"
+      ? URL.createObjectURL(file)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * WP-34: both poll outcomes stay demonstrable without a backend. A file
+ * whose name contains "fail" never becomes an invoice - the upload page
+ * walks its honest timeout path to manual entry. Any other file "extracts"
+ * a few seconds later: the invoice lands in the store with this document_id
+ * attached, exactly like the real pipeline landing its draft, and the
+ * page's polling finds it.
+ */
+export async function mockUploadDocument(file: File, branchId?: string): Promise<UploadResult> {
+  if (branchId && !MOCK_BRANCHES.some((branch) => branch.id === branchId)) {
+    throw new ApiError(422, `unknown branch_id '${branchId}'`);
+  }
   uploadCounter += 1;
-  return respond({ document_id: `doc-upload-${uploadCounter}` });
+  const documentId = `doc-upload-${uploadCounter}`;
+  if (!/fail/i.test(file.name)) {
+    const invoiceId = `inv-upload-${uploadCounter}`;
+    const imageUrl = file.type.startsWith("image/") ? objectUrl(file) : null;
+    setTimeout(() => {
+      invoices.set(
+        invoiceId,
+        buildDetail({
+          ...UPLOADED_INVOICE_TEMPLATE,
+          id: invoiceId,
+          document_id: documentId,
+          branch_id: branchId ?? null,
+          branch_name: branchName(branchId ?? null),
+          supplier_id: null,
+          status: "awaiting_confirm",
+          source: "upload",
+          image_url: imageUrl,
+          created_at: nowIso(),
+        }),
+      );
+    }, UPLOAD_EXTRACTION_MS);
+  }
+  return respond({ document_id: documentId });
+}
+
+let manualCounter = 0;
+
+/** api.py _manual_number, message for message. */
+function manualNumber(value: string | undefined, field: string): string | null {
+  if (value === undefined) return null;
+  const parsed = parseNumberValue(value);
+  if (parsed === null) {
+    throw new ApiError(
+      422,
+      `'${value}' is not a valid ${field}: ` +
+        'send an unsigned decimal string like "16" or "4.50"',
+    );
+  }
+  return parsed;
+}
+
+/** Trimmed free text; blank means the field was not given. */
+function cleanText(value: string | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
+/**
+ * POST /api/invoices/manual (WP-34): the typed fallback, mirrored. The
+ * checks and confidence come from the same validation mirror the fixtures
+ * and PATCH use, so a typed invoice reviews exactly like an extracted one.
+ * One knowing divergence from the server: no supplier matching (the mock
+ * has no supplier catalog to match against), so lines persist unsnapped -
+ * the same result the real API gives for an unknown supplier.
+ */
+export async function mockCreateManualInvoice(body: ManualInvoiceInput): Promise<InvoiceDetail> {
+  if (body.branch_id && !MOCK_BRANCHES.some((branch) => branch.id === body.branch_id)) {
+    throw new ApiError(422, `unknown branch_id '${body.branch_id}'`);
+  }
+  if (body.lines.length === 0) {
+    // The real API rejects an empty lines list in body validation.
+    throw new ApiError(422, "The API returned 422.");
+  }
+  const lines: FixtureLine[] = body.lines.map((line, index) => {
+    const rawName = line.raw_name.trim();
+    if (!rawName) throw new ApiError(422, "a line name cannot be empty");
+    const n = index + 1;
+    return {
+      raw_name: rawName,
+      qty: manualNumber(line.qty, `line ${n} qty`),
+      unit: cleanText(line.unit),
+      pack_size: cleanText(line.pack_size),
+      unit_price: manualNumber(line.unit_price, `line ${n} unit_price`),
+      line_total: manualNumber(line.line_total, `line ${n} line_total`),
+      supplier_item_id: null,
+      snapped: null,
+    };
+  });
+
+  manualCounter += 1;
+  const id = `inv-manual-${manualCounter}`;
+  const detail = buildDetail({
+    id,
+    document_id: `doc-manual-${manualCounter}`,
+    branch_id: body.branch_id ?? null,
+    branch_name: branchName(body.branch_id ?? null),
+    supplier_id: null,
+    supplier_name: cleanText(body.supplier_name),
+    invoice_no: cleanText(body.invoice_no),
+    invoice_date: body.invoice_date ?? null,
+    currency: cleanText(body.currency) ?? "AED",
+    subtotal: manualNumber(body.subtotal, "subtotal"),
+    tax: manualNumber(body.tax, "tax"),
+    total: manualNumber(body.total, "total"),
+    payment_kind: body.payment_kind ?? null,
+    // WP-24 applies to typed invoices too: cash holds for approval.
+    status: body.payment_kind === "cash" ? "needs_review" : "awaiting_confirm",
+    source: "manual",
+    classification: null, // no model looked at anything
+    image_url: null,
+    created_at: nowIso(),
+    lines,
+  });
+  invoices.set(id, detail);
+  return respond(detail);
 }
 
 export async function mockGetSupplierItemPrices(supplierItemId: string): Promise<PriceHistory> {

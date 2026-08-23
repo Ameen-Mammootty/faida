@@ -30,7 +30,13 @@ from .conftest import (
     requires_db,
     wa_image_payload,
 )
-from .test_extraction_flow import drain_jobs, good_invoice, invoice_result, post_webhook
+from .test_extraction_flow import (
+    drain_jobs,
+    good_invoice,
+    invoice_result,
+    post_webhook,
+    seed_supplier_with_items,
+)
 
 API_TOKEN = "test-api-token"
 AUTH = {"Authorization": f"Bearer {API_TOKEN}"}
@@ -464,6 +470,269 @@ async def test_upload_rejects_unsupported_types_and_oversize(api, db):
     assert await db.pool.fetchval("select count(*) from documents") == 0
     assert await db.pool.fetchval("select count(*) from jobs") == 0
     assert fake_storage.objects == {}
+
+
+# --- manual entry (WP-34) ---------------------------------------------------
+
+
+def manual_body(**overrides) -> dict:
+    """A POST /api/invoices/manual body typed from the good_invoice photo:
+    the same numbers, so its checks land exactly where the pipeline's do."""
+    body = {
+        "branch_id": DEMO_BRANCH_ID,
+        "supplier_name": "Gulf Foods Trading LLC",
+        "invoice_no": "MAN-77",
+        "invoice_date": "2026-08-22",
+        "currency": "AED",
+        "payment_kind": "credit",
+        "subtotal": "710.25",
+        "tax": "35.51",
+        "total": "745.76",
+        "lines": [
+            {
+                "raw_name": "MILK PWDR 2.5KG NIDO",
+                "qty": "12",
+                "unit": "sack",
+                "pack_size": "2.5kg",
+                "unit_price": "54.50",
+                "line_total": "654.00",
+            },
+            {
+                "raw_name": "KARAK TEA DUST",
+                "qty": "3",
+                "unit_price": "18.75",
+                "line_total": "56.25",
+            },
+        ],
+    }
+    body.update(overrides)
+    return body
+
+
+@requires_db
+async def test_manual_entry_creates_a_checked_invoice(api, db):
+    app, client, *_ = api
+    resp = await client.post("/api/invoices/manual", headers=AUTH, json=manual_body())
+    assert resp.status_code == 201
+    detail = resp.json()
+
+    assert detail["status"] == "awaiting_confirm"
+    assert detail["supplier_name"] == "Gulf Foods Trading LLC"
+    assert detail["invoice_no"] == "MAN-77"
+    assert detail["invoice_date"] == "2026-08-22"
+    assert detail["currency"] == "AED"
+    assert detail["payment_kind"] == "credit"
+    assert detail["branch_id"] == DEMO_BRANCH_ID
+    assert detail["branch_name"] == "Al Barsha Branch"
+    assert (detail["subtotal"], detail["tax"], detail["total"]) == ("710.25", "35.51", "745.76")
+
+    # The same deterministic checks the pipeline persists, from the same code.
+    line = detail["lines"][0]
+    assert (line["qty"], line["unit_price"], line["line_total"]) == ("12.000", "54.500", "654.00")
+    assert (line["unit"], line["pack_size"]) == ("sack", "2.5kg")
+    assert line["checks"]["arith"] == "passed"
+    assert line["checks"]["status"] == "green"
+    assert detail["confidence"]["lines"] == ["green", "green"]
+    assert detail["confidence"]["document"]["status"] == "green"
+
+    # The stub document: source 'manual', no photo, no classification - and
+    # 'extracted', because a draft invoice with checks exists (C1 invariant).
+    assert detail["document"]["source"] == "manual"
+    assert detail["document"]["status"] == "extracted"
+    assert detail["document"]["classification"] is None
+    assert detail["image_url"] is None
+    doc = await db.get_document(detail["document"]["id"])
+    assert doc["storage_path"] is None
+    assert doc["wa_message_id"] is None
+    assert doc["mime"] is None and doc["sha256"] is None
+    assert str(doc["branch_id"]) == DEMO_BRANCH_ID
+
+    # No AI anywhere in this path: nothing enqueued, no extraction run.
+    assert await db.pool.fetchval("select count(*) from jobs") == 0
+    assert await db.pool.fetchval("select count(*) from extraction_runs") == 0
+
+
+@requires_db
+async def test_manual_cash_invoice_is_held_and_approved_from_the_screen(api, db):
+    app, client, *_ = api
+    resp = await client.post(
+        "/api/invoices/manual", headers=AUTH, json=manual_body(payment_kind="cash")
+    )
+    assert resp.status_code == 201
+    detail = resp.json()
+    assert detail["status"] == "needs_review"  # WP-24 holds typed cash too
+
+    resp = await client.post(f"/api/invoices/{detail['id']}/confirm", headers=AUTH)
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "confirmed"
+
+
+@requires_db
+async def test_manual_entry_derives_amber_from_the_same_checks(api, db):
+    app, client, *_ = api
+    body = manual_body()
+    body["lines"][0]["qty"] = "2"  # 2 x 54.50 != 654.00
+    body["lines"].append({"raw_name": "COOKING OIL 5L"})  # typed with no numbers
+    resp = await client.post("/api/invoices/manual", headers=AUTH, json=body)
+    assert resp.status_code == 201
+    detail = resp.json()
+
+    assert detail["confidence"]["lines"] == ["amber", "green", "amber"]
+    assert detail["lines"][0]["checks"]["arith"] == "failed"
+    assert detail["lines"][0]["checks"]["expected"] == "109.00"  # 2 x 54.50
+    assert detail["lines"][2]["checks"]["arith"] == "indeterminate"
+    # A failed line taints the totals: never green past a broken line.
+    assert detail["confidence"]["document"]["status"] == "amber"
+
+    # The review loop is one machinery for typed and photographed invoices:
+    # PATCH the typo, everything flips green.
+    resp = await client.patch(
+        f"/api/invoices/{detail['id']}/fields",
+        headers=AUTH,
+        json={
+            "corrections": [
+                {"line_index": 0, "field": "qty", "value": "12"},
+                {"line_index": 2, "field": "qty", "value": "1"},
+                {"line_index": 2, "field": "unit_price", "value": "36.00"},
+                {"line_index": 2, "field": "line_total", "value": "36.00"},
+            ]
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.json()["confidence"]["lines"] == ["green", "green", "green"]
+
+
+@requires_db
+async def test_manual_entry_rejects_bad_input_and_persists_nothing(api, db):
+    app, client, *_ = api
+    url = "/api/invoices/manual"
+
+    bad_bodies = [
+        manual_body(subtotal="-5"),  # signed
+        manual_body(tax="nan"),
+        manual_body(total="1e3"),  # exponent
+        manual_body(lines=[]),  # at least one line
+        manual_body(branch_id=str(uuid.uuid4())),  # unknown branch
+        manual_body(branch_id="not-a-uuid"),
+        manual_body(invoice_date="22/08/2026"),  # not ISO
+        manual_body(payment_kind="cheque"),
+        manual_body(surprise="field"),  # extra="forbid"
+    ]
+    bad_qty = manual_body()
+    bad_qty["lines"][0]["qty"] = "twelve"
+    bad_bodies.append(bad_qty)
+    empty_name = manual_body()
+    empty_name["lines"][0]["raw_name"] = "   "
+    bad_bodies.append(empty_name)
+
+    for body in bad_bodies:
+        assert (await client.post(url, headers=AUTH, json=body)).status_code == 422, body
+
+    # Every rejection was whole: no document, invoice, or job left behind.
+    assert await db.pool.fetchval("select count(*) from documents") == 0
+    assert await db.pool.fetchval("select count(*) from invoices") == 0
+    assert await db.pool.fetchval("select count(*) from jobs") == 0
+
+
+@requires_db
+async def test_manual_entry_snaps_to_supplier_memory(api, db):
+    # Layer 4 runs for typed invoices exactly as for photographed ones:
+    # supplier fuzzy-matched, lines snapped, flags folded into the checks
+    # without recomputing status - and the price baseline stays untouched
+    # until confirm.
+    app, client, *_ = api
+    supplier_id, item_ids = await seed_supplier_with_items(
+        db,
+        [
+            {
+                "canonical_name": "MILK PWDR 2.5KG NIDO",
+                "unit": "sack",
+                "pack_size": "2.5kg",
+                "last_price": Decimal("50.00"),
+            }
+        ],
+    )
+
+    resp = await client.post("/api/invoices/manual", headers=AUTH, json=manual_body())
+    assert resp.status_code == 201
+    detail = resp.json()
+    assert detail["supplier_id"] == str(supplier_id)
+    assert detail["lines"][0]["supplier_item_id"] == str(item_ids["MILK PWDR 2.5KG NIDO"])
+    assert detail["lines"][0]["checks"]["snapped"] is True
+    assert detail["lines"][1]["checks"]["snapped"] is False  # not in the catalog
+    # Pipeline parity: an unsnapped line keeps its green arithmetic while the
+    # catalog self-builds.
+    assert detail["confidence"]["lines"] == ["green", "green"]
+
+    milk = await db.pool.fetchrow(
+        "select last_price from supplier_items where id = $1", item_ids["MILK PWDR 2.5KG NIDO"]
+    )
+    assert milk["last_price"] == Decimal("50.00")  # baseline moves only on confirm
+
+
+# --- the revoked-key drill (plan.md §6 M3 done-when) -------------------------
+
+
+@requires_db
+async def test_revoked_key_drill_manual_path_survives(api, db):
+    """With the Anthropic key revoked (provider None, exactly how main.py
+    wires a missing key), upload + manual entry + list + detail + edit +
+    confirm all still work: no financial workflow depends on AI being up
+    (PRD §25.4). This is the M3 done-when as a permanent test."""
+    app, client, _, fake_storage = api
+    data = b"\xff\xd8drill-jpeg-bytes"
+
+    # 1. Upload still ingests: document created, original stored byte for byte.
+    resp = await client.post(
+        "/api/documents",
+        headers=AUTH,
+        files={"file": ("invoice.jpg", data, "image/jpeg")},
+        data={"branch_id": DEMO_BRANCH_ID},
+    )
+    assert resp.status_code == 201
+    document_id = resp.json()["document_id"]
+    path = f"{DEMO_TENANT_ID}/documents/{document_id}/original"
+    assert fake_storage.objects[path] == data
+
+    # 2. The extract job fails cleanly with no provider: the queue retries to
+    # its 3-attempt end, the error is recorded, the document lands failed
+    # (C1), no invoice appears - and the stored original survives for a
+    # retry once the key is back.
+    await drain_jobs(db, app, None, release_backoff=True)
+    job = await db.pool.fetchrow("select * from jobs where kind = 'extract_document'")
+    assert job["status"] == "failed"
+    assert job["attempts"] == 3
+    assert "no extraction provider configured" in job["last_error"]
+    assert (await db.get_document(document_id))["status"] == "failed"
+    assert await db.get_invoice_by_document(document_id) is None
+    assert fake_storage.objects[path] == data
+
+    # 3. Manual entry still works - the fallback the failed upload points to.
+    resp = await client.post("/api/invoices/manual", headers=AUTH, json=manual_body())
+    assert resp.status_code == 201
+    invoice_id = resp.json()["id"]
+
+    # 4. The list still serves: the manual invoice is there, and the failed
+    # document produced no phantom row.
+    resp = await client.get("/api/invoices", headers=AUTH)
+    assert resp.status_code == 200
+    assert [inv["id"] for inv in resp.json()["invoices"]] == [invoice_id]
+
+    # 5. Detail, edit, and confirm all still work end to end.
+    resp = await client.get(f"/api/invoices/{invoice_id}", headers=AUTH)
+    assert resp.status_code == 200
+    assert resp.json()["confidence"]["document"]["status"] == "green"
+    resp = await client.patch(
+        f"/api/invoices/{invoice_id}/fields",
+        headers=AUTH,
+        json={"corrections": [{"line_index": 0, "field": "qty", "value": "12"}]},
+    )
+    assert resp.status_code == 200
+    resp = await client.post(f"/api/invoices/{invoice_id}/confirm", headers=AUTH)
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "confirmed"
+    # Confirm did its whole job: the catalog self-built, prices recorded.
+    assert await db.pool.fetchval("select count(*) from supplier_item_prices") == 2
 
 
 # --- price history ----------------------------------------------------------

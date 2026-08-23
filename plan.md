@@ -8,7 +8,7 @@
 - **Product:** Faida — profit visibility for GCC cafeterias and multi-branch karak/paratha chains, fed through WhatsApp.
 - **Reference:** `Docs/PRD.md` (v2). This plan sequences the build; the PRD owns product intent. Where they conflict on *scope timing*, this plan wins.
 - **Start date:** 2026-08-22
-- **Current milestone:** M2 code complete (gate e2e green); M0 proof + M1 accuracy loop await founder steps (Meta/deploy, corpus)
+- **Current milestone:** M3 code complete (revoked-key drill green); founder-gated: webhook repoint + M0 phone proof, F6 corpus for the M1 accuracy loop
 
 ---
 
@@ -237,8 +237,8 @@ plan (§7).
       button (WP-31)
 - [x] Invoice list (by branch, by supplier) with status chips (WP-32)
 - [x] Price-trend sparkline per supplier item (from `supplier_item_prices`) (WP-33)
-- [ ] Manual invoice entry form (`source = 'manual'`) — the vision-outage fallback (WP-34)
-- [ ] Web CI job: lint + typecheck + build; total CI stays under 5 minutes (WP-35)
+- [x] Manual invoice entry form (`source = 'manual'`) — the vision-outage fallback (WP-34)
+- [x] Web CI job: lint + typecheck + build; total CI stays under 5 minutes (WP-35)
 - **Done when:** every number on the screen traces to the photo beside it; an amber field can be
   fixed and confirmed in the browser; with the Anthropic key revoked, upload + manual entry +
   all screens still work.
@@ -511,6 +511,7 @@ pilot volume. Meta utility template cost applies only from M9 (verify live UAE r
 | 2026-08-22 | Execution decomposition (founder track, contracts, work packages, delegation protocol) lives in this file as §7; no separate BUILD.md | One live file; this plan stays the single sequencing document |
 | 2026-08-22 | Price alerts computed in the extraction reply; `last_price`/`prev_price` update only on confirm | The demo's money moment; unconfirmed invoices must not move the baseline |
 | 2026-08-22 | Confirmations resolved by derivation (newest awaiting-confirm per sender), no pending-confirmations table; CI eval smoke = recorded provider responses, live eval on demand | Keep the schema and CI lean until real usage demands more |
+| 2026-08-23 | C6 extended: POST /api/invoices/manual - no-AI manual invoice creation running the same deterministic validation + snapping, document source='manual' with classification NULL and status extracted | M3's vision-outage fallback needs a write path; the pipeline invariants (checks, confidence, cash hold) apply identically |
 | 2026-08-23 | C6 pinned in implementation: PATCH and confirm return the full updated detail payload; list = {"invoices": [...]}; money serialized as strings, never JSON numbers; confirm also clears needs_review (the review screen is the cash path until M6) | Saves the screen a round trip; float money is banned everywhere |
 | 2026-08-22 | C4 document check is line-sum primary (Σ line_totals + tax vs total; extracted subtotal is a cross-check). C3 note: `RepairResult` keeps its dict-keyed patch shape; providers using strict structured outputs translate via private wire models | §5 was always line-sum, and a subtotal must not masquerade as reconciliation. The Anthropic strict-schema transform silently empties open dicts (verified empirically in WP-10) |
 | 2026-08-22 | Deny-all RLS (`enable row level security`, zero policies) on all ten public tables, in `0001_init.sql` | Supabase serves the `public` schema over PostgREST, so the anon key would have granted the internet full read/write. Owner role + `service_role` bypass RLS, so the backend is untouched; M6 still owns real tenant policies |
@@ -519,6 +520,14 @@ pilot volume. Meta utility template cost applies only from M9 (verify live UAE r
 
 *(newest first — one line per session: date, what shipped, what's next)*
 
+- 2026-08-23 - Wave 7b integrated (WP-34 + WP-35): manual endpoint (deterministic validation +
+  snapping, cash hold, 422 parity with PATCH), upload page with 3 s polling and an honest
+  60 s timeout state that offers manual entry (never a dead end), manual entry form with
+  per-row validation, mock demonstrating both upload outcomes; web CI job (npm ci, lint, tsc,
+  build, ~1 min). The revoked-key drill is now a permanent test - M3's done-when is executable.
+  162 API tests, web build clean. M3 checklist fully ticked. Next: M4 agent side (WP-40 seed,
+  WP-41 latency instrumentation, WP-43 runbook); WP-42 meme path already word-perfect in
+  replies.py; founder: webhook repoint + F4 phone proof + F6 corpus.
 - 2026-08-23 - Wave 7a integrated: web client aligned to the implemented C6 (corrections PATCH
   body, prices envelope, mock now byte-identical to the real API incl. status codes and
   timestamps, signed-URL expiry refetch on image error); WP-32 list refinement (branch/supplier

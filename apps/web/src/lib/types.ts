@@ -151,6 +151,40 @@ export interface FieldCorrections {
   corrections: Correction[];
 }
 
+/**
+ * One typed line for POST /api/invoices/manual. Numbers are unsigned decimal
+ * strings, the same convention corrections use; omitted fields were simply
+ * not on the paper.
+ */
+export interface ManualLineInput {
+  raw_name: string;
+  qty?: string;
+  unit?: string;
+  pack_size?: string;
+  unit_price?: string;
+  line_total?: string;
+}
+
+/**
+ * POST /api/invoices/manual body (WP-34, the sanctioned C6 extension): the
+ * vision-outage fallback's typed path. Everything optional except at least
+ * one line; the server runs the same deterministic checks the pipeline runs
+ * and answers 201 with the standard InvoiceDetail. No AI is involved.
+ */
+export interface ManualInvoiceInput {
+  branch_id?: string;
+  supplier_name?: string;
+  invoice_no?: string;
+  /** ISO date, "YYYY-MM-DD". */
+  invoice_date?: string;
+  currency?: string;
+  payment_kind?: PaymentKind;
+  subtotal?: string;
+  tax?: string;
+  total?: string;
+  lines: ManualLineInput[];
+}
+
 /** One confirmed price observation (supplier_item_prices row). */
 export interface PricePoint {
   price: string;

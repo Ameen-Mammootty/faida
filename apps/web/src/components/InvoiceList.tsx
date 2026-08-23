@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { listInvoices } from "@/lib/api";
 import { ApiError } from "@/lib/errors";
 import { formatDate, money } from "@/lib/format";
+import { branchOptions as deriveBranches, supplierOptions as deriveSuppliers } from "@/lib/options";
 import type { InvoiceFilters, InvoiceStatus, InvoiceSummary } from "@/lib/types";
 import StatusChip from "./StatusChip";
 
@@ -38,28 +39,6 @@ function sortInvoices(invoices: InvoiceSummary[], dir: SortDir): InvoiceSummary[
     }
     return a.id < b.id ? earlierFirst : -earlierFirst;
   });
-}
-
-interface FilterOption {
-  id: string;
-  name: string;
-}
-
-/** Distinct id -> name pairs from the unfiltered list, sorted by name. */
-function distinctOptions(
-  invoices: InvoiceSummary[],
-  id: (invoice: InvoiceSummary) => string | null,
-  name: (invoice: InvoiceSummary) => string | null,
-  fallback: string,
-): FilterOption[] {
-  const seen = new Map<string, string>();
-  for (const invoice of invoices) {
-    const key = id(invoice);
-    if (key !== null && !seen.has(key)) seen.set(key, name(invoice) ?? fallback);
-  }
-  return [...seen.entries()]
-    .map(([optionId, optionName]) => ({ id: optionId, name: optionName }))
-    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export default function InvoiceList() {
@@ -133,18 +112,8 @@ export default function InvoiceList() {
   const invoices = current?.invoices ? sortInvoices(current.invoices, sortDir) : null;
   const error = current?.error ?? null;
 
-  const branchOptions = distinctOptions(
-    options ?? [],
-    (invoice) => invoice.branch_id,
-    (invoice) => invoice.branch_name,
-    "Unnamed branch",
-  );
-  const supplierOptions = distinctOptions(
-    options ?? [],
-    (invoice) => invoice.supplier_id,
-    (invoice) => invoice.supplier_name,
-    "Unnamed supplier",
-  );
+  const branchOptions = deriveBranches(options ?? []);
+  const supplierOptions = deriveSuppliers(options ?? []);
   // A deep-linked filter id keeps its selection visible even before (or
   // without) appearing in the option rows.
   if (branchId && !branchOptions.some((option) => option.id === branchId)) {
@@ -169,13 +138,31 @@ export default function InvoiceList() {
 
   return (
     <div className="space-y-5">
-      <header>
-        <h1 className="font-display text-2xl font-semibold tracking-[-0.02em] text-ink">
-          Invoices
-        </h1>
-        <p className="mt-1 text-sm text-stone">
-          Forwarded on WhatsApp, read, and checked. Every number traces to its photo.
-        </p>
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="font-display text-2xl font-semibold tracking-[-0.02em] text-ink">
+            Invoices
+          </h1>
+          <p className="mt-1 text-sm text-stone">
+            Forwarded on WhatsApp, read, and checked. Every number traces to its photo.
+          </p>
+        </div>
+        {/* WP-34: both fallback paths, one click from the list - upload a
+            photo, or type the invoice in with no photo at all. */}
+        <div className="flex items-center gap-2.5">
+          <Link
+            href="/invoices/manual"
+            className="rounded-sm border border-palm/30 px-3.5 py-2 text-sm font-medium text-palm hover:border-palm hover:bg-mist"
+          >
+            Enter manually
+          </Link>
+          <Link
+            href="/invoices/new"
+            className="rounded-sm bg-palm px-3.5 py-2 text-sm font-semibold text-white hover:bg-palm-deep"
+          >
+            Upload invoice
+          </Link>
+        </div>
       </header>
 
       <nav aria-label="Filter by status" className="flex gap-5 border-b border-ink/10">
@@ -268,7 +255,21 @@ export default function InvoiceList() {
             <>
               <p className="text-sm text-ink">No invoices yet.</p>
               <p className="mt-1 text-sm text-stone">
-                Forward a supplier invoice photo on WhatsApp and it appears here.
+                Forward a supplier invoice photo on WhatsApp and it appears here. You can also{" "}
+                <Link
+                  href="/invoices/new"
+                  className="font-medium text-palm hover:text-palm-deep"
+                >
+                  upload a photo
+                </Link>{" "}
+                or{" "}
+                <Link
+                  href="/invoices/manual"
+                  className="font-medium text-palm hover:text-palm-deep"
+                >
+                  enter one manually
+                </Link>
+                .
               </p>
             </>
           )}

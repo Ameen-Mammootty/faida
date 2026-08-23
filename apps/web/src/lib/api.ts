@@ -4,6 +4,7 @@
  *
  *   GET   /api/invoices                     {"invoices": [...]}, branch/supplier/status filters
  *   GET   /api/invoices/{id}                detail + checks + confidence + signed image URL
+ *   POST  /api/invoices/manual              typed-in invoice (WP-34); returns the detail, 201
  *   PATCH /api/invoices/{id}/fields         {"corrections": [...]}; returns the re-validated detail
  *   POST  /api/invoices/{id}/confirm        confirm (or approve a cash hold); returns the detail
  *   POST  /api/documents                    manual upload (multipart file [+ branch_id])
@@ -24,6 +25,7 @@
 import { ApiError } from "./errors";
 import {
   mockConfirmInvoice,
+  mockCreateManualInvoice,
   mockGetInvoice,
   mockGetSupplierItemPrices,
   mockListInvoices,
@@ -35,6 +37,7 @@ import type {
   InvoiceDetail,
   InvoiceFilters,
   InvoiceSummary,
+  ManualInvoiceInput,
   PriceHistory,
   UploadResult,
 } from "./types";
@@ -118,11 +121,22 @@ export async function confirmInvoice(id: string): Promise<InvoiceDetail> {
   });
 }
 
-export async function uploadDocument(file: File): Promise<UploadResult> {
-  if (MOCK) return mockUploadDocument(file);
+export async function uploadDocument(file: File, branchId?: string): Promise<UploadResult> {
+  if (MOCK) return mockUploadDocument(file, branchId);
   const body = new FormData();
   body.append("file", file);
+  if (branchId) body.append("branch_id", branchId);
   return request<UploadResult>("/api/documents", { method: "POST", body });
+}
+
+/**
+ * The typed fallback (WP-34): create an invoice with no photo and no AI.
+ * Resolves to the created invoice's full detail - green/amber already derived
+ * by the same deterministic checks extraction uses.
+ */
+export async function createManualInvoice(body: ManualInvoiceInput): Promise<InvoiceDetail> {
+  if (MOCK) return mockCreateManualInvoice(body);
+  return request<InvoiceDetail>("/api/invoices/manual", jsonInit("POST", body));
 }
 
 export async function getSupplierItemPrices(supplierItemId: string): Promise<PriceHistory> {

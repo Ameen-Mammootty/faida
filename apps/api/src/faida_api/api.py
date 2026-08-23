@@ -5,10 +5,25 @@ Routes, all under /api and all requiring `Authorization: Bearer <api_token>`:
 
     GET   /api/invoices                       list, newest first, optional filters
     GET   /api/invoices/{id}                  full detail + signed image URL
+    POST  /api/invoices/manual                typed-in invoice, no AI (WP-34)
     PATCH /api/invoices/{id}/fields           apply corrections, re-validate
     POST  /api/invoices/{id}/confirm          confirm (awaiting_confirm or needs_review)
     POST  /api/documents                      manual upload -> extract job
     GET   /api/supplier-items/{id}/prices     price history for the sparkline
+
+POST /api/invoices/manual is the sanctioned WP-34 extension of C6: the
+vision-outage fallback's typed path. Body:
+
+    {branch_id?, supplier_name?, invoice_no?, invoice_date?, currency?,
+     payment_kind?, subtotal?, tax?, total?,
+     lines: [{raw_name, qty?, unit?, pack_size?, unit_price?, line_total?}]}
+
+Money and quantities arrive as unsigned decimal strings (the PATCH
+convention); dates as ISO "YYYY-MM-DD". The server builds the C3 invoice
+shape, runs the same deterministic validation and supplier snapping the
+pipeline runs, and persists through the same helper - no AI anywhere, so
+this path survives a revoked Anthropic key (plan.md §6 M3 done-when).
+Returns 201 with the standard detail payload.
 
 Access control is the C6 demo scheme: one shared-secret bearer token
 (settings.api_token) compared in constant time. An empty setting refuses every
@@ -24,6 +39,7 @@ the same unsigned-number rule, the same re-validate + re-snap application -
 one implementation of "fix a field", whether it arrives by chat or by screen.
 """
 
+import datetime
 import hashlib
 import hmac
 import logging
@@ -45,6 +61,10 @@ from .confirm import (
 )
 from .contracts import InvoiceStatus, JobKind
 from .db import Database
+from .extraction.schema import ExtractedInvoice, ExtractedLine
+from .extraction.validate import validate_invoice
+from .matching import Row, match_supplier, snap_item
+from .replies import DEFAULT_CURRENCY
 
 logger = logging.getLogger(__name__)
 
@@ -302,6 +322,189 @@ async def confirm_invoice(invoice_id: uuid.UUID, request: Request) -> dict:
 
     await db.record_confirmed_prices(str(invoice_id))
     return await _invoice_detail(request, str(invoice_id))
+
+
+# --- manual entry (WP-34, sanctioned C6 extension) --------------------------
+
+
+class ManualLine(BaseModel):
+    """One typed line. Numbers are unsigned decimal strings (the PATCH
+    convention); raw_name must be non-empty."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    raw_name: str
+    qty: str | None = None
+    unit: str | None = None
+    pack_size: str | None = None
+    unit_price: str | None = None
+    line_total: str | None = None
+
+
+class ManualInvoice(BaseModel):
+    """POST /api/invoices/manual body. Everything optional except at least
+    one line - a torn cash receipt often has no invoice number and no printed
+    subtotal, and the deterministic checks mark the gaps amber."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    branch_id: str | None = None
+    supplier_name: str | None = None
+    invoice_no: str | None = None
+    invoice_date: datetime.date | None = None
+    currency: str | None = None
+    payment_kind: Literal["credit", "cash"] | None = None
+    subtotal: str | None = None
+    tax: str | None = None
+    total: str | None = None
+    lines: list[ManualLine] = Field(min_length=1)
+
+
+def _manual_number(value: str | None, field: str) -> Decimal | None:
+    """The unsigned-decimal-string rule, shared with PATCH and chat."""
+    if value is None:
+        return None
+    number = _parse_number(value)
+    if number is None:
+        raise HTTPException(
+            status_code=422,
+            detail=f"'{value}' is not a valid {field}: "
+            'send an unsigned decimal string like "16" or "4.50"',
+        )
+    return number
+
+
+def _clean(value: str | None) -> str | None:
+    """Trim free-text fields; a blank string means the field was not given."""
+    if value is None:
+        return None
+    return value.strip() or None
+
+
+def _to_extracted_invoice(body: ManualInvoice) -> ExtractedInvoice:
+    """Map the typed body onto the C3 schema, so validation (and every later
+    correction) treats a manual invoice exactly like an extracted one."""
+    lines: list[ExtractedLine] = []
+    for index, line in enumerate(body.lines):
+        raw_name = line.raw_name.strip()
+        if not raw_name:
+            raise HTTPException(status_code=422, detail="a line name cannot be empty")
+        n = index + 1
+        lines.append(
+            ExtractedLine(
+                raw_name=raw_name,
+                qty=_manual_number(line.qty, f"line {n} qty"),
+                unit=_clean(line.unit),
+                pack_size=_clean(line.pack_size),
+                unit_price=_manual_number(line.unit_price, f"line {n} unit_price"),
+                line_total=_manual_number(line.line_total, f"line {n} line_total"),
+            )
+        )
+    return ExtractedInvoice(
+        supplier_name=_clean(body.supplier_name),
+        invoice_no=_clean(body.invoice_no),
+        invoice_date=body.invoice_date,
+        currency=_clean(body.currency),
+        payment_kind=body.payment_kind,
+        lines=lines,
+        subtotal=_manual_number(body.subtotal, "subtotal"),
+        tax=_manual_number(body.tax, "tax"),
+        total=_manual_number(body.total, "total"),
+    )
+
+
+@router.post("/invoices/manual", status_code=201)
+async def create_manual_invoice(body: ManualInvoice, request: Request) -> dict:
+    """WP-34's typed fallback: validate + snap + persist a typed invoice
+    through the exact machinery the pipeline uses - plan.md §5 layers 2 and 4
+    with layer 1 (the AI) absent, so this path survives a revoked Anthropic
+    key. The document row is a stub anchor: source 'manual', no stored
+    original, and no classification (no model looked at anything)."""
+    db: Database = request.app.state.db
+    tenant_id = await db.default_tenant_id()
+    if tenant_id is None:
+        raise HTTPException(status_code=500, detail="no tenant seeded; run supabase/seed.sql")
+    if body.branch_id is not None:
+        branch = await _get_branch(db, body.branch_id)
+        if branch is None or str(branch["tenant_id"]) != tenant_id:
+            raise HTTPException(status_code=422, detail=f"unknown branch_id '{body.branch_id}'")
+
+    invoice = _to_extracted_invoice(body)
+    validation = validate_invoice(invoice)
+
+    # Supplier memory (plan.md §5 layer 4), the pipeline's convention: match
+    # the supplier, snap each line, fold snapped flags into the checks without
+    # recomputing status. Deterministic - no AI - and never blocking: on any
+    # failure the invoice persists unsnapped.
+    supplier = None
+    snapped_items: list[Row | None] = [None] * len(invoice.lines)
+    try:
+        suppliers = await db.list_suppliers(tenant_id)
+        supplier = match_supplier(suppliers, invoice.supplier_name)
+        if supplier is not None:
+            items = await db.list_supplier_items(str(supplier["id"]))
+            snapped_items = [snap_item(items, line.raw_name) for line in invoice.lines]
+    except Exception:
+        logger.exception("supplier matching failed for a manual invoice; persisting unsnapped")
+        supplier, snapped_items = None, [None] * len(invoice.lines)
+
+    line_checks = validation.lines
+    if supplier is not None:
+        line_checks = [
+            check.model_copy(update={"snapped": item is not None})
+            for check, item in zip(line_checks, snapped_items, strict=True)
+        ]
+
+    # Derived confidence, never self-reported (plan.md §5 layer 5) - the same
+    # dump the pipeline persists.
+    confidence = {
+        "document": validation.document.model_dump(mode="json"),
+        "lines": [check.status.value for check in line_checks],
+    }
+    lines = [
+        {
+            "position": index,
+            "raw_name": line.raw_name,
+            "supplier_item_id": str(item["id"]) if item is not None else None,
+            "qty": line.qty,
+            "unit": line.unit,
+            "unit_price": line.unit_price,
+            "line_total": line.line_total,
+            "pack_size": line.pack_size,
+            "checks": check.model_dump(mode="json"),
+        }
+        for index, (line, check, item) in enumerate(
+            zip(invoice.lines, line_checks, snapped_items, strict=True)
+        )
+    ]
+
+    # WP-24 (PRD §21) applies to typed invoices too: cash holds for approval.
+    status = (
+        InvoiceStatus.NEEDS_REVIEW
+        if invoice.payment_kind == "cash"
+        else InvoiceStatus.AWAITING_CONFIRM
+    )
+
+    document_id = await db.insert_manual_document(tenant_id, body.branch_id)
+    invoice_id = await db.insert_draft_invoice(
+        tenant_id=tenant_id,
+        branch_id=body.branch_id,
+        document_id=document_id,
+        supplier_id=str(supplier["id"]) if supplier is not None else None,
+        supplier_name=invoice.supplier_name,
+        invoice_no=invoice.invoice_no,
+        invoice_date=invoice.invoice_date,
+        currency=invoice.currency or DEFAULT_CURRENCY,
+        subtotal=invoice.subtotal,
+        tax=invoice.tax,
+        total=invoice.total,
+        payment_kind=invoice.payment_kind,
+        status=status,
+        confidence=confidence,
+        lines=lines,
+        document_classification=None,
+    )
+    return await _invoice_detail(request, invoice_id)
 
 
 # --- documents (manual upload) ----------------------------------------------

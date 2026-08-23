@@ -150,6 +150,20 @@ class Database:
             sha256,
         )
 
+    async def insert_manual_document(self, tenant_id: str, branch_id: str | None) -> str:
+        """A typed-in invoice's anchor row (C6 extension POST /api/invoices/manual,
+        WP-34): source 'manual', no stored original, no message, no mime/sha256 -
+        the evidence is the operator's keyboard, not a photo."""
+        return await self.pool.fetchval(
+            """
+            insert into documents (tenant_id, branch_id, source)
+            values ($1, $2, 'manual')
+            returning id::text
+            """,
+            tenant_id,
+            branch_id,
+        )
+
     async def set_document_storage_path(self, document_id: str, storage_path: str) -> None:
         await self.pool.execute(
             "update documents set storage_path = $2 where id = $1", document_id, storage_path
@@ -196,12 +210,19 @@ class Database:
         status: str = InvoiceStatus.AWAITING_CONFIRM,
         confidence: dict,
         lines: list[dict],
+        document_classification: str | None = "invoice",
     ) -> str:
         """Draft invoice + lines + the document transition, one transaction:
         C1 says 'extracted' means a draft invoice with checks exists, so the
         two can never be observed apart. The insert takes the post-transition
         status directly (C1 permits draft -> awaiting_confirm; cash invoices
-        pass needs_review, WP-24)."""
+        pass needs_review, WP-24).
+
+        `document_classification` defaults to 'invoice' (the pipeline persists
+        only after the model classified the document as one). The manual-entry
+        path (WP-34) passes None: no AI ran, so no classification is claimed -
+        the document still lands 'extracted', because a draft invoice with
+        checks now exists for it."""
         async with self.pool.acquire() as conn, conn.transaction():
             invoice_id = await conn.fetchval(
                 """
@@ -249,9 +270,9 @@ class Database:
                 ],
             )
             await conn.execute(
-                "update documents set status = 'extracted', classification = 'invoice' "
-                "where id = $1",
+                "update documents set status = 'extracted', classification = $2 where id = $1",
                 document_id,
+                document_classification,
             )
         return invoice_id
 
