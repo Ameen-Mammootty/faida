@@ -9,7 +9,9 @@ from the WP-20 composer (replies.py). Cash invoices are held as needs_review
 (Database.record_confirmed_prices).
 """
 
+import datetime
 import logging
+import time
 
 import asyncpg
 
@@ -71,9 +73,16 @@ async def extract_document(
     if await db.get_invoice_by_document(document_id) is not None:
         return  # a previous attempt completed; retries must not duplicate
 
-    from_phone = await _sender_phone(db, doc)
+    # WhatsApp documents reply to their sender; upload/manual (M3) have none.
+    # The inbound message row also carries the webhook receipt time the WP-41
+    # summary line measures from.
+    msg = await db.get_inbound_message(doc["wa_message_id"]) if doc["wa_message_id"] else None
+    from_phone = msg["from_phone"] if msg else None
     await db.set_document_status(document_id, DocumentStatus.PROCESSING)
 
+    # WP-41: per-stage elapsed ms, provider stages taken from the usage the
+    # provider already timed (never re-timed here).
+    stage_ms: dict[str, int] = {}
     try:
         if provider is None:
             raise RuntimeError("no extraction provider configured (anthropic_api_key is empty)")
@@ -81,11 +90,17 @@ async def extract_document(
             raise RuntimeError(f"document {document_id} has no stored original")
         image = await storage.get(doc["storage_path"])
         result, usage = await provider.extract(image, doc["mime"])
+        stage_ms["extract"] = usage.latency_ms
+        logger.info(
+            "latency stage=extract document=%s elapsed_ms=%d", document_id, usage.latency_ms
+        )
 
         if result.classification is Classification.INVOICE:
             if result.invoice is None:
                 raise ValueError("provider returned classification 'invoice' with no invoice")
-            reply = await _persist_extracted(db, provider, doc, image, result.invoice, usage)
+            reply = await _persist_extracted(
+                db, provider, doc, image, result.invoice, usage, stage_ms
+            )
         elif result.classification is Classification.Z_REPORT:
             await db.set_document_status(
                 document_id, DocumentStatus.FAILED, Classification.Z_REPORT
@@ -104,7 +119,31 @@ async def extract_document(
         raise
 
     if from_phone:
+        started = time.monotonic()
         await _reply(db, wa, from_phone, reply)
+        stage_ms["reply"] = int((time.monotonic() - started) * 1000)
+        logger.info("latency stage=reply document=%s elapsed_ms=%d", document_id, stage_ms["reply"])
+
+    # WP-41 summary: forward-to-reply from the DB receipt timestamps plus the
+    # in-process stage timers - the one grep that proves the ~20 s target.
+    # ingest approximates webhook receipt -> document row (queue wait + media
+    # download); the download/store stages above carry the precise splits.
+    if msg is not None:
+        now = datetime.datetime.now(datetime.UTC)
+        stage_ms["ingest"] = max(
+            int((doc["created_at"] - msg["created_at"]).total_seconds() * 1000), 0
+        )
+        logger.info(
+            "latency document=%s webhook_to_reply_ms=%d "
+            "stages=ingest:%d,extract:%d,repair:%d,persist:%d,reply:%d",
+            document_id,
+            int((now - msg["created_at"]).total_seconds() * 1000),
+            stage_ms["ingest"],
+            stage_ms.get("extract", 0),
+            stage_ms.get("repair", 0),
+            stage_ms.get("persist", 0),
+            stage_ms.get("reply", 0),
+        )
 
 
 async def _persist_extracted(
@@ -114,14 +153,21 @@ async def _persist_extracted(
     image: bytes,
     extracted: ExtractedInvoice,
     extract_usage: ProviderUsage,
+    stage_ms: dict[str, int] | None = None,
 ) -> str:
     """Layers 2-4, then persistence: validate, one scoped repair round when
     anything failed, supplier memory + price alerts, then draft invoice +
     lines + document transition in one transaction. Money stays Decimal end
-    to end (C4). Returns the composed extraction reply."""
+    to end (C4). Returns the composed extraction reply. `stage_ms` (WP-41)
+    collects repair/persist elapsed ms for the caller's summary line."""
+    if stage_ms is None:
+        stage_ms = {}
     validation = validate_invoice(extracted)
     outcome = await repair_invoice(provider, image, doc["mime"], extracted, validation)
     invoice, validation = outcome.invoice, outcome.validation
+    # Repair latency comes from the provider's own timing (0 = no repair ran).
+    stage_ms["repair"] = outcome.usage.latency_ms if outcome.usage is not None else 0
+    logger.info("latency stage=repair document=%s elapsed_ms=%d", doc["id"], stage_ms["repair"])
 
     # Supplier memory (plan.md §5 layer 4, WP-22): match the supplier for the
     # tenant, then fuzzy-snap each line against that supplier's catalog. Never
@@ -190,6 +236,7 @@ async def _persist_extracted(
         status = InvoiceStatus.AWAITING_CONFIRM
         reply = compose_invoice_reply(invoice, validation, alerts)
 
+    started = time.monotonic()
     await db.insert_draft_invoice(
         tenant_id=str(doc["tenant_id"]),
         branch_id=str(doc["branch_id"]) if doc["branch_id"] else None,
@@ -215,6 +262,8 @@ async def _persist_extracted(
         applied=outcome.applied,
         outcome="extracted",
     )
+    stage_ms["persist"] = int((time.monotonic() - started) * 1000)
+    logger.info("latency stage=persist document=%s elapsed_ms=%d", doc["id"], stage_ms["persist"])
     return reply
 
 
@@ -272,14 +321,6 @@ async def _record_run(
         repair_applied=applied,
         outcome=outcome,
     )
-
-
-async def _sender_phone(db: Database, doc: asyncpg.Record) -> str | None:
-    """WhatsApp documents reply to their sender; upload/manual (M3) have none."""
-    if not doc["wa_message_id"]:
-        return None
-    msg = await db.get_inbound_message(doc["wa_message_id"])
-    return msg["from_phone"] if msg else None
 
 
 async def _reply(db: Database, wa: WhatsAppClient, to_phone: str, body: str) -> None:

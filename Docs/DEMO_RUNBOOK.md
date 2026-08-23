@@ -1,0 +1,124 @@
+# Faida Demo Runbook (M4)
+
+This is the operating manual for the 4-minute demo in plan.md §6 M4 and for the two rehearsals before it (F7).
+The gate: the demo runs end to end twice in a row with zero intervention.
+Every reply quoted below is the exact template from `apps/api/src/faida_api/replies.py`, so if the phone shows different words, something is wrong.
+
+## A. Preconditions checklist
+
+Run through this list the day before, and again 30 minutes before going on.
+
+- [ ] The API is deployed and healthy: `curl https://<host>/health` returns `{"ok":true,"db":true}` (README §M0 has the troubleshooting table).
+- [ ] The worker is on: Railway variable `WORKER_ENABLED=true` (without it the ack and extraction never run).
+- [ ] The Meta webhook points at the Railway host: WhatsApp → Configuration → Webhook shows `https://<host>/webhook`, verified, subscribed to the `messages` field.
+- [ ] The Meta access token is a system-user token, not the 24-hour temporary one (a mid-demo expiry looks like total silence).
+- [ ] The demo phone(s) are registered as recipients on the Meta test number and have confirmed the code.
+- [ ] `ANTHROPIC_API_KEY` is set on Railway (with it missing, every invoice gets the failure reply).
+- [ ] The demo seed is applied: `psql "$DATABASE_URL" -f supabase/demo_seed.sql` (see section C).
+- [ ] The founder phone is mapped to the demo chain: the commented UPDATE at the bottom of `supabase/demo_seed.sql` has been run once, so the sender resolves to Al Qusais Branch of Karak Al Khaleej Cafeterias.
+- [ ] The review screen loads real data with its API token configured, and the invoice list for the demo chain is empty (no rehearsal leftovers).
+- [ ] The 3 curated invoice photos and 1 meme image are saved on the demo phone, in order, first in the gallery.
+- [ ] Phone details: full battery, full signal or stage wifi, notifications from every other app silenced.
+
+Staged catalog quick reference (from `supabase/demo_seed.sql`):
+
+| Item | Staged last price | Demo invoice price | Expected alert |
+|---|---|---|---|
+| Milk Powder 2.5kg | 50.50 | 54.50 | up AED 4.00 |
+| Karak Tea Dust | 22.00 | 18.75 | down AED 3.25 |
+| Evaporated Milk 400ml | 90.00 | 96.00 | up AED 6.00 (backup invoice 2) |
+| Sugar 50kg, Cardamom Powder 500g, Chakki Atta Flour 25kg | stable | unchanged | none |
+
+Curated invoice 1 (Gulf Foods Trading LLC, 2 lines, total AED 745.76) is the on-stage invoice.
+Invoices 2 (Al Madina Trading) and 3 are rehearsal and backup material.
+Curate credit invoices only: an invoice marked cash gets the cash-hold closing instead of "Reply OK to confirm", and OK will not confirm it from chat.
+
+## B. The 4-minute script
+
+The script from plan.md §6 M4, verbatim: forward invoice, reply appears with price alert, "OK", open review screen with photo beside data all green, show the sparkline for the item that moved, forward a meme, polite decline, close on the no-app line.
+
+1. Open WhatsApp on the demo phone with the chat to the Faida number already on screen.
+2. Say: "This is a supplier invoice from this morning's delivery. Watch what the salesman does with it."
+3. Forward curated invoice 1.
+4. Within a couple of seconds the ack arrives: `Got it - invoice received and saved. I'll reply with the details here soon.`
+5. Now extraction runs, which takes roughly 30 seconds; do not stand in silence.
+6. While waiting, say: "It is reading the photo now: every line item, every price, and checking that the math on the page actually adds up. No typing, no app, and it compares every price against what this cafeteria paid last week."
+7. The parsed reply arrives, exactly:
+   ```
+   Read it: Gulf Foods Trading LLC, 2 lines, total AED 745.76.
+   Milk Powder 2.5kg up AED 4.00 (50.50 to 54.50) since your last purchase.
+   Karak Tea Dust down AED 3.25 (22.00 to 18.75) since your last purchase.
+   Reply OK to confirm.
+   ```
+8. Point at the alert line and say: "That is the money moment: milk powder went up four dirhams and the owner knows before the invoice is even filed."
+9. Reply `OK`.
+10. The confirmation arrives: `Confirmed - Gulf Foods Trading LLC, AED 745.76 recorded. I'll watch these prices for you.`
+11. Open the review screen: the invoice photo sits on the left, the extracted fields on the right, every field green with its check icon.
+12. Open the Milk Powder 2.5kg sparkline: three weeks of gentle drift, then today's jump to 54.50.
+13. Back in WhatsApp, forward the meme and say: "And when someone sends it nonsense?"
+14. First the same ack arrives (`Got it - invoice received and saved. I'll reply with the details here soon.`), then after the read, the decline, exactly: `That doesn't look like a supplier invoice, so I'll leave it - forward an invoice photo and I'll read it.`
+15. Say: "It refuses politely instead of inventing numbers. That discipline is why you can trust the numbers it does record."
+16. Close on the plan's line: "no app, no login, no training - the salesman already knows how to do this."
+
+## C. Reset between rehearsals
+
+One command restores the exact staged state, however messy the last run was:
+
+```bash
+psql "$DATABASE_URL" -f supabase/demo_seed.sql
+```
+
+`$DATABASE_URL` is the same session-pooler URI Railway uses (README §M0 step 2).
+The reset deletes every rehearsal trace for the demo chain (documents, invoices, lines, messages, jobs, runs, confirm-created catalog rows, appended price history) and re-stages the baselines; it cannot touch any other tenant, and it preserves the branch phone mapping.
+Run it after every rehearsal in which you replied OK: confirming moves `last_price` to 54.50, so without the reset the milk powder alert will not fire on the next run.
+Re-forwarding the same photo without confirming is safe, since dedupe is per WhatsApp message, not per image.
+Rehearsal images stay in the storage bucket; that is intended, since originals are immutable and nothing references them after the reset.
+
+Re-check after the reset:
+
+1. `select last_price, prev_price from supplier_items where id = 'd0000000-0000-0000-0000-000000000101';` returns `50.500 | 49.750`.
+2. `select name, wa_phone_e164 from branches where tenant_id = 'd0000000-0000-0000-0000-000000000001';` still shows the founder phone on Al Qusais Branch.
+3. `curl https://<host>/health` returns `{"ok":true,"db":true}`.
+4. The review screen's invoice list for the demo chain is empty again.
+
+## D. Failure playbook
+
+Rule one, from plan.md §7.3 WP-41: every flake found in rehearsal gets fixed, never retried around.
+
+**Extraction is slow or fails on stage.**
+If the second reply has not arrived after about 60 seconds, or the failure reply arrives (`Couldn't read this one - try a straighter photo, or type the total.`), do not fumble.
+The pivot line: "And that is the honest path: when it cannot read something, it says so and asks, instead of quietly guessing a number into your books."
+Then show the review screen's manual entry as the fallback, which is a feature, not an apology.
+
+**The alert did not fire.**
+The reply arrived but without the price alert line.
+Almost always this means a rehearsal confirm moved the baseline: check `last_price` on the milk powder item (query in section C) and re-run the reset.
+If `last_price` is already 54.50, the previous run was confirmed and not reset.
+
+**WhatsApp is silent (no ack at all).**
+No ack within 10 seconds means the message never reached the worker.
+Check in this order, per the README §M0 troubleshooting table: `/health` returns `db:true`; Meta shows the webhook delivery attempt; `META_APP_SECRET` matches (deliveries sent but nothing in `wa_messages` means the signature is being rejected); the access token has not expired; `WORKER_ENABLED` is true.
+On stage, switch to the backup demo phone first and debug later.
+
+**The review screen shows no image.**
+Signed image URLs expire; refresh the page and the screen re-fetches a fresh signed URL.
+If it still fails, show the fields and the sparkline, which carry the story without the photo.
+
+## E. The rehearsal log
+
+Plan.md §6 M4 requires the full script rehearsed twice on the demo phones with zero intervention.
+Forward-to-reply seconds come from the latency summary the API logs at pipeline completion, one line per document:
+
+```
+latency document=<id> webhook_to_reply_ms=<n> stages=ingest:<n>,extract:<n>,repair:<n>,persist:<n>,reply:<n>
+```
+
+Grep the Railway logs for `latency document=` and divide `webhook_to_reply_ms` by 1000.
+The target is under about 20 seconds from forward to reply; a repair round roughly doubles the extract stage, so a curated invoice that keeps triggering repair should be swapped out.
+
+| Run # | Date | Forward-to-reply (s) | Flakes seen (and the fix shipped) |
+|---|---|---|---|
+| 1 | | | |
+| 2 | | | |
+
+A run with any manual intervention does not count; fix the cause and run it again.

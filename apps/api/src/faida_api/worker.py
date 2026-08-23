@@ -5,6 +5,7 @@ volume proves the need (plan §3)."""
 import asyncio
 import hashlib
 import logging
+import time
 
 from .confirm import handle_inbound_text
 from .contracts import MEDIA_TYPES, JobKind
@@ -78,7 +79,9 @@ async def _ingest_media(
     if not media_id:
         raise ValueError(f"media message {wa_message_id} has no media id")
 
+    started = time.monotonic()
     data, mime = await wa.get_media(media_id)
+    download_ms = int((time.monotonic() - started) * 1000)
     sha256 = hashlib.sha256(data).hexdigest()
 
     if existing is None:
@@ -86,9 +89,17 @@ async def _ingest_media(
     else:
         document_id = str(existing["id"])
 
+    # WP-41: per-stage latency, logged once the document id exists.
+    logger.info("latency stage=download document=%s elapsed_ms=%d", document_id, download_ms)
+    started = time.monotonic()
     path = f"{tenant_id}/documents/{document_id}/original"
     await storage.put(path, data, mime)
     await db.set_document_storage_path(document_id, path)
+    logger.info(
+        "latency stage=store document=%s elapsed_ms=%d",
+        document_id,
+        int((time.monotonic() - started) * 1000),
+    )
     return document_id
 
 

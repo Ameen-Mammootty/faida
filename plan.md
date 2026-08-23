@@ -8,7 +8,7 @@
 - **Product:** Faida — profit visibility for GCC cafeterias and multi-branch karak/paratha chains, fed through WhatsApp.
 - **Reference:** `Docs/PRD.md` (v2). This plan sequences the build; the PRD owns product intent. Where they conflict on *scope timing*, this plan wins.
 - **Start date:** 2026-08-22
-- **Current milestone:** M3 code complete (revoked-key drill green); founder-gated: webhook repoint + M0 phone proof, F6 corpus for the M1 accuracy loop
+- **Current milestone:** M0-M4 agent-side code complete. Founder-gated: webhook repoint + M0 phone proof (F4), corpus photos (F6) for the accuracy loop (WP-15/16), demo rehearsals (M4 gate)
 
 ---
 
@@ -244,8 +244,9 @@ plan (§7).
   all screens still work.
 
 ### M4 — Demo hardening + rehearsal (Day 13–15) — **DEMO GATE**
-- [ ] Seed demo tenant: 1 chain, 3 branches, 2 suppliers with 3 weeks of price history (so the
-      live alert fires on stage)
+- [x] Seed demo tenant: 1 chain, 3 branches, 2 suppliers with 3 weeks of price history (so the
+      live alert fires on stage) - `supabase/demo_seed.sql`, idempotent, doubles as the
+      one-command rehearsal reset (WP-40)
 - [ ] Curate the 3 demo invoices; run each through the full loop 5× — flakiness is a bug
 - [ ] Latency pass: forward → reply under ~20s (stream nothing; the reply is one message)
 - [ ] Failure demo path: forward a meme, get the polite decline (shows discipline, sells trust)
@@ -520,6 +521,15 @@ pilot volume. Meta utility template cost applies only from M9 (verify live UAE r
 
 *(newest first — one line per session: date, what shipped, what's next)*
 
+- 2026-08-23 - M4 agent side integrated (WP-40/41/43, WP-42 verified): demo_seed.sql (closed
+  demo-chain world, staged prices produce the exact alert lines, deletes rehearsal residue on
+  re-run, cross-tenant safety asserted in tests), per-stage latency logs + the
+  webhook_to_reply_ms summary line, Docs/DEMO_RUNBOOK.md (preconditions, 4-minute script with
+  verbatim expected replies, one-command reset, failure playbook, rehearsal log). 165 API tests.
+  RISK FLAGGED: extract alone measured ~27 s (F5), so the ~20 s reply target likely misses -
+  rehearsal 1's latency line decides; tuning lives in WP-16 once the corpus exists. Remaining
+  work is all founder-gated: webhook repoint + F4 phone proof, F6 corpus -> WP-15/16, curated
+  demo invoices + two rehearsals.
 - 2026-08-23 - Wave 7b integrated (WP-34 + WP-35): manual endpoint (deterministic validation +
   snapping, cash hold, 422 parity with PATCH), upload page with 3 s polling and an honest
   60 s timeout state that offers manual entry (never a dead end), manual entry form with

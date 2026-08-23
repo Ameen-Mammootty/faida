@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import json
 import logging
+import time
 from typing import Any
 
 from fastapi import APIRouter, Request, Response
@@ -65,6 +66,7 @@ async def verify_webhook(request: Request) -> Response:
 
 @router.post("/webhook")
 async def receive_webhook(request: Request) -> Response:
+    started = time.monotonic()
     raw = await request.body()
     settings = request.app.state.settings
     signature = request.headers.get("X-Hub-Signature-256")
@@ -77,12 +79,20 @@ async def receive_webhook(request: Request) -> Response:
         return Response(status_code=400)
 
     db = request.app.state.db
+    accepted: list[str] = []
     for msg in extract_messages(payload):
         if not msg["id"]:
             continue
         fresh = await db.record_inbound_message(msg["id"], msg["from"], msg["type"], msg["raw"])
         if fresh:
             await db.enqueue(JobKind.PROCESS_WA_MESSAGE, {"message_id": msg["id"]})
+            accepted.append(msg["id"])
         else:
             logger.info("duplicate wa message skipped: %s", msg["id"])
+    # WP-41: receipt-to-200 per accepted message. No document exists yet, so
+    # the message id is the correlator; the pipeline's summary line ties it to
+    # the document through wa_messages.created_at.
+    elapsed_ms = int((time.monotonic() - started) * 1000)
+    for message_id in accepted:
+        logger.info("latency stage=webhook message=%s elapsed_ms=%d", message_id, elapsed_ms)
     return Response(status_code=200)
