@@ -20,7 +20,7 @@ from .constants import (
     LINE_TOLERANCE_ABS,
     LINE_TOLERANCE_PCT,
 )
-from .schema import ExtractedInvoice, ExtractedLine, TaxTreatment
+from .schema import ExtractedInvoice, ExtractedLine, LineKind, TaxTreatment
 
 
 class CheckStatus(StrEnum):
@@ -59,7 +59,8 @@ class DocumentCheck(BaseModel):
 
     arith: CheckStatus  # totals reconcile under one of the two C4 identities
     subtotal_check: CheckStatus  # extracted subtotal vs the line sum or the net, per treatment
-    line_sum: Decimal | None = None  # None when any line_total is missing
+    line_sum: Decimal | None = None  # every line, charges included; None if any is missing
+    stock_sum: Decimal | None = None  # stock lines only - what a printed subtotal refers to
     expected: Decimal | None = None  # line_sum + tax, set only when arith failed
     extracted: Decimal | None = None  # the extracted total, set only when arith failed
     # Which identity reconciled, and at what rate. Derived from the arithmetic
@@ -129,27 +130,34 @@ def _known_gcc_rate(rate: Decimal | None) -> bool:
 
 def _check_subtotal(
     subtotal: Decimal | None,
-    line_sum: Decimal | None,
+    stock_sum: Decimal | None,
     total: Decimal | None,
     tax: Decimal,
+    discount: Decimal,
     treatment: TaxTreatment | None,
 ) -> CheckStatus:
     """Cross-check the printed subtotal against whichever figure it should
     equal under the resolved treatment.
 
-    Exclusive: the subtotal is the net, which is the line sum.
-    Inclusive: invoices print it either way - some show the gross (equal to the
-    total), some show the net (total - tax). Both are legitimate, so accept
-    either rather than manufacturing an amber on a correct document."""
-    if subtotal is None or line_sum is None:
+    Exclusive: the subtotal is the goods total, which is the *stock* line sum -
+    a delivery charge sits outside it. Invoices print it either before or after
+    a trade discount, and both are correct, so accept either.
+    Inclusive: some show the gross (equal to the total), some the net
+    (total - tax). Also both legitimate.
+
+    Accepting a legitimate printing matters as much as catching a wrong one:
+    manufacturing an amber on a correct document spends the sender's attention
+    and teaches them the ambers are noise."""
+    if subtotal is None or stock_sum is None:
         return CheckStatus.INDETERMINATE
     if treatment is TaxTreatment.INCLUSIVE and total is not None:
         gross_ok = abs(subtotal - total) <= DOC_TOLERANCE_ABS
         net_ok = abs(subtotal - (total - tax)) <= DOC_TOLERANCE_ABS
-        return CheckStatus.PASSED if (gross_ok or net_ok) else CheckStatus.FAILED
-    if abs(subtotal - line_sum) <= DOC_TOLERANCE_ABS:
-        return CheckStatus.PASSED
-    return CheckStatus.FAILED
+        if gross_ok or net_ok:
+            return CheckStatus.PASSED
+    before_discount = abs(subtotal - stock_sum) <= DOC_TOLERANCE_ABS
+    after_discount = abs(subtotal - (stock_sum - discount)) <= DOC_TOLERANCE_ABS
+    return CheckStatus.PASSED if (before_discount or after_discount) else CheckStatus.FAILED
 
 
 def check_document(invoice: ExtractedInvoice, line_checks: list[LineCheck]) -> DocumentCheck:
@@ -172,27 +180,39 @@ def check_document(invoice: ExtractedInvoice, line_checks: list[LineCheck]) -> D
     missing_totals = sum(1 for ln in invoice.lines if ln.line_total is None)
     if missing_totals:
         line_sum = None
+        stock_sum = None
         notes.append(f"line_total missing on {missing_totals} line(s); line sum unknown")
     else:
         line_sum = sum((ln.line_total for ln in invoice.lines), Decimal("0"))
+        stock_sum = sum(
+            (ln.line_total for ln in invoice.lines if ln.line_kind is LineKind.STOCK_ITEM),
+            Decimal("0"),
+        )
 
     tax = invoice.tax
     if tax is None:
         tax = Decimal("0")
         notes.append("tax missing; treated as 0")
 
+    # Both stored positive and applied with their printed sign (WP-18).
+    discount = invoice.discount_total or Decimal("0")
+    rounding = invoice.rounding_amount or Decimal("0")
+    # What the lines are actually worth once the invoice's own adjustments are
+    # applied. Every identity below is stated against this, not the raw sum.
+    adjusted = None if line_sum is None else line_sum - discount + rounding
+
     treatment: TaxTreatment | None = None
     vat_rate: Decimal | None = None
     expected: Decimal | None = None
     extracted: Decimal | None = None
 
-    if invoice.total is None or line_sum is None:
+    if invoice.total is None or line_sum is None or adjusted is None:
         arith = CheckStatus.INDETERMINATE
-    elif abs(line_sum + tax - invoice.total) <= DOC_TOLERANCE_ABS:
+    elif abs(adjusted + tax - invoice.total) <= DOC_TOLERANCE_ABS:
         arith = CheckStatus.PASSED
         treatment = TaxTreatment.EXCLUSIVE
-        vat_rate = _effective_vat_rate(tax, line_sum)
-    elif tax > 0 and abs(line_sum - invoice.total) <= DOC_TOLERANCE_ABS:
+        vat_rate = _effective_vat_rate(tax, adjusted)
+    elif tax > 0 and abs(adjusted - invoice.total) <= DOC_TOLERANCE_ABS:
         # Lines already sum to the total, so the tax sits inside them. That
         # the lines add up to the stated total is itself the proof; matching a
         # published rate is confirmation, not a gate, or an invoice at a rate
@@ -204,10 +224,12 @@ def check_document(invoice: ExtractedInvoice, line_checks: list[LineCheck]) -> D
             notes.append(f"tax-inclusive at an unlisted rate ({vat_rate}); totals still reconcile")
     else:
         arith = CheckStatus.FAILED
-        expected = line_sum + tax
+        expected = adjusted + tax
         extracted = invoice.total
 
-    subtotal_check = _check_subtotal(invoice.subtotal, line_sum, invoice.total, tax, treatment)
+    subtotal_check = _check_subtotal(
+        invoice.subtotal, stock_sum, invoice.total, tax, discount, treatment
+    )
 
     # A failed line taints the line sum: if its wrong number is the
     # line_total, a reconciling total proves nothing - stay amber. Lines that
@@ -224,6 +246,7 @@ def check_document(invoice: ExtractedInvoice, line_checks: list[LineCheck]) -> D
         arith=arith,
         subtotal_check=subtotal_check,
         line_sum=line_sum,
+        stock_sum=stock_sum,
         expected=expected,
         extracted=extracted,
         tax_treatment=treatment,

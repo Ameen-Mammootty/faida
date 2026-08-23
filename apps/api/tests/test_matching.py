@@ -190,6 +190,7 @@ async def _seed_invoice(
     tax_treatment: str | None = None,
     tax: Decimal | None = None,
     total: Decimal | None = None,
+    discount_total: Decimal | None = None,
 ) -> str:
     document_id = await db.pool.fetchval(
         "insert into documents (tenant_id, source, status) values ($1, 'manual', 'extracted') "
@@ -199,8 +200,8 @@ async def _seed_invoice(
     invoice_id = await db.pool.fetchval(
         """
         insert into invoices (tenant_id, document_id, supplier_id, supplier_name, status,
-                              tax_treatment, tax, total)
-        values ($1, $2, $3, $4, 'confirmed', $5, $6, $7)
+                              tax_treatment, tax, total, discount_total)
+        values ($1, $2, $3, $4, 'confirmed', $5, $6, $7, $8)
         returning id::text
         """,
         DEMO_TENANT_ID,
@@ -210,13 +211,14 @@ async def _seed_invoice(
         tax_treatment,
         tax,
         total,
+        discount_total,
     )
     for position, line in enumerate(lines):
         await db.pool.execute(
             """
             insert into invoice_lines (invoice_id, position, raw_name, supplier_item_id,
-                                       qty, unit, unit_price, pack_size)
-            values ($1, $2, $3, $4, $5, $6, $7, $8)
+                                       qty, unit, unit_price, pack_size, line_total, line_kind)
+            values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             """,
             invoice_id,
             position,
@@ -226,6 +228,8 @@ async def _seed_invoice(
             line.get("unit"),
             line.get("unit_price"),
             line.get("pack_size"),
+            line.get("line_total"),
+            line.get("line_kind", "stock_item"),
         )
     return invoice_id
 
@@ -499,3 +503,74 @@ async def test_supplier_switching_vat_format_fires_no_price_alert(db):
     # prev_price never shifted, because nothing changed: no alert can fire.
     assert item["prev_price"] is None
     assert [row["price"] for row in await _history(db)] == [Decimal("100.000")] * 2
+
+
+# -- C4 discounts and charges in price memory (WP-18) --------------------------
+
+
+@requires_db
+async def test_charge_lines_never_enter_the_catalog(db):
+    """Delivery and cool-box hire are cost, not stock. If they became supplier
+    items the price catalog would fill with charges and alerts would start
+    firing on delivery fees."""
+    supplier_id = await _seed_supplier(db, "Fresh Fields Produce LLC")
+    invoice_id = await _seed_invoice(
+        db,
+        supplier_id=supplier_id,
+        lines=[
+            {
+                "raw_name": "Avocado",
+                "qty": Decimal("5"),
+                "unit_price": Decimal("92.00"),
+                "line_total": Decimal("460.00"),
+            },
+            {
+                "raw_name": "Chilled delivery and cool box hire",
+                "qty": Decimal("1"),
+                "unit_price": Decimal("25.00"),
+                "line_total": Decimal("25.00"),
+                "line_kind": "charge",
+            },
+        ],
+    )
+
+    await db.record_confirmed_prices(invoice_id)
+
+    items = await db.pool.fetch("select canonical_name from supplier_items")
+    assert [row["canonical_name"] for row in items] == ["Avocado"]
+
+
+@requires_db
+async def test_trade_discount_reaches_the_recorded_price(db):
+    """Price memory records what was paid. A supplier who holds list prices and
+    quietly stops discounting has raised your cost, and storing the list price
+    would draw a flat line straight through that."""
+    supplier_id = await _seed_supplier(db, "Fresh Fields Produce LLC")
+    item_id = await _seed_item(db, supplier_id, "Avocado")
+    invoice_id = await _seed_invoice(
+        db,
+        supplier_id=supplier_id,
+        lines=[
+            {
+                "raw_name": "Avocado",
+                "supplier_item_id": item_id,
+                "qty": Decimal("5"),
+                "unit_price": Decimal("92.00"),
+                "line_total": Decimal("460.00"),
+            },
+            {
+                "raw_name": "Chilled delivery and cool box hire",
+                "qty": Decimal("1"),
+                "unit_price": Decimal("25.00"),
+                "line_total": Decimal("25.00"),
+                "line_kind": "charge",
+            },
+        ],
+        discount_total=Decimal("23.00"),  # 5% of the 460.00 of goods
+    )
+
+    await db.record_confirmed_prices(invoice_id)
+
+    # 92.00 less its pro-rata share of the discount, not the 92.00 on the page.
+    # The charge is outside the discount base, so it cannot dilute the rate.
+    assert (await _item_row(db, item_id))["last_price"] == Decimal("87.400")

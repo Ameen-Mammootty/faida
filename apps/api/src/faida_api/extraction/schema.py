@@ -27,10 +27,20 @@ class TaxTreatment(StrEnum):
     INCLUSIVE = "inclusive"  # lines are gross; total = sum(lines), tax inside
 
 
+class LineKind(StrEnum):
+    """Delivery, cool-box hire and pallet fees belong in the invoice total and
+    in cost, but they are not stock. Keeping them out of the catalog is what
+    stops price alerts firing on a delivery fee (C4, WP-18)."""
+
+    STOCK_ITEM = "stock_item"
+    CHARGE = "charge"
+
+
 class ExtractedLine(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     raw_name: str
+    line_kind: LineKind = LineKind.STOCK_ITEM
     qty: Decimal | None = None
     unit: str | None = None
     pack_size: str | None = None
@@ -50,6 +60,11 @@ class ExtractedInvoice(BaseModel):
     subtotal: Decimal | None = None
     tax: Decimal | None = None
     total: Decimal | None = None
+    # Stored POSITIVE and subtracted, the way an invoice prints it. Without
+    # these the C4 identities miss a trade discount exactly, failing correct
+    # invoices into amber (WP-18).
+    discount_total: Decimal | None = None
+    rounding_amount: Decimal | None = None
     # Printed facts, read like any other field: many GCC invoices state
     # "prices inclusive of VAT" or "VAT 5%". C4 makes these a TIE-BREAKER
     # ONLY - the treatment is derived from the arithmetic, never taken on the

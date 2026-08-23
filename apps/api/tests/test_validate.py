@@ -8,7 +8,12 @@ from decimal import Decimal
 
 import pytest
 
-from faida_api.extraction.schema import ExtractedInvoice, ExtractedLine, TaxTreatment
+from faida_api.extraction.schema import (
+    ExtractedInvoice,
+    ExtractedLine,
+    LineKind,
+    TaxTreatment,
+)
 from faida_api.extraction.validate import CheckStatus, FieldStatus, validate_invoice
 
 
@@ -291,3 +296,78 @@ def test_document_where_every_check_is_indeterminate():
     assert doc.arith == CheckStatus.INDETERMINATE
     assert doc.subtotal_check == CheckStatus.INDETERMINATE
     assert doc.status == FieldStatus.AMBER
+
+
+# --- C4: discounts and non-stock charges (WP-18) ------------------------------
+#
+# Found by running the generated fixtures through the amended validator:
+# EDGE-01 reads perfectly and still failed, because the line sum misses a trade
+# discount exactly. Same shape as the VAT bug - correct extraction, wrong
+# identity, spurious amber - and trade discounts are routine in GCC food supply.
+
+
+def _edge01() -> ExtractedInvoice:
+    """EDGE-01 to the fil: six stock lines (one a credit return) summing to
+    834.00, a 25.00 delivery charge, a 41.70 trade discount which is 5% of the
+    goods and not of the delivery, then 40.87 tax on 817.30, total 858.17."""
+    stock = [
+        ("5", "92.00", "460.00"),
+        ("2", "44.00", "88.00"),
+        ("4", "42.00", "168.00"),
+        ("5", "18.00", "90.00"),
+        ("6", "20.00", "120.00"),
+        ("-1", "92.00", "-92.00"),
+    ]
+    lines = [_line(q, p, t) for q, p, t in stock]
+    charge = _line("1", "25.00", "25.00")
+    charge.line_kind = LineKind.CHARGE
+    lines.append(charge)
+    invoice = _invoice(lines, subtotal="834.00", tax="40.87", total="858.17")
+    invoice.discount_total = Decimal("41.70")
+    return invoice
+
+
+def test_trade_discount_reconciles_green():
+    doc = validate_invoice(_edge01()).document
+    assert doc.arith == CheckStatus.PASSED
+    assert doc.status == FieldStatus.GREEN
+    assert doc.tax_treatment == TaxTreatment.EXCLUSIVE
+    # Every line, charge included; and the goods-only figure a subtotal means.
+    assert doc.line_sum == Decimal("859.00")
+    assert doc.stock_sum == Decimal("834.00")
+
+
+def test_discount_ignored_would_fail_the_same_invoice():
+    """Guards the fix itself: drop the discount and the invoice must break by
+    exactly 41.70, which is what was happening to every discounted invoice."""
+    invoice = _edge01()
+    invoice.discount_total = None
+    doc = validate_invoice(invoice).document
+    assert doc.arith == CheckStatus.FAILED
+    assert doc.expected - doc.extracted == Decimal("41.70")
+
+
+def test_subtotal_may_be_printed_before_or_after_the_discount():
+    invoice = _edge01()
+    invoice.subtotal = Decimal("792.30")  # 834.00 - 41.70, equally legitimate
+    assert validate_invoice(invoice).document.subtotal_check == CheckStatus.PASSED
+
+
+def test_charge_lines_stay_out_of_the_subtotal_comparison():
+    """The printed subtotal is the goods total: a delivery charge sits outside
+    it, so including charges here would amber a correct invoice."""
+    doc = validate_invoice(_edge01()).document
+    assert doc.subtotal_check == CheckStatus.PASSED
+    assert doc.stock_sum != doc.line_sum
+
+
+def test_rounding_amount_absorbs_an_adjustment_larger_than_tolerance():
+    """A fils-level rounding is already inside DOC_TOLERANCE_ABS and needs no
+    field. This is for the invoice that rounds its total to the quarter dirham,
+    where the adjustment is real money and has to be accounted for, not
+    tolerated."""
+    lines = [_line("1", "100.00", "100.00")]
+    invoice = _invoice(lines, subtotal="100.00", tax="5.00", total="105.50")
+    assert validate_invoice(invoice).document.arith == CheckStatus.FAILED
+    invoice.rounding_amount = Decimal("0.50")
+    assert validate_invoice(invoice).document.arith == CheckStatus.PASSED

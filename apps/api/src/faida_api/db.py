@@ -44,6 +44,22 @@ def _net_price_factor(
     return (total - tax) / total
 
 
+def _discount_factor(discount: Decimal | None, stock_sum: Decimal | None) -> Decimal | None:
+    """Allocate an invoice-level trade discount pro rata across the stock lines.
+
+    A discount is quoted against the goods, not the delivery charge, so the
+    base is the stock line sum. None means nothing to allocate.
+
+    The recorded price has to be what was actually paid: a supplier who holds
+    list prices and quietly stops discounting has raised your cost, and price
+    memory that stored the list price would show a flat line through it."""
+    if discount is None or discount <= 0 or stock_sum is None or stock_sum <= 0:
+        return None
+    if discount >= stock_sum:
+        return None
+    return (stock_sum - discount) / stock_sum
+
+
 def _to_net_price(unit_price: Decimal | None, factor: Decimal | None) -> Decimal | None:
     if unit_price is None or factor is None:
         return unit_price
@@ -240,6 +256,8 @@ class Database:
         payment_kind: str | None,
         tax_treatment: str | None = None,
         vat_rate: Decimal | None = None,
+        discount_total: Decimal | None = None,
+        rounding_amount: Decimal | None = None,
         status: str = InvoiceStatus.AWAITING_CONFIRM,
         confidence: dict,
         lines: list[dict],
@@ -262,8 +280,9 @@ class Database:
                 insert into invoices (tenant_id, branch_id, document_id, supplier_id,
                                       supplier_name, invoice_no, invoice_date, currency,
                                       subtotal, tax, total, payment_kind, status, confidence,
-                                      tax_treatment, vat_rate)
-                values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+                                      tax_treatment, vat_rate, discount_total, rounding_amount)
+                values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
+                        $17, $18)
                 returning id::text
                 """,
                 tenant_id,
@@ -282,12 +301,15 @@ class Database:
                 confidence,
                 tax_treatment,
                 vat_rate,
+                discount_total,
+                rounding_amount,
             )
             await conn.executemany(
                 """
                 insert into invoice_lines (invoice_id, position, raw_name, supplier_item_id,
-                                           qty, unit, unit_price, line_total, pack_size, checks)
-                values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                                           qty, unit, unit_price, line_total, pack_size, checks,
+                                           line_kind)
+                values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                 """,
                 [
                     (
@@ -301,6 +323,7 @@ class Database:
                         line["line_total"],
                         line["pack_size"],
                         line["checks"],
+                        line.get("line_kind", "stock_item"),
                     )
                     for line in lines
                 ],
@@ -393,7 +416,8 @@ class Database:
         async with self.pool.acquire() as conn, conn.transaction():
             invoice = await conn.fetchrow(
                 """
-                select tenant_id, supplier_id, supplier_name, tax_treatment, tax, total
+                select tenant_id, supplier_id, supplier_name, tax_treatment, tax, total,
+                       discount_total
                 from invoices where id = $1
                 """,
                 invoice_id,
@@ -426,11 +450,23 @@ class Database:
             net_factor = _net_price_factor(
                 invoice["tax_treatment"], invoice["tax"], invoice["total"]
             )
+            # WP-18: charges (delivery, cool-box hire) are cost, not stock, so
+            # they are excluded from the discount base and never reach the
+            # catalog at all.
+            stock_sum = await conn.fetchval(
+                """
+                select sum(line_total) from invoice_lines
+                where invoice_id = $1 and line_kind = 'stock_item'
+                """,
+                invoice_id,
+            )
+            discount_factor = _discount_factor(invoice["discount_total"], stock_sum)
 
             lines = await conn.fetch(
                 """
                 select id, raw_name, supplier_item_id, qty, unit, pack_size, unit_price
-                from invoice_lines where invoice_id = $1 order by position
+                from invoice_lines
+                where invoice_id = $1 and line_kind = 'stock_item' order by position
                 """,
                 invoice_id,
             )
@@ -465,7 +501,9 @@ class Database:
                 # The history append doubles as the idempotency marker: when
                 # this (item, invoice) observation already exists, a re-run
                 # must not shuffle prev_price either.
-                net_price = _to_net_price(line["unit_price"], net_factor)
+                net_price = _to_net_price(
+                    _to_net_price(line["unit_price"], net_factor), discount_factor
+                )
                 observed = await conn.fetchval(
                     """
                     insert into supplier_item_prices (supplier_item_id, price, invoice_id)

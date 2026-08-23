@@ -9,6 +9,7 @@
     "lines": [
       {
         "raw_name": "Unsalted Butter",
+        "line_kind": "stock_item",
         "qty": "2",
         "unit": "block",
         "pack_size": "1000",
@@ -17,6 +18,7 @@
       },
       {
         "raw_name": "Mature Cheddar",
+        "line_kind": "stock_item",
         "qty": "2",
         "unit": "block",
         "pack_size": "2000",
@@ -25,6 +27,7 @@
       },
       {
         "raw_name": "Condensed Milk",
+        "line_kind": "stock_item",
         "qty": "2",
         "unit": "can",
         "pack_size": "1000",
@@ -33,6 +36,7 @@
       },
       {
         "raw_name": "Whipping Cream",
+        "line_kind": "stock_item",
         "qty": "2",
         "unit": "carton",
         "pack_size": "1000",
@@ -41,6 +45,7 @@
       },
       {
         "raw_name": "Feta Cheese",
+        "line_kind": "stock_item",
         "qty": "8",
         "unit": "tub",
         "pack_size": "1000",
@@ -49,6 +54,7 @@
       },
       {
         "raw_name": "Halloumi Cheese",
+        "line_kind": "stock_item",
         "qty": "12",
         "unit": "block",
         "pack_size": "1000",
@@ -57,6 +63,7 @@
       },
       {
         "raw_name": "Labneh",
+        "line_kind": "stock_item",
         "qty": "3",
         "unit": "tub",
         "pack_size": "2000",
@@ -65,6 +72,7 @@
       },
       {
         "raw_name": "Whole Milk",
+        "line_kind": "stock_item",
         "qty": "1",
         "unit": "case",
         "pack_size": "12000",
@@ -75,6 +83,8 @@
     "subtotal": "1128.00",
     "tax": "56.40",
     "total": "1184.40",
+    "discount_total": null,
+    "rounding_amount": null,
     "tax_treatment": "exclusive",
     "vat_rate": null
   }

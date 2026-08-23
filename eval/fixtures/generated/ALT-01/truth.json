@@ -9,6 +9,7 @@
     "lines": [
       {
         "raw_name": "Tahina Sesame Paste",
+        "line_kind": "stock_item",
         "qty": "4",
         "unit": "tub",
         "pack_size": "2000",
@@ -17,6 +18,7 @@
       },
       {
         "raw_name": "Frikeh Green Cracked Wheat",
+        "line_kind": "stock_item",
         "qty": "2",
         "unit": "bag",
         "pack_size": "5000",
@@ -25,6 +27,7 @@
       },
       {
         "raw_name": "Dibs Rumman Pomegranate Molasses",
+        "line_kind": "stock_item",
         "qty": "3",
         "unit": "bottle",
         "pack_size": "1000",
@@ -33,6 +36,7 @@
       },
       {
         "raw_name": "Zatar Green Blend Lebanese",
+        "line_kind": "stock_item",
         "qty": "4",
         "unit": "pack",
         "pack_size": "500",
@@ -41,6 +45,7 @@
       },
       {
         "raw_name": "Summaq Ground Red",
+        "line_kind": "stock_item",
         "qty": "3",
         "unit": "pack",
         "pack_size": "500",
@@ -49,6 +54,7 @@
       },
       {
         "raw_name": "Chick Peas Boiled Tin",
+        "line_kind": "stock_item",
         "qty": "6",
         "unit": "can",
         "pack_size": "2500",
@@ -57,6 +63,7 @@
       },
       {
         "raw_name": "EVOO Extra Virgin Olive Oil",
+        "line_kind": "stock_item",
         "qty": "2",
         "unit": "tin",
         "pack_size": "5000",
@@ -65,6 +72,7 @@
       },
       {
         "raw_name": "Pistachio Kernel Raw Green",
+        "line_kind": "stock_item",
         "qty": "2",
         "unit": "bag",
         "pack_size": "1000",
@@ -73,6 +81,7 @@
       },
       {
         "raw_name": "Pistachio Paste 100% Pure",
+        "line_kind": "stock_item",
         "qty": "2",
         "unit": "tub",
         "pack_size": "1000",
@@ -81,6 +90,7 @@
       },
       {
         "raw_name": "Rose Petals Dried Edible",
+        "line_kind": "stock_item",
         "qty": "2",
         "unit": "jar",
         "pack_size": "50",
@@ -89,6 +99,7 @@
       },
       {
         "raw_name": "Saffron Negin Threads",
+        "line_kind": "stock_item",
         "qty": "1",
         "unit": "jar",
         "pack_size": "10",
@@ -97,6 +108,7 @@
       },
       {
         "raw_name": "French Fries 9mm Frozen",
+        "line_kind": "stock_item",
         "qty": "3",
         "unit": "carton",
         "pack_size": "10000",
@@ -107,6 +119,8 @@
     "subtotal": "1396.00",
     "tax": "69.80",
     "total": "1465.80",
+    "discount_total": null,
+    "rounding_amount": null,
     "tax_treatment": "exclusive",
     "vat_rate": null
   }

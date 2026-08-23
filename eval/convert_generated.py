@@ -26,6 +26,7 @@ from faida_api.extraction.schema import (
     ExtractedInvoice,
     ExtractedLine,
     ExtractionResult,
+    LineKind,
     TaxTreatment,
 )
 
@@ -68,6 +69,11 @@ def convert(case_dir: pathlib.Path) -> ExtractionResult:
     lines = [
         ExtractedLine(
             raw_name=line["description_raw"],
+            line_kind=(
+                LineKind.CHARGE
+                if line.get("line_kind") == "non_stock_charge"
+                else LineKind.STOCK_ITEM
+            ),
             qty=_dec(line.get("purchase_quantity")),
             unit=line.get("purchase_unit_text"),
             pack_size=line.get("pack_quantity"),
@@ -87,6 +93,8 @@ def convert(case_dir: pathlib.Path) -> ExtractionResult:
         subtotal=_dec(header.get("subtotal_before_discount")),
         tax=_dec(header.get("tax_total")),
         total=_dec(header.get("invoice_total")),
+        discount_total=_dec(header.get("discount_total")),
+        rounding_amount=_dec(header.get("rounding_amount")),
         tax_treatment=treatment,
     )
     return ExtractionResult(classification=Classification.INVOICE, invoice=invoice)

@@ -9,6 +9,7 @@
     "lines": [
       {
         "raw_name": "Avocado",
+        "line_kind": "stock_item",
         "qty": "5",
         "unit": "box",
         "pack_size": "4000",
@@ -17,6 +18,7 @@
       },
       {
         "raw_name": "Pomegranate Arils",
+        "line_kind": "stock_item",
         "qty": "2",
         "unit": "box",
         "pack_size": "2000",
@@ -25,6 +27,7 @@
       },
       {
         "raw_name": "Broccolini",
+        "line_kind": "stock_item",
         "qty": "4",
         "unit": "box",
         "pack_size": "2000",
@@ -33,6 +36,7 @@
       },
       {
         "raw_name": "Kale",
+        "line_kind": "stock_item",
         "qty": "5",
         "unit": "box",
         "pack_size": "1000",
@@ -41,6 +45,7 @@
       },
       {
         "raw_name": "Mixed Fresh Herbs",
+        "line_kind": "stock_item",
         "qty": "6",
         "unit": "box",
         "pack_size": "500",
@@ -49,6 +54,7 @@
       },
       {
         "raw_name": "Avocado",
+        "line_kind": "stock_item",
         "qty": "-1",
         "unit": "box",
         "pack_size": "4000",
@@ -57,6 +63,7 @@
       },
       {
         "raw_name": "Chilled delivery and cool box hire",
+        "line_kind": "charge",
         "qty": "1",
         "unit": "service",
         "pack_size": null,
@@ -67,6 +74,8 @@
     "subtotal": "834.00",
     "tax": "40.87",
     "total": "858.17",
+    "discount_total": "41.70",
+    "rounding_amount": null,
     "tax_treatment": "exclusive",
     "vat_rate": null
   }

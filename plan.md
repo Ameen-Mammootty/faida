@@ -316,7 +316,9 @@ Log; a sub-agent never changes one unilaterally.
 - **C3 - Extraction schema + provider.** One strict Pydantic schema (`Decimal` money) shared by
   provider, validation, persistence, and eval ground truth: supplier block, invoice_no, date,
   currency, payment_kind, lines (raw_name, qty, unit, pack_size, unit_price, line_total),
-  subtotal, tax, total, `tax_treatment` (inclusive / exclusive / null) and `vat_rate`, plus a
+  subtotal, tax, total, `discount_total`, `rounding_amount`, `tax_treatment`
+  (inclusive / exclusive / null) and `vat_rate`, plus a per-line `line_kind`
+  (stock_item / charge), plus a
   top-level classification (invoice / z_report / other). `tax_treatment` and `vat_rate` are
   *printed facts* - most GCC invoices state "prices inclusive of VAT" or "VAT 5%" - and are read
   like any other field. They are a **tie-breaker only**: the treatment is derived arithmetically
@@ -328,8 +330,9 @@ Log; a sub-agent never changes one unilaterally.
   check: |qty × unit_price - line_total| ≤ max(0.05, 0.5% of line_total).
   **Document check - two identities, because GCC invoices come both ways** (amended 2026-08-23,
   see the Decision Log). With L = Σ line_totals, S = printed subtotal, T = tax, G = total:
-  *exclusive* (lines net) holds when |L - S| ≤ 0.10 **and** |L + T - G| ≤ 0.10; *inclusive*
-  (lines gross) holds when |L - G| ≤ 0.10 **and** |T - G × r/(1+r)| ≤ 0.10 for a rate r in the
+  with D = discount and R = rounding, and A = L - D + R (the lines once the invoice's own
+  adjustments are applied): *exclusive* (lines net) holds when |A + T - G| ≤ 0.10; *inclusive*
+  (lines gross) holds when |A - G| ≤ 0.10 **and** T > 0, confirmed against a rate r in the
   GCC table (UAE 5%, KSA 15%, Bahrain 10%, Oman 5%, Qatar 0%, Kuwait 0%). Exactly one holds →
   that is the treatment, and the totals are green. Neither holds → amber and the totals question.
   Both hold → only reachable when T ≈ 0, where the distinction does not matter.
@@ -346,6 +349,13 @@ Log; a sub-agent never changes one unilaterally.
   not tidiness: `PRICE_ALERT_MIN_PCT` is 5% and UAE VAT is 5%, so mixing bases makes a supplier
   changing invoice format fire a full-threshold price alert when nothing moved - the demo's money
   moment lying in the one moment it asks to be trusted.
+  **Discounts and charges (WP-18).** A trade discount is quoted against the goods, so the printed
+  subtotal is compared to the *stock* line sum (before or after discount - invoices print it both
+  ways) and charge lines sit outside it. Charge lines never become supplier items: the catalog is
+  stock, and a catalog full of delivery fees makes price alerts fire on cool-box hire. The
+  discount reaches price memory pro rata over the stock lines, because a supplier who holds list
+  prices and quietly stops discounting has raised your cost, and storing the list price would
+  draw a flat line through exactly that.
   Constants live in one module; the eval scores against the same constants.
 - **C5 - Confirmation resolution (no new table).** An inbound text from phone P resolves against
   the newest `awaiting_confirm` invoice whose document traces back to sender P. None pending →
@@ -377,7 +387,7 @@ demonstrable, not documentary.
 | 16 | Accuracy loop: live eval → inspect failures → one change per round → re-eval, until §5 targets hold | L | 13-15, F5, F6 | the eval report, not opinion |
 | 17 | ~~**VAT treatment, inclusive + exclusive**~~ **done 2026-08-23** (C3/C4 as amended 2026-08-23): both identities in `validate.py` anchored on the line sum, GCC rate table in `constants.py`, `tax_treatment` + `vat_rate` through schema → persistence → eval ground truth (migration 0006), net-canonical price memory converted inside the confirm transaction, and no totals question when a treatment resolves. **Not blocked on the corpus** - deterministic money math with a real invoice already in hand, so it runs in parallel with F6 | M | C3, C4 | Deira T-0084417 (inclusive, UAE 5%) reconciles green with no question; an exclusive invoice still reconciles green; an inclusive invoice printing a *net* subtotal is not misread as exclusive; a supplier switching format produces **no** price alert |
 
-| 18 | **Discounts and non-stock charges break C4 the same way VAT did.** Found by running the generated fixtures through the amended validator: `EDGE-01` reads perfectly and still fails, because the line sum misses the trade discount exactly (834.00 - 41.70 + 25.00 delivery + 40.87 tax = 858.17, but C3 models only subtotal/tax/total). Trade discounts are routine in GCC food supply, so this fails correct invoices into amber. Needs a C3 decision like the VAT one, not a prompt tweak | M | C3, C4 | `EDGE-01` reconciles green; a discounted invoice's price memory records the *post-discount* unit price, since that is what was paid |
+| 18 | ~~**Discounts and non-stock charges break C4 the same way VAT did.**~~ **done 2026-08-23**. Found by running the generated fixtures through the amended validator: `EDGE-01` reads perfectly and still fails, because the line sum misses the trade discount exactly (834.00 - 41.70 + 25.00 delivery + 40.87 tax = 858.17, but C3 models only subtotal/tax/total). Trade discounts are routine in GCC food supply, so this fails correct invoices into amber. Needs a C3 decision like the VAT one, not a prompt tweak | M | C3, C4 | `EDGE-01` reconciles green; a discounted invoice's price memory records the *post-discount* unit price, since that is what was paid |
 
 **M2 (confirm flow, supplier memory, alerts)**
 
@@ -548,6 +558,7 @@ pilot volume. Meta utility template cost applies only from M9 (verify live UAE r
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-08-23 | **C4 generalized again for trade discounts, rounding and non-stock charges** (WP-18): the identities are stated against `line sum - discount + rounding`; C3 gains `discount_total`, `rounding_amount` and a per-line `line_kind`; charge lines are excluded from the catalog and from the discount base; the discount reaches price memory pro rata | Found by running the generated fixtures through the amended validator rather than by waiting for a real invoice: `EDGE-01` read perfectly and still failed, missing the discount exactly (41.70). Same failure shape as the VAT bug - correct extraction, wrong identity, spurious amber - and trade discounts are routine in GCC food supply. Charges had a second bug hiding behind it: with qty and unit_price present, "Chilled delivery and cool box hire" would have become a supplier item with its own price history |
 | 2026-08-23 | **C4 amended to reconcile both VAT-inclusive and VAT-exclusive invoices**, anchored on the line sum; money stored exactly as printed with `tax_treatment` + `vat_rate` beside it; price memory normalized to ex-VAT. C3 gains `tax_treatment` and `vat_rate` as printed facts used only as a tie-breaker | The first real invoice through the live pipeline (Deira Cold Store T-0084417) was VAT-inclusive at UAE 5% and reconciled to the fil - 706.65 / 1.05 = 673.00, and 706.65 - 673.00 = 33.65 exactly matched the printed tax. Extraction was correct; `subtotal + tax = total` was the wrong identity, so correct invoices were going spuriously amber. Storing as printed keeps the §3 photo-traceability rule; net-canonical price memory prevents a 5% VAT basis change from firing the 5% price alert |
 | 2026-08-22 | Brand direction selected: Margin Fold mark, Date Palm and Karak Gold palette, and "Profit, in plain sight." positioning line | Connects invoice flow, multi-branch operations, and profit visibility without red, literal currency marks, or generic AI motifs |
 | 2026-08-22 | Fresh build; previous restaurant-profit-platform is reference-only, no code carried over | Over-engineering post-mortem; schema *ideas* only |
@@ -568,6 +579,23 @@ pilot volume. Meta utility template cost applies only from M9 (verify live UAE r
 
 *(newest first — one line per session: date, what shipped, what's next)*
 
+- 2026-08-23 - **WP-18 shipped: discounts, rounding and non-stock charges.** The C4 identities
+  are now stated against `line sum - discount + rounding`, so a trade discount no longer fails a
+  correct invoice; C3 gains `discount_total`, `rounding_amount` and a per-line `line_kind`
+  (migration 0007). Charge lines are excluded from the printed-subtotal comparison, from the
+  discount base, and from the catalog entirely - the second bug found here, since a delivery line
+  carrying qty and unit_price would otherwise have become a supplier item with its own price
+  history and its own alerts. The discount reaches price memory pro rata over the stock lines:
+  92.00 with a 5% trade discount records 87.40, because a supplier who holds list prices and
+  quietly stops discounting has raised the cost, and storing the list price would draw a flat
+  line straight through it.
+  All 14 generated invoices now reconcile green (`EDGE-03`, a delivery note with no prices, stays
+  correctly indeterminate and asks; `NEG-01` is correctly not an invoice). 179 API tests against
+  real Postgres, 12 eval tests, ruff clean. One test asserts the fix itself by removing the
+  discount and checking the invoice breaks by exactly 41.70.
+  **Deploy order matters:** the live project is still at migration 0005, and this code inserts
+  `tax_treatment`, `vat_rate`, `discount_total`, `rounding_amount` and `line_kind`. Applying 0006
+  and 0007 has to come *before* the next Railway deploy, or every extraction fails on insert.
 - 2026-08-23 - **WP-17 shipped: C4 now reconciles both VAT treatments.** `check_document` tries
   the exclusive identity (L + T = G) then the inclusive one (L = G with T inside), anchored on
   the line sum so an inclusive invoice printing a *net* subtotal cannot masquerade as exclusive;

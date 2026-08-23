@@ -9,6 +9,7 @@
     "lines": [
       {
         "raw_name": "جبنة حلوم",
+        "line_kind": "stock_item",
         "qty": "8",
         "unit": "block",
         "pack_size": null,
@@ -17,6 +18,7 @@
       },
       {
         "raw_name": "لبنة",
+        "line_kind": "stock_item",
         "qty": "4",
         "unit": "tub",
         "pack_size": null,
@@ -25,6 +27,7 @@
       },
       {
         "raw_name": "جبنة فيتا",
+        "line_kind": "stock_item",
         "qty": "5",
         "unit": "tub",
         "pack_size": null,
@@ -33,6 +36,7 @@
       },
       {
         "raw_name": "حليب كامل الدسم",
+        "line_kind": "stock_item",
         "qty": "2",
         "unit": "case",
         "pack_size": null,
@@ -41,6 +45,7 @@
       },
       {
         "raw_name": "كريمة خفق",
+        "line_kind": "stock_item",
         "qty": "6",
         "unit": "carton",
         "pack_size": null,
@@ -49,6 +54,7 @@
       },
       {
         "raw_name": "زبدة غير مملحة",
+        "line_kind": "stock_item",
         "qty": "3",
         "unit": "block",
         "pack_size": null,
@@ -59,6 +65,8 @@
     "subtotal": "944.00",
     "tax": null,
     "total": "944.00",
+    "discount_total": null,
+    "rounding_amount": null,
     "tax_treatment": null,
     "vat_rate": null
   }

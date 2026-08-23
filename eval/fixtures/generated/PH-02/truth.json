@@ -9,6 +9,7 @@
     "lines": [
       {
         "raw_name": "Brioche Burger Bun",
+        "line_kind": "stock_item",
         "qty": "10",
         "unit": "pack",
         "pack_size": "12",
@@ -17,6 +18,7 @@
       },
       {
         "raw_name": "Ciabatta Roll",
+        "line_kind": "stock_item",
         "qty": "15",
         "unit": "pack",
         "pack_size": "8",
@@ -25,6 +27,7 @@
       },
       {
         "raw_name": "Arabic Pita Bread",
+        "line_kind": "stock_item",
         "qty": "14",
         "unit": "pack",
         "pack_size": "10",
@@ -33,6 +36,7 @@
       },
       {
         "raw_name": "Saj Bread",
+        "line_kind": "stock_item",
         "qty": "10",
         "unit": "pack",
         "pack_size": "10",
@@ -41,6 +45,7 @@
       },
       {
         "raw_name": "Sourdough Slice",
+        "line_kind": "stock_item",
         "qty": "20",
         "unit": "loaf",
         "pack_size": "20",
@@ -49,6 +54,7 @@
       },
       {
         "raw_name": "Vanilla Sponge Slab",
+        "line_kind": "stock_item",
         "qty": "6",
         "unit": "tray",
         "pack_size": "2000",
@@ -59,6 +65,8 @@
     "subtotal": "1478.00",
     "tax": "73.90",
     "total": "1551.90",
+    "discount_total": null,
+    "rounding_amount": null,
     "tax_treatment": "exclusive",
     "vat_rate": null
   }

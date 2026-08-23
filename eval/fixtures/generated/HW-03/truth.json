@@ -9,6 +9,7 @@
     "lines": [
       {
         "raw_name": "Tomato Plum Roma",
+        "line_kind": "stock_item",
         "qty": "10",
         "unit": "kg",
         "pack_size": null,
@@ -17,6 +18,7 @@
       },
       {
         "raw_name": "Cucumber Local Short",
+        "line_kind": "stock_item",
         "qty": "6",
         "unit": "kg",
         "pack_size": null,
@@ -25,6 +27,7 @@
       },
       {
         "raw_name": "Onion Brown Holland",
+        "line_kind": "stock_item",
         "qty": "8",
         "unit": "kg",
         "pack_size": null,
@@ -33,6 +36,7 @@
       },
       {
         "raw_name": "Lemon Yellow Turkey",
+        "line_kind": "stock_item",
         "qty": "4",
         "unit": "kg",
         "pack_size": null,
@@ -41,6 +45,7 @@
       },
       {
         "raw_name": "Parsley Baqdounis Bunch",
+        "line_kind": "stock_item",
         "qty": "10",
         "unit": "bunch",
         "pack_size": null,
@@ -49,6 +54,7 @@
       },
       {
         "raw_name": "Mint Na'ana Bunch",
+        "line_kind": "stock_item",
         "qty": "10",
         "unit": "bunch",
         "pack_size": null,
@@ -59,6 +65,8 @@
     "subtotal": "163.10",
     "tax": null,
     "total": "163.10",
+    "discount_total": null,
+    "rounding_amount": null,
     "tax_treatment": null,
     "vat_rate": null
   }

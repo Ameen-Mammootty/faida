@@ -212,6 +212,7 @@ async def _persist_extracted(
         {
             "position": index,
             "raw_name": line.raw_name,
+            "line_kind": line.line_kind.value,
             "supplier_item_id": str(item["id"]) if item is not None else None,
             "qty": line.qty,
             "unit": line.unit,
@@ -255,6 +256,8 @@ async def _persist_extracted(
         # confirm path uses them to record price memory net of VAT.
         tax_treatment=validation.document.tax_treatment,
         vat_rate=validation.document.vat_rate,
+        discount_total=invoice.discount_total,
+        rounding_amount=invoice.rounding_amount,
         status=status,
         confidence=confidence,
         lines=lines,

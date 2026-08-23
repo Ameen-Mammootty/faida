@@ -9,6 +9,7 @@
     "lines": [
       {
         "raw_name": "Food-Grade Ice",
+        "line_kind": "stock_item",
         "qty": "4",
         "unit": "bag",
         "pack_size": "10000",
@@ -17,6 +18,7 @@
       },
       {
         "raw_name": "Lemon Juice",
+        "line_kind": "stock_item",
         "qty": "10",
         "unit": "bottle",
         "pack_size": "1000",
@@ -25,6 +27,7 @@
       },
       {
         "raw_name": "Soda Water",
+        "line_kind": "stock_item",
         "qty": "24",
         "unit": "bottle",
         "pack_size": "1000",
@@ -33,6 +36,7 @@
       },
       {
         "raw_name": "Simple Syrup",
+        "line_kind": "stock_item",
         "qty": "6",
         "unit": "bottle",
         "pack_size": "1000",
@@ -43,6 +47,8 @@
     "subtotal": "296.00",
     "tax": "14.80",
     "total": "310.80",
+    "discount_total": null,
+    "rounding_amount": null,
     "tax_treatment": "exclusive",
     "vat_rate": null
   }
