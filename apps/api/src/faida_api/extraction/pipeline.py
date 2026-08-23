@@ -2,9 +2,10 @@
 
 Wires the pure modules together: fetch the stored original, one structured
 extract call (layer 1), deterministic validation (layer 2), the scoped repair
-round (layer 3), then persistence, the C1 document transitions, and one reply.
-Replies here are plain M1 English constants; WP-20's composer replaces them
-in M2. Layers 4-5 (supplier memory, amber questions) arrive in M2.
+round (layer 3), supplier matching + item snapping (layer 4, WP-22), then
+persistence, the C1 document transitions, and one reply. Replies here are
+plain M1 English constants; WP-20's composer replaces them in M2, and layer
+4's baseline update runs on confirm only (Database.record_confirmed_prices).
 """
 
 import logging
@@ -13,6 +14,7 @@ import asyncpg
 
 from ..contracts import DocumentStatus, InvoiceStatus
 from ..db import RETRY_LIMIT, Database
+from ..matching import match_supplier, snap_item
 from ..storage import Storage
 from ..wa import WhatsAppClient
 from .provider import ExtractionProvider, ProviderUsage
@@ -119,16 +121,46 @@ async def _persist_extracted(
     outcome = await repair_invoice(provider, image, doc["mime"], extracted, validation)
     invoice, validation = outcome.invoice, outcome.validation
 
+    # Supplier memory (plan.md §5 layer 4, WP-22): match the supplier for the
+    # tenant, then fuzzy-snap each line against that supplier's catalog. Never
+    # blocks extraction - on any failure the draft persists unsnapped.
+    supplier = None
+    snapped_items = [None] * len(invoice.lines)
+    try:
+        suppliers = await db.list_suppliers(str(doc["tenant_id"]))
+        supplier = match_supplier(suppliers, invoice.supplier_name)
+        if supplier is not None:
+            items = await db.list_supplier_items(str(supplier["id"]))
+            snapped_items = [snap_item(items, line.raw_name) for line in invoice.lines]
+    except Exception:
+        logger.exception(
+            "supplier matching failed for document %s; persisting unsnapped", doc["id"]
+        )
+        supplier, snapped_items = None, [None] * len(invoice.lines)
+
+    # With a matched supplier every line carries snapped True/False in its
+    # persisted check; without one snapping never ran, so None stays (neutral
+    # per validate.py). Statuses are NOT recomputed: in M1 an unsnapped line
+    # keeps its green arithmetic - the catalog is empty on day one, unknown
+    # items are normal (they self-build on confirm).
+    line_checks = validation.lines
+    if supplier is not None:
+        line_checks = [
+            check.model_copy(update={"snapped": item is not None})
+            for check, item in zip(line_checks, snapped_items, strict=True)
+        ]
+
     # Derived confidence, never self-reported (plan.md §5 layer 5): the
     # document-level check plus the per-line green/amber statuses.
     confidence = {
         "document": validation.document.model_dump(mode="json"),
-        "lines": [check.status.value for check in validation.lines],
+        "lines": [check.status.value for check in line_checks],
     }
     lines = [
         {
             "position": index,
             "raw_name": line.raw_name,
+            "supplier_item_id": str(item["id"]) if item is not None else None,
             "qty": line.qty,
             "unit": line.unit,
             "unit_price": line.unit_price,
@@ -136,12 +168,16 @@ async def _persist_extracted(
             "pack_size": line.pack_size,
             "checks": check.model_dump(mode="json"),
         }
-        for index, (line, check) in enumerate(zip(invoice.lines, validation.lines, strict=True))
+        for index, (line, check, item) in enumerate(
+            zip(invoice.lines, line_checks, snapped_items, strict=True)
+        )
     ]
     await db.insert_draft_invoice(
         tenant_id=str(doc["tenant_id"]),
         branch_id=str(doc["branch_id"]) if doc["branch_id"] else None,
         document_id=str(doc["id"]),
+        supplier_id=str(supplier["id"]) if supplier is not None else None,
+        supplier_name=invoice.supplier_name,
         invoice_no=invoice.invoice_no,
         invoice_date=invoice.invoice_date,
         currency=invoice.currency or "AED",

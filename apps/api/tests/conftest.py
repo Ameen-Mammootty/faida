@@ -19,6 +19,7 @@ requires_db = pytest.mark.skipif(TEST_DATABASE_URL is None, reason="TEST_DATABAS
 
 TEST_APP_SECRET = "test-app-secret"
 DEMO_PHONE = "971500000000"  # matches seed.sql
+DEMO_TENANT_ID = "00000000-0000-0000-0000-000000000001"  # matches seed.sql
 
 
 @pytest.fixture

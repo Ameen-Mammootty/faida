@@ -35,6 +35,7 @@ from faida_api.worker import REPLY_MEDIA_RECEIVED, run_one_job
 
 from .conftest import (
     DEMO_PHONE,
+    DEMO_TENANT_ID,
     TEST_APP_SECRET,
     FakeExtraction,
     FakeMeta,
@@ -153,7 +154,8 @@ async def test_happy_path_photo_to_draft_invoice(api, db):
     assert invoice["subtotal"] == Decimal("710.25")
     assert invoice["tax"] == Decimal("35.51")
     assert invoice["total"] == Decimal("745.76")
-    assert invoice["supplier_id"] is None  # supplier matching is WP-22 (M2)
+    assert invoice["supplier_id"] is None  # no suppliers exist yet for this tenant
+    assert invoice["supplier_name"] == "Gulf Foods Trading LLC"  # raw extracted name kept
     assert invoice["confidence"]["document"]["status"] == "green"
     assert invoice["confidence"]["lines"] == ["green", "green"]
 
@@ -170,6 +172,9 @@ async def test_happy_path_photo_to_draft_invoice(api, db):
     for line in lines:
         assert line["checks"]["arith"] == "passed"
         assert line["checks"]["status"] == "green"
+        # No supplier matched, so snapping never ran: neutral, not False.
+        assert line["checks"]["snapped"] is None
+        assert line["supplier_item_id"] is None
 
     # Run metadata recorded.
     run = await db.pool.fetchrow("select * from extraction_runs where document_id = $1", doc["id"])
@@ -310,3 +315,58 @@ async def test_reextract_of_extracted_document_is_a_noop(api, db):
     assert len(await outbound_bodies(db)) == 2  # ack + summary, no duplicate reply
     doc = await db.get_document_by_wa_message("wamid.in1")
     assert doc["status"] == "extracted"
+
+
+async def test_seeded_supplier_invoice_snaps_lines(api, db):
+    """Plan.md §5 layer 4 in the extraction path (WP-22): a fuzzy supplier
+    match attaches supplier_id, each line snaps against that supplier's
+    catalog, and the snapped flag lands in the persisted checks jsonb -
+    without an unknown item ever costing a line its green (M1 rule)."""
+    app, client, *_ = api
+    supplier_id = await db.pool.fetchval(
+        "insert into suppliers (tenant_id, name) values ($1, $2) returning id",
+        DEMO_TENANT_ID,
+        "Gulf Foods Trading L.L.C.",  # extracted "Gulf Foods Trading LLC" scores 0.96
+    )
+    item_id = await db.pool.fetchval(
+        """
+        insert into supplier_items (tenant_id, supplier_id, canonical_name, unit, pack_size,
+                                    last_price, last_price_at)
+        values ($1, $2, 'Milk Powder 2.5kg', 'sack', '2.5kg', 50.50, now())
+        returning id
+        """,
+        DEMO_TENANT_ID,
+        supplier_id,
+    )
+    provider = FakeExtraction(result=invoice_result(good_invoice()))
+
+    await post_webhook(client, wa_image_payload())
+    await drain_jobs(db, app, provider)
+
+    doc = await db.get_document_by_wa_message("wamid.in1")
+    assert doc["status"] == "extracted"
+    invoice = await db.get_invoice_by_document(str(doc["id"]))
+    assert invoice["supplier_id"] == supplier_id
+    assert invoice["supplier_name"] == "Gulf Foods Trading LLC"  # raw, not the catalog spelling
+
+    lines = await db.pool.fetch(
+        "select * from invoice_lines where invoice_id = $1 order by position", invoice["id"]
+    )
+    # "MILK PWDR 2.5KG NIDO" snapped to the seeded item; the flag is in checks.
+    assert lines[0]["supplier_item_id"] == item_id
+    assert lines[0]["checks"]["snapped"] is True
+    assert lines[0]["checks"]["status"] == "green"
+    # "KARAK TEA DUST" is not in the catalog: snapped False, but the catalog
+    # is empty on day one - an unknown item must not flip green to amber.
+    assert lines[1]["supplier_item_id"] is None
+    assert lines[1]["checks"]["snapped"] is False
+    assert lines[1]["checks"]["arith"] == "passed"
+    assert lines[1]["checks"]["status"] == "green"
+    assert invoice["confidence"]["lines"] == ["green", "green"]
+
+    # Extraction never moves the price baseline (that is confirm's job):
+    # the seeded item's last_price is untouched and no history was appended.
+    item = await db.pool.fetchrow("select * from supplier_items where id = $1", item_id)
+    assert item["last_price"] == Decimal("50.50")
+    assert item["prev_price"] is None
+    assert await db.pool.fetchval("select count(*) from supplier_item_prices") == 0

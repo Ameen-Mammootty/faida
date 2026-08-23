@@ -8,6 +8,8 @@ from typing import Any
 
 import asyncpg
 
+from .matching import clean_name
+
 RETRY_LIMIT = 3
 RETRY_BACKOFF_SECONDS = 30
 
@@ -144,6 +146,8 @@ class Database:
         tenant_id: str,
         branch_id: str | None,
         document_id: str,
+        supplier_id: str | None,
+        supplier_name: str | None,
         invoice_no: str | None,
         invoice_date: datetime.date | None,
         currency: str,
@@ -161,15 +165,17 @@ class Database:
         async with self.pool.acquire() as conn, conn.transaction():
             invoice_id = await conn.fetchval(
                 """
-                insert into invoices (tenant_id, branch_id, document_id, invoice_no,
-                                      invoice_date, currency, subtotal, tax, total,
-                                      payment_kind, status, confidence)
-                values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                insert into invoices (tenant_id, branch_id, document_id, supplier_id,
+                                      supplier_name, invoice_no, invoice_date, currency,
+                                      subtotal, tax, total, payment_kind, status, confidence)
+                values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
                 returning id::text
                 """,
                 tenant_id,
                 branch_id,
                 document_id,
+                supplier_id,
+                supplier_name,
                 invoice_no,
                 invoice_date,
                 currency,
@@ -182,15 +188,16 @@ class Database:
             )
             await conn.executemany(
                 """
-                insert into invoice_lines (invoice_id, position, raw_name, qty, unit,
-                                           unit_price, line_total, pack_size, checks)
-                values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                insert into invoice_lines (invoice_id, position, raw_name, supplier_item_id,
+                                           qty, unit, unit_price, line_total, pack_size, checks)
+                values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                 """,
                 [
                     (
                         invoice_id,
                         line["position"],
                         line["raw_name"],
+                        line["supplier_item_id"],
                         line["qty"],
                         line["unit"],
                         line["unit_price"],
@@ -207,6 +214,122 @@ class Database:
                 document_id,
             )
         return invoice_id
+
+    # -- Supplier memory (WP-22, plan.md §5 layer 4) -------------------------
+
+    async def list_suppliers(self, tenant_id: str) -> list[asyncpg.Record]:
+        return await self.pool.fetch(
+            "select id, name, name_aliases from suppliers where tenant_id = $1", tenant_id
+        )
+
+    async def list_supplier_items(self, supplier_id: str) -> list[asyncpg.Record]:
+        return await self.pool.fetch(
+            """
+            select id, canonical_name, unit, pack_size, last_price, prev_price, last_price_at
+            from supplier_items where supplier_id = $1
+            """,
+            supplier_id,
+        )
+
+    async def record_confirmed_prices(self, invoice_id: str) -> None:
+        """On confirm (called by the WP-21 flow), one transaction: the catalog
+        self-builds and the price baseline moves - never before confirm, so an
+        unconfirmed invoice can't pollute it (plan.md §5 layer 4, §6 M2).
+
+        For each line with qty and unit_price: create the supplier item when
+        the line didn't snap (canonical_name = cleaned raw_name; the supplier
+        itself is created from the raw extracted supplier_name when the invoice
+        has none), append the price observation (idempotent per invoice via
+        the 0003 partial unique index), and shift prev/last price only when
+        this invoice's observation is new AND the price actually changed -
+        re-running for the same invoice is a no-op."""
+        async with self.pool.acquire() as conn, conn.transaction():
+            invoice = await conn.fetchrow(
+                "select tenant_id, supplier_id, supplier_name from invoices where id = $1",
+                invoice_id,
+            )
+            if invoice is None:
+                raise ValueError(f"invoice {invoice_id} not found")
+
+            supplier_id = invoice["supplier_id"]
+            if supplier_id is None:
+                supplier_name = clean_name(invoice["supplier_name"] or "")
+                if not supplier_name:
+                    return  # no supplier and no name to create one from
+                supplier_id = await conn.fetchval(
+                    """
+                    insert into suppliers (tenant_id, name) values ($1, $2)
+                    on conflict (tenant_id, name) do update set name = excluded.name
+                    returning id
+                    """,
+                    invoice["tenant_id"],
+                    supplier_name,
+                )
+                await conn.execute(
+                    "update invoices set supplier_id = $2 where id = $1", invoice_id, supplier_id
+                )
+
+            lines = await conn.fetch(
+                """
+                select id, raw_name, supplier_item_id, qty, unit, pack_size, unit_price
+                from invoice_lines where invoice_id = $1 order by position
+                """,
+                invoice_id,
+            )
+            for line in lines:
+                if line["qty"] is None or line["unit_price"] is None:
+                    continue
+                item_id = line["supplier_item_id"]
+                if item_id is None:
+                    canonical_name = clean_name(line["raw_name"])
+                    if not canonical_name:
+                        continue
+                    item_id = await conn.fetchval(
+                        """
+                        insert into supplier_items (tenant_id, supplier_id, canonical_name,
+                                                    unit, pack_size)
+                        values ($1, $2, $3, $4, $5)
+                        on conflict (supplier_id, canonical_name)
+                          do update set canonical_name = excluded.canonical_name
+                        returning id
+                        """,
+                        invoice["tenant_id"],
+                        supplier_id,
+                        canonical_name,
+                        line["unit"],
+                        line["pack_size"],
+                    )
+                    await conn.execute(
+                        "update invoice_lines set supplier_item_id = $2 where id = $1",
+                        line["id"],
+                        item_id,
+                    )
+                # The history append doubles as the idempotency marker: when
+                # this (item, invoice) observation already exists, a re-run
+                # must not shuffle prev_price either.
+                observed = await conn.fetchval(
+                    """
+                    insert into supplier_item_prices (supplier_item_id, price, invoice_id)
+                    values ($1, $2, $3)
+                    on conflict (supplier_item_id, invoice_id) where invoice_id is not null
+                      do nothing
+                    returning id
+                    """,
+                    item_id,
+                    line["unit_price"],
+                    invoice_id,
+                )
+                if observed is None:
+                    continue
+                await conn.execute(
+                    """
+                    update supplier_items
+                    set prev_price = last_price, last_price = $2, last_price_at = now()
+                    where id = $1 and last_price is distinct from $2
+                    """,
+                    item_id,
+                    line["unit_price"],
+                )
 
     # -- Extraction runs (WP-13) ---------------------------------------------
 

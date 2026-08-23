@@ -515,6 +515,13 @@ pilot volume. Meta utility template cost applies only from M9 (verify live UAE r
 
 *(newest first — one line per session: date, what shipped, what's next)*
 
+- 2026-08-23 - Wave 4 integrated: WP-20 reply composer (every message shape as pure
+  deterministic functions, 3-question amber cap with overflow, PriceAlert rendering, 21 tests)
+  and WP-22 supplier memory (matching.py fuzzy match + snap with pack-size veto, thresholds
+  0.85/0.80, migration 0003 supplier_name + idempotent price-history index, snapping wired into
+  the pipeline, record_confirmed_prices ready for WP-21). 100 API tests green vs real Postgres.
+  Composer wiring + M2 checkbox ticks land with Wave 5 (WP-23+24 pipeline side, then WP-21
+  confirm flow, run sequentially - they share files).
 - 2026-08-23 - F5 done: Anthropic key live, verified against `claude-opus-5` (auth, model
   access, billing). Ran layers 1-3 on a synthetic invoice PDF: clean extraction, document and
   all 5 lines green, repair correctly not applied. Measured 4.3k in / 421 out and ~27 s per
