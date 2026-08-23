@@ -192,8 +192,8 @@ plan (§7).
   steps above, then the README §M0 "Prove M0" checklist.*
 
 ### M1 — Extraction pipeline + eval harness (Day 3–6)
-- [ ] Anthropic API key with billing enabled *(founder, ~10 min - gates running the pipeline, not
-      building it)* (F5)
+- [x] Anthropic API key with billing enabled (F5, 2026-08-23); verified live against
+      `claude-opus-5`: a synthetic invoice extracts clean, all checks green, no repair
 - [x] Provider interface + Claude Opus 5 structured extraction (layer 1); classification
       (invoice / z_report / other, polite decline for memes) happens inside the same structured
       call - a separate classifier call adds cost and latency for nothing at demo volume (C3, WP-10)
@@ -271,7 +271,7 @@ and the accuracy loop (WP-16). Everything else is predictable engineering.
 | ID | Task | Time | Unblocks |
 |---|---|---|---|
 | F1-F4 | The unticked M0 founder boxes in §6, in order (Meta app + demo phones, deploy, prove M0 on a real phone). F2 (Supabase project + bucket) done 2026-08-22 | one ~2 h sitting | end-to-end reality for everything |
-| F5 | Anthropic API key with billing enabled | ~10 min | running extraction (WP-16); building it needs nothing |
+| F5 | ~~Anthropic API key with billing enabled~~ done 2026-08-23, verified live | ~10 min | running extraction (WP-16); building it needs nothing |
 | F6 | Corpus growth: photograph the invoices in hand (flat + angled + crumpled variants of each); keep collecting toward 20-25 real ones from pilot contacts | ongoing | WP-15, WP-16 |
 | F7 | Pilot logistics: pick the target chain; ask the central-purchasing question (§11) before any onboarding talk; schedule the demo only after the M4 gate passes | ongoing | M4 |
 | F8 | Hand-verify every ground-truth file the labeling agent produces. Truth no human checked is not truth | per batch | eval validity |
@@ -515,6 +515,12 @@ pilot volume. Meta utility template cost applies only from M9 (verify live UAE r
 
 *(newest first — one line per session: date, what shipped, what's next)*
 
+- 2026-08-23 - F5 done: Anthropic key live, verified against `claude-opus-5` (auth, model
+  access, billing). Ran layers 1-3 on a synthetic invoice PDF: clean extraction, document and
+  all 5 lines green, repair correctly not applied. Measured 4.3k in / 421 out and ~27 s per
+  document, so the demo's second WhatsApp reply lands roughly half a minute after "Got it",
+  and cost is ~$0.03/invoice at Opus 5 rates. Next: F1/F3/F4 (Meta app, deploy, prove M0) and
+  F6 corpus photos, which now gate WP-15/WP-16 alone.
 - 2026-08-22 - Wave 3: WP-13 integrated - the full M1 loop is code-complete. extract_document
   job chained after ingest (ack stays immediate), pipeline extract -> validate -> one-round
   repair -> draft invoice + lines + checks + confidence in one transaction, extraction_runs

@@ -60,7 +60,10 @@ ruff check . && ruff format --check .
 
 ### 4. Prove M0 (the "done when")
 From a demo phone, send any photo to the test number. Within seconds you should get
-*"Got it — invoice received and saved…"*, and in Supabase: one row in `wa_messages` (in),
+*"Got it — invoice received and saved…"*.
+With `ANTHROPIC_API_KEY` set, a second reply follows once extraction finishes; without it that
+second reply is the failure message, since the pipeline job has no provider.
+In Supabase: one row in `wa_messages` (in),
 one `documents` row with `sha256` + `storage_path`, the image in the `documents` bucket,
 one `jobs` row `done`, one `wa_messages` (out). Send the same message content again —
 count stays the same. Send a text — you get the onboarding reply.
