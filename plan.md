@@ -174,10 +174,11 @@ plan (§7).
       *(founder, ~1 h — step-by-step in README §M0)*
 - [x] Supabase project `Faida MVP` (ap-south-1): schema migrated, private `documents` bucket,
       demo tenant/branch seeded, live branch phone set to the founder's demo handset
-- [ ] Deploy the API to Railway/Fly
-      *(founder, ~30 min — README §M0; Dockerfile ready. Boot takes 6-10 s (pip-installed app
-      + asyncpg pool to Supabase), so give the platform health check a grace period of 30 s or
-      it will restart-loop a service that is actually fine.)*
+- [x] Deployed to Railway (F3, 2026-08-23): `faida-production-3b60.up.railway.app`, Singapore,
+      1 replica, Dockerfile builder, root `apps/api`, watch path scoped so `apps/web` pushes do
+      not restart the API. Verified from outside: `/health` 200 `db:true`, verify handshake
+      echoes, wrong token and unsigned POST both 403. Boot takes 6-10 s (pip install + asyncpg
+      pool), so any health check needs a grace period or it restart-loops a healthy service.
 - [x] FastAPI service code: webhook GET verification + POST signature check (fails closed
       without app secret), `/health`
 - [x] Webhook: verify → dedupe on `message_id` → store raw payload (`wa_messages`) → enqueue →
