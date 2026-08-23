@@ -235,8 +235,8 @@ plan (§7).
 - [x] Next.js app with the one screen: invoice photo left, extracted fields right, green/amber per
       field (with an icon or label, never colour alone), edit-in-place for amber fields, confirm
       button (WP-31)
-- [ ] Invoice list (by branch, by supplier) with status chips (WP-32)
-- [ ] Price-trend sparkline per supplier item (from `supplier_item_prices`) (WP-33)
+- [x] Invoice list (by branch, by supplier) with status chips (WP-32)
+- [x] Price-trend sparkline per supplier item (from `supplier_item_prices`) (WP-33)
 - [ ] Manual invoice entry form (`source = 'manual'`) — the vision-outage fallback (WP-34)
 - [ ] Web CI job: lint + typecheck + build; total CI stays under 5 minutes (WP-35)
 - **Done when:** every number on the screen traces to the photo beside it; an amber field can be
@@ -519,6 +519,14 @@ pilot volume. Meta utility template cost applies only from M9 (verify live UAE r
 
 *(newest first — one line per session: date, what shipped, what's next)*
 
+- 2026-08-23 - Wave 7a integrated: web client aligned to the implemented C6 (corrections PATCH
+  body, prices envelope, mock now byte-identical to the real API incl. status codes and
+  timestamps, signed-URL expiry refetch on image error); WP-32 list refinement (branch/supplier
+  filters on query params, branch_name joined into list + detail, URL-preserved status tabs,
+  date sort, empty states); WP-33 price sparkline (inline SVG, last point emphasized in Karak
+  Gold, exact-string delta labels, sr-only value table; dataviz-skill guided). 156 API tests,
+  web lint/tsc/build clean, browser-QA'd. Next: Wave 7b (WP-34 manual entry + upload, WP-35
+  web CI) closes M3's checklist; revoked-key drill lands there.
 - 2026-08-23 - Wave 6 integrated (WP-30 + WP-31): C6 API live (six routes, fail-closed bearer
   token, signed image URLs degrading to null, upload with type/size caps, confirm doubles as
   the cash-review path; 16 tests) and the Next.js review screen (photo + zoom left, green/amber

@@ -3,13 +3,13 @@
 import { useState } from "react";
 import { ApiError } from "@/lib/errors";
 import { money, quantity } from "@/lib/format";
-import type { InvoiceLine, LineFieldPatch } from "@/lib/types";
+import type { Correction, InvoiceLine } from "@/lib/types";
 import FieldBadge from "./FieldBadge";
 
 interface Props {
   lines: InvoiceLine[];
   editable: boolean;
-  onSaveLine: (patch: LineFieldPatch) => Promise<void>;
+  onSaveLine: (corrections: Correction[]) => Promise<void>;
 }
 
 interface Draft {
@@ -19,6 +19,8 @@ interface Draft {
 }
 
 const NUMBER_RE = /^\d+(\.\d+)?$/;
+
+const LINE_NUMBER_FIELDS = ["qty", "unit_price", "line_total"] as const;
 
 /** Why this line needs review, in the reader's language - from the persisted check. */
 function amberReason(line: InvoiceLine): string {
@@ -45,6 +47,30 @@ function NotRead() {
   return <span className="text-xs font-medium text-caution">Not read</span>;
 }
 
+/**
+ * Map the edit form onto C6 corrections: one {line_index, field, value} per
+ * changed field. A field left as it was sends nothing; a still-unread field
+ * left empty stays unread; a read value cannot be cleared (the API has no
+ * "unset" - only unsigned decimal values).
+ */
+function buildCorrections(line: InvoiceLine, draft: Draft): Correction[] | { error: string } {
+  const corrections: Correction[] = [];
+  for (const field of LINE_NUMBER_FIELDS) {
+    const value = draft[field].trim();
+    const current = line[field];
+    if (value === (current ?? "")) continue; // untouched
+    if (value === "") {
+      if (current === null) continue; // was unread, stays unread
+      return { error: "A value can't be cleared. Enter the number the photo shows." };
+    }
+    if (!NUMBER_RE.test(value)) {
+      return { error: "Enter plain numbers, like 12 or 4.50." };
+    }
+    corrections.push({ line_index: line.position, field, value });
+  }
+  return corrections;
+}
+
 export default function LinesTable({ lines, editable, onSaveLine }: Props) {
   const [editing, setEditing] = useState<number | null>(null);
   const [draft, setDraft] = useState<Draft>({ qty: "", unit_price: "", line_total: "" });
@@ -66,23 +92,21 @@ export default function LinesTable({ lines, editable, onSaveLine }: Props) {
     setError(null);
   }
 
-  async function save(position: number) {
-    const fields = [draft.qty, draft.unit_price, draft.line_total].map((value) => value.trim());
-    if (fields.some((value) => value !== "" && !NUMBER_RE.test(value))) {
-      setError("Enter plain numbers, like 12 or 4.50.");
+  async function save(line: InvoiceLine) {
+    const corrections = buildCorrections(line, draft);
+    if ("error" in corrections) {
+      setError(corrections.error);
       return;
     }
-    const [qty, unitPrice, lineTotal] = fields;
-    const patch: LineFieldPatch = {
-      position,
-      qty: qty === "" ? null : qty,
-      unit_price: unitPrice === "" ? null : unitPrice,
-      line_total: lineTotal === "" ? null : lineTotal,
-    };
+    if (corrections.length === 0) {
+      setEditing(null); // nothing changed
+      setError(null);
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
-      await onSaveLine(patch);
+      await onSaveLine(corrections);
       setEditing(null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Couldn't save the change. Try again.");
@@ -122,7 +146,7 @@ export default function LinesTable({ lines, editable, onSaveLine }: Props) {
             const isEditing = editing === line.position;
             return (
               <LineRows
-                key={line.id}
+                key={line.position}
                 line={line}
                 amber={amber}
                 editable={editable}
@@ -133,7 +157,7 @@ export default function LinesTable({ lines, editable, onSaveLine }: Props) {
                 onDraftChange={setDraft}
                 onStartEdit={() => startEdit(line)}
                 onCancel={cancelEdit}
-                onSave={() => save(line.position)}
+                onSave={() => save(line)}
               />
             );
           })}

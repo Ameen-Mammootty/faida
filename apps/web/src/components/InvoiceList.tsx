@@ -5,11 +5,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { listInvoices } from "@/lib/api";
 import { ApiError } from "@/lib/errors";
-import { formatDate, money, PAYMENT_LABEL } from "@/lib/format";
-import type { InvoiceStatus, InvoiceSummary } from "@/lib/types";
+import { formatDate, money } from "@/lib/format";
+import type { InvoiceFilters, InvoiceStatus, InvoiceSummary } from "@/lib/types";
 import StatusChip from "./StatusChip";
 
-const FILTERS: { value: InvoiceStatus | "all"; label: string }[] = [
+const STATUS_TABS: { value: InvoiceStatus | "all"; label: string }[] = [
   { value: "all", label: "All" },
   { value: "awaiting_confirm", label: "To confirm" },
   { value: "needs_review", label: "Needs approval" },
@@ -19,28 +19,85 @@ const FILTERS: { value: InvoiceStatus | "all"; label: string }[] = [
 
 const VALID_STATUSES = new Set<string>(["draft", "awaiting_confirm", "confirmed", "needs_review"]);
 
+type SortDir = "desc" | "asc";
+
+/** The list's date is the invoice date, falling back to arrival. */
+function sortDate(invoice: InvoiceSummary): string {
+  return invoice.invoice_date ?? invoice.created_at;
+}
+
+/** Newest first by default; ISO strings compare lexicographically. */
+function sortInvoices(invoices: InvoiceSummary[], dir: SortDir): InvoiceSummary[] {
+  // desc: an earlier date sorts after a later one (newest first).
+  const earlierFirst = dir === "desc" ? 1 : -1;
+  return [...invoices].sort((a, b) => {
+    const [da, db] = [sortDate(a), sortDate(b)];
+    if (da !== db) return da < db ? earlierFirst : -earlierFirst;
+    if (a.created_at !== b.created_at) {
+      return a.created_at < b.created_at ? earlierFirst : -earlierFirst;
+    }
+    return a.id < b.id ? earlierFirst : -earlierFirst;
+  });
+}
+
+interface FilterOption {
+  id: string;
+  name: string;
+}
+
+/** Distinct id -> name pairs from the unfiltered list, sorted by name. */
+function distinctOptions(
+  invoices: InvoiceSummary[],
+  id: (invoice: InvoiceSummary) => string | null,
+  name: (invoice: InvoiceSummary) => string | null,
+  fallback: string,
+): FilterOption[] {
+  const seen = new Map<string, string>();
+  for (const invoice of invoices) {
+    const key = id(invoice);
+    if (key !== null && !seen.has(key)) seen.set(key, name(invoice) ?? fallback);
+  }
+  return [...seen.entries()]
+    .map(([optionId, optionName]) => ({ id: optionId, name: optionName }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
 export default function InvoiceList() {
   const router = useRouter();
   const searchParams = useSearchParams();
+
   const rawStatus = searchParams.get("status") ?? "all";
   const status = VALID_STATUSES.has(rawStatus) ? (rawStatus as InvoiceStatus) : undefined;
-
-  const active = status ?? "all";
+  const branchId = searchParams.get("branch_id") ?? undefined;
+  const supplierId = searchParams.get("supplier_id") ?? undefined;
+  const activeTab = status ?? "all";
+  const filtered = Boolean(status || branchId || supplierId);
 
   const [result, setResult] = useState<{
     key: string;
     invoices?: InvoiceSummary[];
     error?: string;
   } | null>(null);
+  // The filter dropdowns list every branch/supplier, so their options come
+  // from one unfiltered fetch - reused from the main load when possible.
+  const [options, setOptions] = useState<InvoiceSummary[] | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
-  const key = `${active}:${reloadKey}`;
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const key = `${activeTab}:${branchId ?? ""}:${supplierId ?? ""}:${reloadKey}`;
 
   useEffect(() => {
     let cancelled = false;
+    const filters: InvoiceFilters = {};
+    if (status) filters.status = status;
+    if (branchId) filters.branch_id = branchId;
+    if (supplierId) filters.supplier_id = supplierId;
     (async () => {
       try {
-        const data = await listInvoices(status ? { status } : {});
-        if (!cancelled) setResult({ key, invoices: data });
+        const data = await listInvoices(filters);
+        if (!cancelled) {
+          setResult({ key, invoices: data });
+          if (!filtered) setOptions(data);
+        }
       } catch (err) {
         if (!cancelled) {
           setResult({
@@ -54,11 +111,61 @@ export default function InvoiceList() {
     return () => {
       cancelled = true;
     };
-  }, [key, status]);
+  }, [key, status, branchId, supplierId, filtered]);
+
+  useEffect(() => {
+    if (options !== null || !filtered) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await listInvoices({});
+        if (!cancelled) setOptions(data);
+      } catch {
+        // The dropdowns simply stay minimal; the main list carries the error.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [options, filtered]);
 
   const current = result?.key === key ? result : null;
-  const invoices = current?.invoices ?? null;
+  const invoices = current?.invoices ? sortInvoices(current.invoices, sortDir) : null;
   const error = current?.error ?? null;
+
+  const branchOptions = distinctOptions(
+    options ?? [],
+    (invoice) => invoice.branch_id,
+    (invoice) => invoice.branch_name,
+    "Unnamed branch",
+  );
+  const supplierOptions = distinctOptions(
+    options ?? [],
+    (invoice) => invoice.supplier_id,
+    (invoice) => invoice.supplier_name,
+    "Unnamed supplier",
+  );
+  // A deep-linked filter id keeps its selection visible even before (or
+  // without) appearing in the option rows.
+  if (branchId && !branchOptions.some((option) => option.id === branchId)) {
+    branchOptions.push({ id: branchId, name: "Selected branch" });
+  }
+  if (supplierId && !supplierOptions.some((option) => option.id === supplierId)) {
+    supplierOptions.push({ id: supplierId, name: "Selected supplier" });
+  }
+
+  function hrefWith(overrides: Record<string, string | null>): string {
+    const params = new URLSearchParams(searchParams.toString());
+    for (const [name, value] of Object.entries(overrides)) {
+      if (value === null) params.delete(name);
+      else params.set(name, value);
+    }
+    const query = params.toString();
+    return query ? `/invoices?${query}` : "/invoices";
+  }
+
+  const selectClasses =
+    "rounded-sm border border-ink/20 bg-paper px-2 py-1.5 text-sm text-ink hover:border-palm/50";
 
   return (
     <div className="space-y-5">
@@ -72,16 +179,12 @@ export default function InvoiceList() {
       </header>
 
       <nav aria-label="Filter by status" className="flex gap-5 border-b border-ink/10">
-        {FILTERS.map((filter) => {
-          const isActive = active === filter.value;
+        {STATUS_TABS.map((tab) => {
+          const isActive = activeTab === tab.value;
           return (
             <Link
-              key={filter.value}
-              href={
-                filter.value === "all"
-                  ? "/invoices"
-                  : { pathname: "/invoices", query: { status: filter.value } }
-              }
+              key={tab.value}
+              href={hrefWith({ status: tab.value === "all" ? null : tab.value })}
               aria-current={isActive ? "page" : undefined}
               className={`-mb-px border-b-2 pb-2 text-sm ${
                 isActive
@@ -89,11 +192,48 @@ export default function InvoiceList() {
                   : "border-transparent font-medium text-stone hover:text-palm"
               }`}
             >
-              {filter.label}
+              {tab.label}
             </Link>
           );
         })}
       </nav>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <label className="flex items-center gap-2 text-sm font-medium text-stone">
+          Branch
+          <select
+            value={branchId ?? ""}
+            onChange={(event) =>
+              router.replace(hrefWith({ branch_id: event.target.value || null }))
+            }
+            className={selectClasses}
+          >
+            <option value="">All branches</option>
+            {branchOptions.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex items-center gap-2 text-sm font-medium text-stone">
+          Supplier
+          <select
+            value={supplierId ?? ""}
+            onChange={(event) =>
+              router.replace(hrefWith({ supplier_id: event.target.value || null }))
+            }
+            className={selectClasses}
+          >
+            <option value="">All suppliers</option>
+            {supplierOptions.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
 
       {error ? (
         <div className="rounded-md border border-plum/30 bg-paper p-6">
@@ -114,12 +254,24 @@ export default function InvoiceList() {
         </div>
       ) : invoices.length === 0 ? (
         <div className="rounded-md border border-ink/10 bg-paper p-8 text-center">
-          <p className="text-sm text-ink">
-            {status ? "No invoices with this status." : "No invoices yet."}
-          </p>
-          <p className="mt-1 text-sm text-stone">
-            Forward a supplier invoice photo on WhatsApp and it appears here.
-          </p>
+          {filtered ? (
+            <>
+              <p className="text-sm text-ink">No invoices match these filters.</p>
+              <p className="mt-1 text-sm text-stone">
+                <Link href="/invoices" className="font-medium text-palm hover:text-palm-deep">
+                  Clear the filters
+                </Link>{" "}
+                to see every invoice.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-sm text-ink">No invoices yet.</p>
+              <p className="mt-1 text-sm text-stone">
+                Forward a supplier invoice photo on WhatsApp and it appears here.
+              </p>
+            </>
+          )}
         </div>
       ) : (
         <div className="overflow-x-auto rounded-md border border-ink/10 bg-paper">
@@ -132,14 +284,27 @@ export default function InvoiceList() {
                 <th scope="col" className="px-4 py-2.5 font-medium">
                   Invoice
                 </th>
-                <th scope="col" className="px-4 py-2.5 font-medium">
-                  Date
+                <th
+                  scope="col"
+                  aria-sort={sortDir === "desc" ? "descending" : "ascending"}
+                  className="px-4 py-2.5 font-medium"
+                >
+                  <button
+                    type="button"
+                    onClick={() => setSortDir((dir) => (dir === "desc" ? "asc" : "desc"))}
+                    className="inline-flex items-center gap-1 tracking-wider uppercase hover:text-palm"
+                  >
+                    Date
+                    <span aria-hidden="true">{sortDir === "desc" ? "↓" : "↑"}</span>
+                    <span className="sr-only">
+                      {sortDir === "desc"
+                        ? "sorted newest first; activate for oldest first"
+                        : "sorted oldest first; activate for newest first"}
+                    </span>
+                  </button>
                 </th>
                 <th scope="col" className="px-4 py-2.5 font-medium">
                   Branch
-                </th>
-                <th scope="col" className="px-4 py-2.5 font-medium">
-                  Payment
                 </th>
                 <th scope="col" className="px-4 py-2.5 text-right font-medium">
                   Total
@@ -169,12 +334,9 @@ export default function InvoiceList() {
                     {invoice.invoice_no ?? "-"}
                   </td>
                   <td className="px-4 py-3 text-stone tabular-nums">
-                    {formatDate(invoice.invoice_date ?? invoice.created_at)}
+                    {formatDate(sortDate(invoice))}
                   </td>
                   <td className="px-4 py-3 text-stone">{invoice.branch_name ?? "-"}</td>
-                  <td className="px-4 py-3 text-stone">
-                    {invoice.payment_kind ? PAYMENT_LABEL[invoice.payment_kind] : "-"}
-                  </td>
                   <td className="px-4 py-3 text-right font-medium text-ink tabular-nums">
                     {invoice.total === null ? (
                       <span className="text-xs font-medium text-caution">Not read</span>

@@ -119,6 +119,7 @@ def _invoice_summary(row: asyncpg.Record) -> dict:
         "status": row["status"],
         "created_at": _iso(row["created_at"]),
         "branch_id": _maybe_str(row["branch_id"]),
+        "branch_name": row["branch_name"],
         "document_id": str(row["document_id"]),
     }
 

@@ -164,6 +164,7 @@ async def test_list_is_newest_first_and_filters_work(api, db):
         "status": "awaiting_confirm",
         "created_at": "2026-08-20T06:00:00+00:00",
         "branch_id": DEMO_BRANCH_ID,
+        "branch_name": "Al Barsha Branch",  # joined from branches (WP-32)
         "document_id": str(first["document_id"]),
     }
 
@@ -203,6 +204,7 @@ async def test_detail_carries_fields_checks_and_a_signed_image_url(api, db):
     assert detail["invoice_no"] == "INV-1041"
     assert detail["invoice_date"] == "2026-08-20"
     assert detail["currency"] == "AED"
+    assert detail["branch_name"] == "Al Barsha Branch"  # joined from branches (WP-32)
     assert detail["payment_kind"] == "credit"
     assert detail["status"] == "awaiting_confirm"
     assert detail["confirmed_at"] is None

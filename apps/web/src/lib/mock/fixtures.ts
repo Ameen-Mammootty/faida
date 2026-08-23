@@ -7,8 +7,16 @@
  *
  * Checks and confidence are computed by the store through the same
  * validation mirror a PATCH uses, so fixtures can never drift from the
- * check shapes the real API persists. The fixture photos in
- * /public/fixtures show exactly these numbers - every field traces.
+ * check shapes the real API persists. Timestamps use the "+00:00" offset
+ * form, exactly as Python's datetime.isoformat() serializes them. The
+ * fixture photos in /public/fixtures show exactly these numbers - every
+ * field traces.
+ *
+ * Price histories (WP-33): a plausible three weeks of confirmed deliveries
+ * for the items the demo sparkline shows - one rising, one steady, one
+ * falling - plus catalog items with no confirmed observations yet (the real
+ * endpoint's header + empty prices case). The open invoices' extracted
+ * prices are deliberately absent: the baseline moves only on confirm.
  */
 
 import type { DocumentSource, InvoiceStatus, PaymentKind, PriceHistory } from "../types";
@@ -63,7 +71,7 @@ export const FIXTURES: Fixture[] = [
     status: "awaiting_confirm",
     source: "whatsapp",
     image_url: "/fixtures/inv-1001.svg",
-    created_at: "2026-08-21T09:42:00Z",
+    created_at: "2026-08-21T09:42:00+00:00",
     lines: [
       {
         raw_name: "Rainbow Milk Powder 2.25kg",
@@ -134,7 +142,7 @@ export const FIXTURES: Fixture[] = [
     status: "awaiting_confirm",
     source: "whatsapp",
     image_url: "/fixtures/inv-1002.svg",
-    created_at: "2026-08-22T11:08:00Z",
+    created_at: "2026-08-22T11:08:00+00:00",
     lines: [
       {
         raw_name: "Chapati Flour 25kg",
@@ -195,7 +203,7 @@ export const FIXTURES: Fixture[] = [
     status: "needs_review",
     source: "whatsapp",
     image_url: "/fixtures/inv-1003.svg",
-    created_at: "2026-08-22T16:31:00Z",
+    created_at: "2026-08-22T16:31:00+00:00",
     lines: [
       {
         raw_name: "Tomatoes Box 5kg",
@@ -232,20 +240,103 @@ export const FIXTURES: Fixture[] = [
 ];
 
 /**
- * Confirmed price history for one supplier item (supplier_item_prices rows).
- * The open invoice's 54.50 is deliberately absent: the baseline moves only on
- * confirm, never before.
+ * GET /api/supplier-items/{id}/prices payloads: item header (from
+ * supplier_items) plus confirmed observations ascending by observed_at (from
+ * supplier_item_prices). prev_price/last_price shift only when a confirmed
+ * price actually changed, so a steady item keeps prev_price null.
  */
 export const PRICE_HISTORIES: Record<string, PriceHistory> = {
+  // The demo's money moment: milk powder creeping up over three weeks. The
+  // open invoice reads 54.50 - visibly above the confirmed 50.50 baseline.
   "si-2001": {
-    supplier_item_id: "si-2001",
+    id: "si-2001",
     canonical_name: "Rainbow Milk Powder 2.25kg",
     unit: "tin",
     pack_size: "2.25kg",
+    last_price: "50.50",
+    prev_price: "49.25",
     prices: [
-      { price: "48.00", observed_at: "2026-07-28T10:15:00Z", invoice_id: "inv-0894" },
-      { price: "49.25", observed_at: "2026-08-05T09:50:00Z", invoice_id: "inv-0921" },
-      { price: "50.50", observed_at: "2026-08-14T10:05:00Z", invoice_id: "inv-0957" },
+      { price: "48.00", observed_at: "2026-08-01T10:15:00+00:00", invoice_id: "inv-0894" },
+      { price: "48.00", observed_at: "2026-08-04T09:40:00+00:00", invoice_id: "inv-0902" },
+      { price: "48.50", observed_at: "2026-08-08T10:05:00+00:00", invoice_id: "inv-0921" },
+      { price: "49.25", observed_at: "2026-08-11T09:55:00+00:00", invoice_id: "inv-0936" },
+      { price: "49.25", observed_at: "2026-08-15T10:20:00+00:00", invoice_id: "inv-0948" },
+      { price: "50.50", observed_at: "2026-08-18T10:10:00+00:00", invoice_id: "inv-0957" },
     ],
+  },
+  // Steady: same price on every confirmed delivery, so prev_price never set.
+  "si-2002": {
+    id: "si-2002",
+    canonical_name: "Karak Tea Dust 5kg",
+    unit: "bag",
+    pack_size: "5kg",
+    last_price: "49.00",
+    prev_price: null,
+    prices: [
+      { price: "49.00", observed_at: "2026-08-02T10:30:00+00:00", invoice_id: "inv-0896" },
+      { price: "49.00", observed_at: "2026-08-09T10:25:00+00:00", invoice_id: "inv-0923" },
+      { price: "49.00", observed_at: "2026-08-16T10:45:00+00:00", invoice_id: "inv-0950" },
+    ],
+  },
+  // Falling: sugar easing off over the same three weeks.
+  "si-2103": {
+    id: "si-2103",
+    canonical_name: "Sugar 10kg",
+    unit: "bag",
+    pack_size: "10kg",
+    last_price: "42.00",
+    prev_price: "44.50",
+    prices: [
+      { price: "46.00", observed_at: "2026-08-02T11:10:00+00:00", invoice_id: "inv-0897" },
+      { price: "44.50", observed_at: "2026-08-09T11:05:00+00:00", invoice_id: "inv-0925" },
+      { price: "42.00", observed_at: "2026-08-16T11:20:00+00:00", invoice_id: "inv-0951" },
+    ],
+  },
+  // Catalog items with no confirmed observations yet: the endpoint still
+  // returns the header, with an empty series.
+  "si-2003": {
+    id: "si-2003",
+    canonical_name: "Sugar 50kg",
+    unit: "sack",
+    pack_size: "50kg",
+    last_price: "118.75",
+    prev_price: null,
+    prices: [],
+  },
+  "si-2004": {
+    id: "si-2004",
+    canonical_name: "Cardamom Powder 500g",
+    unit: "pack",
+    pack_size: "500g",
+    last_price: "24.00",
+    prev_price: null,
+    prices: [],
+  },
+  "si-2005": {
+    id: "si-2005",
+    canonical_name: "Paper Cups 8oz x1000",
+    unit: "carton",
+    pack_size: "1000pc",
+    last_price: "33.50",
+    prev_price: null,
+    prices: [],
+  },
+  "si-2101": {
+    id: "si-2101",
+    canonical_name: "Chapati Flour 25kg",
+    unit: "sack",
+    pack_size: "25kg",
+    last_price: "38.00",
+    prev_price: null,
+    prices: [],
+  },
+  "si-2102": {
+    id: "si-2102",
+    canonical_name: "Evaporated Milk 410ml",
+    unit: "tin",
+    pack_size: "410ml",
+    last_price: "4.50",
+    prev_price: null,
+    prices: [],
   },
 };

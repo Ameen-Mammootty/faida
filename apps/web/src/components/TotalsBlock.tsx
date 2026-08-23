@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { ApiError } from "@/lib/errors";
 import { money } from "@/lib/format";
-import type { DocumentCheck, FieldPatch } from "@/lib/types";
+import type { Correction, DocumentCheck } from "@/lib/types";
 import FieldBadge from "./FieldBadge";
 
 interface Props {
@@ -13,10 +13,12 @@ interface Props {
   currency: string;
   doc: DocumentCheck;
   editable: boolean;
-  onSaveTotals: (patch: FieldPatch) => Promise<void>;
+  onSaveTotals: (corrections: Correction[]) => Promise<void>;
 }
 
 const NUMBER_RE = /^\d+(\.\d+)?$/;
+
+const HEADER_FIELDS = ["subtotal", "tax", "total"] as const;
 
 /**
  * The reconciliation strip: the exact arithmetic the pipeline ran, laid out
@@ -76,20 +78,36 @@ export default function TotalsBlock({
 
   async function save(event: React.FormEvent) {
     event.preventDefault();
-    const values = [draft.subtotal, draft.tax, draft.total].map((value) => value.trim());
-    if (values.some((value) => value !== "" && !NUMBER_RE.test(value))) {
-      setError("Enter plain numbers, like 283.76.");
+    // C6 corrections: one {line_index: null, field, value} per changed header
+    // field. An untouched field sends nothing; a still-unread field left
+    // empty stays unread; a read value cannot be cleared (the API only takes
+    // unsigned decimal values, never an unset).
+    const currentValues = { subtotal, tax, total };
+    const corrections: Correction[] = [];
+    for (const field of HEADER_FIELDS) {
+      const value = draft[field].trim();
+      const current = currentValues[field];
+      if (value === (current ?? "")) continue; // untouched
+      if (value === "") {
+        if (current === null) continue; // was unread, stays unread
+        setError("A value can't be cleared. Enter the number the photo shows.");
+        return;
+      }
+      if (!NUMBER_RE.test(value)) {
+        setError("Enter plain numbers, like 283.76.");
+        return;
+      }
+      corrections.push({ line_index: null, field, value });
+    }
+    if (corrections.length === 0) {
+      setEditing(false); // nothing changed
+      setError(null);
       return;
     }
-    const [nextSubtotal, nextTax, nextTotal] = values;
     setSaving(true);
     setError(null);
     try {
-      await onSaveTotals({
-        subtotal: nextSubtotal === "" ? null : nextSubtotal,
-        tax: nextTax === "" ? null : nextTax,
-        total: nextTotal === "" ? null : nextTotal,
-      });
+      await onSaveTotals(corrections);
       setEditing(false);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Couldn't save the change. Try again.");

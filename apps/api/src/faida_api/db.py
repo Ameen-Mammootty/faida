@@ -264,16 +264,19 @@ class Database:
         supplier_id: str | None = None,
         status: str | None = None,
     ) -> list[asyncpg.Record]:
-        """C6 invoice list, newest first; every filter optional."""
+        """C6 invoice list, newest first; every filter optional. Carries the
+        branch name (WP-32: the list shows names, not UUIDs)."""
         return await self.pool.fetch(
             """
-            select id, supplier_name, supplier_id, invoice_no, invoice_date, currency,
-                   total, status, created_at, branch_id, document_id
-            from invoices
-            where ($1::uuid is null or branch_id = $1)
-              and ($2::uuid is null or supplier_id = $2)
-              and ($3::text is null or status = $3)
-            order by created_at desc, id desc
+            select i.id, i.supplier_name, i.supplier_id, i.invoice_no, i.invoice_date,
+                   i.currency, i.total, i.status, i.created_at, i.branch_id, i.document_id,
+                   b.name as branch_name
+            from invoices i
+            left join branches b on b.id = i.branch_id
+            where ($1::uuid is null or i.branch_id = $1)
+              and ($2::uuid is null or i.supplier_id = $2)
+              and ($3::text is null or i.status = $3)
+            order by i.created_at desc, i.id desc
             """,
             branch_id,
             supplier_id,
@@ -463,7 +466,16 @@ class Database:
         )
 
     async def get_invoice(self, invoice_id: str) -> asyncpg.Record | None:
-        return await self.pool.fetchrow("select * from invoices where id = $1", invoice_id)
+        """One invoice row plus its branch name (C6 detail shows names)."""
+        return await self.pool.fetchrow(
+            """
+            select i.*, b.name as branch_name
+            from invoices i
+            left join branches b on b.id = i.branch_id
+            where i.id = $1
+            """,
+            invoice_id,
+        )
 
     async def get_invoice_lines(self, invoice_id: str) -> list[asyncpg.Record]:
         return await self.pool.fetch(

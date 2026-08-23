@@ -1,17 +1,22 @@
 /**
- * The typed client for the C6 web API surface (plan.md section 7.2):
+ * The typed client for the C6 web API surface as implemented (apps/api
+ * src/faida_api/api.py, pinned by tests/test_api.py):
  *
- *   GET   /api/invoices                     list, with branch/supplier/status filters
- *   GET   /api/invoices/{id}                fields, checks, confidence, signed image URL
- *   PATCH /api/invoices/{id}/fields         edit fields; the API re-validates
- *   POST  /api/invoices/{id}/confirm        confirm (or approve a cash invoice)
- *   POST  /api/documents                    manual upload
- *   GET   /api/supplier-items/{id}/prices   price history for one supplier item
+ *   GET   /api/invoices                     {"invoices": [...]}, branch/supplier/status filters
+ *   GET   /api/invoices/{id}                detail + checks + confidence + signed image URL
+ *   PATCH /api/invoices/{id}/fields         {"corrections": [...]}; returns the re-validated detail
+ *   POST  /api/invoices/{id}/confirm        confirm (or approve a cash hold); returns the detail
+ *   POST  /api/documents                    manual upload (multipart file [+ branch_id])
+ *   GET   /api/supplier-items/{id}/prices   item header + confirmed prices, oldest first
  *
- * Mock mode is the default until the real API (WP-30) lands: set
- * NEXT_PUBLIC_MOCK_API=false plus NEXT_PUBLIC_API_BASE and
- * NEXT_PUBLIC_API_TOKEN to talk to the real thing. The bearer token is the
- * demo's shared secret (real auth arrives in M6).
+ * PATCH and confirm return the full updated detail payload - callers use it
+ * directly and never refetch after a write.
+ *
+ * Mock mode is the default: set NEXT_PUBLIC_MOCK_API=false plus
+ * NEXT_PUBLIC_API_BASE and NEXT_PUBLIC_API_TOKEN to talk to the real thing.
+ * The bearer token is the demo's shared secret (real auth arrives in M6).
+ * The mock serves byte-identical shapes, so components cannot tell the modes
+ * apart.
  *
  * Money values are strings end to end and pass through this module verbatim.
  */
@@ -26,7 +31,7 @@ import {
   mockUploadDocument,
 } from "./mock/store";
 import type {
-  FieldPatch,
+  Correction,
   InvoiceDetail,
   InvoiceFilters,
   InvoiceSummary,
@@ -94,11 +99,15 @@ export async function getInvoice(id: string): Promise<InvoiceDetail> {
   return request<InvoiceDetail>(`/api/invoices/${encodeURIComponent(id)}`);
 }
 
-export async function patchInvoiceFields(id: string, patch: FieldPatch): Promise<InvoiceDetail> {
-  if (MOCK) return mockPatchInvoiceFields(id, patch);
+/** Apply one or more field corrections; resolves to the re-validated detail. */
+export async function patchInvoiceFields(
+  id: string,
+  corrections: Correction[],
+): Promise<InvoiceDetail> {
+  if (MOCK) return mockPatchInvoiceFields(id, corrections);
   return request<InvoiceDetail>(
     `/api/invoices/${encodeURIComponent(id)}/fields`,
-    jsonInit("PATCH", patch),
+    jsonInit("PATCH", { corrections }),
   );
 }
 
@@ -118,7 +127,5 @@ export async function uploadDocument(file: File): Promise<UploadResult> {
 
 export async function getSupplierItemPrices(supplierItemId: string): Promise<PriceHistory> {
   if (MOCK) return mockGetSupplierItemPrices(supplierItemId);
-  return request<PriceHistory>(
-    `/api/supplier-items/${encodeURIComponent(supplierItemId)}/prices`,
-  );
+  return request<PriceHistory>(`/api/supplier-items/${encodeURIComponent(supplierItemId)}/prices`);
 }

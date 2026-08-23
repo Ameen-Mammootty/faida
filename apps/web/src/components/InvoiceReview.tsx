@@ -1,17 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { confirmInvoice, getInvoice, getSupplierItemPrices, patchInvoiceFields } from "@/lib/api";
+import { useEffect, useRef, useState } from "react";
+import { confirmInvoice, getInvoice, patchInvoiceFields } from "@/lib/api";
 import { ApiError } from "@/lib/errors";
 import { formatDate, PAYMENT_LABEL } from "@/lib/format";
-import type {
-  DocumentSource,
-  FieldPatch,
-  InvoiceDetail,
-  LineFieldPatch,
-  PriceHistory,
-} from "@/lib/types";
+import type { Correction, DocumentSource, InvoiceDetail } from "@/lib/types";
 import { AlertIcon, CheckIcon } from "./icons";
 import FieldBadge from "./FieldBadge";
 import InvoicePhoto from "./InvoicePhoto";
@@ -29,7 +23,6 @@ const SOURCE_LABEL: Record<DocumentSource, string> = {
 interface LoadResult {
   key: string;
   invoice?: InvoiceDetail;
-  histories?: PriceHistory[];
   error?: string;
 }
 
@@ -49,6 +42,7 @@ export default function InvoiceReview({ id }: { id: string }) {
   const [reloadKey, setReloadKey] = useState(0);
   const [confirming, setConfirming] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
+  const imageRefreshedAt = useRef(0);
 
   const key = `${id}:${reloadKey}`;
 
@@ -57,22 +51,7 @@ export default function InvoiceReview({ id }: { id: string }) {
     (async () => {
       try {
         const detail = await getInvoice(id);
-        const itemIds = [
-          ...new Set(
-            detail.lines
-              .filter((line) => line.checks.snapped === true && line.supplier_item_id)
-              .map((line) => line.supplier_item_id as string),
-          ),
-        ];
-        const settled = await Promise.allSettled(itemIds.map(getSupplierItemPrices));
-        const histories = settled
-          .filter(
-            (entry): entry is PromiseFulfilledResult<PriceHistory> =>
-              entry.status === "fulfilled",
-          )
-          .map((entry) => entry.value)
-          .filter((history) => history.prices.length > 0);
-        if (!cancelled) setResult({ key, invoice: detail, histories });
+        if (!cancelled) setResult({ key, invoice: detail });
       } catch (err) {
         if (!cancelled) {
           setResult({
@@ -90,7 +69,6 @@ export default function InvoiceReview({ id }: { id: string }) {
 
   const current = result?.key === key ? result : null;
   const invoice = current?.invoice ?? null;
-  const histories = current?.histories ?? [];
   const loadError = current?.error ?? null;
 
   function applyUpdate(updated: InvoiceDetail) {
@@ -99,12 +77,9 @@ export default function InvoiceReview({ id }: { id: string }) {
     );
   }
 
-  async function saveLine(patch: LineFieldPatch) {
-    applyUpdate(await patchInvoiceFields(id, { lines: [patch] }));
-  }
-
-  async function saveTotals(patch: FieldPatch) {
-    applyUpdate(await patchInvoiceFields(id, patch));
+  // PATCH returns the full re-validated detail - use it directly, no refetch.
+  async function saveCorrections(corrections: Correction[]) {
+    applyUpdate(await patchInvoiceFields(id, corrections));
   }
 
   async function confirm() {
@@ -118,6 +93,20 @@ export default function InvoiceReview({ id }: { id: string }) {
       );
     } finally {
       setConfirming(false);
+    }
+  }
+
+  // The signed image URL lives ~600 s. When a long-open photo starts failing,
+  // refetch the detail quietly for a fresh URL - at most once every 10 s so a
+  // permanently broken image can't loop.
+  async function refreshExpiredImage() {
+    const now = Date.now();
+    if (now - imageRefreshedAt.current < 10_000) return;
+    imageRefreshedAt.current = now;
+    try {
+      applyUpdate(await getInvoice(id));
+    } catch {
+      // keep the current view; the photo shows its fallback
     }
   }
 
@@ -148,7 +137,14 @@ export default function InvoiceReview({ id }: { id: string }) {
 
   const confirmed = invoice.status === "confirmed";
   const cashHold = invoice.status === "needs_review" && invoice.payment_kind === "cash";
-  const editable = !confirmed;
+  const editable = invoice.status === "awaiting_confirm" || invoice.status === "needs_review";
+  const watchItemIds = [
+    ...new Set(
+      invoice.lines
+        .map((line) => line.supplier_item_id)
+        .filter((itemId): itemId is string => itemId !== null),
+    ),
+  ];
 
   return (
     <div className="space-y-5">
@@ -167,7 +163,7 @@ export default function InvoiceReview({ id }: { id: string }) {
             {[
               invoice.invoice_no ? `Invoice ${invoice.invoice_no}` : "No invoice number",
               invoice.branch_name,
-              `via ${SOURCE_LABEL[invoice.source]}`,
+              invoice.document ? `via ${SOURCE_LABEL[invoice.document.source]}` : null,
             ]
               .filter(Boolean)
               .join(" · ")}
@@ -221,6 +217,7 @@ export default function InvoiceReview({ id }: { id: string }) {
           <InvoicePhoto
             src={invoice.image_url}
             alt={`Invoice photo from ${invoice.supplier_name ?? "unknown supplier"}`}
+            onExpired={() => void refreshExpiredImage()}
           />
         </div>
 
@@ -239,7 +236,11 @@ export default function InvoiceReview({ id }: { id: string }) {
               />
             </dl>
             <div className="mt-4 border-t border-ink/10 pt-1">
-              <LinesTable lines={invoice.lines} editable={editable} onSaveLine={saveLine} />
+              <LinesTable
+                lines={invoice.lines}
+                editable={editable}
+                onSaveLine={saveCorrections}
+              />
             </div>
             <div className="mt-4">
               <TotalsBlock
@@ -249,12 +250,12 @@ export default function InvoiceReview({ id }: { id: string }) {
                 currency={invoice.currency}
                 doc={invoice.confidence.document}
                 editable={editable}
-                onSaveTotals={saveTotals}
+                onSaveTotals={saveCorrections}
               />
             </div>
           </section>
 
-          <PriceWatch histories={histories} />
+          <PriceWatch itemIds={watchItemIds} confirmed={confirmed} />
         </div>
       </div>
     </div>

@@ -1,11 +1,14 @@
 /**
- * C6 contract types (plan.md section 7.2), mirroring the shapes the API
- * persists in apps/api (extraction/validate.py LineCheck / DocumentCheck and
- * pipeline.py's confidence + line dumps).
+ * C6 contract types, mirroring the wire shapes the implemented API serves
+ * (apps/api src/faida_api/api.py `_invoice_summary` / `_invoice_detail` /
+ * `supplier_item_prices`, with checks and confidence persisted by
+ * extraction/validate.py + pipeline.py). tests/test_api.py pins these shapes;
+ * this file mirrors those assertions, field for field.
  *
- * Money is a string end to end. The API serializes Decimal values as strings;
- * this app renders them verbatim (padded to two decimals by string ops only)
- * and never parses them to a float.
+ * Money is a string end to end. The API serializes Decimal values as strings
+ * ("745.76", never a JSON number); this app renders them verbatim (padded to
+ * two decimals by string ops only) and never parses them to a float. The one
+ * sanctioned parse is geometry: scaling a sparkline's y-axis.
  */
 
 export type CheckStatus = "passed" | "failed" | "indeterminate";
@@ -17,6 +20,12 @@ export type InvoiceStatus = "draft" | "awaiting_confirm" | "confirmed" | "needs_
 export type PaymentKind = "credit" | "cash";
 
 export type DocumentSource = "whatsapp" | "upload" | "manual";
+
+/** C1 document machine: received -> processing -> extracted | failed, plus
+ * confirmed once the invoice is confirmed. */
+export type DocumentStatus = "received" | "processing" | "extracted" | "confirmed" | "failed";
+
+export type DocumentClassification = "invoice" | "z_report" | "other";
 
 /** Persisted per-line check: validate.py LineCheck.model_dump(mode="json"). */
 export interface LineCheck {
@@ -52,8 +61,26 @@ export interface Confidence {
   lines: FieldStatus[];
 }
 
-export interface InvoiceLine {
+/** One row of GET /api/invoices (the list envelope is {"invoices": [...]}). */
+export interface InvoiceSummary {
   id: string;
+  supplier_name: string | null;
+  supplier_id: string | null;
+  invoice_no: string | null;
+  /** ISO date, e.g. "2026-08-21". */
+  invoice_date: string | null;
+  currency: string;
+  total: string | null;
+  status: InvoiceStatus;
+  /** ISO datetime of the invoice row's creation, e.g. "2026-08-21T09:42:00+00:00". */
+  created_at: string;
+  branch_id: string | null;
+  branch_name: string | null;
+  document_id: string;
+}
+
+/** One line of the detail payload. No id on the wire - position is the key. */
+export interface InvoiceLine {
   position: number;
   raw_name: string;
   supplier_item_id: string | null;
@@ -65,32 +92,30 @@ export interface InvoiceLine {
   checks: LineCheck;
 }
 
-export interface InvoiceSummary {
+/** The document block inside the detail payload. */
+export interface InvoiceDocument {
   id: string;
-  document_id: string;
-  branch_id: string | null;
-  branch_name: string | null;
-  supplier_id: string | null;
-  supplier_name: string | null;
-  invoice_no: string | null;
-  /** ISO date, e.g. "2026-08-21". */
-  invoice_date: string | null;
-  currency: string;
-  total: string | null;
-  payment_kind: PaymentKind | null;
-  status: InvoiceStatus;
-  /** ISO datetime of the document's arrival. */
-  created_at: string;
+  status: DocumentStatus;
+  classification: DocumentClassification | null;
+  source: DocumentSource;
+  created_at: string | null;
 }
 
+/**
+ * GET /api/invoices/{id}: the summary fields plus totals, confidence, lines,
+ * the document, and a short-lived signed image URL (~600 s TTL - refetch the
+ * detail when a long-open image starts 403ing). PATCH and confirm return this
+ * same payload, so the screen never refetches after a write.
+ */
 export interface InvoiceDetail extends InvoiceSummary {
   subtotal: string | null;
   tax: string | null;
-  /** Signed URL for the stored original; null for manual entries with no photo. */
-  image_url: string | null;
-  source: DocumentSource;
-  lines: InvoiceLine[];
+  payment_kind: PaymentKind | null;
   confidence: Confidence;
+  confirmed_at: string | null;
+  lines: InvoiceLine[];
+  document: InvoiceDocument | null;
+  image_url: string | null;
 }
 
 export interface InvoiceFilters {
@@ -99,39 +124,52 @@ export interface InvoiceFilters {
   supplier_id?: string;
 }
 
-/** One line's editable fields; strings pass through verbatim. */
-export interface LineFieldPatch {
-  position: number;
-  raw_name?: string;
-  qty?: string | null;
-  unit_price?: string | null;
-  line_total?: string | null;
+export type CorrectionField =
+  | "qty"
+  | "unit_price"
+  | "line_total"
+  | "name"
+  | "subtotal"
+  | "tax"
+  | "total";
+
+/**
+ * One field fix for PATCH /api/invoices/{id}/fields, exactly the chat
+ * grammar's field set (api.py Correction). line_index (0-based) targets a
+ * line field; null targets the totals block (subtotal/tax/total). Values are
+ * strings: unsigned decimals for numbers ("16", "4.50" - no sign, no
+ * exponent), free text for "name". A field can never be cleared to null.
+ */
+export interface Correction {
+  line_index: number | null;
+  field: CorrectionField;
+  value: string;
 }
 
-/** PATCH /api/invoices/{id}/fields body. The API re-validates and returns the new detail. */
-export interface FieldPatch {
-  supplier_name?: string;
-  invoice_no?: string;
-  invoice_date?: string;
-  subtotal?: string | null;
-  tax?: string | null;
-  total?: string | null;
-  lines?: LineFieldPatch[];
+/** PATCH body: {"corrections": [...]}, at least one. Returns InvoiceDetail. */
+export interface FieldCorrections {
+  corrections: Correction[];
 }
 
+/** One confirmed price observation (supplier_item_prices row). */
 export interface PricePoint {
   price: string;
-  /** ISO datetime the price was observed (confirmed invoice date). */
+  /** ISO datetime the price was observed. */
   observed_at: string;
   invoice_id: string | null;
 }
 
-/** GET /api/supplier-items/{id}/prices response. */
+/**
+ * GET /api/supplier-items/{id}/prices: the item header plus confirmed
+ * observations ascending by observed_at (the sparkline draws left to right).
+ */
 export interface PriceHistory {
-  supplier_item_id: string;
+  id: string;
   canonical_name: string;
   unit: string | null;
   pack_size: string | null;
+  last_price: string | null;
+  prev_price: string | null;
   prices: PricePoint[];
 }
 
