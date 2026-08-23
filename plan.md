@@ -8,7 +8,7 @@
 - **Product:** Faida — profit visibility for GCC cafeterias and multi-branch karak/paratha chains, fed through WhatsApp.
 - **Reference:** `Docs/PRD.md` (v2). This plan sequences the build; the PRD owns product intent. Where they conflict on *scope timing*, this plan wins.
 - **Start date:** 2026-08-22
-- **Current milestone:** M0-M4 agent-side code complete. Founder-gated: webhook repoint + M0 phone proof (F4), corpus photos (F6) for the accuracy loop (WP-15/16), demo rehearsals (M4 gate)
+- **Current milestone:** M0-M4 agent-side code complete; webhook repointed 2026-08-23. Founder-gated: a fresh system-user token + migrations 0004/0005 on the live project, then the M0 phone proof (F4); corpus photos (F6) for the accuracy loop (WP-15/16); demo rehearsals (M4 gate)
 
 ---
 
@@ -521,6 +521,30 @@ pilot volume. Meta utility template cost applies only from M9 (verify live UAE r
 
 *(newest first — one line per session: date, what shipped, what's next)*
 
+- 2026-08-23 - Webhook repointed to the Railway host (founder): callback URL set, handshake
+  verified, `messages` subscribed at v26.0, which matches the `config.py` default. Meta's
+  dashboard Test returned success, and since a signature mismatch is a 403 at `webhook.py:71`
+  and Meta reports success only on a 200, that is production proof of signature verification.
+  Three blockers found before F4 can run, none of them code:
+  (1) The Meta access token is an expired 24-hour temporary token, not the system-user token the
+  founder-session entry below claimed. Graph returns OAuthException 190/463 "Session has expired
+  on 23-Aug-26 01:00:00 PDT" on both v21.0 and v26.0, so it is the token and not the version.
+  A forwarded photo fails at media download and at the reply, and the phone shows total silence;
+  `jobs` id 3 already burned its 3 attempts exactly this way. Needs a real system-user token in
+  Railway Variables *and* `apps/api/.env`.
+  (2) The live project is still at migration 0003: `invoices.confirmed_at` (0004) and
+  `waitlist_signups` (0005) are both absent, so the demo script's "Reply OK" step and the landing
+  waitlist form would both fail on stage. Apply 0004 + 0005.
+  (3) That failed job called Graph v21.0 though the code has defaulted to v26.0 since 264e1bb.
+  The deployed build is current - its `openapi.json` carries every Wave 7b route - so either
+  `GRAPH_API_BASE` is pinned to v21.0 in Railway Variables from an early `.env` paste, or it
+  self-healed on a later redeploy. One look at the Variables tab settles it.
+  Unplanned win: Meta's sample payload carries a fixed message id, so the Test press deduped
+  against the 11:57 UTC row through `on conflict (message_id) do nothing` (`db.py:51`) - a real
+  production proof of the dedupe clause in M0's done-when. It also means the Test button cannot
+  prove anything new again, since every future press dedupes against that same row.
+  Next: system-user token -> apply 0004 + 0005 -> check `GRAPH_API_BASE` -> `demo_seed.sql` plus
+  its branch UPDATE -> F4 phone proof.
 - 2026-08-23 - M4 agent side integrated (WP-40/41/43, WP-42 verified): demo_seed.sql (closed
   demo-chain world, staged prices produce the exact alert lines, deletes rehearsal residue on
   re-run, cross-tenant safety asserted in tests), per-stage latency logs + the
@@ -554,8 +578,10 @@ pilot volume. Meta utility template cost applies only from M9 (verify live UAE r
   endpoint + migration 0005) rode along cleanly. 156 API tests green, web lint/tsc/build clean.
   Known follow-up: web real-mode client shapes (PATCH body, prices envelope, branch_name)
   drifted from the implemented C6 - alignment is Wave 7a with WP-32/33.
-- 2026-08-23 - Founder session: Meta credentials complete (app secret, system-user token,
-  phone number ID) by reusing the restaurant-profit-platform app; Graph base bumped v21 -> v26
+- 2026-08-23 - Founder session: Meta credentials complete (app secret, access token, phone
+  number ID) by reusing the restaurant-profit-platform app. The token was recorded here as a
+  system-user token; it was in fact the 24-hour temporary one, which expired the next morning
+  and blocked F4 - corrected in the webhook-repoint entry above. Graph base bumped v21 -> v26
   after probing which versions are live. Webhook proven locally against the live DB with the
   real secret: verify handshake, fail-closed on bad/absent signature, dedupe on redelivery,
   job enqueued, test rows cleaned up. Live project brought up to migrations 0002-0003 (it was
