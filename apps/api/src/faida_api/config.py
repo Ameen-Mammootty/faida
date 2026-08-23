@@ -13,7 +13,9 @@ class Settings(BaseSettings):
     meta_app_secret: str = ""
     meta_access_token: str = ""
     meta_phone_number_id: str = ""
-    graph_api_base: str = "https://graph.facebook.com/v21.0"
+    # v26.0 is the newest live Graph version (v27+ do not resolve, probed 2026-08-23).
+    # Media download URLs expire fast, so an unsupported version fails ingest, not just replies.
+    graph_api_base: str = "https://graph.facebook.com/v26.0"
 
     # Supabase Storage (service key never leaves the backend)
     supabase_url: str = ""
