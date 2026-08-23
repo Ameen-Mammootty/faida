@@ -10,16 +10,11 @@ from .contracts import MEDIA_TYPES, JobKind
 from .db import Database
 from .extraction.pipeline import extract_document
 from .extraction.provider import ExtractionProvider
+from .replies import REPLY_MEDIA_RECEIVED, REPLY_TEXT_ONBOARDING, REPLY_UNSUPPORTED_TYPE
 from .storage import Storage
 from .wa import WhatsAppClient
 
 logger = logging.getLogger(__name__)
-
-REPLY_MEDIA_RECEIVED = "Got it — invoice received and saved. I'll reply with the details here soon."
-REPLY_TEXT = "Hi! Forward a supplier invoice photo here and I'll read it for you."
-REPLY_UNSUPPORTED = (
-    "I can only read photos or PDF invoices for now — please forward the invoice as a photo."
-)
 
 
 async def process_wa_message(
@@ -49,9 +44,9 @@ async def process_wa_message(
         await db.enqueue(JobKind.EXTRACT_DOCUMENT, {"document_id": document_id})
         reply = REPLY_MEDIA_RECEIVED
     elif msg_type == "text":
-        reply = REPLY_TEXT
+        reply = REPLY_TEXT_ONBOARDING
     else:
-        reply = REPLY_UNSUPPORTED
+        reply = REPLY_UNSUPPORTED_TYPE
 
     if from_phone:
         out_id = await wa.send_text(from_phone, reply)

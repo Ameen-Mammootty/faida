@@ -2,10 +2,11 @@
 
 Wires the pure modules together: fetch the stored original, one structured
 extract call (layer 1), deterministic validation (layer 2), the scoped repair
-round (layer 3), supplier matching + item snapping (layer 4, WP-22), then
-persistence, the C1 document transitions, and one reply. Replies here are
-plain M1 English constants; WP-20's composer replaces them in M2, and layer
-4's baseline update runs on confirm only (Database.record_confirmed_prices).
+round (layer 3), supplier matching + item snapping + price alerts (layer 4,
+WP-22/WP-23), then persistence, the C1 document transitions, and one reply
+from the WP-20 composer (replies.py). Cash invoices are held as needs_review
+(WP-24); layer 4's baseline update runs on confirm only
+(Database.record_confirmed_prices).
 """
 
 import logging
@@ -14,25 +15,25 @@ import asyncpg
 
 from ..contracts import DocumentStatus, InvoiceStatus
 from ..db import RETRY_LIMIT, Database
-from ..matching import match_supplier, snap_item
+from ..matching import Row, match_supplier, snap_item
+from ..replies import (
+    DEFAULT_CURRENCY,
+    REPLY_EXTRACTION_FAILED,
+    REPLY_NOT_INVOICE,
+    REPLY_Z_REPORT,
+    PriceAlert,
+    compose_cash_hold_reply,
+    compose_invoice_reply,
+)
 from ..storage import Storage
 from ..wa import WhatsAppClient
+from .constants import PRICE_ALERT_MIN_ABS, PRICE_ALERT_MIN_PCT
 from .provider import ExtractionProvider, ProviderUsage
 from .repair import repair_invoice
 from .schema import Classification, ExtractedInvoice
 from .validate import validate_invoice
 
 logger = logging.getLogger(__name__)
-
-# Plain M1 replies (English-only per plan.md §3); WP-20 owns the M2 templates.
-REPLY_INVOICE_SUMMARY = "Read it: {supplier}, {line_count} {line_word}, total {currency} {total}."
-REPLY_NOT_INVOICE = (
-    "That doesn't look like a supplier invoice, so I'll leave it - forward an "
-    "invoice photo and I'll read it."
-)
-REPLY_Z_REPORT = "I read supplier invoices for now - sales reports are coming soon."
-# Plan.md §5 layer 6: the failure path is one message, never a dead end.
-REPLY_FAILED = "Couldn't read this one - try a straighter photo, or type the total."
 
 
 def build_provider(anthropic_api_key: str) -> ExtractionProvider | None:
@@ -99,7 +100,7 @@ async def extract_document(
         if attempts >= RETRY_LIMIT:
             await db.set_document_status(document_id, DocumentStatus.FAILED)
             if from_phone:
-                await _reply(db, wa, from_phone, REPLY_FAILED)
+                await _reply(db, wa, from_phone, REPLY_EXTRACTION_FAILED)
         raise
 
     if from_phone:
@@ -114,9 +115,10 @@ async def _persist_extracted(
     extracted: ExtractedInvoice,
     extract_usage: ProviderUsage,
 ) -> str:
-    """Layers 2-3, then persistence: validate, one scoped repair round when
-    anything failed, then draft invoice + lines + document transition in one
-    transaction. Money stays Decimal end to end (C4). Returns the summary."""
+    """Layers 2-4, then persistence: validate, one scoped repair round when
+    anything failed, supplier memory + price alerts, then draft invoice +
+    lines + document transition in one transaction. Money stays Decimal end
+    to end (C4). Returns the composed extraction reply."""
     validation = validate_invoice(extracted)
     outcome = await repair_invoice(provider, image, doc["mime"], extracted, validation)
     invoice, validation = outcome.invoice, outcome.validation
@@ -125,7 +127,7 @@ async def _persist_extracted(
     # tenant, then fuzzy-snap each line against that supplier's catalog. Never
     # blocks extraction - on any failure the draft persists unsnapped.
     supplier = None
-    snapped_items = [None] * len(invoice.lines)
+    snapped_items: list[Row | None] = [None] * len(invoice.lines)
     try:
         suppliers = await db.list_suppliers(str(doc["tenant_id"]))
         supplier = match_supplier(suppliers, invoice.supplier_name)
@@ -149,6 +151,10 @@ async def _persist_extracted(
             check.model_copy(update={"snapped": item is not None})
             for check, item in zip(line_checks, snapped_items, strict=True)
         ]
+        # The composer sees exactly what persists, snapped flags included.
+        validation = validation.model_copy(update={"lines": line_checks})
+
+    alerts = _price_alerts(invoice, snapped_items)
 
     # Derived confidence, never self-reported (plan.md §5 layer 5): the
     # document-level check plus the per-line green/amber statuses.
@@ -172,6 +178,18 @@ async def _persist_extracted(
             zip(invoice.lines, line_checks, snapped_items, strict=True)
         )
     ]
+
+    # WP-24 (PRD §21): a cash invoice is held for the owner's approval and
+    # cannot confirm from chat; everything else goes straight to awaiting the
+    # "OK" the reply asks for (C1 permits draft -> awaiting_confirm, and the
+    # insert takes the post-transition status directly).
+    if invoice.payment_kind == "cash":
+        status = InvoiceStatus.NEEDS_REVIEW
+        reply = compose_cash_hold_reply(invoice, validation, alerts)
+    else:
+        status = InvoiceStatus.AWAITING_CONFIRM
+        reply = compose_invoice_reply(invoice, validation, alerts)
+
     await db.insert_draft_invoice(
         tenant_id=str(doc["tenant_id"]),
         branch_id=str(doc["branch_id"]) if doc["branch_id"] else None,
@@ -180,12 +198,12 @@ async def _persist_extracted(
         supplier_name=invoice.supplier_name,
         invoice_no=invoice.invoice_no,
         invoice_date=invoice.invoice_date,
-        currency=invoice.currency or "AED",
+        currency=invoice.currency or DEFAULT_CURRENCY,
         subtotal=invoice.subtotal,
         tax=invoice.tax,
         total=invoice.total,
         payment_kind=invoice.payment_kind,
-        status=InvoiceStatus.DRAFT,  # awaiting_confirm belongs to the M2 confirm flow
+        status=status,
         confidence=confidence,
         lines=lines,
     )
@@ -197,7 +215,33 @@ async def _persist_extracted(
         applied=outcome.applied,
         outcome="extracted",
     )
-    return _summary_reply(invoice)
+    return reply
+
+
+def _price_alerts(invoice: ExtractedInvoice, snapped_items: list[Row | None]) -> list[PriceAlert]:
+    """WP-23 (plan.md §6 M2, the demo's money moment): one alert per snapped
+    line whose extracted unit_price moved from the item's last_price by both
+    >= PRICE_ALERT_MIN_ABS and >= PRICE_ALERT_MIN_PCT of it - either
+    direction, falling prices are signal too. Ordered by absolute delta
+    descending. The baseline itself moves only on confirm
+    (Database.record_confirmed_prices), never here."""
+    alerts: list[PriceAlert] = []
+    for line, item in zip(invoice.lines, snapped_items, strict=True):
+        if item is None or line.unit_price is None or item["last_price"] is None:
+            continue
+        last = item["last_price"]
+        delta = abs(line.unit_price - last)
+        if delta >= PRICE_ALERT_MIN_ABS and delta >= PRICE_ALERT_MIN_PCT * last:
+            alerts.append(
+                PriceAlert(
+                    item_name=item["canonical_name"],
+                    prev_price=last,
+                    new_price=line.unit_price,
+                    currency=invoice.currency or DEFAULT_CURRENCY,
+                )
+            )
+    alerts.sort(key=lambda alert: alert.delta, reverse=True)
+    return alerts
 
 
 async def _record_run(
@@ -241,15 +285,3 @@ async def _sender_phone(db: Database, doc: asyncpg.Record) -> str | None:
 async def _reply(db: Database, wa: WhatsAppClient, to_phone: str, body: str) -> None:
     out_id = await wa.send_text(to_phone, body)
     await db.record_outbound_message(out_id, to_phone, body)
-
-
-def _summary_reply(invoice: ExtractedInvoice) -> str:
-    count = len(invoice.lines)
-    total = f"{invoice.total:.2f}" if invoice.total is not None else "unreadable"
-    return REPLY_INVOICE_SUMMARY.format(
-        supplier=invoice.supplier_name or "supplier unknown",
-        line_count=count,
-        line_word="line" if count == 1 else "lines",
-        currency=invoice.currency or "AED",
-        total=total,
-    )

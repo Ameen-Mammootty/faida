@@ -207,7 +207,7 @@ plan (§7).
   draft invoice with per-field checks.
 
 ### M2 — Confirm flow, supplier memory, price alerts (Day 7–9)
-- [ ] WhatsApp reply composer: supplier, line count, total, amber-field question(s), price alerts,
+- [x] WhatsApp reply composer: supplier, line count, total, amber-field question(s), price alerts,
       "Reply OK to confirm", plus cash-hold, failure, and decline messages - deterministic English
       templates, zero generation (WP-20)
 - [ ] "OK" / correction parsing (OK, or "line 4 qty 16"-style fix, or numbered options) → status
@@ -215,11 +215,11 @@ plan (§7).
       awaiting-confirm invoice for that sender per C5 - no pending-confirmations table (WP-21)
 - [ ] Supplier matching + item snapping + `last_price`/`prev_price` update on confirm (layer 4)
       (WP-22)
-- [ ] Price alert computed in the *extraction reply* (the demo's money moment) when the extracted
+- [x] Price alert computed in the *extraction reply* (the demo's money moment) when the extracted
       unit price differs from the snapped item's `last_price` by ≥5% and ≥ AED 0.25;
       `last_price`/`prev_price` update only on confirm, so an unconfirmed invoice never pollutes
       the baseline (WP-23)
-- [ ] Cash invoices (`payment_kind = 'cash'`) marked and held as `needs_review` — approval UI comes
+- [x] Cash invoices (`payment_kind = 'cash'`) marked and held as `needs_review` — approval UI comes
       later (M6); the distinction is captured now, per PRD §21 (WP-24)
 - **Done when:** two invoices from the same supplier a week apart produce a correct
   "X up AED Y" alert in chat, and "OK" records the invoice. This gate becomes a permanent e2e
@@ -515,6 +515,13 @@ pilot volume. Meta utility template cost applies only from M9 (verify live UAE r
 
 *(newest first — one line per session: date, what shipped, what's next)*
 
+- 2026-08-23 - Wave 5a integrated (WP-23 + WP-24 + composer wiring): price alerts computed in
+  the extraction reply (both thresholds, multiplication form so zero baselines are safe, sorted
+  by delta, falling prices included), baseline provably untouched until confirm; cash invoices
+  persist needs_review with the cash-hold reply; non-cash persist awaiting_confirm; pipeline and
+  worker fully on replies.py, local constants deleted; amber questions render from real
+  post-repair state. 104 API tests green. The demo reply now reads: summary + "Karak Tea Dust
+  down AED 3.25..." + "Reply OK to confirm." Next: WP-21 confirm/correction flow closes M2 chat.
 - 2026-08-23 - Wave 4 integrated: WP-20 reply composer (every message shape as pure
   deterministic functions, 3-question amber cap with overflow, PriceAlert rendering, 21 tests)
   and WP-22 supplier memory (matching.py fuzzy match + snap with pack-size veto, thresholds

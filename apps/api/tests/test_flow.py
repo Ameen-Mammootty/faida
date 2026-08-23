@@ -12,10 +12,11 @@ import json
 import httpx
 import pytest
 
+from faida_api.replies import REPLY_MEDIA_RECEIVED, REPLY_TEXT_ONBOARDING
 from faida_api.storage import Storage
 from faida_api.wa import WhatsAppClient
 from faida_api.webhook import router as webhook_router
-from faida_api.worker import REPLY_MEDIA_RECEIVED, REPLY_TEXT, run_one_job
+from faida_api.worker import run_one_job
 
 from .conftest import (
     DEMO_PHONE,
@@ -138,7 +139,7 @@ async def test_text_message_gets_onboarding_reply(api, db):
 
     await post_webhook(client, payload)
     assert await run_one_job(db, app.state.wa, app.state.storage) is True
-    assert fake_meta.sent[-1]["text"]["body"] == REPLY_TEXT
+    assert fake_meta.sent[-1]["text"]["body"] == REPLY_TEXT_ONBOARDING
     assert await db.pool.fetchval("select count(*) from documents") == 0
 
 

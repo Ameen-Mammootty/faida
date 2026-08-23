@@ -16,11 +16,6 @@ import httpx
 import pytest
 
 from faida_api.contracts import JobKind
-from faida_api.extraction.pipeline import (
-    REPLY_FAILED,
-    REPLY_NOT_INVOICE,
-    REPLY_Z_REPORT,
-)
 from faida_api.extraction.schema import (
     Classification,
     ExtractedInvoice,
@@ -28,10 +23,19 @@ from faida_api.extraction.schema import (
     ExtractionResult,
     RepairResult,
 )
+from faida_api.replies import (
+    CASH_HOLD_NOTE,
+    CLOSING_ALL_GREEN,
+    CLOSING_WITH_AMBERS,
+    REPLY_EXTRACTION_FAILED,
+    REPLY_MEDIA_RECEIVED,
+    REPLY_NOT_INVOICE,
+    REPLY_Z_REPORT,
+)
 from faida_api.storage import Storage
 from faida_api.wa import WhatsAppClient
 from faida_api.webhook import router as webhook_router
-from faida_api.worker import REPLY_MEDIA_RECEIVED, run_one_job
+from faida_api.worker import run_one_job
 
 from .conftest import (
     DEMO_PHONE,
@@ -128,6 +132,34 @@ async def outbound_bodies(db) -> list[str]:
     return [row["payload"]["text"] for row in rows]
 
 
+async def seed_supplier_with_items(db, items: list[dict]) -> tuple[str, dict[str, str]]:
+    """Seed the Gulf Foods supplier (the extracted 'Gulf Foods Trading LLC'
+    fuzzy-matches it at 0.96) plus catalog items with optional last_price;
+    returns (supplier_id, {canonical_name: item_id})."""
+    supplier_id = await db.pool.fetchval(
+        "insert into suppliers (tenant_id, name) values ($1, $2) returning id",
+        DEMO_TENANT_ID,
+        "Gulf Foods Trading L.L.C.",
+    )
+    item_ids: dict[str, str] = {}
+    for item in items:
+        item_ids[item["canonical_name"]] = await db.pool.fetchval(
+            """
+            insert into supplier_items (tenant_id, supplier_id, canonical_name, unit,
+                                        pack_size, last_price, last_price_at)
+            values ($1, $2, $3, $4, $5, $6, now())
+            returning id
+            """,
+            DEMO_TENANT_ID,
+            supplier_id,
+            item["canonical_name"],
+            item.get("unit"),
+            item.get("pack_size"),
+            item.get("last_price"),
+        )
+    return supplier_id, item_ids
+
+
 async def test_happy_path_photo_to_draft_invoice(api, db):
     app, client, fake_meta, fake_storage = api
     provider = FakeExtraction(result=invoice_result(good_invoice()))
@@ -144,9 +176,10 @@ async def test_happy_path_photo_to_draft_invoice(api, db):
     assert provider.extract_calls == [(fake_meta.media_bytes, "image/jpeg")]
     assert provider.repair_calls == []
 
-    # Draft invoice: header fields, Decimal money, derived confidence.
+    # Draft invoice: header fields, Decimal money, derived confidence. The
+    # reply asks for an OK, so the invoice awaits it (C1, WP-21 confirms it).
     invoice = await db.get_invoice_by_document(str(doc["id"]))
-    assert invoice["status"] == "draft"
+    assert invoice["status"] == "awaiting_confirm"
     assert invoice["invoice_no"] == "INV-1041"
     assert invoice["invoice_date"] == datetime.date(2026, 8, 20)
     assert invoice["currency"] == "AED"
@@ -184,11 +217,12 @@ async def test_happy_path_photo_to_draft_invoice(api, db):
     assert run["prompt_version"] == "v0"
     assert (run["input_tokens"], run["output_tokens"], run["latency_ms"]) == (100, 50, 7)
 
-    # Exactly two outbound messages: the ack, then the summary.
+    # Exactly two outbound messages: the ack, then compose_invoice_reply's
+    # output - summary plus the confirm prompt (WP-20 composer swap).
     bodies = await outbound_bodies(db)
     assert bodies == [
         REPLY_MEDIA_RECEIVED,
-        "Read it: Gulf Foods Trading LLC, 2 lines, total AED 745.76.",
+        "Read it: Gulf Foods Trading LLC, 2 lines, total AED 745.76.\nReply OK to confirm.",
     ]
     assert [m["text"]["body"] for m in fake_meta.sent] == bodies
     assert fake_meta.sent[-1]["to"] == DEMO_PHONE
@@ -230,7 +264,7 @@ async def test_repair_path_fixes_wrong_line_with_one_call(api, db):
     assert (run["input_tokens"], run["output_tokens"], run["latency_ms"]) == (200, 100, 14)
 
     assert (await outbound_bodies(db))[-1] == (
-        "Read it: Gulf Foods Trading LLC, 2 lines, total AED 745.76."
+        "Read it: Gulf Foods Trading LLC, 2 lines, total AED 745.76.\nReply OK to confirm."
     )
 
 
@@ -294,7 +328,7 @@ async def test_provider_down_retries_then_fails_with_one_reply(api, db):
     assert await db.pool.fetchval("select count(*) from extraction_runs") == 0
 
     # The §5 layer 6 reply goes out exactly once, on the final attempt.
-    assert await outbound_bodies(db) == [REPLY_MEDIA_RECEIVED, REPLY_FAILED]
+    assert await outbound_bodies(db) == [REPLY_MEDIA_RECEIVED, REPLY_EXTRACTION_FAILED]
 
 
 async def test_reextract_of_extracted_document_is_a_noop(api, db):
@@ -323,21 +357,18 @@ async def test_seeded_supplier_invoice_snaps_lines(api, db):
     catalog, and the snapped flag lands in the persisted checks jsonb -
     without an unknown item ever costing a line its green (M1 rule)."""
     app, client, *_ = api
-    supplier_id = await db.pool.fetchval(
-        "insert into suppliers (tenant_id, name) values ($1, $2) returning id",
-        DEMO_TENANT_ID,
-        "Gulf Foods Trading L.L.C.",  # extracted "Gulf Foods Trading LLC" scores 0.96
+    supplier_id, item_ids = await seed_supplier_with_items(
+        db,
+        [
+            {
+                "canonical_name": "Milk Powder 2.5kg",
+                "unit": "sack",
+                "pack_size": "2.5kg",
+                "last_price": Decimal("50.50"),
+            }
+        ],
     )
-    item_id = await db.pool.fetchval(
-        """
-        insert into supplier_items (tenant_id, supplier_id, canonical_name, unit, pack_size,
-                                    last_price, last_price_at)
-        values ($1, $2, 'Milk Powder 2.5kg', 'sack', '2.5kg', 50.50, now())
-        returning id
-        """,
-        DEMO_TENANT_ID,
-        supplier_id,
-    )
+    item_id = item_ids["Milk Powder 2.5kg"]
     provider = FakeExtraction(result=invoice_result(good_invoice()))
 
     await post_webhook(client, wa_image_payload())
@@ -370,3 +401,156 @@ async def test_seeded_supplier_invoice_snaps_lines(api, db):
     assert item["last_price"] == Decimal("50.50")
     assert item["prev_price"] is None
     assert await db.pool.fetchval("select count(*) from supplier_item_prices") == 0
+
+
+async def test_price_alert_fires_in_the_extraction_reply(api, db):
+    """WP-23 (plan.md §6 M2, the demo's money moment): every snapped line
+    whose price moved by >= 5% and >= AED 0.25 alerts in the extraction reply,
+    largest absolute move first, falling prices included - and the baseline
+    stays untouched until confirm."""
+    app, client, *_ = api
+    _, item_ids = await seed_supplier_with_items(
+        db,
+        [
+            {
+                "canonical_name": "Milk Powder 2.5kg",
+                "unit": "sack",
+                "pack_size": "2.5kg",
+                "last_price": Decimal("51.90"),  # extracted 54.50: up 2.60 (5.01%)
+            },
+            {
+                "canonical_name": "Karak Tea Dust",
+                "last_price": Decimal("22.00"),  # extracted 18.75: down 3.25 (14.8%)
+            },
+        ],
+    )
+    provider = FakeExtraction(result=invoice_result(good_invoice()))
+
+    await post_webhook(client, wa_image_payload())
+    await drain_jobs(db, app, provider)
+
+    doc = await db.get_document_by_wa_message("wamid.in1")
+    assert doc["status"] == "extracted"
+    invoice = await db.get_invoice_by_document(str(doc["id"]))
+    assert invoice["status"] == "awaiting_confirm"
+
+    # Alerts ordered by absolute delta descending: karak's 3.25 (a falling
+    # price - still signal) before milk's 2.60, regardless of line order.
+    assert (await outbound_bodies(db))[-1] == (
+        "Read it: Gulf Foods Trading LLC, 2 lines, total AED 745.76.\n"
+        "Karak Tea Dust down AED 3.25 (22.00 to 18.75) since your last purchase.\n"
+        "Milk Powder 2.5kg up AED 2.60 (51.90 to 54.50) since your last purchase.\n"
+        "Reply OK to confirm."
+    )
+
+    # The baseline rule: alerting must not move last_price/prev_price or
+    # append history - only confirm does (record_confirmed_prices, WP-21).
+    for name, last in (("Milk Powder 2.5kg", "51.90"), ("Karak Tea Dust", "22.00")):
+        item = await db.pool.fetchrow("select * from supplier_items where id = $1", item_ids[name])
+        assert item["last_price"] == Decimal(last)
+        assert item["prev_price"] is None
+    assert await db.pool.fetchval("select count(*) from supplier_item_prices") == 0
+
+
+async def test_no_alert_when_either_threshold_is_unmet(api, db):
+    """Both thresholds must hold (plan.md §6 M2): a 1.9% move fails the pct
+    leg even at AED 1.00, and a 5% move on a cheap item fails the abs leg -
+    neither line alerts even though both snapped."""
+    app, client, *_ = api
+    await seed_supplier_with_items(
+        db,
+        [
+            {
+                "canonical_name": "Milk Powder 2.5kg",
+                "unit": "sack",
+                "pack_size": "2.5kg",
+                "last_price": Decimal("53.50"),  # extracted 54.50: 1.00 but only 1.9%
+            },
+            {
+                "canonical_name": "Paratha Wrap",
+                "last_price": Decimal("0.80"),  # extracted 0.84: 5.0% but only 0.04
+            },
+        ],
+    )
+    invoice = ExtractedInvoice(
+        supplier_name="Gulf Foods Trading LLC",
+        currency="AED",
+        payment_kind="credit",
+        lines=[
+            _line("MILK PWDR 2.5KG NIDO", "12", "54.50", "654.00", pack_size="2.5kg"),
+            _line("PARATHA WRAP", "20", "0.84", "16.80"),
+        ],
+        subtotal=Decimal("670.80"),
+        tax=Decimal("33.54"),
+        total=Decimal("704.34"),
+    )
+    provider = FakeExtraction(result=invoice_result(invoice))
+
+    await post_webhook(client, wa_image_payload())
+    await drain_jobs(db, app, provider)
+
+    doc = await db.get_document_by_wa_message("wamid.in1")
+    row = await db.get_invoice_by_document(str(doc["id"]))
+    lines = await db.pool.fetch(
+        "select * from invoice_lines where invoice_id = $1 order by position", row["id"]
+    )
+    # Both lines snapped - the silence is the thresholds, not a missed match.
+    assert all(line["supplier_item_id"] is not None for line in lines)
+
+    assert (await outbound_bodies(db))[-1] == (
+        "Read it: Gulf Foods Trading LLC, 2 lines, total AED 704.34.\nReply OK to confirm."
+    )
+
+
+async def test_cash_invoice_is_held_for_review(api, db):
+    """WP-24 (PRD §21): payment_kind cash persists as needs_review and the
+    reply notes the owner-approval hold instead of inviting an OK - the
+    document itself still extracts normally."""
+    app, client, *_ = api
+    cash = good_invoice()
+    cash.payment_kind = "cash"
+    provider = FakeExtraction(result=invoice_result(cash))
+
+    await post_webhook(client, wa_image_payload())
+    await drain_jobs(db, app, provider)
+
+    doc = await db.get_document_by_wa_message("wamid.in1")
+    assert doc["status"] == "extracted"
+    assert doc["classification"] == "invoice"
+    row = await db.get_invoice_by_document(str(doc["id"]))
+    assert row["status"] == "needs_review"
+    assert row["payment_kind"] == "cash"
+
+    reply = (await outbound_bodies(db))[-1]
+    assert reply == (
+        "Read it: Gulf Foods Trading LLC, 2 lines, total AED 745.76.\n" + CASH_HOLD_NOTE
+    )
+    assert CLOSING_ALL_GREEN not in reply  # a cash invoice cannot confirm from chat
+
+
+async def test_unrepaired_failure_asks_the_amber_question(api, db):
+    """Plan.md §5 layer 5: a line still failing after the one repair round
+    stays amber and gets its specific question in the reply - never silence."""
+    app, client, *_ = api
+    misread = good_invoice()
+    misread.lines[1].line_total = Decimal("65.25")  # 3 x 18.75 != 65.25
+    # FakeExtraction's default repair patch is empty: the re-read fixes nothing.
+    provider = FakeExtraction(result=invoice_result(misread))
+
+    await post_webhook(client, wa_image_payload())
+    await drain_jobs(db, app, provider)
+
+    assert len(provider.repair_calls) == 1  # repair ran and could not fix it
+
+    doc = await db.get_document_by_wa_message("wamid.in1")
+    assert doc["status"] == "extracted"
+    invoice = await db.get_invoice_by_document(str(doc["id"]))
+    assert invoice["status"] == "awaiting_confirm"
+    assert invoice["confidence"]["lines"] == ["green", "amber"]
+
+    reply = (await outbound_bodies(db))[-1]
+    assert (
+        "Line 2: the math doesn't add up (3 x 18.75 = 56.25 but the line says 65.25) "
+        "- which is right?"
+    ) in reply
+    assert reply.splitlines()[-1] == CLOSING_WITH_AMBERS

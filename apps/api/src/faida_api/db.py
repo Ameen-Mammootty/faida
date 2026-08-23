@@ -8,6 +8,7 @@ from typing import Any
 
 import asyncpg
 
+from .contracts import InvoiceStatus
 from .matching import clean_name
 
 RETRY_LIMIT = 3
@@ -155,13 +156,15 @@ class Database:
         tax: Decimal | None,
         total: Decimal | None,
         payment_kind: str | None,
-        status: str,
+        status: str = InvoiceStatus.AWAITING_CONFIRM,
         confidence: dict,
         lines: list[dict],
     ) -> str:
         """Draft invoice + lines + the document transition, one transaction:
         C1 says 'extracted' means a draft invoice with checks exists, so the
-        two can never be observed apart."""
+        two can never be observed apart. The insert takes the post-transition
+        status directly (C1 permits draft -> awaiting_confirm; cash invoices
+        pass needs_review, WP-24)."""
         async with self.pool.acquire() as conn, conn.transaction():
             invoice_id = await conn.fetchval(
                 """
