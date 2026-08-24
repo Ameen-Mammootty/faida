@@ -8,7 +8,7 @@
 - **Product:** Faida — profit visibility for GCC cafeterias and multi-branch karak/paratha chains, fed through WhatsApp.
 - **Reference:** `Docs/PRD.md` (v2). This plan sequences the build; the PRD owns product intent. Where they conflict on *scope timing*, this plan wins.
 - **Start date:** 2026-08-22
-- **Current milestone:** **M0 proven on real hardware 2026-08-23 (F1-F4 done)** - the live chain carried through M1 extraction and M2 confirm on the first real invoice. Founder-gated: a permanent access token (today's expires 19:00), corpus photos (F6) for the accuracy loop (WP-15/16), demo rehearsals (M4 gate). Known gaps before the demo: VAT-inclusive reconciliation, forward-to-reply at 28.4 s vs the ~20 s target, `demo_seed.sql` + branch mapping, `API_TOKEN`/`WEB_ORIGIN` on Railway
+- **Current milestone:** **M0 proven on real hardware 2026-08-23 (F1-F4 done)** - the live chain carried through M1 extraction and M2 confirm on the first real invoice. The live project's schema is at migration 0010 (applied 2026-08-24). Founder-gated: a permanent access token (the 24 h token expired 2026-08-23 19:00; replacement in progress), corpus photos (F6) for the accuracy loop (WP-15/16), demo rehearsals (M4 gate). Known gaps before the demo: forward-to-reply at 28.4 s vs the ~20 s target; the review screen has never been deployed (`apps/web` to Vercel, `API_TOKEN`/`WEB_ORIGIN` on Railway); `eval/run.py` has no `--live` mode so the WP-16 accuracy loop has not run
 
 ---
 
@@ -593,6 +593,12 @@ pilot volume. Meta utility template cost applies only from M9 (verify live UAE r
 
 *(newest first — one line per session: date, what shipped, what's next)*
 
+- 2026-08-24 - **Live project migrated to 0010; the deploy-order debt is cleared.**
+  A schema check against the live Supabase project found it at 0007 (0006/0007 had been applied since the WP-18 warning) while the code pushed this morning already writes the 0009 `tenant_id` columns.
+  Applied 0008-0010 in order, each atomically, and verified: both indexes present, zero null or parent-mismatched `tenant_id`s after backfill, the one `confirmed` document remapped to `extracted`, four-state status constraint in place.
+  No live damage occurred: the last job ran 2026-08-23 14:00, before the pushes, because the expired Meta token has kept the channel silent since.
+  The plan header was also stale (it still listed WP-17 VAT reconciliation and WP-40 `demo_seed.sql` as gaps; both shipped 2026-08-23) and is fixed in this commit per the plan-vs-code rule.
+  Next: permanent Meta system-user token into Railway + `.env` and redeploy (founder, in progress), then one test forward; then the review-screen deploy and the eval `--live` mode.
 - 2026-08-24 - **Schema hardening: findings 1-4 of a full schema review fixed, migrations 0008-0010.**
   A visual schema review produced eight findings; the four that get expensive after the first paying customer are closed while migrations are still squashable.
   0008 turns the assumed one-invoice-per-document into a unique index (the pipeline's check-then-insert guard was raceable across a job's three attempts) and indexes `invoice_lines (invoice_id, position)`, which also serves the review screen's `order by position`.
