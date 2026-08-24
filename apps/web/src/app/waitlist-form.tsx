@@ -12,10 +12,11 @@ export function WaitlistForm() {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const form = event.currentTarget;
     setState("submitting");
     setMessage("");
 
-    const data = new FormData(event.currentTarget);
+    const data = new FormData(form);
     try {
       const response = await fetch("/api/waitlist", {
         method: "POST",
@@ -36,7 +37,7 @@ export function WaitlistForm() {
         return;
       }
 
-      event.currentTarget.reset();
+      form.reset();
       setState("success");
       setMessage("You are on the list. We will be in touch when the private pilot opens.");
     } catch {
