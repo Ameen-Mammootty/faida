@@ -234,6 +234,8 @@ plan (§7).
       fixed the same day: `extraction/currency.py` derives the ISO code (Dhs, dirhams, د.إ, the
       U+20C3 dirham sign, riyal marks incl. U+20C1) once in the pipeline, the manual path, and
       the eval scorer, while C3 keeps reading the currency as printed
+- [ ] Line-completeness guard: a short read fails loudly instead of persisting a partial invoice
+      whose header still reconciles (WP-19, ported from the old platform's post-mortem 2026-08-24)
 - **Done when:** eval report hits the accuracy targets, and a forwarded photo produces a stored
   draft invoice with per-field checks.
 
@@ -252,6 +254,8 @@ plan (§7).
       the baseline (WP-23)
 - [x] Cash invoices (`payment_kind = 'cash'`) marked and held as `needs_review` — approval UI comes
       later (M6); the distinction is captured now, per PRD §21 (WP-24)
+- [ ] Required-field ambers: a missing invoice date or number is asked for in the reply, never
+      silently stored (WP-25, observed live 2026-08-24)
 - **Done when:** two invoices from the same supplier a week apart produce a correct
   "X up AED Y" alert in chat, and "OK" records the invoice. This gate becomes a permanent e2e
   test in CI from the moment it first passes.
@@ -285,6 +289,8 @@ plan (§7).
 - [ ] Latency pass: forward → reply under ~20s (stream nothing; the reply is one message)
 - [ ] Failure demo path: forward a meme, get the polite decline (shows discipline, sells trust)
 - [ ] Full rehearsal of the exact script, twice, on the demo phones
+- [ ] Duplicate invoice hold: the same paper sent twice is held with a reply naming the first one,
+      `DUP-01` (WP-44)
 - **Done when:** the demo runs end-to-end twice in a row with zero intervention.
 
 **Demo script (keep to 4 minutes):** forward invoice → reply appears with price alert → "OK" →
@@ -402,6 +408,7 @@ demonstrable, not documentary.
 | 17 | ~~**VAT treatment, inclusive + exclusive**~~ **done 2026-08-23** (C3/C4 as amended 2026-08-23): both identities in `validate.py` anchored on the line sum, GCC rate table in `constants.py`, `tax_treatment` + `vat_rate` through schema → persistence → eval ground truth (migration 0006), net-canonical price memory converted inside the confirm transaction, and no totals question when a treatment resolves. **Not blocked on the corpus** - deterministic money math with a real invoice already in hand, so it runs in parallel with F6 | M | C3, C4 | Deira T-0084417 (inclusive, UAE 5%) reconciles green with no question; an exclusive invoice still reconciles green; an inclusive invoice printing a *net* subtotal is not misread as exclusive; a supplier switching format produces **no** price alert |
 
 | 18 | ~~**Discounts and non-stock charges break C4 the same way VAT did.**~~ **done 2026-08-23**. Found by running the generated fixtures through the amended validator: `EDGE-01` reads perfectly and still fails, because the line sum misses the trade discount exactly (834.00 - 41.70 + 25.00 delivery + 40.87 tax = 858.17, but C3 models only subtotal/tax/total). Trade discounts are routine in GCC food supply, so this fails correct invoices into amber. Needs a C3 decision like the VAT one, not a prompt tweak | M | C3, C4 | `EDGE-01` reconciles green; a discounted invoice's price memory records the *post-discount* unit price, since that is what was paid |
+| 19 | **Line-completeness guard** (ported 2026-08-24 from the old platform's post-mortem, whose dominant real failure was a perfect header with 2 of 34 lines from an 8k output ceiling): a short read is a *failure*, not an amber - check the provider's stop reason for output truncation, compare the extracted line count with the rows the model reports seeing, and prove adaptive thinking cannot eat into the 16k output budget on a 34-line invoice. Reconciliation catches the symptom; this names the cause | S | 13 | `PH-01` extracts all 34 lines live; a simulated truncated response fails loudly instead of persisting a partial invoice whose header still reconciles |
 
 **M2 (confirm flow, supplier memory, alerts)**
 
@@ -412,6 +419,7 @@ demonstrable, not documentary.
 | 22 | Supplier memory (`matching.py`): alias match, fuzzy snap (single tunable threshold), on-confirm item create + price update + history append | M | schema | messy real corpus names snap correctly; history append idempotent per invoice |
 | 23 | Price alerts per the §6 M2 rule (thresholds as constants in one module) | S | 20, 22 | alert shows in the extraction reply; baseline untouched until confirm |
 | 24 | Cash hold: `payment_kind = 'cash'` → `needs_review` + reply notes approval pending | S | 13, 20 | e2e test |
+| 25 | **Required-field ambers** (ported 2026-08-24; observed live the same day when AAF 2214 stored with no date and the reply asked nothing): a null invoice date or invoice number becomes one amber question in the reply, exactly like a failed line, answered through the WP-21 correction path. Never silently stored | S | 20, 21 | e2e: an invoice with no readable date is asked for it; the answer lands via the correction grammar and the invoice proceeds |
 
 **M3 (review screen)**
 
@@ -432,6 +440,7 @@ demonstrable, not documentary.
 | 41 | Hardening: per-stage latency logs (webhook, download, extract, repair, reply); forward → reply under ~20 s; each demo invoice through the loop 5×; every flake fixed, never retried around | M |
 | 42 | Meme decline path, word-perfect | S |
 | 43 | Demo runbook with reset steps between rehearsals; founder rehearses twice (F7) | S |
+| 44 | **Duplicate invoice hold** (ported 2026-08-24): normalize the invoice number (lowercase, strip non-alphanumerics); same supplier + number + total against an existing invoice holds the new one with a reply naming the earlier one; number-or-date match adds a note. No new tables; `DUP-01` is already a fixture | S |
 
 ### 7.4 Delegation waves
 
@@ -572,6 +581,7 @@ pilot volume. Meta utility template cost applies only from M9 (verify live UAE r
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-08-24 | **The old restaurant-profit-platform extraction layer was reviewed read-only and three edge-case ports adopted (WP-19 line-completeness guard, WP-25 required-field ambers, WP-44 duplicate hold); its machinery stays out** | Founder call after a three-explorer survey of the previous build. Its own post-mortem: no run ever completed all 26 stages, extraction failed about one run in three, the dominant failure was a perfect header with 2 of 34 lines from an 8k output ceiling, and a confidently wrong value was never offered for review. The edge-case catalogue is worth keeping; the 7-stage chain, fragment planner, model-reported 0.85 confidence gate, and recovery subsystem are exactly what §2 forbids. Its second synthetic corpus (six Cedar & Spice invoices, one 34 lines over two pages, with 75-line ground truth) is noted as a free phase-1 eval extension; our 15 generated fixtures are the same set it carries |
 | 2026-08-24 | **Landing positioning leads with profit margin per item; supplier-price variation demoted to supporting evidence** | Founder call: the main proposition is knowing the margin each item earns, because that is where profit comes from; price moves matter as the thing that eats those margins, not as the headline. Copy uses "item", never "SKU" (no-jargon display rule). The hero's WhatsApp price-alert mock stays as proof of the live loop |
 | 2026-08-24 | **C1 amended: `confirmed` leaves the document status vocabulary; the document machine ends at `extracted` (terminal) or `failed`, and the confirm flow touches only the invoice** | A schema review found both tables claiming a `confirmed` state kept in sync only by application code in the two confirm paths - drift waiting for the third path. Since `invoices.document_id` is unique (0008), document confirmation is exactly derivable through its invoice, so the duplicated state carried risk and no information. The C6 detail payload already carries the invoice's `status` and `confirmed_at`; the M3 review screen must read confirmation from those, never from `document.status` |
 | 2026-08-24 | **The 1:1 between documents and invoices and the day-one tenancy rule are now DB-enforced** (0008, 0009): unique index on `invoices.document_id`, composite index on `invoice_lines (invoice_id, position)`, and `tenant_id` (not null, FK) on `invoice_lines`, `supplier_item_prices`, `extraction_runs`, derived from the parent row in every insert path | The extraction pipeline's duplicate guard was a check-then-insert read that two of a job's three attempts could both pass, drafting two invoices whose confirms would each move price memory; the code already assumed 1:1 (`get_invoice_by_document` fetches one row). The tenancy rule (§4) had three silent exceptions that would have made M6's RLS policies per-row join subqueries on PostgREST-exposed tables, and adding the column pre-customer is a backfill over seeded data instead of a live migration |
@@ -599,6 +609,12 @@ pilot volume. Meta utility template cost applies only from M9 (verify live UAE r
 
 *(newest first — one line per session: date, what shipped, what's next)*
 
+- 2026-08-24 - **Old-platform extraction layer reviewed (read-only); three ports entered the plan.**
+  Three explorers catalogued restaurant-profit-platform's pipeline mechanics, its design docs and corpus, and its SQL normalization layer against ours; the comparison is a reference artifact (Extraction Inheritance Review).
+  Adopted as WP-19 (line-completeness guard, M1), WP-25 (required-field ambers, M2) and WP-44 (duplicate invoice hold, M4), each with a checklist box; a tenant-currency mismatch amber is noted as a cheap fourth.
+  Deliberately not inherited: the 7-stage job chain, fragment planning, model-reported confidence with a flat 0.85 SQL gate, the recovery subsystem, and the no-persisted-model-output rule its own assessment called fatal for learning.
+  Where the explorers assumed we lacked totals reconciliation or a negative control, they were wrong: `validate.py` carries both VAT identities and `NEG-01` is in the fixtures.
+  Next: eval `--live` mode, then WP-16 with WP-19 folded in.
 - 2026-08-24 - **First real photo through the hardened schema in production; currency normalization shipped.**
   The founder sent a real cash invoice (Al Aweer Fresh Vegetable Trading, 6 lines, 402.00) to the test number.
   The webhook received and enqueued it even with the dead token; media download 401'd three times; after a fresh 24 h token went into Railway the failed job was requeued by hand and ran clean on attempt 1: photo stored (sha256 matches Meta's), branch resolved, ack at +3 s, extraction with no repair round, all six lines reconciled, cash hold to `needs_review` with the owner-approval reply.
