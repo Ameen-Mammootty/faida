@@ -229,7 +229,11 @@ plan (§7).
       even when extraction was perfect (C4 amended 2026-08-23; the fix is **WP-17**, which does
       not wait on the corpus); (b) **the amber question invites an answer it cannot
       parse** - it asks "which is right?", the founder answered "It's correct, the lines are
-      inclusive of vat", and got "Sorry, I didn't get that"
+      inclusive of vat", and got "Sorry, I didn't get that"; (c) **the printed currency word
+      reached the reply** - a real cash invoice on 2026-08-24 replied "total dirhams 402.00";
+      fixed the same day: `extraction/currency.py` derives the ISO code (Dhs, dirhams, د.إ, the
+      U+20C3 dirham sign, riyal marks incl. U+20C1) once in the pipeline, the manual path, and
+      the eval scorer, while C3 keeps reading the currency as printed
 - **Done when:** eval report hits the accuracy targets, and a forwarded photo produces a stored
   draft invoice with per-field checks.
 
@@ -595,6 +599,12 @@ pilot volume. Meta utility template cost applies only from M9 (verify live UAE r
 
 *(newest first — one line per session: date, what shipped, what's next)*
 
+- 2026-08-24 - **First real photo through the hardened schema in production; currency normalization shipped.**
+  The founder sent a real cash invoice (Al Aweer Fresh Vegetable Trading, 6 lines, 402.00) to the test number.
+  The webhook received and enqueued it even with the dead token; media download 401'd three times; after a fresh 24 h token went into Railway the failed job was requeued by hand and ran clean on attempt 1: photo stored (sha256 matches Meta's), branch resolved, ack at +3 s, extraction with no repair round, all six lines reconciled, cash hold to `needs_review` with the owner-approval reply.
+  Every schema change from this morning held in production: `tenant_id` on the run and all six lines, one invoice per document, document at `extracted` with the invoice owning the review state.
+  Found and fixed the same day: the currency was read as the printed word ("dirhams") and reached the reply verbatim; `extraction/currency.py` now derives the ISO code once in the pipeline seam, the manual-entry builder, and the eval scorer (211 API tests, 13 eval tests), and the live row was corrected to AED.
+  Open from the same run: the invoice date came back null (check the photo); extraction took 135 s (5,332 in / 914 out tokens) against the ~18-27 s seen before, most likely Anthropic overload that day (529s seen on other calls), so it is not the new baseline until a second forward measures it; the token in Railway is a 24 h temporary one and expires 2026-08-25 ~18:00 Dubai - the permanent system-user token is still F-track.
 - 2026-08-24 - **Landing repositioned around per-item profit margin (founder call, see Decision Log).**
   New hero: "Know the profit margin on every item you sell."; the primary capability card is now Item margins with a per-item margin visual (the low-margin item highlighted as the quiet loser), supplier prices demoted to a supporting card tied to margins, and the closing banner reads "Every item. Every branch. Real margins."
   The Source proof card folded into the Built for trust section it duplicated; the grid stays three cards, no CSS changes.

@@ -554,3 +554,22 @@ async def test_unrepaired_failure_asks_the_amber_question(api, db):
         "- which is right?"
     ) in reply
     assert reply.splitlines()[-1] == CLOSING_WITH_AMBERS
+
+
+async def test_printed_currency_is_stored_and_replied_as_iso_code(api, db):
+    """Found live 2026-08-24: a real cash invoice printed 'dirhams', the model
+    copied it as printed (C3), and the reply said 'total dirhams 402.00'. The
+    ISO code is derived once in the pipeline, so the row and the reply agree."""
+    app, client, fake_meta, fake_storage = api
+    printed = good_invoice().model_copy(update={"currency": "dirhams"})
+    provider = FakeExtraction(result=invoice_result(printed))
+
+    assert (await post_webhook(client, wa_image_payload())).status_code == 200
+    await drain_jobs(db, app, provider)
+
+    doc = await db.get_document_by_wa_message("wamid.in1")
+    invoice = await db.get_invoice_by_document(str(doc["id"]))
+    assert invoice["currency"] == "AED"
+    reply = (await outbound_bodies(db))[-1]
+    assert "total AED 745.76" in reply
+    assert "dirhams" not in reply

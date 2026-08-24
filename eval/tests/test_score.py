@@ -106,6 +106,14 @@ def test_supplier_name_scored_fuzzy_but_invoice_no_exact():
     assert fields["invoice_no"] is False
 
 
+def test_currency_scored_as_the_derived_iso_code():
+    # The model copies "Dhs." as printed; the pipeline derives AED from it, so
+    # the eval must agree with what the invoice row will actually hold.
+    truth = invoice_result([], currency="AED")
+    assert score_case(invoice_result([], currency="Dhs."), truth)["header_fields"]["currency"]
+    assert not score_case(invoice_result([], currency="SAR"), truth)["header_fields"]["currency"]
+
+
 def test_decimal_numeric_equality_across_string_forms():
     truth = invoice_result(
         [line("Karak Premix", qty="2", unit_price="27.25", line_total="54.50")],

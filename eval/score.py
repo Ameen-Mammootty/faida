@@ -15,6 +15,7 @@ from faida_api.extraction.constants import (
     LINE_TOLERANCE_ABS,
     LINE_TOLERANCE_PCT,
 )
+from faida_api.extraction.currency import normalize_currency
 from faida_api.extraction.provider import ProviderUsage
 from faida_api.extraction.schema import ExtractedInvoice, ExtractedLine, ExtractionResult
 
@@ -64,6 +65,15 @@ def _match(extracted: object, truth: object, fuzzy: bool) -> bool:
         return normalize_text(str(extracted)) == normalize_text(truth)
     # Decimal ("54.5" == "54.50") and dates compare by value.
     return bool(extracted == truth)
+
+
+def _header_value(invoice: ExtractedInvoice, field: str) -> object:
+    """Currency is scored as the ISO code the pipeline derives, so a printed
+    "Dhs" read as "Dhs" against a truth of "AED" is agreement, not a miss."""
+    value = getattr(invoice, field)
+    if field == "currency":
+        return normalize_currency(value)
+    return value
 
 
 def _pair_score(extracted: ExtractedLine, truth: ExtractedLine) -> float:
@@ -169,8 +179,8 @@ def score_case(
     extracted_invoice = extracted.invoice if extracted.invoice is not None else ExtractedInvoice()
     case["header_fields"] = {
         field: _match(
-            getattr(extracted_invoice, field),
-            getattr(truth_invoice, field),
+            _header_value(extracted_invoice, field),
+            _header_value(truth_invoice, field),
             fuzzy=field in _FUZZY_HEADER_FIELDS,
         )
         for field in HEADER_FIELDS

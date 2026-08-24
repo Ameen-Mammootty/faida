@@ -61,6 +61,7 @@ from .confirm import (
 )
 from .contracts import InvoiceStatus, JobKind
 from .db import Database
+from .extraction.currency import normalize_currency
 from .extraction.schema import ExtractedInvoice, ExtractedLine
 from .extraction.validate import validate_invoice
 from .matching import Row, match_supplier, snap_item
@@ -404,7 +405,7 @@ def _to_extracted_invoice(body: ManualInvoice) -> ExtractedInvoice:
         supplier_name=_clean(body.supplier_name),
         invoice_no=_clean(body.invoice_no),
         invoice_date=body.invoice_date,
-        currency=_clean(body.currency),
+        currency=normalize_currency(_clean(body.currency)),
         payment_kind=body.payment_kind,
         lines=lines,
         subtotal=_manual_number(body.subtotal, "subtotal"),
