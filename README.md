@@ -65,6 +65,8 @@ then fix up three things:
 | `WORKER_ENABLED` | `true` — locally it is often `false`; in production the worker must run |
 | `DATABASE_URL` | the session-pooler URI with the real password and **no `[ ]` brackets** |
 | `PORT` | do not set it — Railway injects it and the container's CMD already honours it |
+| `API_TOKEN` | the review screen's shared secret (`openssl rand -hex 32`); empty fail-closes every `/api` route. Must equal the web deploy's `NEXT_PUBLIC_API_TOKEN` |
+| `WEB_ORIGIN` | the deployed web origin, scheme+host only, no trailing slash (e.g. `https://faida-web.vercel.app`). CORS allows exactly this one origin; a leftover `http://localhost:3000` from `.env` silently breaks the deployed review screen |
 
 Everything else (`SUPABASE_*`, `META_*`, `ANTHROPIC_API_KEY`, `STORAGE_BUCKET`) carries over
 from `.env` unchanged.
@@ -108,6 +110,12 @@ build.
 | `{"ok":true,"db":false}` | `DATABASE_URL` wrong: brackets, password, or transaction pooler |
 
 Cost is roughly $5/month for an always-on service.
+
+**Deploy the web app (Vercel).**
+Create the Vercel project with **Root Directory** `apps/web` (standalone npm project, stock `next build`, no monorepo config).
+Set four Production environment variables: `NEXT_PUBLIC_MOCK_API=false` (the exact string), `NEXT_PUBLIC_API_BASE` (the Railway host, `https://`, no trailing slash), `NEXT_PUBLIC_API_TOKEN` (same value as Railway's `API_TOKEN`), and `FAIDA_API_URL` (the Railway host again; server-only, powers the waitlist proxy - forgetting it silently 503s every signup).
+The three `NEXT_PUBLIC_*` values are baked into the bundle at build time, so any change to them needs a redeploy; the token is readable in the shipped JS (accepted C6 demo posture until M6).
+Then set `WEB_ORIGIN` on Railway to the Vercel production origin - preview deployments will fail CORS by design, demo from the production URL only.
 
 ### 3. Meta WhatsApp Cloud API (free test number)
 1. developers.facebook.com → Create app → type **Business** → add the **WhatsApp** product.

@@ -8,7 +8,7 @@
 - **Product:** Faida — profit visibility for GCC cafeterias and multi-branch karak/paratha chains, fed through WhatsApp.
 - **Reference:** `Docs/PRD.md` (v2). This plan sequences the build; the PRD owns product intent. Where they conflict on *scope timing*, this plan wins.
 - **Start date:** 2026-08-22
-- **Current milestone:** **M0 proven on real hardware 2026-08-23 (F1-F4 done)** - the live chain carried through M1 extraction and M2 confirm on the first real invoice. The live project's schema is at migration 0010 (applied 2026-08-24). Founder-gated: a permanent access token (the 24 h token expired 2026-08-23 19:00; replacement in progress), corpus photos (F6) for the accuracy loop (WP-15/16), demo rehearsals (M4 gate). Known gaps before the demo: forward-to-reply at 28.4 s vs the ~20 s target; the review screen has never been deployed (`apps/web` to Vercel, `API_TOKEN`/`WEB_ORIGIN` on Railway); `eval/run.py` has no `--live` mode so the WP-16 accuracy loop has not run
+- **Current milestone:** **M0 proven on real hardware 2026-08-23 (F1-F4 done)** - the live chain carried through M1 extraction and M2 confirm on the first real invoice. The live project's schema is at migration 0010 (applied 2026-08-24). Founder-gated: a permanent access token (the 24 h token expired 2026-08-23 19:00; replacement in progress), corpus photos (F6) for the accuracy loop (WP-15/16), demo rehearsals (M4 gate). The review screen is live at `https://faida-web-nine.vercel.app` (deployed 2026-08-24). Known gaps before the demo: forward-to-reply at 28.4 s vs the ~20 s target; `eval/run.py` has no `--live` mode so the WP-16 accuracy loop has not run
 
 ---
 
@@ -271,11 +271,12 @@ plan (§7).
 - [x] Seed demo tenant: 1 chain, 3 branches, 2 suppliers with 3 weeks of price history (so the
       live alert fires on stage) - `supabase/demo_seed.sql`, idempotent, doubles as the
       one-command rehearsal reset (WP-40)
-- [ ] **Review screen deployed and wired:** `apps/web` deployed (Vercel), `API_TOKEN` +
-      `WEB_ORIGIN` set on Railway, `NEXT_PUBLIC_MOCK_API=false` with the API base and token on the
-      web side, and the screen loading live data for the demo chain. M3 ticked the *code*; none of
-      it has ever been deployed, and `api_token` defaults to `""` which fail-closes every `/api`
-      request. Demo script steps 11-12 have nothing to open until this is done
+- [x] **Review screen deployed and wired** (2026-08-24): `apps/web` live at
+      `https://faida-web-nine.vercel.app` (Vercel project `faida-web`, root `apps/web`),
+      `API_TOKEN` + `WEB_ORIGIN` on Railway, `NEXT_PUBLIC_MOCK_API=false` with API base and token
+      on the web side. Verified against live data: browser QA of list + detail with the photo
+      rendering, token auth 401/200, CORS preflight exact-origin, waitlist browser-to-database.
+      Demo script steps 11-12 now have a real screen to open
 - [ ] Curate the 3 demo invoices; run each through the full loop 5× — flakiness is a bug
 - [ ] Latency pass: forward → reply under ~20s (stream nothing; the reply is one message)
 - [ ] Failure demo path: forward a meme, get the polite decline (shows discipline, sells trust)
@@ -593,6 +594,13 @@ pilot volume. Meta utility template cost applies only from M9 (verify live UAE r
 
 *(newest first — one line per session: date, what shipped, what's next)*
 
+- 2026-08-24 - **Review screen deployed and wired; the M4 deploy checkbox is closed.**
+  `apps/web` is live at `https://faida-web-nine.vercel.app` (Vercel project `faida-web`, root `apps/web`), built non-mock for the first time anywhere; the four web env vars are set for Production, and `API_TOKEN` + `WEB_ORIGIN` are on Railway (the first attempt failed CORS preflight on an inexact `WEB_ORIGIN`; the byte-exact origin fixed it).
+  Verified live: token auth flips 401 to 200, the preflight echoes the exact origin, the list renders the real confirmed T-0084417 with no mock data and no sample badge, the detail shows the photo (signed URL, loaded at 714x1280) beside ten green-checked lines with per-item price history, the console is clean, and a waitlist signup landed exactly one normalized row browser to database before the test row was deleted.
+  Known stored-data artifact, not a bug: T-0084417's totals block still shows the pre-WP-17 amber ("lines plus VAT come to 740.30") because its checks were stored before the VAT amendment; re-extraction would clear it.
+  Token posture per C6: the bearer token is baked into the public JS bundle, demo data only, closed in M6; rotating it requires a Vercel redeploy, and Vercel preview deployments fail CORS by design (single-origin policy, demo from production only).
+  Deploy docs added in the same commit: `API_TOKEN`/`WEB_ORIGIN` rows in the README's Railway table, a Vercel deploy section, and `apps/web/.env.example` now tracked and documenting all four web vars.
+  Next: eval `--live` mode and the WP-16 accuracy loop; the latency pass; then curate the 3 demo invoices and rehearse.
 - 2026-08-24 - **Live project migrated to 0010; the deploy-order debt is cleared.**
   A schema check against the live Supabase project found it at 0007 (0006/0007 had been applied since the WP-18 warning) while the code pushed this morning already writes the 0009 `tenant_id` columns.
   Applied 0008-0010 in order, each atomically, and verified: both indexes present, zero null or parent-mismatched `tenant_id`s after backfill, the one `confirmed` document remapped to `extracted`, four-state status constraint in place.

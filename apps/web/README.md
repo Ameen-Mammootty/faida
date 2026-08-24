@@ -31,13 +31,16 @@ The client implements the C6 contract (plan.md section 7.2).
 To point it at the real backend, set:
 
 ```bash
-NEXT_PUBLIC_MOCK_API=false
-NEXT_PUBLIC_API_BASE=http://localhost:8000   # the FastAPI service
-NEXT_PUBLIC_API_TOKEN=<shared-secret>        # demo bearer token; real auth is M6
+NEXT_PUBLIC_MOCK_API=false                   # mock unless this is the exact string "false"
+NEXT_PUBLIC_API_BASE=http://localhost:8000   # the FastAPI service, no trailing slash
+NEXT_PUBLIC_API_TOKEN=<shared-secret>        # demo bearer token (API_TOKEN on the API side); real auth is M6
+FAIDA_API_URL=http://localhost:8000          # server-only: the waitlist proxy target (easy to miss - not NEXT_PUBLIC_)
 ```
 
-Mock mode is the default until WP-30 lands.
+All three `NEXT_PUBLIC_*` values are inlined into the JS bundle at build time: changing one requires a rebuild, and the token is readable by anyone who loads the deployed site (accepted C6 demo posture, closed in M6).
+Mock mode is the default whenever the env vars are absent.
 The switch lives in `src/lib/api.ts`; nothing else in the app knows which mode it is in.
+Deploying to Vercel: root directory `apps/web`, the four variables above set for Production, and the API's `WEB_ORIGIN` must equal the deployed origin exactly (see the root README).
 
 ## Rules this app holds
 
