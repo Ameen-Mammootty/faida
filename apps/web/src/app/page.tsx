@@ -53,12 +53,13 @@ export default function Home() {
               Private pilot for GCC cafeteria operators
             </p>
             <h1 id="hero-title">
-              Spot supplier price increases
-              <strong> before they squeeze your margins.</strong>
+              Know the profit margin
+              <strong> on every item you sell.</strong>
             </h1>
             <p className={styles.promise}>
-              Faida combines supplier invoices sent on WhatsApp with daily sales to show where
-              margin is moving across every branch, with every number traceable to its source.
+              Faida reads the supplier invoices your team already forwards on WhatsApp, pairs
+              them with daily sales, and shows which items and branches are helping or hurting
+              profit, with every number traceable to its source.
             </p>
             <WaitlistForm />
             <div className={styles.formProof} aria-label="Waitlist details">
@@ -181,7 +182,7 @@ export default function Home() {
                 </svg>
               </div>
               <h3>See the impact</h3>
-              <p>Price movement and branch comparisons appear with a path back to the original invoice.</p>
+              <p>Item margins, price moves, and branch comparisons appear with a path back to the original invoice.</p>
             </li>
           </ol>
         </section>
@@ -194,11 +195,35 @@ export default function Home() {
 
           <div className={styles.capabilityGrid}>
             <article className={styles.featurePrimary}>
-              <div className={styles.featureIndex}>Supplier prices</div>
-              <h3>Catch cost movement while it is still actionable.</h3>
+              <div className={styles.featureIndex}>Item margins</div>
+              <h3>See which items earn their place and which quietly lose money.</h3>
               <p>
-                See what changed, by how much, and against which confirmed invoice before a small
-                increase becomes a monthly leak.
+                Faida builds each item&apos;s true cost from confirmed supplier invoices and sets
+                it against what the item sells for, ranked so the quiet losers stand out before
+                the month ends.
+              </p>
+              <div className={styles.priceLedger} aria-label="Example margin per item">
+                <div>
+                  <span>KARAK</span>
+                  <b>61%</b>
+                </div>
+                <div>
+                  <span>SAMOSA</span>
+                  <b>44%</b>
+                </div>
+                <div className={styles.currentPrice}>
+                  <span>MANGO JUICE</span>
+                  <b>9%</b>
+                </div>
+              </div>
+            </article>
+
+            <article>
+              <div className={styles.featureIndex}>Supplier prices</div>
+              <h3>Catch the cost moves that eat item margins.</h3>
+              <p>
+                When an ingredient&apos;s price climbs, every item using it earns less. Faida
+                shows what changed, by how much, and against which confirmed invoice.
               </p>
               <div className={styles.priceLedger} aria-label="Example milk powder price history">
                 <div>
@@ -229,24 +254,6 @@ export default function Home() {
                 <span style={{ "--bar": "51%" } as CSSProperties} />
               </div>
             </article>
-
-            <article>
-              <div className={styles.featureIndex}>Source proof</div>
-              <h3>Trace the number instead of taking it on faith.</h3>
-              <p>
-                Open the original invoice beside the extracted fields. Verified, estimated, and
-                incomplete results stay clearly labelled.
-              </p>
-              <div className={styles.statusList}>
-                <span>
-                  <TickIcon /> Source attached
-                </span>
-                <span>
-                  <TickIcon /> Arithmetic checked
-                </span>
-                <span className={styles.attentionStatus}>! Needs review</span>
-              </div>
-            </article>
           </div>
         </section>
 
@@ -274,7 +281,7 @@ export default function Home() {
             <img src="/brand/faida-mark.svg" alt="" />
           </div>
           <p className={styles.sectionLabel}>Private pilot</p>
-          <h2 id="final-cta-title">Every branch. Clearer margins.</h2>
+          <h2 id="final-cta-title">Every item. Every branch. Real margins.</h2>
           <p>Join the first GCC cafeteria operators shaping Faida before launch.</p>
           <a href="#waitlist-form" className={styles.finalButton}>
             Join the waitlist
