@@ -350,7 +350,8 @@ async def test_confirm_flips_status_and_records_prices(api, db):
     detail = resp.json()
     assert detail["status"] == "confirmed"
     assert detail["confirmed_at"] is not None
-    assert detail["document"]["status"] == "confirmed"
+    # The document's status is ingest-only; confirmation shows on the invoice.
+    assert detail["document"]["status"] == "extracted"
     assert detail["supplier_id"] is not None  # the catalog self-built on confirm
 
     prices = await db.pool.fetch("select price from supplier_item_prices order by price")
@@ -382,7 +383,7 @@ async def test_confirm_from_needs_review_is_the_cash_approval_path(api, db):
     detail = resp.json()
     assert detail["status"] == "confirmed"
     assert detail["confirmed_at"] is not None
-    assert detail["document"]["status"] == "confirmed"
+    assert detail["document"]["status"] == "extracted"
     assert await db.pool.fetchval("select count(*) from supplier_item_prices") == 2
 
     assert (
@@ -750,9 +751,10 @@ async def test_price_history_is_ascending_with_the_item_header(api, db):
     # one: ordering must come from observed_at, not insertion order.
     await db.pool.execute(
         """
-        insert into supplier_item_prices (supplier_item_id, price, observed_at)
-        values ($1, 50.50, now() - interval '7 days')
+        insert into supplier_item_prices (tenant_id, supplier_item_id, price, observed_at)
+        values ($1, $2, 50.50, now() - interval '7 days')
         """,
+        milk["tenant_id"],
         milk["id"],
     )
 

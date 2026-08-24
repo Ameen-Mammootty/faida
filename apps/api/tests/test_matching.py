@@ -216,10 +216,12 @@ async def _seed_invoice(
     for position, line in enumerate(lines):
         await db.pool.execute(
             """
-            insert into invoice_lines (invoice_id, position, raw_name, supplier_item_id,
-                                       qty, unit, unit_price, pack_size, line_total, line_kind)
-            values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            insert into invoice_lines (tenant_id, invoice_id, position, raw_name,
+                                       supplier_item_id, qty, unit, unit_price, pack_size,
+                                       line_total, line_kind)
+            values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             """,
+            DEMO_TENANT_ID,
             invoice_id,
             position,
             line["raw_name"],

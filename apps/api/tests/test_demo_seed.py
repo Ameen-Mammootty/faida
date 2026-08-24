@@ -191,9 +191,11 @@ async def test_reapply_resets_a_rehearsal_and_spares_other_tenants(db):
     )
     await db.pool.execute(
         """
-        insert into invoice_lines (invoice_id, raw_name, supplier_item_id, qty, unit_price)
-        values ($1, 'MILK PWDR 2.5KG NIDO', $2, 12, 54.50)
+        insert into invoice_lines (tenant_id, invoice_id, raw_name, supplier_item_id, qty,
+                                   unit_price)
+        values ($1, $2, 'MILK PWDR 2.5KG NIDO', $3, 12, 54.50)
         """,
+        CHAIN_TENANT_ID,
         invoice_id,
         MILK_POWDER_ID,
     )
@@ -209,8 +211,9 @@ async def test_reapply_resets_a_rehearsal_and_spares_other_tenants(db):
     )
     # The confirm moved the baseline and appended history (what breaks re-runs).
     await db.pool.execute(
-        "insert into supplier_item_prices (supplier_item_id, price, invoice_id) "
-        "values ($1, 54.50, $2)",
+        "insert into supplier_item_prices (tenant_id, supplier_item_id, price, invoice_id) "
+        "values ($1, $2, 54.50, $3)",
+        CHAIN_TENANT_ID,
         MILK_POWDER_ID,
         invoice_id,
     )
@@ -257,7 +260,10 @@ async def test_reapply_resets_a_rehearsal_and_spares_other_tenants(db):
         keep_supplier,
     )
     await db.pool.execute(
-        "insert into supplier_item_prices (supplier_item_id, price) values ($1, 9.99)", keep_item
+        "insert into supplier_item_prices (tenant_id, supplier_item_id, price) "
+        "values ($1, $2, 9.99)",
+        DEMO_TENANT_ID,
+        keep_item,
     )
 
     # --- the one-command reset ------------------------------------------------

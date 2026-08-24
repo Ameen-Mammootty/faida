@@ -71,7 +71,7 @@ async def extract_document(
         logger.warning("extract job for unknown document %s", document_id)
         return
     if await db.get_invoice_by_document(document_id) is not None:
-        return  # a previous attempt completed; retries must not duplicate
+        return  # a previous attempt completed; invoices_document_uidx is the hard guard
 
     # WhatsApp documents reply to their sender; upload/manual (M3) have none.
     # The inbound message row also carries the webhook receipt time the WP-41

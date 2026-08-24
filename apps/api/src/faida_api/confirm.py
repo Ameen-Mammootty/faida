@@ -4,11 +4,12 @@
 An inbound WhatsApp text resolves against the newest awaiting_confirm invoice
 whose document traces back to the sender phone (C5 - stateless, no
 conversation table; nothing pending falls back to onboarding). "OK" confirms:
-the invoice and its document flip to confirmed (C1) and
-Database.record_confirmed_prices moves the price baseline (plan.md §5 layer
-4). Corrections apply, re-validate, re-snap, re-alert, and re-reply with the
-WP-20 composer; the invoice stays awaiting_confirm. Cash invoices are
-needs_review and never addressable from chat (M6 owns approvals).
+the invoice flips to confirmed (C1 - the document stays 'extracted', its
+status tracking ingest only) and Database.record_confirmed_prices moves the
+price baseline (plan.md §5 layer 4). Corrections apply, re-validate, re-snap,
+re-alert, and re-reply with the WP-20 composer; the invoice stays
+awaiting_confirm. Cash invoices are needs_review and never addressable from
+chat (M6 owns approvals).
 
 The chat grammar, in full (all keywords case-insensitive):
 

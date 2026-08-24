@@ -176,9 +176,12 @@ values
 -- Three weeks of history per item (the review screen's sparkline), oldest
 -- first: gentle weekly drift ending at last_price, so the on-stage confirm
 -- appends a visible jump.
-insert into supplier_item_prices (supplier_item_id, price, observed_at)
-values
-  ('d0000000-0000-0000-0000-000000000101',  49.25, now() - interval '21 days'),
+-- tenant_id is read from the catalog item, the same way every insert path in
+-- the API derives it: the observation belongs to the row it prices.
+insert into supplier_item_prices (tenant_id, supplier_item_id, price, observed_at)
+select i.tenant_id, h.item_id, h.price, h.observed_at
+from (values
+  ('d0000000-0000-0000-0000-000000000101'::uuid,  49.25, now() - interval '21 days'),
   ('d0000000-0000-0000-0000-000000000101',  49.75, now() - interval '14 days'),
   ('d0000000-0000-0000-0000-000000000101',  50.50, now() - interval '7 days'),
   ('d0000000-0000-0000-0000-000000000102',  21.00, now() - interval '21 days'),
@@ -195,7 +198,9 @@ values
   ('d0000000-0000-0000-0000-000000000105',  90.00, now() - interval '7 days'),
   ('d0000000-0000-0000-0000-000000000106',  42.00, now() - interval '21 days'),
   ('d0000000-0000-0000-0000-000000000106',  42.75, now() - interval '14 days'),
-  ('d0000000-0000-0000-0000-000000000106',  43.50, now() - interval '7 days');
+  ('d0000000-0000-0000-0000-000000000106',  43.50, now() - interval '7 days')
+) as h(item_id, price, observed_at)
+join supplier_items i on i.id = h.item_id;
 
 commit;
 

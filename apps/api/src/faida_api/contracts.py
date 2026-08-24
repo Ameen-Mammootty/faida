@@ -23,7 +23,6 @@ class DocumentStatus(StrEnum):
     RECEIVED = "received"
     PROCESSING = "processing"
     EXTRACTED = "extracted"  # a draft invoice with checks exists
-    CONFIRMED = "confirmed"  # its invoice was confirmed
     FAILED = "failed"  # repair also failed, unreadable, or not an invoice
 
 
@@ -34,14 +33,15 @@ class InvoiceStatus(StrEnum):
     NEEDS_REVIEW = "needs_review"  # e.g. cash invoices held for approval
 
 
-# The worker owns document transitions up to EXTRACTED/FAILED; the confirm flow
-# owns EXTRACTED -> CONFIRMED. FAILED -> PROCESSING is the retry path
-# (recovery is a screen, not a subsystem - plan.md §2 rule 5).
+# Ingest states only: the worker owns every document transition, and EXTRACTED
+# is terminal because the invoice owns the review lifecycle from there (a
+# document is confirmed only in the sense that its invoice is - read it through
+# invoices.document_id). FAILED -> PROCESSING is the retry path (recovery is a
+# screen, not a subsystem - plan.md §2 rule 5).
 DOCUMENT_TRANSITIONS: dict[DocumentStatus, set[DocumentStatus]] = {
     DocumentStatus.RECEIVED: {DocumentStatus.PROCESSING},
     DocumentStatus.PROCESSING: {DocumentStatus.EXTRACTED, DocumentStatus.FAILED},
-    DocumentStatus.EXTRACTED: {DocumentStatus.CONFIRMED},
-    DocumentStatus.CONFIRMED: set(),
+    DocumentStatus.EXTRACTED: set(),
     DocumentStatus.FAILED: {DocumentStatus.PROCESSING},
 }
 

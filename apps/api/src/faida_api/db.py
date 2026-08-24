@@ -306,13 +306,14 @@ class Database:
             )
             await conn.executemany(
                 """
-                insert into invoice_lines (invoice_id, position, raw_name, supplier_item_id,
-                                           qty, unit, unit_price, line_total, pack_size, checks,
-                                           line_kind)
-                values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                insert into invoice_lines (tenant_id, invoice_id, position, raw_name,
+                                           supplier_item_id, qty, unit, unit_price, line_total,
+                                           pack_size, checks, line_kind)
+                values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
                 """,
                 [
                     (
+                        tenant_id,
                         invoice_id,
                         line["position"],
                         line["raw_name"],
@@ -504,10 +505,13 @@ class Database:
                 net_price = _to_net_price(
                     _to_net_price(line["unit_price"], net_factor), discount_factor
                 )
+                # tenant_id comes from the item rather than the invoice: the
+                # observation belongs to the catalog row it prices.
                 observed = await conn.fetchval(
                     """
-                    insert into supplier_item_prices (supplier_item_id, price, invoice_id)
-                    values ($1, $2, $3)
+                    insert into supplier_item_prices (tenant_id, supplier_item_id, price,
+                                                      invoice_id)
+                    select tenant_id, id, $2, $3 from supplier_items where id = $1
                     on conflict (supplier_item_id, invoice_id) where invoice_id is not null
                       do nothing
                     returning id
@@ -590,47 +594,40 @@ class Database:
         )
 
     async def confirm_invoice(self, invoice_id: str) -> bool:
-        """C1, one transaction: invoice awaiting_confirm -> confirmed (stamping
-        confirmed_at) and its document extracted -> confirmed. Returns False
-        without touching anything when the invoice was not awaiting_confirm
-        (already confirmed, or held needs_review) - safe to re-run."""
-        async with self.pool.acquire() as conn, conn.transaction():
-            row = await conn.fetchrow(
+        """C1: invoice awaiting_confirm -> confirmed, stamping confirmed_at.
+        The document is left at 'extracted' - its status tracks ingest only,
+        and confirmation is read back through invoices.document_id. Returns
+        False without touching anything when the invoice was not
+        awaiting_confirm (already confirmed, or held needs_review) - safe to
+        re-run."""
+        return (
+            await self.pool.fetchval(
                 """
                 update invoices set status = 'confirmed', confirmed_at = now()
                 where id = $1 and status = 'awaiting_confirm'
-                returning document_id
+                returning id
                 """,
                 invoice_id,
             )
-            if row is None:
-                return False
-            await conn.execute(
-                "update documents set status = 'confirmed' where id = $1", row["document_id"]
-            )
-            return True
+            is not None
+        )
 
     async def confirm_reviewed_invoice(self, invoice_id: str) -> bool:
         """C1, the review-screen path (WP-30): invoice needs_review ->
-        confirmed (stamping confirmed_at) and its document extracted ->
-        confirmed, one transaction. The review screen is the cash approval
-        path until M6 (plan.md §6 M2). Returns False without touching
+        confirmed, stamping confirmed_at. The review screen is the cash
+        approval path until M6 (plan.md §6 M2). Returns False without touching
         anything when the invoice was not needs_review - safe to re-run."""
-        async with self.pool.acquire() as conn, conn.transaction():
-            row = await conn.fetchrow(
+        return (
+            await self.pool.fetchval(
                 """
                 update invoices set status = 'confirmed', confirmed_at = now()
                 where id = $1 and status = 'needs_review'
-                returning document_id
+                returning id
                 """,
                 invoice_id,
             )
-            if row is None:
-                return False
-            await conn.execute(
-                "update documents set status = 'confirmed' where id = $1", row["document_id"]
-            )
-            return True
+            is not None
+        )
 
     async def apply_invoice_correction(
         self,
@@ -694,11 +691,16 @@ class Database:
         repair_applied: bool,
         outcome: str,
     ) -> None:
+        """The run's tenant is the document's, read in the insert - so a run row
+        can never claim a tenant its document does not. A document_id with no
+        row records nothing, which only happens if the document was deleted
+        between the pipeline reading it and the run finishing."""
         await self.pool.execute(
             """
-            insert into extraction_runs (document_id, model_id, prompt_version, input_tokens,
-                                         output_tokens, latency_ms, repair_applied, outcome)
-            values ($1, $2, $3, $4, $5, $6, $7, $8)
+            insert into extraction_runs (tenant_id, document_id, model_id, prompt_version,
+                                         input_tokens, output_tokens, latency_ms, repair_applied,
+                                         outcome)
+            select tenant_id, id, $2, $3, $4, $5, $6, $7, $8 from documents where id = $1
             """,
             document_id,
             model_id,

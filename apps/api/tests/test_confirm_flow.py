@@ -271,9 +271,9 @@ async def test_full_confirm_flow_records_prices_and_acks(api, db):
     await post_webhook(client, wa_text_payload("OK", message_id="wamid.ok1"))
     await drain_jobs(db, app, None)
 
-    # C1: invoice and its document both confirmed.
+    # C1: the invoice is confirmed; the document stays at its ingest terminal.
     doc = await db.get_document_by_wa_message("wamid.in1")
-    assert doc["status"] == "confirmed"
+    assert doc["status"] == "extracted"
     invoice = await db.get_invoice_by_document(str(doc["id"]))
     assert invoice["status"] == "confirmed"
     assert invoice["confirmed_at"] is not None
@@ -350,7 +350,7 @@ async def test_ok_with_open_ambers_confirms_anyway(api, db):
     doc = await db.get_document_by_wa_message("wamid.in1")
     invoice = await db.get_invoice_by_document(str(doc["id"]))
     assert invoice["status"] == "confirmed"
-    assert doc["status"] == "confirmed"
+    assert doc["status"] == "extracted"
     assert (await outbound_bodies(db))[-1] == ACK_GULF
 
 
