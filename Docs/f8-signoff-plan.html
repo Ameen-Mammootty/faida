@@ -1,0 +1,358 @@
+<title>Checking the Answer Key</title>
+<style>
+:root {
+  --bg:#fbf8f3; --panel:#fff; --ink:#1c1a17; --muted:#6b6459; --line:#e5ddd0;
+  --accent:#8a6a2f; --accent-soft:#f5edda; --code:#f7f3ec;
+  --proven:#1d7f57; --copied:#4a63b5; --judge:#c08411;
+  --proven-soft:#e6f2ec; --judge-soft:#faf0d9;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:#16150f; --panel:#1e1c16; --ink:#efe9dd; --muted:#a49b8a; --line:#332f25;
+    --accent:#d9b264; --accent-soft:#2a2418; --code:#141210;
+    --proven:#3f9c70; --copied:#6a80c8; --judge:#b3852f;
+    --proven-soft:#1a2a22; --judge-soft:#2a2418;
+  }
+}
+:root[data-theme="dark"] {
+  --bg:#16150f; --panel:#1e1c16; --ink:#efe9dd; --muted:#a49b8a; --line:#332f25;
+  --accent:#d9b264; --accent-soft:#2a2418; --code:#141210;
+  --proven:#3f9c70; --copied:#6a80c8; --judge:#b3852f;
+  --proven-soft:#1a2a22; --judge-soft:#2a2418;
+}
+* { box-sizing:border-box; }
+body {
+  background:var(--bg); color:var(--ink); margin:0;
+  font:16px/1.65 ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+.wrap { max-width:940px; margin:0 auto; padding:44px 22px 96px; }
+header.top { border-bottom:2px solid var(--accent); padding-bottom:24px; }
+h1 { font-size:2rem; margin:0 0 8px; letter-spacing:-.02em; }
+.sub { color:var(--muted); margin:0; font-size:1.05rem; }
+.meta { display:flex; flex-wrap:wrap; gap:8px; margin-top:18px; }
+.meta span {
+  background:var(--accent-soft); color:var(--accent); border:1px solid var(--line);
+  padding:3px 11px; border-radius:999px; font-size:.78rem; font-weight:600;
+}
+section { margin-top:46px; }
+h2 {
+  font-size:1.22rem; margin:0 0 10px; padding-bottom:9px;
+  border-bottom:1px solid var(--line); display:flex; align-items:baseline; gap:10px;
+}
+h2 .n { color:var(--accent); font-variant-numeric:tabular-nums; font-size:.85rem; }
+h3 { font-size:1rem; margin:26px 0 8px; }
+p { margin:12px 0; }
+.lede { color:var(--muted); }
+.big {
+  font-size:1.15rem; line-height:1.6; border-left:3px solid var(--accent);
+  padding:4px 0 4px 18px; margin:18px 0;
+}
+.card {
+  background:var(--panel); border:1px solid var(--line); border-radius:10px;
+  padding:20px 22px; margin:18px 0;
+}
+.callout {
+  border-left:3px solid var(--accent); background:var(--accent-soft);
+  padding:16px 20px; border-radius:0 8px 8px 0; margin:18px 0;
+}
+.callout strong { color:var(--accent); }
+code {
+  background:var(--code); border:1px solid var(--line); border-radius:4px;
+  padding:1px 5px; font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+
+/* --- the one chart: part-to-whole of a single total --- */
+figure.chart { margin:26px 0 8px; }
+figure.chart figcaption {
+  font-size:.8rem; text-transform:uppercase; letter-spacing:.05em;
+  color:var(--muted); font-weight:600; margin-bottom:10px;
+}
+.bar { display:flex; gap:2px; height:52px; }
+.bar > div {
+  display:flex; align-items:center; justify-content:center;
+  color:#fff; font-weight:700; font-size:1rem; font-variant-numeric:tabular-nums;
+  min-width:0;
+}
+.bar .s1 { background:var(--proven); border-radius:5px 0 0 5px; }
+.bar .s2 { background:var(--copied); }
+.bar .s3 { background:var(--judge); border-radius:0 5px 5px 0; }
+.legend { display:flex; flex-wrap:wrap; gap:22px; margin-top:16px; }
+.legend div { display:flex; align-items:flex-start; gap:9px; font-size:.9rem; max-width:270px; }
+.legend i {
+  width:12px; height:12px; border-radius:3px; flex:0 0 12px; margin-top:5px;
+}
+.legend b { display:block; }
+.legend span { color:var(--muted); font-size:.85rem; }
+.sw1 { background:var(--proven); } .sw2 { background:var(--copied); } .sw3 { background:var(--judge); }
+
+table.grid { width:100%; border-collapse:collapse; font-size:.93rem; }
+table.grid th {
+  text-align:left; font-size:.74rem; text-transform:uppercase; letter-spacing:.05em;
+  color:var(--muted); border-bottom:1px solid var(--line); padding:7px 12px 7px 0; font-weight:600;
+}
+table.grid td { border-bottom:1px solid var(--line); padding:10px 12px 10px 0; vertical-align:top; }
+table.grid td.num {
+  font-variant-numeric:tabular-nums; font-weight:700; white-space:nowrap; color:var(--judge);
+}
+.scroll { overflow-x:auto; }
+
+ol.steps { counter-reset:s; list-style:none; padding:0; margin:22px 0; }
+ol.steps li { counter-increment:s; position:relative; padding:0 0 0 48px; margin:0 0 24px; }
+ol.steps li::before {
+  content:counter(s); position:absolute; left:0; top:-2px; width:30px; height:30px;
+  border-radius:50%; background:var(--accent-soft); color:var(--accent);
+  border:1px solid var(--line); display:grid; place-items:center;
+  font-size:.85rem; font-weight:700;
+}
+ol.steps b { display:block; margin-bottom:3px; }
+ol.steps .who { color:var(--muted); font-size:.8rem; font-weight:600;
+  text-transform:uppercase; letter-spacing:.04em; }
+
+/* the mock of what the review screen will look like */
+.mock {
+  border:1px solid var(--line); border-radius:10px; overflow:hidden;
+  display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.15fr); margin:20px 0 8px;
+  background:var(--panel);
+}
+.mock .photo {
+  background:var(--code); border-right:1px solid var(--line);
+  display:grid; place-items:center; color:var(--muted); font-size:.85rem;
+  padding:30px 16px; text-align:center; min-height:230px;
+}
+.mock .fields { padding:16px 18px; }
+.mock .row {
+  display:flex; justify-content:space-between; gap:14px; padding:6px 8px;
+  border-radius:5px; font-size:.86rem;
+}
+.mock .row.dim { color:var(--muted); }
+.mock .row.check {
+  background:var(--judge-soft); border:1px solid var(--judge);
+  font-weight:600; margin:3px 0;
+}
+.mock .row .lbl { font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+.mock .tag {
+  font-size:.68rem; text-transform:uppercase; letter-spacing:.04em;
+  color:var(--judge); font-weight:700; white-space:nowrap;
+}
+.mock .head {
+  font-size:.7rem; text-transform:uppercase; letter-spacing:.05em; color:var(--muted);
+  font-weight:600; margin:10px 0 4px; padding:0 8px;
+}
+@media (max-width:720px) {
+  .mock { grid-template-columns:1fr; }
+  .mock .photo { border-right:0; border-bottom:1px solid var(--line); min-height:130px; }
+}
+
+ul.plain { padding-left:20px; }
+ul.plain li { margin:8px 0; }
+.done { list-style:none; padding:0; }
+.done li { padding:9px 0 9px 30px; position:relative; border-bottom:1px solid var(--line); }
+.done li::before {
+  content:"☐"; position:absolute; left:4px; top:8px; color:var(--accent); font-size:1.05rem;
+}
+footer {
+  margin-top:56px; padding-top:18px; border-top:1px solid var(--line);
+  color:var(--muted); font-size:.85rem;
+}
+</style>
+
+<div class="wrap">
+<header class="top">
+  <h1>Checking the answer key</h1>
+  <p class="sub">What the F8 sign-off actually is, why it can't be skipped, and how we get
+  through it in about half an hour.</p>
+  <div class="meta">
+    <span>10 invoices</span>
+    <span>100 line items</span>
+    <span>680 values</span>
+    <span>134 need your eye</span>
+  </div>
+</header>
+
+<section>
+  <h2><span class="n">01</span> What this is, in one sentence</h2>
+  <p class="big">We now have an accuracy score for reading invoices. Before anyone trusts it,
+  a human has to confirm the answers we scored against are actually what the invoices say.</p>
+  <p>An accuracy exam has two halves: the answers the system gives, and the answer key we mark
+  them against. We have been very careful about the first half. The second half was written by
+  me, and nobody has checked it.</p>
+</section>
+
+<section>
+  <h2><span class="n">02</span> Why it can't be skipped</h2>
+  <p>A wrong answer key doesn't produce a slightly-off score. It produces a <em>confidently
+  wrong</em> one, in either direction: the system reads a pack size correctly and gets marked
+  wrong, or it misreads one and gets marked right.</p>
+  <div class="callout">
+    <strong>This already happened, last week.</strong> The answer key said a pack was
+    <code>2000</code> where the invoice actually prints <code>2 kg</code>. The score for that
+    field came back at <strong>19%</strong> and the model had read every single one correctly.
+    Had nobody looked, the next step would have been rewriting prompts to fix a problem that
+    did not exist.
+  </div>
+  <p>That is why your own build plan says it in one line: <em>"Truth no human checked is not
+  truth."</em> The key has since been rebuilt from the printed pages, and the score is now
+  near-perfect - which is exactly when a second pair of eyes matters most, because a good
+  number is the one nobody questions.</p>
+</section>
+
+<section>
+  <h2><span class="n">03</span> Not all 680 values need you</h2>
+  <p>Every invoice has header values (supplier, number, date, totals) and six values per line.
+  Across ten invoices that is 680 individual things the key asserts. Checking all of them by
+  eye would take hours and would mostly be wasted, because two thirds of them are already
+  independently verified.</p>
+
+  <figure class="chart">
+    <figcaption>How much of the answer key still needs a human</figcaption>
+    <div class="bar" role="img" aria-label="Of 680 values: 330 proven by arithmetic, 216 copied verbatim from a printed column, 134 judgment calls needing review.">
+      <div class="s1" style="flex:330">330</div>
+      <div class="s2" style="flex:216">216</div>
+      <div class="s3" style="flex:134">134</div>
+    </div>
+    <div class="legend">
+      <div><i class="sw1"></i><span><b>330 proven by arithmetic</b>
+        Every line multiplies out and every invoice adds up. A wrong number here would break
+        the sums, and all ten reconcile.</span></div>
+      <div><i class="sw2"></i><span><b>216 copied word for word</b>
+        Supplier name, invoice number, date, item descriptions. Copied straight off a printed
+        column, nothing interpreted.</span></div>
+      <div><i class="sw3"></i><span><b>134 judgment calls</b>
+        Places where I decided rather than copied. <strong>This is the job.</strong></span></div>
+    </div>
+  </figure>
+</section>
+
+<section>
+  <h2><span class="n">04</span> The 134, and what I decided</h2>
+  <p class="lede">Each of these is a place the page didn't simply hand over an answer, so I made
+  a call. If a call is wrong, the score is wrong with it.</p>
+  <div class="scroll">
+  <table class="grid">
+    <thead><tr><th>what</th><th>how many</th><th>the call I made, and why it might be wrong</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>Pack size</b><br><span class="lede">every line</span></td>
+        <td class="num">100</td>
+        <td>I changed what this field means. It is now whatever the page prints in its pack-size
+          column; where there is no such column, it is the size printed inside the item name
+          ("RICE BASM <b>5KG</b>"); and where neither exists, it is empty. Three different rules,
+          applied by me.</td>
+      </tr>
+      <tr>
+        <td><b>Bilingual item names</b><br><span class="lede">AR-01, HW-04</span></td>
+        <td class="num">14</td>
+        <td>Where the page prints an item in English and Arabic, I recorded both, joined with a
+          space. If the page shows them stacked, or shows only one, that join is wrong.</td>
+      </tr>
+      <tr>
+        <td><b>Missing units on TH-01</b><br><span class="lede">the till receipt</span></td>
+        <td class="num">10</td>
+        <td>I asserted this receipt prints no unit column at all, so every unit is empty. That is
+          a claim about the whole document. One glance at the photo settles it.</td>
+      </tr>
+      <tr>
+        <td><b>Cash or credit</b><br><span class="lede">one per invoice</span></td>
+        <td class="num">10</td>
+        <td>Read from the printed terms line: "14 days" means credit, a till receipt means cash.
+          This decides which purchases need your approval, so a wrong call has consequences
+          beyond the score.</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section>
+  <h2><span class="n">05</span> How we'll actually do it</h2>
+  <ol class="steps">
+    <li><span class="who">me · about an hour</span>
+      <b>Build a review screen</b>
+      One invoice per screen: the photo on the left, the answer key on the right. The 134
+      judgment values are highlighted and labelled; everything else is visible but dimmed, so
+      you can see it without having to check it.</li>
+    <li><span class="who">you · about 30 minutes</span>
+      <b>Walk the ten invoices</b>
+      For each highlighted value: right or wrong. If wrong, say what it should be. You are not
+      reading 680 numbers - you are answering about 134 yes/no questions, most of them
+      obvious at a glance.</li>
+    <li><span class="who">me</span>
+      <b>Apply corrections and re-run the exam</b>
+      Every correction goes into the answer key, the accuracy exam re-runs against the saved
+      answers (free, no API cost), and I report exactly what moved and why.</li>
+    <li><span class="who">me</span>
+      <b>Record the sign-off in the repo</b>
+      Who checked it, when, and against which version of the files. "Verified" becomes something
+      anyone can look up months later, rather than something someone remembers.</li>
+  </ol>
+
+  <h3>What the review screen will look like</h3>
+  <div class="mock" aria-label="Mock of the review screen">
+    <div class="photo">the invoice photo,<br>zoomable</div>
+    <div class="fields">
+      <div class="head">TH-01 · invoice 3 of 10</div>
+      <div class="row dim"><span class="lbl">supplier</span><span>Al Manara Trading LLC</span></div>
+      <div class="row dim"><span class="lbl">invoice_no</span><span>T-0084417</span></div>
+      <div class="row dim"><span class="lbl">total</span><span>706.65</span></div>
+      <div class="row check"><span class="lbl">payment_kind</span>
+        <span>cash <span class="tag">check</span></span></div>
+      <div class="head">line 1</div>
+      <div class="row dim"><span class="lbl">raw_name</span><span>RICE BASM 5KG</span></div>
+      <div class="row dim"><span class="lbl">qty × price</span><span>2 × 33.60 = 67.20</span></div>
+      <div class="row check"><span class="lbl">pack_size</span>
+        <span>5KG <span class="tag">check</span></span></div>
+      <div class="row check"><span class="lbl">unit</span>
+        <span>(empty) <span class="tag">check</span></span></div>
+    </div>
+  </div>
+  <p class="lede">Gold means "I decided this, please confirm". Dimmed means "already proven,
+  shown so you can see the whole invoice".</p>
+</section>
+
+<section>
+  <h2><span class="n">06</span> Where I'd look hardest</h2>
+  <p>If something in the key is wrong, my money is on one of these three. They are the calls I
+  had the least evidence for.</p>
+  <ul class="plain">
+    <li><b>TH-01's empty units.</b> I claim a whole column doesn't exist on that receipt.
+      Cheapest thing to check and the most embarrassing to get wrong.</li>
+    <li><b>The bilingual joins.</b> "Unsalted Butter زبدة غير مملحة" as one name is my
+      reading of a page that prints the Arabic on its own line underneath.</li>
+    <li><b>Pack sizes pulled out of item names.</b> On HW-02 the model said a tray of eggs has a
+      pack size of "30" and the key says it has none. I left that one deliberately unresolved,
+      because I genuinely don't know which is right - you will.</li>
+  </ul>
+</section>
+
+<section>
+  <h2><span class="n">07</span> What is not being signed off</h2>
+  <div class="callout">
+    <strong>Five of the fifteen cases have no picture.</strong> They have an answer key and a
+    written description, but the invoice image was never generated, so there is nothing to check
+    the key against. They cannot be signed off by anyone.
+  </div>
+  <p>My recommendation: mark those five as unverified and keep them out of the corpus until the
+  images exist. Two of them (<code>EDGE-02</code>, <code>EDGE-03</code>) cover invoice shapes
+  nothing else in the set covers, so generating those pictures is the single cheapest way to
+  make the exam stronger.</p>
+</section>
+
+<section>
+  <h2><span class="n">08</span> What "done" looks like</h2>
+  <ul class="done">
+    <li>All ten picture-backed invoices reviewed, every judgment value confirmed or corrected</li>
+    <li>Corrections applied to the answer key and the exam re-run, with the change reported</li>
+    <li>Sign-off recorded in the repo against a specific commit</li>
+    <li>The five picture-less cases marked unverified and excluded until images exist</li>
+    <li>The accuracy number stops carrying the "not yet checked by a human" caveat</li>
+  </ul>
+  <p class="lede">After that, the score means what it says - on generated invoices. It still
+  isn't pilot accuracy, and it won't be until real photographed invoices replace these.</p>
+</section>
+
+<footer>
+  Counts measured from <code>eval/fixtures/generated/</code> at commit <code>8fb8b78</code>:
+  10 cases with images, 100 line items, 680 asserted values, 134 of them judgment calls.
+  The remaining five cases carry ground truth for images that were never generated.
+</footer>
+</div>

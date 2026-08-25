@@ -334,7 +334,7 @@ and the accuracy loop (WP-16). Everything else is predictable engineering.
 | F5 | ~~Anthropic API key with billing enabled~~ done 2026-08-23, verified live | ~10 min | running extraction (WP-16); building it needs nothing |
 | F6 | Corpus growth: photograph the invoices in hand (flat + angled + crumpled variants of each); keep collecting toward 20-25 real ones from pilot contacts. **Deliberately collect both VAT-inclusive and VAT-exclusive invoices** - the first invoice through was inclusive and broke C4 (WP-17), so a corpus of one kind would hide the other. **No longer blocks M1** (2026-08-23): the generated set carries phase 1 while these are collected, ~1-2 weeks out | ongoing, not blocking | phase 2 of the §5 corpus; re-scoring WP-16 |
 | F7 | Pilot logistics: pick the target chain; ask the central-purchasing question (§11) before any onboarding talk; schedule the demo only after the M4 gate passes | ongoing | M4 |
-| F8 | Hand-verify every ground-truth file the labeling agent produces. Truth no human checked is not truth | per batch | eval validity |
+| F8 | Hand-verify every ground-truth file the labeling agent produces. Truth no human checked is not truth. **Tooling ready 2026-08-25**: `Docs/f8-review.html` (built by `Docs/build_f8_review.py`) puts each invoice photo beside the key and marks the **134 values of 680 that were decided rather than copied** - the other 546 are either proven by arithmetic or copied verbatim from a printed column, so the review is a few dozen judgements, not 680 comparisons. Plain-English brief for the task: `Docs/f8-signoff-plan.html` | ~30 min | eval validity |
 
 ### 7.2 Pinned contracts (C1-C7)
 
@@ -632,6 +632,14 @@ pilot volume. Meta utility template cost applies only from M9 (verify live UAE r
 
 *(newest first — one line per session: date, what shipped, what's next)*
 
+- 2026-08-25 - **F8 sign-off tooling built; the ground-truth review is now a half-hour job instead of a day.**
+  `Docs/f8-review.html` shows each invoice photo beside the key we score against, one invoice per screen, and marks only the values that were *decided* rather than copied: pack sizes (the field whose meaning changed), bilingual item names joined from two scripts, the units TH-01 asserts do not exist, and each cash-or-credit call with the printed terms line quoted as its evidence.
+  That is 134 of the 680 asserted values; the other 546 are either proven by arithmetic (every line multiplies out, every invoice reconciles) or copied verbatim from a printed column, so they are shown dimmed rather than queued for a decision.
+  Flagging a value captures what the key says and what it should be, work survives a reload, and Finish emits a JSON sign-off record naming the reviewer and every correction.
+  Built by `Docs/build_f8_review.py` from the truth files, the images and the prompts, so it cannot drift from the corpus; the five image-less cases are excluded because there is nothing to check their key against.
+  Driving it in a browser found and fixed one real defect before handover: flagging a value and then pressing the confirm button silently discarded the correction. The button now saves corrections rather than overwriting them, and clearing flags is a separate explicit action.
+  Also `Docs/f8-signoff-plan.html`, the plain-English brief for what the task is and why it cannot be skipped, with the 19%-that-was-really-100% incident as the worked example.
+  Next: the founder runs the review; corrections get applied, the eval re-runs against the saved answers at no API cost, and the sign-off record lands in the repo against a commit.
 - 2026-08-25 - **WP-16 round 2: every extraction field is at 100% on the phase-1 corpus except one genuinely ambiguous pack size, and the round found a latent way to take the whole pipeline down.**
   Three founder decisions implemented: cash-or-credit conventions in code, a units dictionary with harmonizing, and plain-English reporting as a standing rule in `CLAUDE.md`/`AGENTS.md`.
   `extraction/payment.py` derives the arrangement from the printed terms line, which C3 now carries as `payment_terms_text`: a due period is credit, an explicit cash marker is cash, printed terms outrank the model's own reading, and anything unrecognized stays null so no unmarked document slips past the cash approval gate. `payment_kind` 60% -> 100%.
