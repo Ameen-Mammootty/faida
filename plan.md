@@ -636,6 +636,15 @@ pilot volume. Meta utility template cost applies only from M9 (verify live UAE r
 
 *(newest first — one line per session: date, what shipped, what's next)*
 
+- 2026-08-25 - **Latency pass planned, and the headline number turns out to be stale in our favour.**
+  `Docs/latency-plan.html` lays out the whole thing in plain English with the stage breakdown.
+  The 28.4 s on record was measured 2026-08-23, when reading took 18 s *because the model was asked twice*: that invoice was VAT-inclusive, C4 said it did not add up, and a repair round fired on a perfectly-read page.
+  WP-17 and WP-18 fixed those identities, and across all ten corpus invoices at prompt v2 **not one now needs a repair round**; reading averages 10.7 s (7.3 s on a small delivery note, 22.4 s on the 34-line `PH-01`).
+  Holding the other stages constant that projects to **~21 s**, so step zero is to forward one photo and read the `webhook_to_reply_ms` line WP-41 already prints, rather than optimise something that may already be fixed.
+  Ranked levers if it is still over: a lower image ceiling (up to ~4 s, and the accuracy cost is now measurable with `--live`), starting the read before the photo finishes filing (~1-2 s), fast mode (a few seconds, doubles cost to ~$0.12, needs checking against structured outputs), and the queue poll (~1 s).
+  **Correction carried into three places in this file:** the "~4 s idle across two job hops" figure was wrong and had been quoted as an easy win repeatedly, including by me. `worker.py` sleeps only when the queue is empty, so the second job starts immediately; the exposure is one wait of up to 2 s.
+  Noted for the demo: at 22.4 s to read, `PH-01` alone cannot clear a 20 s target, so curating the three demo invoices and the latency pass are the same job.
+  Next: the founder forwards one invoice to re-measure; then the levers, in order, only as far as the target needs.
 - 2026-08-25 - **F8 done: the ten image-backed cases are human-verified, zero corrections, and the sign-off is now something that can go stale loudly rather than quietly.**
   The founder reviewed all ten invoices against their photos and confirmed every one of the 134 values that had been decided rather than copied: pack sizes under the changed rule, the bilingual names joined from two scripts, TH-01's asserted absence of a unit column, and all ten cash-or-credit calls read off printed terms.
   That also settles the one question left deliberately open: `HW-02`'s "Eggs Free Range Large Tray 30" has **no** pack size, so the model returning "30" is a genuine miss and the 99% `pack_size` figure is real rather than an artifact of my own key.
@@ -660,7 +669,7 @@ pilot volume. Meta utility template cost applies only from M9 (verify live UAE r
   Two smaller harness fixes: a printed "-" now means absence in the pipeline as well as in ground truth (one shared definition), and recorded replays run through the same derivation seam live runs use, so a recording cannot score differently depending on how it is read.
   **Round 2, measured on generated invoices** (phase 1, never quotable as pilot accuracy): classification, supplier, invoice no, date, currency, payment kind, subtotal, tax, total, line recall and precision, `raw_name`, `qty`, `unit`, `unit_price`, `line_total` all 100%; `pack_size` 99%; reconciliation 100% with no repair round needed on any case; ~$0.06 and ~10.7 s of provider time per invoice.
   264 API tests, 32 eval tests, smoke green, ruff clean. Prompt is at v2 and the corpus recordings were regenerated with it.
-  Next: F8 sign-off on the rebuilt ground truth; generate the five missing images (`EDGE-02` and `EDGE-03` cover reconciliation paths nothing else reaches); the latency pass, where the 2 s worker poll across two job hops is the cheap ~4 s of the 28.4 s; and the amber question that still dead-ends on a plain-English answer.
+  Next: F8 sign-off on the rebuilt ground truth; generate the five missing images (`EDGE-02` and `EDGE-03` cover reconciliation paths nothing else reaches); the latency pass (see the correction in the 2026-08-25 entry: the worker poll costs ~1 s, not ~4 s); and the amber question that still dead-ends on a plain-English answer.
 - 2026-08-24 - **`eval --live` shipped and WP-16 round 1 ran; the first real accuracy numbers exist, and most of what they first showed was the harness, not the model.**
   `--live` runs the product's own layers 1-3 through the product's own modules (extract, the pipeline's currency normalization, `validate_invoice`, one scoped `repair_invoice` round), scores repair lift and cost per invoice, records responses so every later re-score is free, runs cases concurrently, and isolates a failing case instead of losing the round.
   Three harness defects came out ahead of any model finding, each one capable of sending the accuracy loop after a phantom.
@@ -672,7 +681,7 @@ pilot volume. Meta utility template cost applies only from M9 (verify live UAE r
   `pack_size` 89% and `payment_kind` 60% are the only gaps and both are open C3 questions, escalated rather than settled here (see the Decision Log).
   Also found by running it: **the phase-1 corpus is 10 images, not 15** - `DUP-01`, `EDGE-02`, `EDGE-03`, `HW-03` and `NEG-01` are ground truth for images nobody generated, and two of them cover reconciliation paths nothing else in the set reaches. `eval/` was never linted by CI either, which is how a wrong-line-length reformat slipped in mid-session; it now has its own ruff config and a CI step.
   211 API tests, 32 eval tests, smoke green, ruff clean.
-  Next, in order: F8 sign-off on the rebuilt ground truth (agent-written truth is exactly what F8 exists to check); round 2 on the prompt, which describes neither `discount_total` nor `line_kind` nor `tax_treatment` and tells the model to skip `payment_kind` unless the page says the word; generate the five missing images (and the old platform's six Cedar & Spice invoices noted 2026-08-24 are a free extension); then the latency pass, where the 2 s worker poll across two job hops is the cheap ~4 s of the 28.4 s.
+  Next, in order: F8 sign-off on the rebuilt ground truth (agent-written truth is exactly what F8 exists to check); round 2 on the prompt, which describes neither `discount_total` nor `line_kind` nor `tax_treatment` and tells the model to skip `payment_kind` unless the page says the word; generate the five missing images (and the old platform's six Cedar & Spice invoices noted 2026-08-24 are a free extension); then the latency pass (the ~4 s worker-poll figure quoted here was wrong; see the 2026-08-25 correction).
 - 2026-08-24 - **Old-platform extraction layer reviewed (read-only); three ports entered the plan.**
   Three explorers catalogued restaurant-profit-platform's pipeline mechanics, its design docs and corpus, and its SQL normalization layer against ours; the comparison is a reference artifact (Extraction Inheritance Review).
   Adopted as WP-19 (line-completeness guard, M1), WP-25 (required-field ambers, M2) and WP-44 (duplicate invoice hold, M4), each with a checklist box; a tenant-currency mismatch amber is noted as a cheap fourth.
@@ -732,7 +741,7 @@ pilot volume. Meta utility template cost applies only from M9 (verify live UAE r
   a dependency. 186 API tests, 12 eval tests.
   Next, in order: `--live` mode in `eval/run.py` (does not exist, and WP-16 needs it), then the
   accuracy loop on the phase-1 corpus, then the amber question that dead-ends on a plain-English
-  answer, then the worker's 2-second poll (two job hops, so up to ~4s of the 28.43s is idle).
+  answer, then the worker's 2-second poll (two job hops, so up to ~4s of the 28.43s is idle). **Corrected 2026-08-25:** that ~4s was never there. `worker.py` only sleeps when the queue is empty, so the second job starts the instant the first finishes; there is one wait, at the start, of up to 2s. The real lever was the repair round, which the WP-17 and WP-18 fixes have since stopped firing entirely.
 - 2026-08-23 - **WP-18 shipped: discounts, rounding and non-stock charges.** The C4 identities
   are now stated against `line sum - discount + rounding`, so a trade discount no longer fails a
   correct invoice; C3 gains `discount_total`, `rounding_amount` and a per-line `line_kind`

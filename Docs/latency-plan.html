@@ -1,0 +1,276 @@
+<title>The Latency Pass</title>
+<style>
+:root {
+  --bg:#fbf8f3; --panel:#fff; --ink:#1c1a17; --muted:#6b6459; --line:#e5ddd0;
+  --accent:#8a6a2f; --accent-soft:#f5edda; --code:#f7f3ec;
+  --s1:#4a63b5; --s2:#1d7f57; --s3:#c08411; --s4:#a34a7d;
+  --good:#1d7f57;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:#16150f; --panel:#1e1c16; --ink:#efe9dd; --muted:#a49b8a; --line:#332f25;
+    --accent:#d9b264; --accent-soft:#2a2418; --code:#141210;
+    --s1:#6a80c8; --s2:#35a878; --s3:#bd8524; --s4:#cc6d9d;
+    --good:#3f9c70;
+  }
+}
+:root[data-theme="dark"] {
+  --bg:#16150f; --panel:#1e1c16; --ink:#efe9dd; --muted:#a49b8a; --line:#332f25;
+  --accent:#d9b264; --accent-soft:#2a2418; --code:#141210;
+  --s1:#6a80c8; --s2:#35a878; --s3:#bd8524; --s4:#cc6d9d;
+  --good:#3f9c70;
+}
+* { box-sizing:border-box; }
+body {
+  background:var(--bg); color:var(--ink); margin:0;
+  font:16px/1.65 ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+.wrap { max-width:940px; margin:0 auto; padding:44px 22px 96px; }
+header.top { border-bottom:2px solid var(--accent); padding-bottom:24px; }
+h1 { font-size:2rem; margin:0 0 8px; letter-spacing:-.02em; }
+.sub { color:var(--muted); margin:0; font-size:1.05rem; }
+.meta { display:flex; flex-wrap:wrap; gap:8px; margin-top:18px; }
+.meta span {
+  background:var(--accent-soft); color:var(--accent); border:1px solid var(--line);
+  padding:3px 11px; border-radius:999px; font-size:.78rem; font-weight:600;
+}
+section { margin-top:46px; }
+h2 {
+  font-size:1.22rem; margin:0 0 10px; padding-bottom:9px;
+  border-bottom:1px solid var(--line); display:flex; align-items:baseline; gap:10px;
+}
+h2 .n { color:var(--accent); font-variant-numeric:tabular-nums; font-size:.85rem; }
+h3 { font-size:1rem; margin:24px 0 8px; }
+p { margin:12px 0; }
+.lede { color:var(--muted); }
+.big {
+  font-size:1.15rem; line-height:1.6; border-left:3px solid var(--accent);
+  padding:4px 0 4px 18px; margin:18px 0;
+}
+.callout {
+  border-left:3px solid var(--accent); background:var(--accent-soft);
+  padding:16px 20px; border-radius:0 8px 8px 0; margin:18px 0;
+}
+.callout strong { color:var(--accent); }
+.callout.good { border-left-color:var(--good); }
+.callout.good strong { color:var(--good); }
+code {
+  background:var(--code); border:1px solid var(--line); border-radius:4px;
+  padding:1px 5px; font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+
+figure.chart { margin:24px 0 8px; }
+.barrow { margin:0 0 16px; }
+.barlabel {
+  display:flex; justify-content:space-between; align-items:baseline;
+  font-size:.82rem; margin-bottom:6px;
+}
+.barlabel b { font-size:.9rem; }
+.barlabel .tot { font-variant-numeric:tabular-nums; font-weight:700; }
+.bar { display:flex; gap:2px; height:42px; }
+.bar > div {
+  display:flex; align-items:center; justify-content:center; min-width:0;
+  color:#fff; font-weight:700; font-size:.82rem; font-variant-numeric:tabular-nums;
+  overflow:hidden; white-space:nowrap;
+}
+.bar > div:first-child { border-radius:5px 0 0 5px; }
+.bar > div:last-child { border-radius:0 5px 5px 0; }
+.bar .rest { background:transparent; }
+.b1 { background:var(--s1); } .b2 { background:var(--s2); }
+.b3 { background:var(--s3); } .b4 { background:var(--s4); }
+.legend { display:flex; flex-wrap:wrap; gap:20px; margin-top:14px; }
+.legend div { display:flex; align-items:flex-start; gap:8px; font-size:.86rem; }
+.legend i { width:12px; height:12px; border-radius:3px; flex:0 0 12px; margin-top:5px; }
+.legend b { display:block; }
+.legend span { color:var(--muted); font-size:.82rem; }
+.sw1 { background:var(--s1); } .sw2 { background:var(--s2); }
+.sw3 { background:var(--s3); } .sw4 { background:var(--s4); }
+
+table.grid { width:100%; border-collapse:collapse; font-size:.92rem; }
+table.grid th {
+  text-align:left; font-size:.72rem; text-transform:uppercase; letter-spacing:.05em;
+  color:var(--muted); border-bottom:1px solid var(--line); padding:7px 12px 7px 0; font-weight:600;
+}
+table.grid td { border-bottom:1px solid var(--line); padding:10px 12px 10px 0; vertical-align:top; }
+td.saves { font-weight:700; color:var(--good); white-space:nowrap; font-variant-numeric:tabular-nums; }
+td.cost { white-space:nowrap; }
+.scroll { overflow-x:auto; }
+ul.plain { padding-left:20px; }
+ul.plain li { margin:9px 0; }
+footer {
+  margin-top:56px; padding-top:18px; border-top:1px solid var(--line);
+  color:var(--muted); font-size:.85rem;
+}
+</style>
+
+<div class="wrap">
+<header class="top">
+  <h1>The latency pass</h1>
+  <p class="sub">Forward a photo, get the parsed reply. It took 28 seconds. We want under 20.
+  Most of the gap may already be closed.</p>
+  <div class="meta">
+    <span>measured 28.4s</span>
+    <span>target ~20s</span>
+    <span>projected today ~21s</span>
+  </div>
+</header>
+
+<section>
+  <h2><span class="n">01</span> The number, and why it's stale</h2>
+  <p class="big">The 28.4 seconds was measured on 23 August. Since then we fixed two things that
+  were making the system read every VAT-inclusive and discounted invoice <em>twice</em>.</p>
+  <p>So before optimising anything, the honest first move is to measure again. We may already be
+  at the target without writing a line of code.</p>
+</section>
+
+<section>
+  <h2><span class="n">02</span> Where the time goes</h2>
+  <figure class="chart">
+    <div class="barrow">
+      <div class="barlabel"><b>Measured, 23 August</b><span class="tot">28.4s</span></div>
+      <div class="bar" role="img" aria-label="28.4 seconds: 6.7 ingest, 1.0 queue wait, 18.0 reading, 2.7 saving and replying.">
+        <div class="b1" style="flex:6.7">6.7s</div>
+        <div class="b2" style="flex:1.0"></div>
+        <div class="b3" style="flex:18.0">18.0s</div>
+        <div class="b4" style="flex:2.7">2.7s</div>
+      </div>
+    </div>
+    <div class="barrow">
+      <div class="barlabel"><b>Projected today, same invoice</b><span class="tot">~21.2s</span></div>
+      <div class="bar" role="img" aria-label="About 21.2 seconds: 6.7 ingest, 1.0 queue wait, 10.7 reading, 2.7 saving and replying.">
+        <div class="b1" style="flex:6.7">6.7s</div>
+        <div class="b2" style="flex:1.0"></div>
+        <div class="b3" style="flex:10.7">10.7s</div>
+        <div class="b4" style="flex:2.7">2.7s</div>
+        <div class="rest" style="flex:7.3"></div>
+      </div>
+    </div>
+    <div class="legend">
+      <div><i class="sw1"></i><span><b>Fetching and filing the photo</b>
+        Download from WhatsApp, hash it, store it, send "Got it"</span></div>
+      <div><i class="sw2"></i><span><b>Waiting in the queue</b>
+        Up to 2s, about 1s on average</span></div>
+      <div><i class="sw3"></i><span><b>Reading the invoice</b>
+        The model's own time. The lever.</span></div>
+      <div><i class="sw4"></i><span><b>Saving and replying</b>
+        Writing the invoice, sending the summary</span></div>
+    </div>
+  </figure>
+</section>
+
+<section>
+  <h2><span class="n">03</span> The 7 seconds we probably already got back</h2>
+  <p>On that 23 August run, reading took 18 seconds because <strong>the model was asked
+  twice</strong>. The invoice had VAT inside the prices, our arithmetic said it didn't add up, so
+  a repair round fired: a second full look at the same photo.</p>
+  <p>The invoice was fine. Our maths was wrong. We fixed it, then fixed the same shape of bug for
+  trade discounts.</p>
+  <div class="callout good">
+    <strong>Across all ten corpus invoices now, not one needs a second look.</strong>
+    Reading averages <strong>10.7 seconds</strong>, from 7.3s on a small delivery note to 22.4s on
+    a 34-line invoice. The repair round that cost 7 seconds on stage has stopped firing.
+  </div>
+  <p class="lede">That saving is real but unproven on the actual phone. It has only been measured
+  through the accuracy harness, never through WhatsApp end to end.</p>
+</section>
+
+<section>
+  <h2><span class="n">04</span> Step zero: measure, don't optimise</h2>
+  <p>One forward on the demo phone with the current build. The per-stage timing was already built
+  in back in August, so the server prints a single line with the whole breakdown:</p>
+  <p><code>latency document=... webhook_to_reply_ms=21160 stages=ingest:6700,extract:10700,repair:0,persist:900,reply:1800</code></p>
+  <p>That costs one minute and about six cents, and it settles whether there is any work to do at
+  all. Optimising before that measurement risks spending a day making the wrong part faster.</p>
+</section>
+
+<section>
+  <h2><span class="n">05</span> If we're still over, in the order I'd try them</h2>
+  <div class="scroll">
+  <table class="grid">
+    <thead><tr><th>What</th><th>Saves</th><th>Risk</th><th>Cost</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>Send a smaller photo</b><br><span class="lede">we shrink a photo only when it is
+          too big to send at all; a lower ceiling means fewer pixels to read</span></td>
+        <td class="saves">up to ~4s</td>
+        <td>Might lose faint print on thermal paper. <b>Measurable</b>: run the accuracy exam at
+          each ceiling and only keep one that doesn't move the score.</td>
+        <td class="cost">none<br><span class="lede">saves money too</span></td>
+      </tr>
+      <tr>
+        <td><b>Start reading before the photo is filed</b><br><span class="lede">today we download
+          it, upload it to storage, then download it again to read it</span></td>
+        <td class="saves">~1-2s</td>
+        <td>Rework of the ingest step, and the retry path has to stay correct.</td>
+        <td class="cost">none</td>
+      </tr>
+      <tr>
+        <td><b>Fast mode</b><br><span class="lede">same model, roughly 2.5x quicker at producing
+          its answer</span></td>
+        <td class="saves">a few seconds</td>
+        <td>Research preview, and I'd need to confirm it works with the strict output format we
+          rely on. Falls back cleanly if not.</td>
+        <td class="cost">doubles it<br><span class="lede">~$0.12 vs ~$0.06</span></td>
+      </tr>
+      <tr>
+        <td><b>Check the queue more often</b><br><span class="lede">the worker looks for new work
+          every 2 seconds</span></td>
+        <td class="saves">~1s</td>
+        <td>None worth naming.</td>
+        <td class="cost">none</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section>
+  <h2><span class="n">06</span> A correction to the plan file</h2>
+  <div class="callout">
+    <strong>The plan said about 4 seconds were lost idling in the queue. The code says otherwise.</strong>
+    The worker only pauses when there is nothing to do, so the second job starts the instant the
+    first finishes. There is one wait, at the very start, of up to 2 seconds.
+  </div>
+  <p>Worth flagging because that "4 seconds" had been quoted as an easy win several times,
+  including by me. It was never there. The plan file is corrected.</p>
+</section>
+
+<section>
+  <h2><span class="n">07</span> The part that connects to the demo</h2>
+  <p>The slowest invoice in the corpus takes <strong>22.4 seconds to read on its own</strong> - it
+  has 34 lines. The fastest takes 7.3.</p>
+  <p>So "under 20 seconds" is partly a choice about which invoices go on stage. Curating the three
+  demo invoices is already an open task, and it is the same task as this one: a ten-line invoice
+  comfortably clears the target, a thirty-four-line one cannot, no matter what we optimise.</p>
+</section>
+
+<section>
+  <h2><span class="n">08</span> What we're not going to do</h2>
+  <ul class="plain">
+    <li><b>Stream the reply.</b> The reply is deliberately one finished message. Watching words
+      appear would be worse, not better, on a phone.</li>
+    <li><b>Add a queue broker.</b> Banned until message volume proves it is needed, and it would
+      not save a single second at one invoice at a time.</li>
+    <li><b>Keep the photo in memory between steps.</b> Saves about a second and adds a way for a
+      retry to read the wrong bytes. Not worth it.</li>
+  </ul>
+</section>
+
+<section>
+  <h2><span class="n">09</span> The honest limit</h2>
+  <p>The largest block is the model reading the invoice, and that is not ours to speed up beyond
+  trimming what we send and paying for a faster mode. Somewhere around 8 to 10 seconds is
+  irreducible at the accuracy we now have.</p>
+  <p>If 20 seconds turns out to be unreachable on a real invoice, the better answer is to change
+  what we promise rather than to cut accuracy for it. The "Got it" message already lands in a few
+  seconds; having it say how long the read will take costs nothing and is honest. A number that
+  arrives in 24 seconds and is right beats one that arrives in 15 and is not.</p>
+</section>
+
+<footer>
+  Stage figures: the 23 August live forward recorded in the plan's progress log, and the reading
+  time from the current corpus run at prompt v2 (10 invoices, 10.7s average, no repair rounds).
+  The projection assumes the ingest, queue and reply stages are unchanged, which the next real
+  forward will confirm or correct.
+</footer>
+</div>
