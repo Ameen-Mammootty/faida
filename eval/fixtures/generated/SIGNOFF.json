@@ -1,0 +1,105 @@
+{
+  "task": "F8 ground-truth sign-off (plan.md §7.1, WP-15)",
+  "corpus": "eval/fixtures/generated",
+  "phase": 1,
+  "phase_note": "Generated invoices, not photographed ones. A number measured here is reported as measured on generated invoices and is never quoted as pilot accuracy (plan.md §5).",
+  "reviewed_at": "2026-08-25T17:48:29Z",
+  "reviewer": "Ameen-Mammootty",
+  "reviewer_note": "Attributed from git config: the review tool's name field was left blank. Correct this line if the review was carried out by someone else.",
+  "reviewed_with": "Docs/f8-review.html",
+  "repo_commit_at_signoff": "a2c79eb",
+  "values_marked_for_review": 134,
+  "corrections_found": 0,
+  "cases": {
+    "ALT-01": {
+      "truth_sha256": "2d20a8e7b52dd1078f0af541af5e039e414b250cedba9733865b00c55d2c5a8b",
+      "has_image": true,
+      "verdict": "ok",
+      "corrections": []
+    },
+    "AR-01": {
+      "truth_sha256": "5d7fe05d892b848a129e4720b945d1095250c03eab4d2f5a9d10f14060473024",
+      "has_image": true,
+      "verdict": "ok",
+      "corrections": []
+    },
+    "DUP-01": {
+      "truth_sha256": "cc6f95e280986a1bb11e2f79f68d9094d85ada34406f84ac56930f204ce01b01",
+      "has_image": false,
+      "verdict": "unverifiable",
+      "reason": "no image was ever generated, so there is nothing to check the key against"
+    },
+    "EDGE-01": {
+      "truth_sha256": "f4e823be779639869f61170de90e83b476643602890da598d8805b7be92e0398",
+      "has_image": true,
+      "verdict": "ok",
+      "corrections": []
+    },
+    "EDGE-02": {
+      "truth_sha256": "4d32593c27777c9c2bf31f9d0979861563d8a345d7a0c97712af4d1773322824",
+      "has_image": false,
+      "verdict": "unverifiable",
+      "reason": "no image was ever generated, so there is nothing to check the key against"
+    },
+    "EDGE-03": {
+      "truth_sha256": "cb44a5ff15325ef0f5a27052dc88de49a38a16cb0dc1554b580983a7e920ce96",
+      "has_image": false,
+      "verdict": "unverifiable",
+      "reason": "no image was ever generated, so there is nothing to check the key against"
+    },
+    "HW-01": {
+      "truth_sha256": "2f0e4110d10b59f25d61b90c3436a93c05e260a69dd8fea0dadb63f287532b79",
+      "has_image": true,
+      "verdict": "ok",
+      "corrections": []
+    },
+    "HW-02": {
+      "truth_sha256": "58c3070275e5bfc24eb0110d0c9ae711f52df732e24649e733fba141070affa4",
+      "has_image": true,
+      "verdict": "ok",
+      "corrections": []
+    },
+    "HW-03": {
+      "truth_sha256": "7058b15d8a6c44d9903541b88f0f39e4778bc80154cae5ab71be9a66828450a2",
+      "has_image": false,
+      "verdict": "unverifiable",
+      "reason": "no image was ever generated, so there is nothing to check the key against"
+    },
+    "HW-04": {
+      "truth_sha256": "b8f5df36b1df148b143b39a93728138ea8fed7353bc168d3091d4ed1b7434ad8",
+      "has_image": true,
+      "verdict": "ok",
+      "corrections": []
+    },
+    "NEG-01": {
+      "truth_sha256": "ac2bf140959827ad1207ecb28ce58adc158397cadfa76b4dc915d65a10b182f2",
+      "has_image": false,
+      "verdict": "unverifiable",
+      "reason": "no image was ever generated, so there is nothing to check the key against"
+    },
+    "PH-01": {
+      "truth_sha256": "29957a955be5f909245e5f223e15745574f4364dd73ffe33dc23969b1cd9db3a",
+      "has_image": true,
+      "verdict": "ok",
+      "corrections": []
+    },
+    "PH-02": {
+      "truth_sha256": "7ed79b31eb6f3e0f5e6f6087dc8b7949750769ea859d92f57ea799e57978be6d",
+      "has_image": true,
+      "verdict": "ok",
+      "corrections": []
+    },
+    "PR-01": {
+      "truth_sha256": "cc6f95e280986a1bb11e2f79f68d9094d85ada34406f84ac56930f204ce01b01",
+      "has_image": true,
+      "verdict": "ok",
+      "corrections": []
+    },
+    "TH-01": {
+      "truth_sha256": "7f14af6c38bb8196b4e3f93415794576bdaf0cca5cb82edbae30cf7796ac01e7",
+      "has_image": true,
+      "verdict": "ok",
+      "corrections": []
+    }
+  }
+}

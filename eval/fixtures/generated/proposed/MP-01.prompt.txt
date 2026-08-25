@@ -1,0 +1,57 @@
+Produce one photorealistic image of a single real-world paper document. The image contains nothing but that document and the surface it rests on. Do not add captions, arrows, labels, borders, mock-up frames, logos of real companies, or any text of your own invention.
+
+PHYSICAL ARTEFACT
+A crisp A4 laser-printed business document, flat, evenly lit, no shadow, no skew, pure white paper, as if produced by a flatbed scanner at 300 dpi. Whole page in frame with a thin white margin.
+This is the FIRST sheet of a two-sheet invoice. A staple through the top left corner has left a small puncture and a faint shadow of the sheet behind it, but only this sheet is readable and only this sheet is in frame. There is no totals block anywhere on this page.
+
+LANGUAGE
+All text is in English with western digits.
+
+EXACT CONTENT. Reproduce every character and every digit exactly as written below. Do not round, recalculate, reorder, translate, abbreviate, expand, add or omit anything. The arithmetic below is already correct.
+
+-- Header --
+SUPPLIER NAME (top of the document): Gulf Pantry Supply LLC
+SUPPLIER ADDRESS: Warehouse 31, Dubai Investment Park 2, Dubai, UAE
+SUPPLIER PHONE: +971 4 555 4404
+SUPPLIER TRN: 100000000000104
+DOCUMENT TITLE: TAX INVOICE
+Invoice number: GPS-INV-260707-1188
+Date: 2026-07-07
+PO reference: CS-DT-PO-20260703-006
+Bill to: Cedar & Spice Hospitality LLC
+Customer TRN: 100000000000001
+Deliver to: Downtown Branch, Unit 12, Creekside Avenue, Downtown, Dubai, UAE
+Payment terms: 30 days
+Currency: AED
+Printed in the top right corner, on its own line, in the same size as the invoice number: Page 1 of 2
+Small grey footer line at the very bottom of the page: SYNTHETIC TEST DOCUMENT - CEDAR & SPICE QA - NOT A COMMERCIAL RECORD
+
+-- Line items, all 12 of them, in this exact order --
+COLUMNS, left to right: # | Item code | Description | Qty | Unit | Pack size | Unit price AED | Amount AED
+
+1 | GPS-RIC-5KG | Basmati Rice Sella | 6 | sack | 5 kg | 34.50 | 207.00
+2 | GPS-OIL-5L | Sunflower Oil | 4 | jerry can | 5 L | 47.00 | 188.00
+3 | GPS-SUG-25KG | White Sugar | 3 | sack | 25 kg | 96.00 | 288.00
+4 | GPS-FLR-25KG | All Purpose Flour | 2 | sack | 25 kg | 62.00 | 124.00
+5 | GPS-CHK-2.5K | Chickpeas Canned | 12 | tin | 2.5 kg | 21.00 | 252.00
+6 | GPS-TOM-2.5K | Crushed Tomato | 12 | tin | 2.5 kg | 18.50 | 222.00
+7 | GPS-LEN-1KG | Red Lentils | 10 | bag | 1 kg | 7.25 | 72.50
+8 | GPS-SLT-1KG | Fine Table Salt | 12 | bag | 1 kg | 2.75 | 33.00
+9 | GPS-PAS-500 | Penne Pasta | 24 | pack | 500 g | 4.10 | 98.40
+10 | GPS-VIN-5L | White Vinegar | 2 | jerry can | 5 L | 19.00 | 38.00
+11 | GPS-TEA-800 | Black Tea Dust | 8 | pack | 800 g | 16.75 | 134.00
+12 | GPS-CRD-500 | Cardamom Powder | 4 | tin | 500 g | 63.00 | 252.00
+
+-- Foot of the page, in place of a totals block --
+There is NO subtotal, NO discount line, NO VAT line and NO total anywhere on this page. Where a totals block would normally sit, print only these two lines, right aligned, in the same weight as the table body:
+Carried forward to page 2: AED 1,908.90
+Continued on page 2 of 2
+
+RULES
+- All 12 item rows must appear on the document, in the order given, none merged, none dropped, none repeated.
+- Every figure must be readable at full resolution. Prefer a slightly tighter row height over shrinking the digits.
+- Keep the whole document inside the frame, including all four corners.
+- Do not add sample, specimen, draft, void or watermark text, and do not add any row, column, tax line or charge that is not listed above.
+- Do not add a subtotal, a VAT line, a grand total, an amount in words or a signature block. Their absence is the point of this document.
+- The second sheet is not in frame and none of its text is visible. Only the staple and a faint edge behind the top left corner hint that it exists.
+- The physical damage and lighting described above must never make any digit unreadable. Degrade the paper, not the data.

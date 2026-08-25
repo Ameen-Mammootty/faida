@@ -21,6 +21,16 @@ total, a date written 5/7 with no year, ballpoint that did not transfer through 
 Hitting the §5 accuracy targets on this set would tell you nothing about Tuesday's delivery note,
 so **F6 stays open until real photos exist**.
 
+## Ground-truth sign-off
+
+`SIGNOFF.json` records who verified this corpus, when, and against exactly which file contents.
+All ten image-backed cases were signed off on 2026-08-25 with no corrections; the five without
+images are recorded as `unverifiable`, because there is nothing to check their key against.
+
+`eval/tests/test_signoff.py` fails if a verified `truth.json` changes afterwards, if a case joins
+the corpus without a verdict, or if one of the five ever gets an image.
+Re-review in `Docs/f8-review.html` and update `SIGNOFF.json` when it does.
+
 ## What they are good for
 
 - **Edge cases the real corpus will not cover for months.** `EDGE-01` has a negative line and a

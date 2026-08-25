@@ -220,12 +220,16 @@ plan (§7).
 - [x] Arithmetic reconciliation + targeted repair pass (layers 2–3) (C4, WP-11, WP-12)
 - [x] Pipeline orchestration + persistence: `extract_document` job, status transitions, draft
       invoices + lines + checks, run metadata, failure + meme decline paths (C1, C2, WP-13)
-- [ ] Eval corpus ≥15 invoices with hand-verified ground truth (F6, F8, WP-15); runner + scores
-      (WP-14); CI smoke = 3 recorded fixtures (§5 CI policy). **The phase-1 corpus is 10, not 15**
-      (found 2026-08-24 by running it): `DUP-01`, `EDGE-02`, `EDGE-03`, `HW-03` and `NEG-01` are
-      ground truth and prompts for images that were never generated. Ground truth for the ten was
-      rebuilt from the printed page the same day (see the Decision Log) and still needs F8
-      sign-off - it is agent-written truth, which is exactly what F8 exists to check
+- [x] Ground truth hand-verified (F8, WP-15) **2026-08-25**: all ten image-backed cases signed
+      off against the photos in `Docs/f8-review.html`, **zero corrections** across the 134 values
+      that were decided rather than copied. Recorded in
+      `eval/fixtures/generated/SIGNOFF.json` with a content hash per truth file, and
+      `eval/tests/test_signoff.py` fails if a verified file changes afterwards - a sign-off that
+      cannot go stale silently. Runner + scores (WP-14) and the CI smoke (§5 policy) were already
+      done. **Still short of the ≥15 target**: the phase-1 corpus is 10, because `DUP-01`,
+      `EDGE-02`, `EDGE-03`, `HW-03` and `NEG-01` are ground truth for images nobody generated;
+      they are recorded as `unverifiable` and the test flips them back to needing review the
+      moment an image appears. F6 (real photos) still owns phase 2
 - [x] `--live` mode in `eval/run.py` (2026-08-24): the accuracy loop's missing tool. Runs the
       product's own layers 1-3 through the product's own modules, scores repair lift and cost per
       invoice, records responses so every re-score afterwards is free, and prints the mismatches
@@ -632,6 +636,14 @@ pilot volume. Meta utility template cost applies only from M9 (verify live UAE r
 
 *(newest first — one line per session: date, what shipped, what's next)*
 
+- 2026-08-25 - **F8 done: the ten image-backed cases are human-verified, zero corrections, and the sign-off is now something that can go stale loudly rather than quietly.**
+  The founder reviewed all ten invoices against their photos and confirmed every one of the 134 values that had been decided rather than copied: pack sizes under the changed rule, the bilingual names joined from two scripts, TH-01's asserted absence of a unit column, and all ten cash-or-credit calls read off printed terms.
+  That also settles the one question left deliberately open: `HW-02`'s "Eggs Free Range Large Tray 30" has **no** pack size, so the model returning "30" is a genuine miss and the 99% `pack_size` figure is real rather than an artifact of my own key.
+  `eval/fixtures/generated/SIGNOFF.json` records the verdict, the reviewer, the commit and a sha256 per truth file; `eval/tests/test_signoff.py` fails if a verified file changes afterwards, if a new case joins the corpus without a verdict, or if one of the five image-less cases ever gets an image - which turns "truth no human checked is not truth" from a slogan into something CI enforces.
+  Two honest marks against the result: the review tool's name field was left blank, so the reviewer is attributed from git config and the record says so; and zero corrections out of 134 is a strong claim resting on one pass by one person.
+  The phase-1 numbers now carry a human behind them: every extraction field 100% except `pack_size` at 99%, reconciliation 100%, ~$0.06 and ~10.7 s per invoice, **measured on generated invoices** and still not pilot accuracy.
+  59 eval tests, 264 API tests, smoke green.
+  Next: generate the five missing images (`EDGE-02` and `EDGE-03` cover reconciliation paths nothing else reaches, and the old platform's six Cedar & Spice invoices are a free extension); the latency pass; the amber question that still dead-ends; and the deferred currency guard.
 - 2026-08-25 - **F8 sign-off tooling built; the ground-truth review is now a half-hour job instead of a day.**
   `Docs/f8-review.html` shows each invoice photo beside the key we score against, one invoice per screen, and marks only the values that were *decided* rather than copied: pack sizes (the field whose meaning changed), bilingual item names joined from two scripts, the units TH-01 asserts do not exist, and each cash-or-credit call with the printed terms line quoted as its evidence.
   That is 134 of the 680 asserted values; the other 546 are either proven by arithmetic (every line multiplies out, every invoice reconciles) or copied verbatim from a printed column, so they are shown dimmed rather than queued for a decision.

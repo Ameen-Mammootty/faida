@@ -1,0 +1,54 @@
+Produce one photorealistic image of a single real-world paper document. The image contains nothing but that document and the surface it rests on. Do not add captions, arrows, labels, borders, mock-up frames, logos of real companies, or any text of your own invention.
+
+PHYSICAL ARTEFACT
+A crisp A4 laser-printed business document, flat, evenly lit, no shadow, no skew, pure white paper, as if produced by a flatbed scanner at 300 dpi. Whole page in frame with a thin white margin.
+The layout is the supplier's ordinary accounts-receivable statement: the same letterhead they use on their invoices, a running ledger table, an ageing strip and a remittance line at the foot.
+
+LANGUAGE
+All text is in English with western digits.
+
+EXACT CONTENT. Reproduce every character and every digit exactly as written below. Do not round, recalculate, reorder, translate, abbreviate, expand, add or omit anything. The arithmetic below is already correct.
+
+-- Header --
+SUPPLIER NAME (top of the document): Dairy House Foodstuff LLC
+SUPPLIER ADDRESS: Store 22, Al Quoz Industrial 3, Dubai, UAE
+SUPPLIER PHONE: +971 4 555 3303
+SUPPLIER TRN: 100000000000103
+DOCUMENT TITLE, centred, in the largest type on the page: STATEMENT OF ACCOUNT
+Statement number: DHF-STM-2026-07-0043
+Statement period: 01 July 2026 to 31 July 2026
+Statement date: 2026-07-31
+Account: Cedar & Spice Hospitality LLC
+Customer TRN: 100000000000001
+Account code: CS-DHF-0117
+Payment terms: 14 days
+Currency: AED
+Small grey footer line at the very bottom of the page: SYNTHETIC TEST DOCUMENT - CEDAR & SPICE QA - NOT A COMMERCIAL RECORD
+
+-- Ledger table, all 7 rows of it, in this exact order --
+COLUMNS, left to right: Date | Reference | Description | Debit AED | Credit AED | Balance AED
+The first row is the opening balance and has no reference. Debit and Credit cells that carry no figure are left empty, not filled with a dash or a zero.
+
+2026-07-01 | (empty) | Opening balance brought forward | (empty) | (empty) | 2,140.00
+2026-07-02 | DHF-INV-260702-0651 | Invoice | 1,184.40 | (empty) | 3,324.40
+2026-07-05 | DHF-INV-260705-0688 | Invoice | 1,184.40 | (empty) | 4,508.80
+2026-07-09 | RCPT-4471 | Payment received, thank you | (empty) | 2,140.00 | 2,368.80
+2026-07-14 | DHF-CRN-260714-0031 | Credit note, returned goods | (empty) | 216.00 | 2,152.80
+2026-07-19 | DHF-INV-260719-0742 | Invoice | 963.00 | (empty) | 3,115.80
+2026-07-26 | DHF-INV-260726-0810 | Invoice | 1,402.50 | (empty) | 4,518.30
+
+-- Ageing strip, a single row of four boxes across the width of the page under the table --
+Current: 2,365.50    31 to 60 days: 2,152.80    61 to 90 days: 0.00    Over 90 days: 0.00
+
+-- Foot of the page, lower right --
+CLOSING BALANCE DUE: AED 4,518.30
+Under it, in ordinary weight: Please remit by 14 August 2026 to Dairy House Foodstuff LLC, account 0111 2233 4455, Emirates NBD.
+
+RULES
+- All 7 ledger rows must appear on the document, in the order given, none merged, none dropped, none repeated.
+- Every figure must be readable at full resolution. Prefer a slightly tighter row height over shrinking the digits.
+- Keep the whole document inside the frame, including all four corners.
+- Do not add sample, specimen, draft, void or watermark text, and do not add any row, column, tax line or charge that is not listed above.
+- This document is a statement, not an invoice. It has no item descriptions, no quantities, no unit prices, no subtotal, no VAT line and no invoice total. Do not add any of them, and do not print the words TAX INVOICE anywhere on the page.
+- Do not add a disclaimer such as "this is not a tax invoice". Its absence is deliberate.
+- The physical damage and lighting described above must never make any digit unreadable. Degrade the paper, not the data.

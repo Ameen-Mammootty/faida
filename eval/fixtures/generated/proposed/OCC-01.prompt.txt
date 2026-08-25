@@ -1,0 +1,47 @@
+Produce one photorealistic image of a single real-world paper document. The image contains nothing but that document and the surface it rests on. Do not add captions, arrows, labels, borders, mock-up frames, logos of real companies, or any text of your own invention.
+
+PHYSICAL ARTEFACT
+A phone photograph of a printed A4 invoice lying on a stainless steel prep counter under warm indoor light, taken from slightly above and a little to the left, with the mild perspective and soft shadow of a hand-held shot. The whole sheet is in frame.
+A hand is holding the sheet flat: the thumb and the side of the index finger rest on the lower right of the page and cover the totals block completely. Nothing else on the page is obscured.
+
+LANGUAGE
+All text is in English with western digits.
+
+EXACT CONTENT. Reproduce every character and every digit exactly as written below. Do not round, recalculate, reorder, translate, abbreviate, expand, add or omit anything. The arithmetic below is already correct.
+
+-- Header --
+SUPPLIER NAME (top of the document): Artisan Bakehouse LLC
+SUPPLIER ADDRESS: Unit 4, Al Quoz Industrial 1, Dubai, UAE
+SUPPLIER PHONE: +971 4 555 6606
+SUPPLIER TRN: 100000000000106
+DOCUMENT TITLE: TAX INVOICE
+Invoice number: ABL-INV-260709-0517
+Date: 2026-07-09
+PO reference: CS-DT-PO-20260706-009
+Bill to: Cedar & Spice Hospitality LLC
+Customer TRN: 100000000000001
+Deliver to: Downtown Branch, Unit 12, Creekside Avenue, Downtown, Dubai, UAE
+Payment terms: 7 days
+Currency: AED
+Small grey footer line at the very bottom of the page: SYNTHETIC TEST DOCUMENT - CEDAR & SPICE QA - NOT A COMMERCIAL RECORD
+
+-- Line items, all 6 of them, in this exact order --
+COLUMNS, left to right: # | Item code | Description | Qty | Unit | Unit price AED | Amount AED
+
+1 | ABL-BUN-BRG | Brioche Burger Bun 4 inch | 12 | pack of 6 | 11.50 | 138.00
+2 | ABL-BAG-SES | Sesame Bagel | 6 | pack of 6 | 13.00 | 78.00
+3 | ABL-BRD-SOU | Sourdough Loaf 800 g | 10 | loaf | 14.00 | 140.00
+4 | ABL-CRO-BUT | Butter Croissant | 8 | tray of 12 | 42.00 | 336.00
+5 | ABL-PIT-WHT | Pita Bread White | 20 | pack of 10 | 6.50 | 130.00
+6 | ABL-TOR-12 | Flour Tortilla 12 inch | 6 | pack of 12 | 18.00 | 108.00
+
+-- Totals block, lower right, COVERED BY THE HAND --
+The totals block is printed on the page in the usual place at the lower right, but the thumb and the side of the index finger rest squarely on top of it, so not one character or digit of it is visible in the photograph. Do not print any part of it in the clear, do not let a figure peek out at the edge of the thumb, and do not move the block elsewhere on the page. A reader of this photograph can see that a totals block is there and cannot read a single number in it.
+
+RULES
+- All 6 item rows must appear on the document, in the order given, none merged, none dropped, none repeated.
+- Every figure in the header and in all 6 item rows must be readable at full resolution. Prefer a slightly tighter row height over shrinking the digits.
+- Keep the whole document inside the frame, including all four corners.
+- Do not add sample, specimen, draft, void or watermark text, and do not add any row, column, tax line or charge that is not listed above.
+- The hand covers the totals block and nothing else. It does not cross the item table, the header, or the grey footer line, and it does not cast a shadow over any row.
+- The occlusion is deliberate and is the only exception on this document: apart from the covered totals block, no crease, glare, shadow or blur may make any character harder to read.

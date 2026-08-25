@@ -1,0 +1,51 @@
+Produce one photorealistic image of a single real-world paper document. The image contains nothing but that document and the surface it rests on. Do not add captions, arrows, labels, borders, mock-up frames, logos of real companies, or any text of your own invention.
+
+PHYSICAL ARTEFACT
+A crisp A4 laser-printed business document, flat, evenly lit, no shadow, no skew, pure white paper, as if produced by a flatbed scanner at 300 dpi. Whole page in frame with a thin white margin.
+A Saudi tax invoice. A plain square QR code block about 25 mm across sits at the bottom left of the page, below the totals, with no caption and no readable content of its own.
+
+LANGUAGE
+Arabic-dominant bilingual layout. The document title, every column heading and every totals label appear in Arabic first with the English underneath in a smaller face. Each item row shows the Arabic name on one line and the English name directly under it, exactly as given below. Numbers are western digits and the item table reads left to right.
+
+EXACT CONTENT. Reproduce every character and every digit exactly as written below. Do not round, recalculate, reorder, translate, abbreviate, expand, add or omit anything. The arithmetic below is already correct.
+
+-- Header --
+SUPPLIER NAME (top of the document): Riyadh Provisions Company
+SUPPLIER NAME IN ARABIC (above the English, larger): شركة أرزاق الرياض للتموين
+SUPPLIER ADDRESS: Warehouse 9, Al Sulay Industrial District, Riyadh 14328, Saudi Arabia
+SUPPLIER PHONE: +966 11 555 7701
+SUPPLIER VAT NUMBER (labelled الرقم الضريبي / VAT Number): 310000000000103
+COMMERCIAL REGISTRATION (labelled السجل التجاري / CR): 1010000411
+DOCUMENT TITLE, Arabic above English: فاتورة ضريبية / TAX INVOICE
+Invoice number (labelled رقم الفاتورة): RPC-2026-07-0442
+Date (labelled التاريخ): 2026-07-08
+Bill to (labelled فاتورة إلى): Cedar & Spice Hospitality - Riyadh Branch
+Customer VAT number (labelled الرقم الضريبي للعميل): 310000000000001
+Deliver to (labelled التسليم إلى): Riyadh Branch, King Abdullah Road, Al Olaya, Riyadh, Saudi Arabia
+Payment terms (labelled شروط الدفع): 30 days
+Currency (labelled العملة): SAR
+Small grey footer line at the very bottom of the page: SYNTHETIC TEST DOCUMENT - CEDAR & SPICE QA - NOT A COMMERCIAL RECORD
+
+-- Line items, all 6 of them, in this exact order --
+COLUMNS, left to right, Arabic heading above English heading in each cell: # / م | Item code / رمز الصنف | Description / الوصف | Qty / الكمية | Unit / الوحدة | Pack size / حجم العبوة | Unit price SAR / سعر الوحدة | Amount SAR / المبلغ
+
+1 | RPC-RIC-10 | Basmati Rice  (Arabic line directly above it: أرز بسمتي) | 4 | sack | 10 kg | 62.00 | 248.00
+2 | RPC-OIL-16 | Corn Oil  (Arabic line directly above it: زيت ذرة) | 2 | tin | 16 L | 118.00 | 236.00
+3 | RPC-CHK-12 | Whole Chicken Frozen  (Arabic line directly above it: دجاج كامل مجمد) | 20 | piece | 1.2 kg | 14.50 | 290.00
+4 | RPC-DAT-5 | Sukkari Dates  (Arabic line directly above it: تمر سكري) | 3 | box | 5 kg | 78.00 | 234.00
+5 | RPC-TEA-1 | Loose Black Tea  (Arabic line directly above it: شاي أسود) | 6 | pack | 1 kg | 32.00 | 192.00
+6 | RPC-CRD-250 | Whole Cardamom  (Arabic line directly above it: هيل حب) | 4 | tin | 250 g | 45.00 | 180.00
+
+-- Totals block, lower right, Arabic label above English label on every line --
+المجموع قبل الضريبة / Subtotal excluding VAT: SAR 1,380.00
+ضريبة القيمة المضافة 15% / VAT 15%: SAR 207.00
+الإجمالي شامل الضريبة / TOTAL including VAT: SAR 1,587.00
+
+RULES
+- All 6 item rows must appear on the document, in the order given, none merged, none dropped, none repeated.
+- Every figure must be readable at full resolution. Prefer a slightly tighter row height over shrinking the digits.
+- Keep the whole document inside the frame, including all four corners.
+- Do not add sample, specimen, draft, void or watermark text, and do not add any row, column, tax line or charge that is not listed above.
+- The VAT rate on this document is 15 percent and the currency is SAR. Neither appears anywhere as 5 percent or as AED or as a dirham symbol.
+- The QR block is a plain square code with no border, no caption and no logo. Do not print any text inside or beside it.
+- The physical damage and lighting described above must never make any digit unreadable. Degrade the paper, not the data.
