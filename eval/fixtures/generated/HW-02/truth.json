@@ -5,7 +5,7 @@
     "invoice_no": "PPT/26/0913",
     "invoice_date": "2026-07-03",
     "currency": "AED",
-    "payment_kind": null,
+    "payment_kind": "credit",
     "lines": [
       {
         "raw_name": "Beef Mince Angus 80/20",

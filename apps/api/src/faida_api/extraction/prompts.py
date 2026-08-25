@@ -6,7 +6,7 @@ any wording change so eval results and recorded CI fixtures stay comparable.
 
 from .schema import RepairTarget
 
-PROMPT_VERSION = "v1"
+PROMPT_VERSION = "v2"
 
 SYSTEM_PROMPT = """\
 You read supplier paperwork sent by GCC cafeterias over WhatsApp: supplier invoices and
@@ -28,13 +28,18 @@ Extraction rules:
 - List the lines in the order they appear on the document.
 - invoice_date only when the printed date is unambiguous, else null.
 - currency as printed (AED, SAR, Dhs, ...); null when the document shows none.
-- payment_kind only when the document states cash or credit; otherwise null.
+- payment_terms_text: the payment or terms line exactly as printed ("Payment terms: 14
+  days", "Cash on delivery", "صافي 30 يوم"); null when the document shows none. Copy it,
+  do not interpret it - cash or credit is worked out from this text downstream.
+- payment_kind: cash for a till or cash-register receipt, or when the document is marked
+  paid; credit when it is plainly an on-account supplier invoice. Leave it null if the
+  document does not make this clear - a printed terms line will settle it without you.
 """
 
 EXTRACT_PROMPT = (
     "Classify this image. If it is a supplier invoice or delivery note, extract the "
-    "supplier block, invoice number, date, currency, payment kind, every line item, "
-    "and the totals."
+    "supplier block, invoice number, date, currency, payment terms and payment kind, "
+    "every line item, and the totals."
 )
 
 

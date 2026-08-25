@@ -5,14 +5,14 @@
     "invoice_no": "CBS-INV-260702-1188",
     "invoice_date": "2026-07-02",
     "currency": "AED",
-    "payment_kind": null,
+    "payment_kind": "credit",
     "lines": [
       {
         "raw_name": "Food-Grade Ice",
         "line_kind": "stock_item",
         "qty": "4",
         "unit": "bag",
-        "pack_size": "10000",
+        "pack_size": "10 kg",
         "unit_price": "8.00",
         "line_total": "32.00"
       },
@@ -21,7 +21,7 @@
         "line_kind": "stock_item",
         "qty": "10",
         "unit": "bottle",
-        "pack_size": "1000",
+        "pack_size": "1 L",
         "unit_price": "12.00",
         "line_total": "120.00"
       },
@@ -30,7 +30,7 @@
         "line_kind": "stock_item",
         "qty": "24",
         "unit": "bottle",
-        "pack_size": "1000",
+        "pack_size": "1 L",
         "unit_price": "4.00",
         "line_total": "96.00"
       },
@@ -39,7 +39,7 @@
         "line_kind": "stock_item",
         "qty": "6",
         "unit": "bottle",
-        "pack_size": "1000",
+        "pack_size": "1 L",
         "unit_price": "8.00",
         "line_total": "48.00"
       }

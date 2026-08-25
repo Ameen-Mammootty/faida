@@ -20,6 +20,11 @@ token-sorted ratios):
   sizes - carries the trap cases the ratio alone would miss ("Chicken 10kg"
   vs "Chickpeas 1kg" scores exactly 0.80; "BASMATI RICE 5KG" vs "Basmati
   Rice 20kg" scores 0.91).
+
+The veto compares harmonized pack sizes from `extraction.units`, so "2kg" and
+"2000g" are one pack and one catalog item. Splitting them would split the
+price history too, and a supplier who only changed their printing would fire
+the price alert.
 """
 
 import re
@@ -27,6 +32,8 @@ from collections.abc import Mapping, Sequence
 from decimal import Decimal
 from difflib import SequenceMatcher
 from typing import Any
+
+from .extraction import units
 
 # A row from suppliers / supplier_items: an asyncpg.Record or a plain dict.
 Row = Mapping[str, Any]
@@ -40,32 +47,6 @@ _DOT_RE = re.compile(r"(?<!\d)\.|\.(?!\d)")
 # Everything that is not a word character, whitespace, or a (kept) dot.
 # \w keeps Arabic script - invoices are mixed Arabic/English (plan.md §3).
 _PUNCT_RE = re.compile(r"[^\w\s.]|_")
-
-# Pack-size tokens: a number glued to a unit ("2.5kg", "50 KG", "30PCS").
-# Digits and units discriminate pack sizes, so normalize() keeps them.
-_PACK_RE = re.compile(
-    r"(\d+(?:\.\d+)?)\s*(kgs?|gm?s?|gr|ltr|litres?|liters?|lt|l|ml|pcs?|pkts?|dzn?|ctn)\b"
-)
-# Spelling variants to one canonical unit; g/ml then convert into kg/l so
-# "500g" and "0.5kg" collide instead of falsely vetoing each other.
-_UNIT_ALIASES = {
-    "kgs": "kg",
-    "gm": "g",
-    "gms": "g",
-    "gs": "g",
-    "gr": "g",
-    "ltr": "l",
-    "litre": "l",
-    "litres": "l",
-    "liter": "l",
-    "liters": "l",
-    "lt": "l",
-    "pcs": "pc",
-    "pkts": "pkt",
-    "dzn": "dz",
-    "ctn": "ctn",
-}
-_UNIT_CONVERSIONS = {"g": (Decimal(1000), "kg"), "ml": (Decimal(1000), "l")}
 
 
 def normalize(name: str) -> str:
@@ -98,18 +79,12 @@ def _similarity(a: str, b: str) -> float:
     return max(whole, token_sorted)
 
 
-def _pack_tokens(text: str) -> set[tuple[Decimal, str]]:
-    """The (value, canonical unit) pack sizes named in a string: "MILK PWDR
-    2.5KG" -> {(2.5, kg)}, "500g" -> {(0.5, kg)}. Empty when none are named."""
-    tokens: set[tuple[Decimal, str]] = set()
-    for value, unit in _PACK_RE.findall(normalize(text)):
-        unit = _UNIT_ALIASES.get(unit, unit)
-        quantity = Decimal(value)
-        if unit in _UNIT_CONVERSIONS:
-            divisor, unit = _UNIT_CONVERSIONS[unit]
-            quantity /= divisor
-        tokens.add((quantity, unit))
-    return tokens
+def _pack_tokens(text: str) -> set[tuple[str, str, Decimal]]:
+    """The harmonized pack sizes named in a string: "MILK PWDR 2.5KG" and
+    "Milk Powder 2500 g" produce the same token, so they never veto each
+    other. The dictionary lives in extraction.units - one implementation, so
+    the eval and the catalog agree on what a pack is."""
+    return {pack.key for pack in units.find_all(normalize(text))}
 
 
 def match_supplier(suppliers: Sequence[Row], extracted_name: str | None) -> Row | None:

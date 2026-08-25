@@ -5,14 +5,14 @@
     "invoice_no": "GPS-INV-260707-2266",
     "invoice_date": "2026-07-07",
     "currency": "AED",
-    "payment_kind": null,
+    "payment_kind": "credit",
     "lines": [
       {
         "raw_name": "Tahina Sesame Paste",
         "line_kind": "stock_item",
         "qty": "4",
         "unit": "tub",
-        "pack_size": "2000",
+        "pack_size": "2 kg",
         "unit_price": "46.00",
         "line_total": "184.00"
       },
@@ -21,7 +21,7 @@
         "line_kind": "stock_item",
         "qty": "2",
         "unit": "bag",
-        "pack_size": "5000",
+        "pack_size": "5 kg",
         "unit_price": "38.00",
         "line_total": "76.00"
       },
@@ -30,7 +30,7 @@
         "line_kind": "stock_item",
         "qty": "3",
         "unit": "bottle",
-        "pack_size": "1000",
+        "pack_size": "1 L",
         "unit_price": "22.00",
         "line_total": "66.00"
       },
@@ -39,7 +39,7 @@
         "line_kind": "stock_item",
         "qty": "4",
         "unit": "pack",
-        "pack_size": "500",
+        "pack_size": "500 g",
         "unit_price": "18.00",
         "line_total": "72.00"
       },
@@ -48,7 +48,7 @@
         "line_kind": "stock_item",
         "qty": "3",
         "unit": "pack",
-        "pack_size": "500",
+        "pack_size": "500 g",
         "unit_price": "16.00",
         "line_total": "48.00"
       },
@@ -57,7 +57,7 @@
         "line_kind": "stock_item",
         "qty": "6",
         "unit": "can",
-        "pack_size": "2500",
+        "pack_size": "2.5 kg",
         "unit_price": "20.00",
         "line_total": "120.00"
       },
@@ -66,7 +66,7 @@
         "line_kind": "stock_item",
         "qty": "2",
         "unit": "tin",
-        "pack_size": "5000",
+        "pack_size": "5 L",
         "unit_price": "78.00",
         "line_total": "156.00"
       },
@@ -75,7 +75,7 @@
         "line_kind": "stock_item",
         "qty": "2",
         "unit": "bag",
-        "pack_size": "1000",
+        "pack_size": "1 kg",
         "unit_price": "72.00",
         "line_total": "144.00"
       },
@@ -84,7 +84,7 @@
         "line_kind": "stock_item",
         "qty": "2",
         "unit": "tub",
-        "pack_size": "1000",
+        "pack_size": "1 kg",
         "unit_price": "95.00",
         "line_total": "190.00"
       },
@@ -93,7 +93,7 @@
         "line_kind": "stock_item",
         "qty": "2",
         "unit": "jar",
-        "pack_size": "50",
+        "pack_size": "50 g",
         "unit_price": "20.00",
         "line_total": "40.00"
       },
@@ -102,7 +102,7 @@
         "line_kind": "stock_item",
         "qty": "1",
         "unit": "jar",
-        "pack_size": "10",
+        "pack_size": "10 g",
         "unit_price": "30.00",
         "line_total": "30.00"
       },
@@ -111,7 +111,7 @@
         "line_kind": "stock_item",
         "qty": "3",
         "unit": "carton",
-        "pack_size": "10000",
+        "pack_size": "10 kg",
         "unit_price": "90.00",
         "line_total": "270.00"
       }

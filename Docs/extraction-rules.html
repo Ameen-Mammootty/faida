@@ -1,0 +1,696 @@
+<title>Faida Extraction Rules</title>
+<style>
+:root {
+  --bg:#fbf8f3; --panel:#fff; --ink:#1c1a17; --muted:#6b6459; --line:#e5ddd0;
+  --accent:#8a6a2f; --accent-soft:#f5edda; --green:#2e6b45; --code:#f7f3ec;
+  --green:#2e6b45; --amber:#9a6a12; --red:#a33a2a;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:#16150f; --panel:#1e1c16; --ink:#efe9dd; --muted:#a49b8a; --line:#332f25;
+    --accent:#d9b264; --accent-soft:#2a2418; --code:#141210;
+    --green:#7fc79a; --amber:#e0b45e; --red:#e08a78;
+  }
+}
+:root[data-theme="dark"] {
+  --bg:#16150f; --panel:#1e1c16; --ink:#efe9dd; --muted:#a49b8a; --line:#332f25;
+  --accent:#d9b264; --accent-soft:#2a2418; --code:#141210;
+  --green:#7fc79a; --amber:#e0b45e; --red:#e08a78;
+}
+* { box-sizing:border-box; }
+body {
+  background:var(--bg); color:var(--ink); margin:0;
+  font:16px/1.6 ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+.wrap { max-width:1000px; margin:0 auto; padding:40px 22px 96px; }
+header.top { border-bottom:2px solid var(--accent); padding-bottom:22px; margin-bottom:8px; }
+h1 { font-size:1.85rem; margin:0 0 6px; letter-spacing:-.02em; }
+.sub { color:var(--muted); margin:0; }
+.meta { display:flex; flex-wrap:wrap; gap:8px; margin-top:16px; }
+.meta span {
+  background:var(--accent-soft); color:var(--accent); border:1px solid var(--line);
+  padding:3px 10px; border-radius:999px; font-size:.78rem; font-weight:600;
+}
+section { margin-top:44px; }
+h2 {
+  font-size:1.18rem; margin:0 0 4px; padding-bottom:8px; border-bottom:1px solid var(--line);
+  display:flex; align-items:baseline; gap:10px;
+}
+h2 .n { color:var(--accent); font-variant-numeric:tabular-nums; font-size:.9rem; }
+h3 { font-size:1rem; margin:26px 0 8px; }
+h4 { font-size:.9rem; margin:20px 0 8px; text-transform:uppercase; letter-spacing:.05em;
+     color:var(--muted); }
+h4 .note { text-transform:none; letter-spacing:0; font-weight:400; }
+p { margin:10px 0; }
+.lede { color:var(--muted); margin:10px 0 0; }
+.card {
+  background:var(--panel); border:1px solid var(--line); border-radius:10px;
+  padding:18px 20px; margin:16px 0;
+}
+.src {
+  background:var(--code); border:1px solid var(--line); border-radius:8px;
+  padding:14px 16px; overflow-x:auto; white-space:pre-wrap; word-break:break-word;
+  font:13px/1.65 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; margin:0;
+}
+.scroll { overflow-x:auto; }
+.scroll .src { white-space:pre; word-break:normal; max-height:460px; overflow:auto; }
+code {
+  background:var(--code); border:1px solid var(--line); border-radius:4px;
+  padding:1px 5px; font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+table.grid { width:100%; border-collapse:collapse; font-size:.9rem; }
+table.grid th {
+  text-align:left; font-size:.75rem; text-transform:uppercase; letter-spacing:.05em;
+  color:var(--muted); border-bottom:1px solid var(--line); padding:6px 10px 6px 0; font-weight:600;
+}
+table.grid td { border-bottom:1px solid var(--line); padding:8px 10px 8px 0; vertical-align:top; }
+table.grid td.num { font-variant-numeric:tabular-nums; color:var(--muted); white-space:nowrap; }
+.chips { display:flex; flex-wrap:wrap; gap:5px; }
+.chips span {
+  background:var(--code); border:1px solid var(--line); border-radius:5px;
+  padding:1px 7px; font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+.none { color:var(--muted); font-size:.85rem; }
+table.tight { margin:14px 0 4px; }
+table.tight td { font-size:.87rem; }
+.sub2 { color:var(--muted); font-size:.8rem; margin-top:3px; }
+td.quote { font-style:italic; }
+.rule { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:0;
+         border:1px solid var(--line); border-radius:10px; overflow:hidden; margin:14px 0; }
+.rule > div { padding:16px 18px; }
+.rule .what { background:var(--panel); border-right:1px solid var(--line); }
+.rule .why { background:transparent; color:var(--muted); font-size:.92rem; }
+.rule h5 { margin:0 0 8px; font-size:.95rem; color:var(--ink); }
+@media (max-width:720px) {
+  .rule { grid-template-columns:1fr; }
+  .rule .what { border-right:0; border-bottom:1px solid var(--line); }
+}
+.formula {
+  font:14px/1.9 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  background:var(--code); border:1px solid var(--line); border-left:3px solid var(--accent);
+  border-radius:6px; padding:12px 16px; margin:10px 0; overflow-x:auto;
+}
+.flag { font-weight:600; }
+.flag.g { color:var(--green); } .flag.a { color:var(--amber); }
+.callout {
+  border-left:3px solid var(--accent); background:var(--accent-soft);
+  padding:14px 18px; border-radius:0 8px 8px 0; margin:16px 0;
+}
+.callout strong { color:var(--accent); }
+ol.steps { counter-reset:s; list-style:none; padding:0; margin:18px 0; }
+ol.steps li { counter-increment:s; position:relative; padding:0 0 0 44px; margin:0 0 18px; }
+ol.steps li::before {
+  content:counter(s); position:absolute; left:0; top:0; width:28px; height:28px;
+  border-radius:50%; background:var(--accent-soft); color:var(--accent);
+  border:1px solid var(--line); display:grid; place-items:center;
+  font-size:.82rem; font-weight:700;
+}
+ol.steps b { display:block; }
+ol.steps .ai { color:var(--amber); } ol.steps .det { color:var(--green); }
+footer { margin-top:56px; padding-top:18px; border-top:1px solid var(--line);
+          color:var(--muted); font-size:.85rem; }
+</style>
+
+<div class="wrap">
+<header class="top">
+  <h1>What we ask the model, and what we check ourselves</h1>
+  <p class="sub">Every prompt and every deterministic rule in the extraction pipeline, generated
+  from the source so this page cannot disagree with the code.</p>
+  <div class="meta">
+    <span>claude-opus-5</span>
+    <span>prompt v2</span>
+    <span>max 16,000 tokens</span>
+    <span>pre-commit review</span>
+  </div>
+</header>
+
+<section>
+  <h2><span class="n">00</span> The division of labour</h2>
+  <p class="lede">The model reads. It never decides. Everything that turns a reading into a
+  number we act on is deterministic code you can read below.</p>
+  <ol class="steps">
+    <li><b class="ai">The model reads the photo</b> One call decides what the photo is and, only
+      if it is an invoice, copies out every printed value. It is told to copy exactly and never
+      to compute.
+      <table class="grid tight"><thead><tr><th>it decides</th><th>what happens</th>
+      <th>what the sender gets back</th></tr></thead><tbody>
+        <tr><td><code>invoice</code><div class="sub2">a supplier invoice or delivery note
+          charging you for goods</div></td>
+          <td>read in full, checked, saved as a draft</td>
+          <td>the parsed summary, any price alert, and "Reply OK to confirm"</td></tr>
+        <tr><td><code>z_report</code><div class="sub2">a till or POS end-of-day sales
+          summary</div></td>
+          <td>nothing extracted, photo still stored</td>
+          <td class="quote">I read supplier invoices for now - sales reports are coming soon.</td></tr>
+        <tr><td><code>other</code><div class="sub2">memes, chat screenshots, anything
+          else</div></td>
+          <td>nothing extracted, photo stored and marked failed</td>
+          <td class="quote">That doesn&#x27;t look like a supplier invoice, so I&#x27;ll leave it - forward an invoice photo and I&#x27;ll read it.</td></tr>
+      </tbody></table>
+      <p class="lede">Only an invoice is read. For the other two the model returns the verdict
+      alone, so we never pay to extract line items off a meme. It is deliberately one call and
+      not a cheap classifier followed by an extraction: a separate first call would add a round
+      trip of cost and latency to every genuine invoice in order to catch the occasional one that
+      is not.</p></li>
+    <li><b class="det">We derive the printed facts</b> The currency word becomes an ISO code,
+      the payment terms become cash or credit, a printed dash becomes an absence.</li>
+    <li><b class="det">We check the arithmetic</b> Every line, then the invoice, against fixed
+      tolerances. Nothing is trusted because the model sounded confident.</li>
+    <li><b class="ai">One scoped re-read, at most</b> Only the exact cells that failed, once.
+      Never a re-extraction of the whole document.</li>
+    <li><b class="det">We match the supplier and snap the items</b> Fuzzy name match with a hard
+      pack-size veto, then the price comparison that produces an alert.</li>
+    <li><b class="det">We colour the fields</b> Green only when the arithmetic passed. Anything
+      else is amber and asks a question.</li>
+  </ol>
+  <div class="callout">
+    <strong>The one invariant:</strong> a wrong value can never come out green. When a check
+    cannot be completed, the field goes amber and asks. Silence is not an option and neither is
+    a confident guess.
+  </div>
+</section>
+
+<section>
+  <h2><span class="n">01</span> The system prompt</h2>
+  <p class="lede">Sent with every extraction call, verbatim below.</p>
+  <pre class="src">You read supplier paperwork sent by GCC cafeterias over WhatsApp: supplier invoices and
+delivery notes, often crumpled thermal paper photographed at an angle, mixed Arabic and
+English, with handwritten quantities, prices, or corrections.
+
+Classify the image first:
+- invoice: a supplier invoice or delivery note charging the cafeteria for goods.
+- z_report: a POS end-of-day sales summary.
+- other: anything else - memes, chat screenshots, selfies, unrelated documents.
+Only an invoice gets extracted; for z_report and other, return the classification alone.
+
+Extraction rules:
+- Copy every value exactly as printed. Keep amounts in the document&#x27;s own currency and
+  format; never convert currencies or units.
+- Never invent or compute a value. A cell that is unreadable, ambiguous, or absent is
+  null - do not derive a missing line_total from qty and unit_price.
+- raw_name is the item name exactly as written, original language and spelling kept.
+- List the lines in the order they appear on the document.
+- invoice_date only when the printed date is unambiguous, else null.
+- currency as printed (AED, SAR, Dhs, ...); null when the document shows none.
+- payment_terms_text: the payment or terms line exactly as printed (&quot;Payment terms: 14
+  days&quot;, &quot;Cash on delivery&quot;, &quot;صافي 30 يوم&quot;); null when the document shows none. Copy it,
+  do not interpret it - cash or credit is worked out from this text downstream.
+- payment_kind: cash for a till or cash-register receipt, or when the document is marked
+  paid; credit when it is plainly an on-account supplier invoice. Leave it null if the
+  document does not make this clear - a printed terms line will settle it without you.
+</pre>
+  <h3>The instruction that accompanies the image</h3>
+  <pre class="src">Classify this image. If it is a supplier invoice or delivery note, extract the supplier block, invoice number, date, currency, payment terms and payment kind, every line item, and the totals.</pre>
+</section>
+
+<section>
+  <h2><span class="n">02</span> The repair prompt</h2>
+  <p class="lede">Built only when a check fails, and only for the cells that failed. This is a
+  real example with one bad line and a totals block that matched neither identity.</p>
+  <pre class="src">This document was already extracted; arithmetic checks failed on the cells listed
+below. Re-read ONLY those cells from the image - do not re-extract anything else.
+
+- Line 2 (0-based in the extracted line list), cells: qty, unit_price, line_total. Reason: 12 x 4.50 = 54.00, extracted line_total 58.00
+- Totals block, cells: subtotal, tax, total. Reason: lines sum to 834.00; extracted total 858.17 matches neither identity
+
+Return one lines entry per targeted line: its line_index, raw_name exactly as
+printed (to confirm the row), fresh readings for the targeted cells, and null for
+every other field. Fill subtotal/tax/total only when the totals block is targeted
+above, else null. A cell you still cannot read stays null; never guess.</pre>
+  <div class="callout">
+    <strong>Capped at 1 round.</strong> Whatever still fails after it
+    stays amber and becomes a question in chat. We never loop the model until it agrees with us.
+  </div>
+</section>
+
+<section>
+  <h2><span class="n">03</span> The arithmetic checks</h2>
+  <p class="lede">Deterministic, in exact decimals, never floating point.</p>
+
+  <div class="rule">
+    <div class="what">
+      <h5>Every line</h5>
+      <div class="formula">| qty × unit_price − line_total |<br>&nbsp;&nbsp;≤ max(0.05, 0.005 × line_total)</div>
+    </div>
+    <div class="why">Quantity times price has to equal the line amount, allowing
+      0.05 fils or 0.5% for the
+      supplier's own rounding, whichever is larger. A line missing any of the three values cannot
+      pass: it goes <span class="flag a">amber</span> rather than being assumed.</div>
+  </div>
+
+  <div class="rule">
+    <div class="what">
+      <h5>The invoice, two ways</h5>
+      <div class="formula">A = line sum − discount + rounding<br><br>
+      exclusive: | A + tax − total | ≤ 0.10<br>
+      inclusive: | A − total | ≤ 0.10 and tax &gt; 0</div>
+    </div>
+    <div class="why">GCC invoices come both ways: prices with VAT already inside, or added on
+      top. Exactly one identity holds, and that tells us which kind it is. We never take the
+      document's word for it, even when it prints one.
+      <p><strong>Anchored on the line sum, never the printed subtotal.</strong> An inclusive
+      invoice that prints its subtotal as the net figure would otherwise masquerade as exclusive.
+      The line sum is the only total we verify independently.</p></div>
+  </div>
+
+  <div class="rule">
+    <div class="what">
+      <h5>Naming the VAT rate</h5>
+      <div class="chips"><span>5%</span><span>10%</span><span>15%</span></div>
+    </div>
+    <div class="why">Used to name the rate on an invoice whose arithmetic already worked, as
+      confirmation. Never a gate: an invoice at an unlisted rate that still adds up passes, with
+      the effective rate derived from its own totals.</div>
+  </div>
+
+  <div class="rule">
+    <div class="what">
+      <h5>Green or amber</h5>
+      <p><span class="flag g">Green</span> the arithmetic passed and, where we know the item, the
+      price is plausible.</p>
+      <p><span class="flag a">Amber</span> everything else, including anything we could not
+      check.</p>
+    </div>
+    <div class="why">Colour never carries the meaning alone: every field also carries an icon or
+      a label on the review screen. Amber fields drive one specific question in chat rather than
+      a dead end.</div>
+  </div>
+</section>
+
+<section>
+  <h2><span class="n">04</span> Reading the printed form</h2>
+  <p class="lede">The model is told to copy exactly as printed, so it does. These rules turn a
+  printed value into one we can compute with, without ever changing what it means.</p>
+
+  <h3>Money</h3>
+  <div class="rule">
+    <div class="what">
+      <h5>Accepted and parsed</h5>
+      <div class="chips"><span>AED 332.00</span><span>332.00 AED</span><span>د.إ 45.00</span><span>1,240.50</span><span>(41.70)</span><span>-92.00</span><span>٤٥.٥٠</span></div>
+    </div>
+    <div class="why">Currency prefixes, thousands separators, accounting negatives in brackets,
+      and Arabic-Indic numerals. A value with no number in it at all is
+      <strong>rejected loudly</strong> rather than read as zero, because a silent wrong number is
+      the one failure we will not accept.</div>
+  </div>
+
+  <h3>A discount is always a magnitude</h3>
+  <div class="rule">
+    <div class="what">
+      <h5>−41.70 is stored as 41.70</h5>
+      <div class="formula">A = line sum − discount + rounding</div>
+    </div>
+    <div class="why">Invoices print a discount as a negative. The identity already subtracts it,
+      so a negative would add it back and miss by double, failing a perfectly read invoice into
+      amber. Fixed in the schema itself, so no rewording of the prompt can undo it.</div>
+  </div>
+
+  <h3>"Nothing here" is an absence</h3>
+  <div class="card"><div class="chips"><span>-</span><span>--</span><span>---</span><span>n/a</span><span>na</span><span>nil</span><span>none</span><span>–</span><span>—</span></div>
+  <p class="lede">A printed dash in a pack-size column means the row has none. Recorded
+  literally, it becomes a pack size of "-" that the catalogue then has to compare against.</p></div>
+
+  <h3>Currency words and signs become ISO codes</h3>
+  <table class="grid"><thead><tr><th>stored as</th><th>printed on the invoice as any of</th></tr></thead>
+  <tbody><tr><td><code>AED</code></td><td><div class="chips"><span>aed</span><span>dh</span><span>dhs</span><span>dirham</span><span>dirhams</span><span>uae dirham</span><span>uae dirhams</span><span>دإ</span><span>دراهم</span><span>درهم</span><span>درهم إماراتي</span><span>⃃</span></div></td></tr><tr><td><code>BHD</code></td><td><div class="chips"><span>bahraini dinar</span><span>bd</span><span>bhd</span><span>دب</span><span>دينار بحريني</span></div></td></tr><tr><td><code>KWD</code></td><td><div class="chips"><span>kd</span><span>kuwaiti dinar</span><span>kwd</span><span>دك</span><span>دينار كويتي</span></div></td></tr><tr><td><code>OMR</code></td><td><div class="chips"><span>omani rial</span><span>omr</span><span>rial</span><span>rials</span><span>ro</span><span>رع</span><span>ريال عماني</span></div></td></tr><tr><td><code>QAR</code></td><td><div class="chips"><span>qar</span><span>qatari riyal</span><span>qr</span><span>رق</span><span>ريال قطري</span></div></td></tr><tr><td><code>SAR</code></td><td><div class="chips"><span>riyal</span><span>riyals</span><span>sar</span><span>saudi riyal</span><span>saudi riyals</span><span>sr</span><span>رس</span><span>ريال</span><span>ريال سعودي</span><span>⃁</span></div></td></tr></tbody></table>
+</section>
+
+<section>
+  <h2><span class="n">05</span> Cash or credit</h2>
+  <p class="lede">This decides which purchases need owner approval, so it is decided by rule.
+  The model copies the terms line as printed; the rules below read it.</p>
+  <div class="rule">
+    <div class="what">
+      <h5>Cash, checked first</h5>
+      <div class="chips"><span>cash on delivery</span><span>cash and carry</span><span>cash</span><span>cod</span><span>c.o.d</span><span>paid in full</span><span>paid</span><span>settled</span><span>نقدا</span><span>نقداً</span><span>نقدي</span><span>كاش</span><span>مدفوع</span></div>
+    </div>
+    <div class="why">Checked before the credit markers on purpose: "cash on delivery" contains a
+      word the credit rules also look for, and reading it as a due period would send every COD
+      purchase straight past the approval gate.</div>
+  </div>
+  <div class="rule">
+    <div class="what">
+      <h5>Credit, a due period in any wording</h5>
+      <div class="chips"><span>credit</span><span>days</span><span>day</span><span>net</span><span>end of month</span><span>eom</span><span>due on</span><span>due by</span><span>payable by</span><span>on account</span><span>آجل</span><span>أجل</span><span>بالأجل</span><span>شهر</span><span>يوم</span></div>
+    </div>
+    <div class="why">"Payment terms: 14 days" is credit even though the page never prints the
+      word. That inference used to be forbidden, which is why this field read blank on invoices a
+      person reads at a glance.</div>
+  </div>
+  <div class="callout">
+    <strong>Unrecognised stays blank.</strong> Printed terms outrank the model's own reading when
+    they disagree. If neither settles it the field stays empty, because guessing "credit" would
+    quietly route a cash purchase around the approval gate.
+  </div>
+</section>
+
+<section>
+  <h2><span class="n">06</span> The units dictionary</h2>
+  <p class="lede">One dictionary decides what a pack is, for the catalogue and for the accuracy
+  exam alike. Read as different packs, the catalogue doubles and a supplier who changed only
+  their printing sets off a price alert.</p>
+  <h4>Weight <span class='note'>base unit: gram</span></h4><table class=grid><thead><tr><th>canonical</th><th>= base</th><th>also accepted as</th></tr></thead><tbody><tr><td><code>g</code></td><td class="num">1</td><td><div class="chips"><span>gm</span><span>gms</span><span>gr</span><span>gram</span><span>gramme</span><span>grams</span><span>grms</span><span>gs</span><span>جرام</span><span>جم</span><span>غرام</span></div></td></tr><tr><td><code>kg</code></td><td class="num">1000</td><td><div class="chips"><span>k</span><span>kgm</span><span>kgs</span><span>kilo</span><span>kilogram</span><span>kilogramme</span><span>kilograms</span><span>kilos</span><span>كجم</span><span>كغم</span><span>كيلو</span><span>كيلوجرام</span></div></td></tr><tr><td><code>lb</code></td><td class="num">453.59237</td><td><div class="chips"><span>lbs</span><span>pound</span><span>pounds</span></div></td></tr><tr><td><code>mg</code></td><td class="num">0.001</td><td><span class=none>none</span></td></tr><tr><td><code>oz</code></td><td class="num">28.349523125</td><td><div class="chips"><span>ounce</span><span>ounces</span><span>ozs</span></div></td></tr></tbody></table><h4>Volume <span class='note'>base unit: millilitre</span></h4><table class=grid><thead><tr><th>canonical</th><th>= base</th><th>also accepted as</th></tr></thead><tbody><tr><td><code>cl</code></td><td class="num">10</td><td><span class=none>none</span></td></tr><tr><td><code>gal</code></td><td class="num">3785.411784</td><td><div class="chips"><span>gallon</span><span>gallons</span><span>gals</span></div></td></tr><tr><td><code>l</code></td><td class="num">1000</td><td><div class="chips"><span>liter</span><span>liters</span><span>litre</span><span>litres</span><span>lt</span><span>ltr</span><span>ltrs</span><span>lts</span><span>لتر</span><span>لترات</span></div></td></tr><tr><td><code>ml</code></td><td class="num">1</td><td><div class="chips"><span>cc</span><span>millilitre</span><span>millilitres</span><span>mls</span><span>مل</span></div></td></tr></tbody></table><h4>Count <span class='note'>base unit: piece</span></h4><table class=grid><thead><tr><th>canonical</th><th>= base</th><th>also accepted as</th></tr></thead><tbody><tr><td><code>dz</code></td><td class="num">12</td><td><div class="chips"><span>doz</span><span>dozen</span><span>dozens</span><span>dzn</span><span>درزن</span></div></td></tr><tr><td><code>pc</code></td><td class="num">1</td><td><div class="chips"><span>ea</span><span>each</span><span>no</span><span>nos</span><span>pce</span><span>pces</span><span>pcs</span><span>piece</span><span>pieces</span><span>unit</span><span>units</span><span>حبات</span><span>حبة</span><span>قطعة</span></div></td></tr></tbody></table><h4>Containers <span class='note'>compared only with their own kind</span></h4><table class=grid><thead><tr><th>canonical</th><th>= base</th><th>also accepted as</th></tr></thead><tbody><tr><td><code>bag</code></td><td class="num">1</td><td><div class="chips"><span>bags</span><span>أكياس</span><span>كيس</span></div></td></tr><tr><td><code>block</code></td><td class="num">1</td><td><div class="chips"><span>blocks</span></div></td></tr><tr><td><code>box</code></td><td class="num">1</td><td><div class="chips"><span>boxes</span><span>علب</span><span>علبة</span></div></td></tr><tr><td><code>btl</code></td><td class="num">1</td><td><div class="chips"><span>bottle</span><span>bottles</span><span>btls</span><span>زجاجة</span></div></td></tr><tr><td><code>bunch</code></td><td class="num">1</td><td><div class="chips"><span>bunches</span></div></td></tr><tr><td><code>bundle</code></td><td class="num">1</td><td><div class="chips"><span>bundles</span></div></td></tr><tr><td><code>can</code></td><td class="num">1</td><td><div class="chips"><span>cans</span></div></td></tr><tr><td><code>case</code></td><td class="num">1</td><td><div class="chips"><span>cases</span></div></td></tr><tr><td><code>ctn</code></td><td class="num">1</td><td><div class="chips"><span>carton</span><span>cartons</span><span>ctns</span><span>صندوق</span><span>كرتون</span></div></td></tr><tr><td><code>jar</code></td><td class="num">1</td><td><div class="chips"><span>jars</span></div></td></tr><tr><td><code>loaf</code></td><td class="num">1</td><td><div class="chips"><span>loafs</span><span>loaves</span></div></td></tr><tr><td><code>pack</code></td><td class="num">1</td><td><div class="chips"><span>packs</span></div></td></tr><tr><td><code>pkt</code></td><td class="num">1</td><td><div class="chips"><span>packet</span><span>packets</span><span>pkts</span></div></td></tr><tr><td><code>roll</code></td><td class="num">1</td><td><div class="chips"><span>rolls</span></div></td></tr><tr><td><code>sachet</code></td><td class="num">1</td><td><div class="chips"><span>sachets</span></div></td></tr><tr><td><code>service</code></td><td class="num">1</td><td><span class=none>none</span></td></tr><tr><td><code>tin</code></td><td class="num">1</td><td><div class="chips"><span>tins</span></div></td></tr><tr><td><code>tray</code></td><td class="num">1</td><td><div class="chips"><span>trays</span></div></td></tr><tr><td><code>tub</code></td><td class="num">1</td><td><div class="chips"><span>tubs</span></div></td></tr></tbody></table>
+  <div class="callout">
+    <strong>Containers are deliberately not counts.</strong> A carton is not twelve of anything
+    until someone says what is in it, so "6 ctn" and "6 pc" never compare equal. Merging them
+    would silently combine two real items. A unit we do not recognise is left alone, not guessed.
+  </div>
+</section>
+
+<section>
+  <h2><span class="n">07</span> Matching and price alerts</h2>
+  <div class="rule">
+    <div class="what">
+      <h5>Thresholds</h5>
+      <table class="grid"><tbody>
+        <tr><td>Supplier name match</td><td class="num">0.85</td></tr>
+        <tr><td>Item snap</td><td class="num">0.8</td></tr>
+        <tr><td>Alert: minimum move</td><td class="num">5.0%</td></tr>
+        <tr><td>Alert: minimum amount</td><td class="num">AED 0.25</td></tr>
+      </tbody></table>
+    </div>
+    <div class="why">Both alert thresholds must be met, so neither a trivial percentage on a big
+      number nor a few fils on a cheap one raises a flag. A missed match just means no snapping;
+      a wrong match corrupts another supplier's price history, so the bar sits high.
+      <p><strong>The baseline only moves on confirmation.</strong> An unconfirmed invoice never
+      changes the price we compare against.</p></div>
+  </div>
+</section>
+
+<section>
+  <h2><span class="n">08</span> The exact shape the model must return</h2>
+  <p class="lede">Enforced by the API, not by asking nicely. Money crosses as text so nothing
+  becomes a floating-point number on the way in.</p>
+  <div class="scroll"><pre class="src">{
+  &quot;$defs&quot;: {
+    &quot;Classification&quot;: {
+      &quot;enum&quot;: [
+        &quot;invoice&quot;,
+        &quot;z_report&quot;,
+        &quot;other&quot;
+      ],
+      &quot;title&quot;: &quot;Classification&quot;,
+      &quot;type&quot;: &quot;string&quot;
+    },
+    &quot;ExtractedInvoice&quot;: {
+      &quot;additionalProperties&quot;: false,
+      &quot;properties&quot;: {
+        &quot;supplier_name&quot;: {
+          &quot;anyOf&quot;: [
+            {
+              &quot;type&quot;: &quot;string&quot;
+            },
+            {
+              &quot;type&quot;: &quot;null&quot;
+            }
+          ],
+          &quot;default&quot;: null,
+          &quot;title&quot;: &quot;Supplier Name&quot;
+        },
+        &quot;invoice_no&quot;: {
+          &quot;anyOf&quot;: [
+            {
+              &quot;type&quot;: &quot;string&quot;
+            },
+            {
+              &quot;type&quot;: &quot;null&quot;
+            }
+          ],
+          &quot;default&quot;: null,
+          &quot;title&quot;: &quot;Invoice No&quot;
+        },
+        &quot;invoice_date&quot;: {
+          &quot;anyOf&quot;: [
+            {
+              &quot;format&quot;: &quot;date&quot;,
+              &quot;type&quot;: &quot;string&quot;
+            },
+            {
+              &quot;type&quot;: &quot;null&quot;
+            }
+          ],
+          &quot;default&quot;: null,
+          &quot;title&quot;: &quot;Invoice Date&quot;
+        },
+        &quot;currency&quot;: {
+          &quot;anyOf&quot;: [
+            {
+              &quot;type&quot;: &quot;string&quot;
+            },
+            {
+              &quot;type&quot;: &quot;null&quot;
+            }
+          ],
+          &quot;default&quot;: null,
+          &quot;title&quot;: &quot;Currency&quot;
+        },
+        &quot;payment_kind&quot;: {
+          &quot;anyOf&quot;: [
+            {
+              &quot;enum&quot;: [
+                &quot;credit&quot;,
+                &quot;cash&quot;
+              ],
+              &quot;type&quot;: &quot;string&quot;
+            },
+            {
+              &quot;type&quot;: &quot;null&quot;
+            }
+          ],
+          &quot;default&quot;: null,
+          &quot;title&quot;: &quot;Payment Kind&quot;
+        },
+        &quot;payment_terms_text&quot;: {
+          &quot;anyOf&quot;: [
+            {
+              &quot;type&quot;: &quot;string&quot;
+            },
+            {
+              &quot;type&quot;: &quot;null&quot;
+            }
+          ],
+          &quot;default&quot;: null,
+          &quot;title&quot;: &quot;Payment Terms Text&quot;
+        },
+        &quot;lines&quot;: {
+          &quot;items&quot;: {
+            &quot;$ref&quot;: &quot;#/$defs/ExtractedLine&quot;
+          },
+          &quot;title&quot;: &quot;Lines&quot;,
+          &quot;type&quot;: &quot;array&quot;
+        },
+        &quot;subtotal&quot;: {
+          &quot;anyOf&quot;: [
+            {
+              &quot;type&quot;: &quot;string&quot;
+            },
+            {
+              &quot;type&quot;: &quot;null&quot;
+            }
+          ],
+          &quot;default&quot;: null,
+          &quot;title&quot;: &quot;Subtotal&quot;
+        },
+        &quot;tax&quot;: {
+          &quot;anyOf&quot;: [
+            {
+              &quot;type&quot;: &quot;string&quot;
+            },
+            {
+              &quot;type&quot;: &quot;null&quot;
+            }
+          ],
+          &quot;default&quot;: null,
+          &quot;title&quot;: &quot;Tax&quot;
+        },
+        &quot;total&quot;: {
+          &quot;anyOf&quot;: [
+            {
+              &quot;type&quot;: &quot;string&quot;
+            },
+            {
+              &quot;type&quot;: &quot;null&quot;
+            }
+          ],
+          &quot;default&quot;: null,
+          &quot;title&quot;: &quot;Total&quot;
+        },
+        &quot;discount_total&quot;: {
+          &quot;anyOf&quot;: [
+            {
+              &quot;type&quot;: &quot;string&quot;
+            },
+            {
+              &quot;type&quot;: &quot;null&quot;
+            }
+          ],
+          &quot;default&quot;: null,
+          &quot;title&quot;: &quot;Discount Total&quot;
+        },
+        &quot;rounding_amount&quot;: {
+          &quot;anyOf&quot;: [
+            {
+              &quot;type&quot;: &quot;string&quot;
+            },
+            {
+              &quot;type&quot;: &quot;null&quot;
+            }
+          ],
+          &quot;default&quot;: null,
+          &quot;title&quot;: &quot;Rounding Amount&quot;
+        },
+        &quot;tax_treatment&quot;: {
+          &quot;anyOf&quot;: [
+            {
+              &quot;$ref&quot;: &quot;#/$defs/TaxTreatment&quot;
+            },
+            {
+              &quot;type&quot;: &quot;null&quot;
+            }
+          ],
+          &quot;default&quot;: null
+        },
+        &quot;vat_rate&quot;: {
+          &quot;anyOf&quot;: [
+            {
+              &quot;type&quot;: &quot;string&quot;
+            },
+            {
+              &quot;type&quot;: &quot;null&quot;
+            }
+          ],
+          &quot;default&quot;: null,
+          &quot;title&quot;: &quot;Vat Rate&quot;
+        }
+      },
+      &quot;title&quot;: &quot;ExtractedInvoice&quot;,
+      &quot;type&quot;: &quot;object&quot;
+    },
+    &quot;ExtractedLine&quot;: {
+      &quot;additionalProperties&quot;: false,
+      &quot;properties&quot;: {
+        &quot;raw_name&quot;: {
+          &quot;title&quot;: &quot;Raw Name&quot;,
+          &quot;type&quot;: &quot;string&quot;
+        },
+        &quot;line_kind&quot;: {
+          &quot;$ref&quot;: &quot;#/$defs/LineKind&quot;,
+          &quot;default&quot;: &quot;stock_item&quot;
+        },
+        &quot;qty&quot;: {
+          &quot;anyOf&quot;: [
+            {
+              &quot;type&quot;: &quot;string&quot;
+            },
+            {
+              &quot;type&quot;: &quot;null&quot;
+            }
+          ],
+          &quot;default&quot;: null,
+          &quot;title&quot;: &quot;Qty&quot;
+        },
+        &quot;unit&quot;: {
+          &quot;anyOf&quot;: [
+            {
+              &quot;type&quot;: &quot;string&quot;
+            },
+            {
+              &quot;type&quot;: &quot;null&quot;
+            }
+          ],
+          &quot;default&quot;: null,
+          &quot;title&quot;: &quot;Unit&quot;
+        },
+        &quot;pack_size&quot;: {
+          &quot;anyOf&quot;: [
+            {
+              &quot;type&quot;: &quot;string&quot;
+            },
+            {
+              &quot;type&quot;: &quot;null&quot;
+            }
+          ],
+          &quot;default&quot;: null,
+          &quot;title&quot;: &quot;Pack Size&quot;
+        },
+        &quot;unit_price&quot;: {
+          &quot;anyOf&quot;: [
+            {
+              &quot;type&quot;: &quot;string&quot;
+            },
+            {
+              &quot;type&quot;: &quot;null&quot;
+            }
+          ],
+          &quot;default&quot;: null,
+          &quot;title&quot;: &quot;Unit Price&quot;
+        },
+        &quot;line_total&quot;: {
+          &quot;anyOf&quot;: [
+            {
+              &quot;type&quot;: &quot;string&quot;
+            },
+            {
+              &quot;type&quot;: &quot;null&quot;
+            }
+          ],
+          &quot;default&quot;: null,
+          &quot;title&quot;: &quot;Line Total&quot;
+        }
+      },
+      &quot;required&quot;: [
+        &quot;raw_name&quot;
+      ],
+      &quot;title&quot;: &quot;ExtractedLine&quot;,
+      &quot;type&quot;: &quot;object&quot;
+    },
+    &quot;LineKind&quot;: {
+      &quot;description&quot;: &quot;Delivery, cool-box hire and pallet fees belong in the invoice total and\nin cost, but they are not stock. Keeping them out of the catalog is what\nstops price alerts firing on a delivery fee (C4, WP-18).&quot;,
+      &quot;enum&quot;: [
+        &quot;stock_item&quot;,
+        &quot;charge&quot;
+      ],
+      &quot;title&quot;: &quot;LineKind&quot;,
+      &quot;type&quot;: &quot;string&quot;
+    },
+    &quot;TaxTreatment&quot;: {
+      &quot;description&quot;: &quot;Whether the line prices already contain VAT. Both shapes are normal in\nthe GCC (C4): a UAE cash-and-carry receipt usually prints tax-inclusive\nprices, a trade delivery note usually does not.&quot;,
+      &quot;enum&quot;: [
+        &quot;exclusive&quot;,
+        &quot;inclusive&quot;
+      ],
+      &quot;title&quot;: &quot;TaxTreatment&quot;,
+      &quot;type&quot;: &quot;string&quot;
+    }
+  },
+  &quot;additionalProperties&quot;: false,
+  &quot;properties&quot;: {
+    &quot;classification&quot;: {
+      &quot;$ref&quot;: &quot;#/$defs/Classification&quot;
+    },
+    &quot;invoice&quot;: {
+      &quot;anyOf&quot;: [
+        {
+          &quot;$ref&quot;: &quot;#/$defs/ExtractedInvoice&quot;
+        },
+        {
+          &quot;type&quot;: &quot;null&quot;
+        }
+      ],
+      &quot;default&quot;: null
+    }
+  },
+  &quot;required&quot;: [
+    &quot;classification&quot;
+  ],
+  &quot;title&quot;: &quot;ExtractionResult&quot;,
+  &quot;type&quot;: &quot;object&quot;
+}</pre></div>
+</section>
+
+<footer>
+  Generated from the working tree of <code>apps/api/src/faida_api/extraction/</code> and
+  <code>matching.py</code>. Prompt version <code>v2</code>,
+  model <code>claude-opus-5</code>. Figures shown are the live constants, not a copy.
+</footer>
+</div>

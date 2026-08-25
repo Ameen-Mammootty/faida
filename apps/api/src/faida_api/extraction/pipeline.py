@@ -30,7 +30,7 @@ from ..replies import (
 from ..storage import Storage
 from ..wa import WhatsAppClient
 from .constants import PRICE_ALERT_MIN_ABS, PRICE_ALERT_MIN_PCT
-from .currency import normalize_currency
+from .normalize import normalize_extracted
 from .provider import ExtractionProvider, ProviderUsage
 from .repair import repair_invoice
 from .schema import Classification, ExtractedInvoice
@@ -163,9 +163,11 @@ async def _persist_extracted(
     collects repair/persist elapsed ms for the caller's summary line."""
     if stage_ms is None:
         stage_ms = {}
-    # The model copies the currency as printed (C3); the ISO code is derived
-    # here so the invoice row, price alerts and the reply all agree on it.
-    extracted = extracted.model_copy(update={"currency": normalize_currency(extracted.currency)})
+    # The model copies printed facts (C3); the derivations from them - ISO
+    # currency code, cash-or-credit from the printed terms - happen once, at
+    # this seam, so the invoice row, price alerts, the cash hold and the reply
+    # all agree.
+    extracted = normalize_extracted(extracted)
     validation = validate_invoice(extracted)
     outcome = await repair_invoice(provider, image, doc["mime"], extracted, validation)
     invoice, validation = outcome.invoice, outcome.validation

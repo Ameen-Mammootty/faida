@@ -7,9 +7,28 @@ truth - a corpus truth.json is exactly a serialized ExtractionResult.
 import datetime
 from decimal import Decimal
 from enum import StrEnum
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, WithJsonSchema, field_validator
+
+from .money import parse_money
+
+# Money and quantities cross the provider boundary as plain decimal strings.
+#
+# Pydantic's default JSON schema for `Decimal | None` is a three-branch union
+# carrying a negative-lookahead regex, and the schema has fourteen of them
+# inside an unbounded array of lines. That compiled fine until one more
+# optional field was added and the API began rejecting every request outright
+# with "Schema is too complex" / "Grammar compilation timed out" - a hard 400
+# on every invoice, not a degraded read. Declaring one concrete type drops the
+# regex and a branch per field.
+#
+# It also removes a real ambiguity: a JSON number is a float on the wire, and
+# C4 bans float money everywhere else in this codebase.
+# The string form invites the printed one - the model returns "AED 332.00"
+# when told to copy exactly as printed, which is correct of it - so the printed
+# form is parsed here rather than argued with in the prompt.
+Money = Annotated[Decimal, BeforeValidator(parse_money), WithJsonSchema({"type": "string"})]
 
 
 class Classification(StrEnum):
@@ -41,11 +60,11 @@ class ExtractedLine(BaseModel):
 
     raw_name: str
     line_kind: LineKind = LineKind.STOCK_ITEM
-    qty: Decimal | None = None
+    qty: Money | None = None
     unit: str | None = None
     pack_size: str | None = None
-    unit_price: Decimal | None = None
-    line_total: Decimal | None = None
+    unit_price: Money | None = None
+    line_total: Money | None = None
 
 
 class ExtractedInvoice(BaseModel):
@@ -56,21 +75,43 @@ class ExtractedInvoice(BaseModel):
     invoice_date: datetime.date | None = None
     currency: str | None = None
     payment_kind: Literal["credit", "cash"] | None = None
+    # The terms line as printed ("Payment terms: 14 days", "Cash on delivery").
+    # A printed fact, copied not interpreted: extraction.payment turns it into
+    # payment_kind, the same split as the printed currency word and its ISO
+    # code. Not persisted - it is an input to that derivation, not a column.
+    payment_terms_text: str | None = None
     lines: list[ExtractedLine] = Field(default_factory=list)
-    subtotal: Decimal | None = None
-    tax: Decimal | None = None
-    total: Decimal | None = None
+    subtotal: Money | None = None
+    tax: Money | None = None
+    total: Money | None = None
     # Stored POSITIVE and subtracted, the way an invoice prints it. Without
     # these the C4 identities miss a trade discount exactly, failing correct
     # invoices into amber (WP-18).
-    discount_total: Decimal | None = None
-    rounding_amount: Decimal | None = None
+    discount_total: Money | None = None
+    rounding_amount: Money | None = None
     # Printed facts, read like any other field: many GCC invoices state
     # "prices inclusive of VAT" or "VAT 5%". C4 makes these a TIE-BREAKER
     # ONLY - the treatment is derived from the arithmetic, never taken on the
     # document's word (plan.md §5 layer 5: derived, not self-reported).
     tax_treatment: TaxTreatment | None = None
-    vat_rate: Decimal | None = None
+    vat_rate: Money | None = None
+
+    @field_validator("discount_total")
+    @classmethod
+    def _discount_is_a_magnitude(cls, value: Decimal | None) -> Decimal | None:
+        """A discount is a reduction, so C4 states its identity as
+        `line sum - discount + rounding` and this field carries the magnitude.
+
+        Invoices print the same fact as "-41.70", and the first live eval run
+        caught the model copying that sign faithfully: with D negative the
+        identity *adds* the discount, misses by twice it, and fails a
+        perfectly-read invoice into amber (EDGE-01, 2026-08-24). Canonicalizing
+        here rather than in the prompt means no rewording can regress it, and
+        every path - pipeline, manual entry, eval - gets the same convention
+        from the one place the schema is defined. This normalizes a
+        representation, like the ISO currency code; it never invents a value.
+        """
+        return None if value is None else abs(value)
 
 
 class ExtractionResult(BaseModel):
@@ -99,6 +140,6 @@ class RepairResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     lines: dict[int, ExtractedLine] = Field(default_factory=dict)
-    subtotal: Decimal | None = None
-    tax: Decimal | None = None
-    total: Decimal | None = None
+    subtotal: Money | None = None
+    tax: Money | None = None
+    total: Money | None = None

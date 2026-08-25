@@ -96,7 +96,7 @@
     "avg_input_tokens": 1850.0,
     "avg_output_tokens": 280.0,
     "avg_latency_ms": 4800.0,
-    "avg_cost_usd": null
+    "avg_cost_usd": 0.01625
   },
   "repair_lift": {
     "reconciliation_rate_before_repair": null,

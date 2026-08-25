@@ -1,0 +1,326 @@
+{
+  "classification": "invoice",
+  "invoice": {
+    "supplier_name": "Gulf Pantry Supply LLC",
+    "invoice_no": "GPS-INV-260706-2231",
+    "invoice_date": "2026-07-06",
+    "currency": "AED",
+    "payment_kind": "credit",
+    "payment_terms_text": "14 days",
+    "lines": [
+      {
+        "raw_name": "Fine Breadcrumb",
+        "line_kind": "stock_item",
+        "qty": "1",
+        "unit": "bag",
+        "pack_size": "1 kg",
+        "unit_price": "8.00",
+        "line_total": "8.00"
+      },
+      {
+        "raw_name": "Cooked Chickpeas",
+        "line_kind": "stock_item",
+        "qty": "13",
+        "unit": "can",
+        "pack_size": "2.5 kg",
+        "unit_price": "20.00",
+        "line_total": "260.00"
+      },
+      {
+        "raw_name": "Chilli Relish",
+        "line_kind": "stock_item",
+        "qty": "3",
+        "unit": "jar",
+        "pack_size": "1 kg",
+        "unit_price": "20.00",
+        "line_total": "60.00"
+      },
+      {
+        "raw_name": "Caramelised Onion",
+        "line_kind": "stock_item",
+        "qty": "5",
+        "unit": "tub",
+        "pack_size": "1 kg",
+        "unit_price": "18.00",
+        "line_total": "90.00"
+      },
+      {
+        "raw_name": "Dry Couscous",
+        "line_kind": "stock_item",
+        "qty": "1",
+        "unit": "bag",
+        "pack_size": "5 kg",
+        "unit_price": "30.00",
+        "line_total": "30.00"
+      },
+      {
+        "raw_name": "Plain Flour",
+        "line_kind": "stock_item",
+        "qty": "1",
+        "unit": "bag",
+        "pack_size": "5 kg",
+        "unit_price": "12.00",
+        "line_total": "12.00"
+      },
+      {
+        "raw_name": "Dry Freekeh",
+        "line_kind": "stock_item",
+        "qty": "2",
+        "unit": "bag",
+        "pack_size": "5 kg",
+        "unit_price": "38.00",
+        "line_total": "76.00"
+      },
+      {
+        "raw_name": "Frozen French Fries",
+        "line_kind": "stock_item",
+        "qty": "3",
+        "unit": "carton",
+        "pack_size": "10 kg",
+        "unit_price": "90.00",
+        "line_total": "270.00"
+      },
+      {
+        "raw_name": "Harissa Paste",
+        "line_kind": "stock_item",
+        "qty": "2",
+        "unit": "jar",
+        "pack_size": "1 kg",
+        "unit_price": "32.00",
+        "line_total": "64.00"
+      },
+      {
+        "raw_name": "Tomato Ketchup",
+        "line_kind": "stock_item",
+        "qty": "1",
+        "unit": "bottle",
+        "pack_size": "2 kg",
+        "unit_price": "14.00",
+        "line_total": "14.00"
+      },
+      {
+        "raw_name": "Mayonnaise",
+        "line_kind": "stock_item",
+        "qty": "1",
+        "unit": "tub",
+        "pack_size": "3 kg",
+        "unit_price": "36.00",
+        "line_total": "36.00"
+      },
+      {
+        "raw_name": "Dijon Mustard",
+        "line_kind": "stock_item",
+        "qty": "1",
+        "unit": "jar",
+        "pack_size": "1 kg",
+        "unit_price": "16.00",
+        "line_total": "16.00"
+      },
+      {
+        "raw_name": "Extra Virgin Olive Oil",
+        "line_kind": "stock_item",
+        "qty": "2",
+        "unit": "tin",
+        "pack_size": "5 L",
+        "unit_price": "78.00",
+        "line_total": "156.00"
+      },
+      {
+        "raw_name": "Mixed Olives",
+        "line_kind": "stock_item",
+        "qty": "2",
+        "unit": "tub",
+        "pack_size": "2 kg",
+        "unit_price": "26.00",
+        "line_total": "52.00"
+      },
+      {
+        "raw_name": "Cucumber Pickles",
+        "line_kind": "stock_item",
+        "qty": "8",
+        "unit": "jar",
+        "pack_size": "2 kg",
+        "unit_price": "20.00",
+        "line_total": "160.00"
+      },
+      {
+        "raw_name": "Pistachio Kernels",
+        "line_kind": "stock_item",
+        "qty": "2",
+        "unit": "bag",
+        "pack_size": "1 kg",
+        "unit_price": "72.00",
+        "line_total": "144.00"
+      },
+      {
+        "raw_name": "Pomegranate Molasses",
+        "line_kind": "stock_item",
+        "qty": "1",
+        "unit": "bottle",
+        "pack_size": "1 L",
+        "unit_price": "22.00",
+        "line_total": "22.00"
+      },
+      {
+        "raw_name": "Preserved Lemon",
+        "line_kind": "stock_item",
+        "qty": "1",
+        "unit": "jar",
+        "pack_size": "1 kg",
+        "unit_price": "24.00",
+        "line_total": "24.00"
+      },
+      {
+        "raw_name": "Pistachio Paste",
+        "line_kind": "stock_item",
+        "qty": "3",
+        "unit": "tub",
+        "pack_size": "1 kg",
+        "unit_price": "95.00",
+        "line_total": "285.00"
+      },
+      {
+        "raw_name": "Dry Quinoa",
+        "line_kind": "stock_item",
+        "qty": "2",
+        "unit": "bag",
+        "pack_size": "5 kg",
+        "unit_price": "55.00",
+        "line_total": "110.00"
+      },
+      {
+        "raw_name": "Pickle Relish",
+        "line_kind": "stock_item",
+        "qty": "1",
+        "unit": "jar",
+        "pack_size": "1 kg",
+        "unit_price": "18.00",
+        "line_total": "18.00"
+      },
+      {
+        "raw_name": "Basmati Rice",
+        "line_kind": "stock_item",
+        "qty": "2",
+        "unit": "bag",
+        "pack_size": "5 kg",
+        "unit_price": "32.00",
+        "line_total": "64.00"
+      },
+      {
+        "raw_name": "Dried Rose Petals",
+        "line_kind": "stock_item",
+        "qty": "2",
+        "unit": "jar",
+        "pack_size": "50 g",
+        "unit_price": "20.00",
+        "line_total": "40.00"
+      },
+      {
+        "raw_name": "Saffron Threads",
+        "line_kind": "stock_item",
+        "qty": "1",
+        "unit": "jar",
+        "pack_size": "10 g",
+        "unit_price": "30.00",
+        "line_total": "30.00"
+      },
+      {
+        "raw_name": "Fine Sea Salt",
+        "line_kind": "stock_item",
+        "qty": "1",
+        "unit": "bag",
+        "pack_size": "5 kg",
+        "unit_price": "7.00",
+        "line_total": "7.00"
+      },
+      {
+        "raw_name": "Sesame Seeds",
+        "line_kind": "stock_item",
+        "qty": "1",
+        "unit": "pack",
+        "pack_size": "1 kg",
+        "unit_price": "18.00",
+        "line_total": "18.00"
+      },
+      {
+        "raw_name": "Sunflower Frying Oil",
+        "line_kind": "stock_item",
+        "qty": "2",
+        "unit": "tin",
+        "pack_size": "5 L",
+        "unit_price": "45.00",
+        "line_total": "90.00"
+      },
+      {
+        "raw_name": "House Spice Blend",
+        "line_kind": "stock_item",
+        "qty": "2",
+        "unit": "pack",
+        "pack_size": "500 g",
+        "unit_price": "18.00",
+        "line_total": "36.00"
+      },
+      {
+        "raw_name": "Ground Sumac",
+        "line_kind": "stock_item",
+        "qty": "2",
+        "unit": "pack",
+        "pack_size": "500 g",
+        "unit_price": "16.00",
+        "line_total": "32.00"
+      },
+      {
+        "raw_name": "Tahini",
+        "line_kind": "stock_item",
+        "qty": "4",
+        "unit": "tub",
+        "pack_size": "2 kg",
+        "unit_price": "46.00",
+        "line_total": "184.00"
+      },
+      {
+        "raw_name": "Crushed Tomato",
+        "line_kind": "stock_item",
+        "qty": "9",
+        "unit": "can",
+        "pack_size": "2.5 kg",
+        "unit_price": "18.00",
+        "line_total": "162.00"
+      },
+      {
+        "raw_name": "Walnut Kernels",
+        "line_kind": "stock_item",
+        "qty": "1",
+        "unit": "bag",
+        "pack_size": "1 kg",
+        "unit_price": "52.00",
+        "line_total": "52.00"
+      },
+      {
+        "raw_name": "White Chocolate",
+        "line_kind": "stock_item",
+        "qty": "2",
+        "unit": "bag",
+        "pack_size": "1 kg",
+        "unit_price": "40.00",
+        "line_total": "80.00"
+      },
+      {
+        "raw_name": "Za'atar Blend",
+        "line_kind": "stock_item",
+        "qty": "1",
+        "unit": "pack",
+        "pack_size": "500 g",
+        "unit_price": "18.00",
+        "line_total": "18.00"
+      }
+    ],
+    "subtotal": "2720.00",
+    "tax": "136.00",
+    "total": "2856.00",
+    "discount_total": null,
+    "rounding_amount": null,
+    "tax_treatment": "exclusive",
+    "vat_rate": "5"
+  }
+}

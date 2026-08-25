@@ -39,6 +39,10 @@ jobs:
       - name: Tests
         working-directory: apps/api
         run: pytest -q
+      - name: Eval lint
+        run: |
+          ruff check eval
+          ruff format --check eval
       - name: Eval scorer tests
         run: python -m pytest eval/tests -q
       - name: Eval smoke (recorded fixtures, no API key)

@@ -5,14 +5,14 @@
     "invoice_no": "PPT-INV-260707-0901",
     "invoice_date": "2026-07-07",
     "currency": "AED",
-    "payment_kind": null,
+    "payment_kind": "credit",
     "lines": [
       {
         "raw_name": "Chicken Breast",
         "line_kind": "stock_item",
         "qty": "6",
         "unit": "carton",
-        "pack_size": "10000",
+        "pack_size": "10 kg",
         "unit_price": "231.00",
         "line_total": "1386.00"
       },
@@ -21,7 +21,7 @@
         "line_kind": "stock_item",
         "qty": "5",
         "unit": "carton",
-        "pack_size": "5000",
+        "pack_size": "5 kg",
         "unit_price": "152.25",
         "line_total": "761.25"
       },
@@ -30,7 +30,7 @@
         "line_kind": "stock_item",
         "qty": "4",
         "unit": "carton",
-        "pack_size": "5000",
+        "pack_size": "5 kg",
         "unit_price": "168.00",
         "line_total": "672.00"
       },
@@ -39,7 +39,7 @@
         "line_kind": "stock_item",
         "qty": "3",
         "unit": "carton",
-        "pack_size": "5000",
+        "pack_size": "5 kg",
         "unit_price": "273.00",
         "line_total": "819.00"
       },
@@ -48,7 +48,7 @@
         "line_kind": "stock_item",
         "qty": "20",
         "unit": "tray",
-        "pack_size": "30",
+        "pack_size": "30 pcs",
         "unit_price": "29.40",
         "line_total": "588.00"
       }

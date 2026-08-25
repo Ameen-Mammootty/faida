@@ -1,0 +1,110 @@
+{
+  "classification": "invoice",
+  "invoice": {
+    "supplier_name": "Deira Cold Store & General Trading",
+    "invoice_no": "T-0084417",
+    "invoice_date": "2026-07-05",
+    "currency": "AED",
+    "payment_kind": "cash",
+    "payment_terms_text": null,
+    "lines": [
+      {
+        "raw_name": "RICE BASM 5KG",
+        "line_kind": "stock_item",
+        "qty": "2",
+        "unit": null,
+        "pack_size": "5KG",
+        "unit_price": "33.60",
+        "line_total": "67.20"
+      },
+      {
+        "raw_name": "FRY OIL SUN 5L",
+        "line_kind": "stock_item",
+        "qty": "2",
+        "unit": null,
+        "pack_size": "5L",
+        "unit_price": "47.25",
+        "line_total": "94.50"
+      },
+      {
+        "raw_name": "TOM CRUSH 2.5K",
+        "line_kind": "stock_item",
+        "qty": "6",
+        "unit": null,
+        "pack_size": "2.5K",
+        "unit_price": "18.90",
+        "line_total": "113.40"
+      },
+      {
+        "raw_name": "CHICKPEA TIN 2.5K",
+        "line_kind": "stock_item",
+        "qty": "8",
+        "unit": null,
+        "pack_size": "2.5K",
+        "unit_price": "21.00",
+        "line_total": "168.00"
+      },
+      {
+        "raw_name": "SALT FINE 5KG",
+        "line_kind": "stock_item",
+        "qty": "1",
+        "unit": null,
+        "pack_size": "5KG",
+        "unit_price": "7.35",
+        "line_total": "7.35"
+      },
+      {
+        "raw_name": "FLOUR AP 5KG",
+        "line_kind": "stock_item",
+        "qty": "2",
+        "unit": null,
+        "pack_size": "5KG",
+        "unit_price": "12.60",
+        "line_total": "25.20"
+      },
+      {
+        "raw_name": "SODA 1L",
+        "line_kind": "stock_item",
+        "qty": "24",
+        "unit": null,
+        "pack_size": "1L",
+        "unit_price": "4.20",
+        "line_total": "100.80"
+      },
+      {
+        "raw_name": "KETCHUP 2KG",
+        "line_kind": "stock_item",
+        "qty": "2",
+        "unit": null,
+        "pack_size": "2KG",
+        "unit_price": "14.70",
+        "line_total": "29.40"
+      },
+      {
+        "raw_name": "MAYO 3KG",
+        "line_kind": "stock_item",
+        "qty": "1",
+        "unit": null,
+        "pack_size": "3KG",
+        "unit_price": "37.80",
+        "line_total": "37.80"
+      },
+      {
+        "raw_name": "PICKLE CUC 2KG",
+        "line_kind": "stock_item",
+        "qty": "3",
+        "unit": null,
+        "pack_size": "2KG",
+        "unit_price": "21.00",
+        "line_total": "63.00"
+      }
+    ],
+    "subtotal": "706.65",
+    "tax": "33.65",
+    "total": "706.65",
+    "discount_total": null,
+    "rounding_amount": null,
+    "tax_treatment": "inclusive",
+    "vat_rate": "5"
+  }
+}

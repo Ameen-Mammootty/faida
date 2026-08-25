@@ -1,0 +1,83 @@
+{
+  "classification": "invoice",
+  "invoice": {
+    "supplier_name": "Fresh Fields Produce LLC",
+    "invoice_no": "FFP-INV-260706-0209",
+    "invoice_date": "2026-07-06",
+    "currency": "AED",
+    "payment_kind": "credit",
+    "payment_terms_text": "Payment terms: 14 days",
+    "lines": [
+      {
+        "raw_name": "Avocado",
+        "line_kind": "stock_item",
+        "qty": "5",
+        "unit": "box",
+        "pack_size": "4 kg",
+        "unit_price": "92.00",
+        "line_total": "460.00"
+      },
+      {
+        "raw_name": "Pomegranate Arils",
+        "line_kind": "stock_item",
+        "qty": "2",
+        "unit": "box",
+        "pack_size": "2 kg",
+        "unit_price": "44.00",
+        "line_total": "88.00"
+      },
+      {
+        "raw_name": "Broccolini",
+        "line_kind": "stock_item",
+        "qty": "4",
+        "unit": "box",
+        "pack_size": "2 kg",
+        "unit_price": "42.00",
+        "line_total": "168.00"
+      },
+      {
+        "raw_name": "Kale",
+        "line_kind": "stock_item",
+        "qty": "5",
+        "unit": "box",
+        "pack_size": "1 kg",
+        "unit_price": "18.00",
+        "line_total": "90.00"
+      },
+      {
+        "raw_name": "Mixed Fresh Herbs",
+        "line_kind": "stock_item",
+        "qty": "6",
+        "unit": "box",
+        "pack_size": "500 g",
+        "unit_price": "20.00",
+        "line_total": "120.00"
+      },
+      {
+        "raw_name": "Avocado",
+        "line_kind": "stock_item",
+        "qty": "-1",
+        "unit": "box",
+        "pack_size": "4 kg",
+        "unit_price": "92.00",
+        "line_total": "-92.00"
+      },
+      {
+        "raw_name": "Chilled delivery and cool box hire",
+        "line_kind": "charge",
+        "qty": "1",
+        "unit": "service",
+        "pack_size": "-",
+        "unit_price": "25.00",
+        "line_total": "25.00"
+      }
+    ],
+    "subtotal": "834.00",
+    "tax": "40.87",
+    "total": "858.17",
+    "discount_total": "41.70",
+    "rounding_amount": null,
+    "tax_treatment": "exclusive",
+    "vat_rate": "5"
+  }
+}

@@ -1,0 +1,92 @@
+{
+  "classification": "invoice",
+  "invoice": {
+    "supplier_name": "Fresh Fields Produce LLC",
+    "invoice_no": "1487",
+    "invoice_date": "2026-07-02",
+    "currency": "AED",
+    "payment_kind": "cash",
+    "payment_terms_text": "Cash on delivery",
+    "lines": [
+      {
+        "raw_name": "Tomato Plum Roma",
+        "line_kind": "stock_item",
+        "qty": "3",
+        "unit": "box",
+        "pack_size": null,
+        "unit_price": "28.00",
+        "line_total": "84.00"
+      },
+      {
+        "raw_name": "Cucumber Local Short",
+        "line_kind": "stock_item",
+        "qty": "2",
+        "unit": "box",
+        "pack_size": null,
+        "unit_price": "24.00",
+        "line_total": "48.00"
+      },
+      {
+        "raw_name": "Cos Lettuce Romaine",
+        "line_kind": "stock_item",
+        "qty": "2",
+        "unit": "box",
+        "pack_size": null,
+        "unit_price": "28.00",
+        "line_total": "56.00"
+      },
+      {
+        "raw_name": "Onion Brown Holland",
+        "line_kind": "stock_item",
+        "qty": "2",
+        "unit": "bag",
+        "pack_size": null,
+        "unit_price": "16.00",
+        "line_total": "32.00"
+      },
+      {
+        "raw_name": "Parsley Baqdounis Bunch",
+        "line_kind": "stock_item",
+        "qty": "6",
+        "unit": "bunch",
+        "pack_size": null,
+        "unit_price": "4.00",
+        "line_total": "24.00"
+      },
+      {
+        "raw_name": "Mint Na'ana Bunch",
+        "line_kind": "stock_item",
+        "qty": "6",
+        "unit": "bunch",
+        "pack_size": null,
+        "unit_price": "5.00",
+        "line_total": "30.00"
+      },
+      {
+        "raw_name": "Lemon Yellow Turkey",
+        "line_kind": "stock_item",
+        "qty": "1",
+        "unit": "box",
+        "pack_size": null,
+        "unit_price": "30.00",
+        "line_total": "30.00"
+      },
+      {
+        "raw_name": "Garlic Whole Peeled Free",
+        "line_kind": "stock_item",
+        "qty": "2",
+        "unit": "bag",
+        "pack_size": null,
+        "unit_price": "14.00",
+        "line_total": "28.00"
+      }
+    ],
+    "subtotal": "332.00",
+    "tax": null,
+    "total": "332.00",
+    "discount_total": null,
+    "rounding_amount": null,
+    "tax_treatment": null,
+    "vat_rate": null
+  }
+}

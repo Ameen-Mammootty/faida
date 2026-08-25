@@ -1,5 +1,11 @@
 # Generated receipt fixtures - synthetic, never scored against the §5 targets
 
+> **10 of the 15 cases have images.** `DUP-01`, `EDGE-02`, `EDGE-03`, `HW-03` and `NEG-01` are
+> ground truth and prompts for images that were never generated, so `--live` skips them and the
+> corpus that actually scores is ten. Generating those five images is the cheapest way to grow
+> phase 1, and two of them (`EDGE-02` VAT-inclusive, `EDGE-03` a delivery note with no prices)
+> cover reconciliation paths nothing else in the set reaches.
+
 Every image in this directory was produced from a text prompt (`<case>.prompt.txt`), and
 every `expected.json` carries `"synthetic": true`.
 They are development and CI material.

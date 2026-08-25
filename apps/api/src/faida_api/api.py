@@ -61,7 +61,7 @@ from .confirm import (
 )
 from .contracts import InvoiceStatus, JobKind
 from .db import Database
-from .extraction.currency import normalize_currency
+from .extraction.normalize import normalize_extracted
 from .extraction.schema import ExtractedInvoice, ExtractedLine
 from .extraction.validate import validate_invoice
 from .matching import Row, match_supplier, snap_item
@@ -401,16 +401,21 @@ def _to_extracted_invoice(body: ManualInvoice) -> ExtractedInvoice:
                 line_total=_manual_number(line.line_total, f"line {n} line_total"),
             )
         )
-    return ExtractedInvoice(
-        supplier_name=_clean(body.supplier_name),
-        invoice_no=_clean(body.invoice_no),
-        invoice_date=body.invoice_date,
-        currency=normalize_currency(_clean(body.currency)),
-        payment_kind=body.payment_kind,
-        lines=lines,
-        subtotal=_manual_number(body.subtotal, "subtotal"),
-        tax=_manual_number(body.tax, "tax"),
-        total=_manual_number(body.total, "total"),
+    # Same seam the pipeline uses. A typed payment_kind is a human's decision
+    # and passes through untouched (there are no printed terms to read); the
+    # currency still normalizes, so "dirhams" typed by hand becomes AED too.
+    return normalize_extracted(
+        ExtractedInvoice(
+            supplier_name=_clean(body.supplier_name),
+            invoice_no=_clean(body.invoice_no),
+            invoice_date=body.invoice_date,
+            currency=_clean(body.currency),
+            payment_kind=body.payment_kind,
+            lines=lines,
+            subtotal=_manual_number(body.subtotal, "subtotal"),
+            tax=_manual_number(body.tax, "tax"),
+            total=_manual_number(body.total, "total"),
+        )
     )
 
 

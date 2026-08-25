@@ -10,14 +10,21 @@ from __future__ import annotations
 from decimal import Decimal
 from difflib import SequenceMatcher
 
-from faida_api.extraction.constants import (
-    DOC_TOLERANCE_ABS,
-    LINE_TOLERANCE_ABS,
-    LINE_TOLERANCE_PCT,
-)
+from faida_api.extraction import units
 from faida_api.extraction.currency import normalize_currency
 from faida_api.extraction.provider import ProviderUsage
-from faida_api.extraction.schema import ExtractedInvoice, ExtractedLine, ExtractionResult
+from faida_api.extraction.schema import (
+    ExtractedInvoice,
+    ExtractedLine,
+    ExtractionResult,
+)
+from faida_api.extraction.validate import CheckStatus, validate_invoice
+
+# Claude API list prices in USD per million tokens. Only models we actually
+# run belong here: an unknown model id yields a null cost, never a guess.
+MODEL_PRICING_USD_PER_MTOK: dict[str, tuple[Decimal, Decimal]] = {
+    "claude-opus-5": (Decimal("5.00"), Decimal("25.00")),
+}
 
 FUZZY_THRESHOLD = 0.9
 # A candidate line pair needs at least this pair score to align at all.
@@ -53,6 +60,30 @@ def fuzzy_ratio(a: str, b: str) -> float:
 
 def fuzzy_equal(a: str, b: str) -> bool:
     return fuzzy_ratio(a, b) >= FUZZY_THRESHOLD
+
+
+def _match_line_field(field: str, extracted: object, truth: object) -> bool:
+    """Line-field comparison, with the units dictionary applied where the same
+    fact has many printings.
+
+    A supplier writing "2 kg" where the catalog says "2000 g" has not made an
+    error and neither has the model, so scoring them as a miss would send the
+    accuracy loop chasing a difference that does not exist. The same dictionary
+    decides it here and in the catalog (`extraction.units`), so the eval cannot
+    drift from what snapping actually does.
+    """
+    if field == "pack_size":
+        if extracted is None or truth is None:
+            return extracted is None and truth is None
+        return units.same_pack_size(str(extracted), str(truth))
+    if field == "unit":
+        if extracted is None or truth is None:
+            return extracted is None and truth is None
+        left = units.canonical_unit(str(extracted))
+        right = units.canonical_unit(str(truth))
+        if left is not None and right is not None:
+            return left == right
+    return _match(extracted, truth, fuzzy=field == "raw_name")
 
 
 def _match(extracted: object, truth: object, fuzzy: bool) -> bool:
@@ -117,26 +148,47 @@ def align_lines(
 
 
 def invoice_reconciles(invoice: ExtractedInvoice) -> bool:
-    """C4 arithmetic over one extracted invoice (plan.md §5 layer 2).
+    """C4 arithmetic over one extracted invoice (plan.md §5 layer 2), decided
+    by the validator the product ships.
 
-    Line: |qty * unit_price - line_total| <= max(LINE_TOLERANCE_ABS,
-    LINE_TOLERANCE_PCT * line_total); a line missing any of the three values
-    cannot reconcile. Document: |sum(line_totals) + tax - total| <=
-    DOC_TOLERANCE_ABS, with a missing tax treated as zero. Duplicated here so
-    the eval stands alone; WP-16 may swap this to faida_api.extraction.validate
-    once WP-11/WP-13 integrate.
+    This was a second copy of C4 until WP-16, kept "so the eval stands alone",
+    and it drifted exactly as plan.md §2 rule 3 predicts a second
+    implementation will. It knew only the exclusive identity, so after WP-17
+    and WP-18 it scored TH-01 and EDGE-02 (VAT-inclusive) and EDGE-01
+    (trade discount) as unreconciled *off hand-verified ground truth* - a
+    reconciliation ceiling of 11/14 against a §5 gate of 100%, measuring a
+    program we do not run.
+
+    An invoice reconciles when the document identity holds and every line's
+    arithmetic passes. Snapping is deliberately not required: it moves a field
+    from green to amber (layer 5), not the arithmetic.
     """
-    for line in invoice.lines:
-        if line.qty is None or line.unit_price is None or line.line_total is None:
-            return False
-        tolerance = max(LINE_TOLERANCE_ABS, LINE_TOLERANCE_PCT * abs(line.line_total))
-        if abs(line.qty * line.unit_price - line.line_total) > tolerance:
-            return False
-    if invoice.total is None:
-        return False
-    tax = invoice.tax if invoice.tax is not None else Decimal(0)
-    line_sum = sum((line.line_total for line in invoice.lines), Decimal(0))
-    return abs(line_sum + tax - invoice.total) <= DOC_TOLERANCE_ABS
+    validation = validate_invoice(invoice)
+    return validation.document.arith is CheckStatus.PASSED and all(
+        check.arith is CheckStatus.PASSED for check in validation.lines
+    )
+
+
+def cost_usd(usage: ProviderUsage | None) -> float | None:
+    """Dollar cost of one run from its token counts (plan.md §5: cost per
+    invoice). None when the model is not in the price table - a made-up unit
+    price is worse than an empty column."""
+    if usage is None:
+        return None
+    price = MODEL_PRICING_USD_PER_MTOK.get(usage.model_id)
+    if price is None:
+        # The API echoes back the model that served the request, which may
+        # carry a suffix the request did not; fall back to the longest
+        # matching prefix before giving up.
+        matches = [k for k in MODEL_PRICING_USD_PER_MTOK if usage.model_id.startswith(k)]
+        if not matches:
+            return None
+        price = MODEL_PRICING_USD_PER_MTOK[max(matches, key=len)]
+    per_input, per_output = price
+    total = (
+        Decimal(usage.input_tokens) * per_input + Decimal(usage.output_tokens) * per_output
+    ) / Decimal(1_000_000)
+    return float(round(total, 6))
 
 
 def _rate(numerator: int, denominator: int) -> float | None:
@@ -147,6 +199,7 @@ def score_case(
     extracted: ExtractionResult,
     truth: ExtractionResult,
     usage: ProviderUsage | None = None,
+    reconciled_before_repair: bool | None = None,
 ) -> dict:
     """Score one (extracted, truth) pair into a JSON-serializable dict.
 
@@ -155,6 +208,10 @@ def score_case(
     scores every set truth field wrong and every truth line unmatched.
     Reconciliation is a property of the extracted invoice alone, so it is
     "applicable" only when the extraction produced one.
+
+    `extracted` is the post-repair invoice; `reconciled_before_repair` carries
+    the pre-repair verdict so the aggregate can report repair lift (§5 layer
+    3). Recorded runs replay the extract call alone and pass None.
     """
     case: dict = {
         "classification": {
@@ -169,8 +226,10 @@ def score_case(
             "reconciled": (
                 invoice_reconciles(extracted.invoice) if extracted.invoice is not None else None
             ),
+            "reconciled_before_repair": reconciled_before_repair,
         },
         "usage": usage.model_dump() if usage is not None else None,
+        "cost_usd": cost_usd(usage),
     }
     if truth.invoice is None:
         return case
@@ -193,11 +252,7 @@ def score_case(
         truth_line = truth_invoice.lines[j]
         for field in LINE_FIELDS:
             fields[field]["total"] += 1
-            if _match(
-                getattr(extracted_line, field),
-                getattr(truth_line, field),
-                fuzzy=field == "raw_name",
-            ):
+            if _match_line_field(field, getattr(extracted_line, field), getattr(truth_line, field)):
                 fields[field]["correct"] += 1
     case["lines"] = {
         "truth_count": len(truth_invoice.lines),
@@ -210,6 +265,71 @@ def score_case(
     return case
 
 
+def _render(value: object) -> str | None:
+    """Money, dates and enums into something a diff line can show."""
+    if value is None:
+        return None
+    if isinstance(value, Decimal):
+        return format(value, "f")
+    return str(getattr(value, "value", value))
+
+
+def explain_case(extracted: ExtractionResult, truth: ExtractionResult) -> dict:
+    """Every disagreement behind one case's booleans, as extracted-vs-truth
+    pairs (WP-16).
+
+    The scores say a field is wrong; the accuracy loop needs to know *how*
+    before it can tell a model error from a ground-truth error. The first live
+    run scored pack_size at 19% and that turned out to be truth holding
+    "2000" where the page prints "2 kg" - a converter bug, not an extraction
+    one, and invisible from a boolean.
+
+    Kept out of score_case so the scored dict stays exactly what the CI smoke
+    pins.
+    """
+    out: dict = {"classification": None, "header_fields": {}, "lines": [], "unmatched": []}
+    if extracted.classification != truth.classification:
+        out["classification"] = {
+            "extracted": extracted.classification.value,
+            "truth": truth.classification.value,
+        }
+    if truth.invoice is None:
+        return out
+
+    extracted_invoice = extracted.invoice if extracted.invoice is not None else ExtractedInvoice()
+    for field in HEADER_FIELDS:
+        got = _header_value(extracted_invoice, field)
+        want = _header_value(truth.invoice, field)
+        if not _match(got, want, fuzzy=field in _FUZZY_HEADER_FIELDS):
+            out["header_fields"][field] = {"extracted": _render(got), "truth": _render(want)}
+
+    pairs = align_lines(extracted_invoice.lines, truth.invoice.lines)
+    for i, j in pairs:
+        extracted_line = extracted_invoice.lines[i]
+        truth_line = truth.invoice.lines[j]
+        for field in LINE_FIELDS:
+            got = getattr(extracted_line, field)
+            want = getattr(truth_line, field)
+            if not _match_line_field(field, got, want):
+                out["lines"].append(
+                    {
+                        "line": j,
+                        "field": field,
+                        "extracted": _render(got),
+                        "truth": _render(want),
+                    }
+                )
+    matched_extracted = {i for i, _ in pairs}
+    matched_truth = {j for _, j in pairs}
+    for i, extracted_line in enumerate(extracted_invoice.lines):
+        if i not in matched_extracted:
+            out["unmatched"].append({"side": "extracted", "raw_name": extracted_line.raw_name})
+    for j, truth_line in enumerate(truth.invoice.lines):
+        if j not in matched_truth:
+            out["unmatched"].append({"side": "truth", "raw_name": truth_line.raw_name})
+    return out
+
+
 def aggregate(cases: list[dict]) -> dict:
     """Fold per-case scores into corpus-level metrics."""
     classification_correct = sum(1 for c in cases if c["classification"]["correct"])
@@ -217,7 +337,9 @@ def aggregate(cases: list[dict]) -> dict:
     line_fields = {field: {"correct": 0, "total": 0} for field in LINE_FIELDS}
     matched = truth_count = extracted_count = 0
     reconciled = applicable = 0
+    reconciled_before = before_measured = 0
     usages = [c["usage"] for c in cases if c["usage"] is not None]
+    costs = [c["cost_usd"] for c in cases if c.get("cost_usd") is not None]
 
     for case in cases:
         if case["header_fields"] is not None:
@@ -234,6 +356,10 @@ def aggregate(cases: list[dict]) -> dict:
         if case["reconciliation"]["applicable"]:
             applicable += 1
             reconciled += int(bool(case["reconciliation"]["reconciled"]))
+            before = case["reconciliation"].get("reconciled_before_repair")
+            if before is not None:
+                before_measured += 1
+                reconciled_before += int(before)
 
     for tally in header.values():
         tally["accuracy"] = _rate(tally["correct"], tally["total"])
@@ -248,9 +374,8 @@ def aggregate(cases: list[dict]) -> dict:
             "avg_input_tokens": round(sum(u["input_tokens"] for u in usages) / n, 1),
             "avg_output_tokens": round(sum(u["output_tokens"] for u in usages) / n, 1),
             "avg_latency_ms": round(sum(u["latency_ms"] for u in usages) / n, 1),
-            # Dollar cost derives from tokens; the pricing table arrives with
-            # WP-16 live runs.
-            "avg_cost_usd": None,
+            # Null when no case carried a priced model (see cost_usd).
+            "avg_cost_usd": round(sum(costs) / len(costs), 6) if costs else None,
         }
 
     return {
@@ -275,11 +400,15 @@ def aggregate(cases: list[dict]) -> dict:
             "rate": _rate(reconciled, applicable),
         },
         "usage": usage_aggregate,
-        # Repair lift is measured on live runs (reconciliation before vs after
-        # the repair pass, plan.md §5 layer 3); recorded fixtures cannot supply
-        # it, so the fields stay null until WP-16.
+        # Repair lift (plan.md §5 layer 3): reconciliation before vs after the
+        # scoped repair round. Only live runs make both calls, so recorded
+        # replays leave both rates null rather than reporting a lift of zero.
         "repair_lift": {
-            "reconciliation_rate_before_repair": None,
-            "reconciliation_rate_after_repair": None,
+            "reconciliation_rate_before_repair": (
+                _rate(reconciled_before, before_measured) if before_measured else None
+            ),
+            "reconciliation_rate_after_repair": (
+                _rate(reconciled, applicable) if before_measured else None
+            ),
         },
     }

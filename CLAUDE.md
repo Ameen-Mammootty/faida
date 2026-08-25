@@ -85,6 +85,22 @@ Once the eval harness exists, every pipeline change runs the eval before merge.
 - Test the path the user takes: the eval harness and a few end-to-end tests over the real flow outrank any volume of unit tests. Banned: tests that assert on code text, tests of framework behavior, coverage targets for their own sake.
 - New scope enters the plan only with a customer quote naming who asked and what they said.
 
+## How to report back
+
+Answer in plain English, the way you would explain it to the founder rather than to another
+engineer. Assume the reader is smart, knows the business cold, and does not know what a schema
+validator or a reconciliation identity is. The point of a report is to make a decision easy.
+
+- Lead with what it means, not what you did. "The scorecard was marking correct answers wrong"
+  before "`invoice_reconciles` delegated to the shipped validator".
+- Translate every internal term on first use, or drop it. Ground truth is the answer key.
+  Reconciliation is whether the invoice adds up. An eval is an exam.
+- Name the decision the reader has to make, and say which way you would go and why.
+- Say plainly when a number is not what it looks like: which corpus it came from, what it does
+  not cover, and what would change it.
+- Keep the code identifiers for the diff and for follow-up questions. They belong at the end of a
+  point, not at the front of it.
+
 ## Product display rules
 
 Rounded AED headline numbers; exact figures only in invoice detail.

@@ -1,0 +1,74 @@
+{
+  "classification": "invoice",
+  "invoice": {
+    "supplier_name": "Dairy House Foodstuff LLC",
+    "invoice_no": "2260",
+    "invoice_date": "2026-07-04",
+    "currency": "AED",
+    "payment_kind": "cash",
+    "payment_terms_text": "Cash on delivery",
+    "lines": [
+      {
+        "raw_name": "جبنة حلوم",
+        "line_kind": "stock_item",
+        "qty": "8",
+        "unit": "block",
+        "pack_size": null,
+        "unit_price": "36.00",
+        "line_total": "288.00"
+      },
+      {
+        "raw_name": "لبنة",
+        "line_kind": "stock_item",
+        "qty": "4",
+        "unit": "tub",
+        "pack_size": null,
+        "unit_price": "40.00",
+        "line_total": "160.00"
+      },
+      {
+        "raw_name": "جبنة فيتا",
+        "line_kind": "stock_item",
+        "qty": "5",
+        "unit": "tub",
+        "pack_size": null,
+        "unit_price": "32.00",
+        "line_total": "160.00"
+      },
+      {
+        "raw_name": "حليب كامل الدسم",
+        "line_kind": "stock_item",
+        "qty": "2",
+        "unit": "case",
+        "pack_size": null,
+        "unit_price": "60.00",
+        "line_total": "120.00"
+      },
+      {
+        "raw_name": "كريمة خفق",
+        "line_kind": "stock_item",
+        "qty": "6",
+        "unit": "carton",
+        "pack_size": null,
+        "unit_price": "18.00",
+        "line_total": "108.00"
+      },
+      {
+        "raw_name": "زبدة غير مملحة",
+        "line_kind": "stock_item",
+        "qty": "3",
+        "unit": "block",
+        "pack_size": null,
+        "unit_price": "36.00",
+        "line_total": "108.00"
+      }
+    ],
+    "subtotal": "944.00",
+    "tax": null,
+    "total": "944.00",
+    "discount_total": null,
+    "rounding_amount": null,
+    "tax_treatment": null,
+    "vat_rate": null
+  }
+}

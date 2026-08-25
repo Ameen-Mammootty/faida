@@ -1,0 +1,92 @@
+{
+  "classification": "invoice",
+  "invoice": {
+    "supplier_name": "Dairy House Foodstuff LLC",
+    "invoice_no": "DHF-INV-260705-0688",
+    "invoice_date": "2026-07-05",
+    "currency": "AED",
+    "payment_kind": "credit",
+    "payment_terms_text": "14 days",
+    "lines": [
+      {
+        "raw_name": "Unsalted Butter زبدة غير مملحة",
+        "line_kind": "stock_item",
+        "qty": "2",
+        "unit": "block",
+        "pack_size": "1 kg",
+        "unit_price": "36.00",
+        "line_total": "72.00"
+      },
+      {
+        "raw_name": "Mature Cheddar جبنة شيدر",
+        "line_kind": "stock_item",
+        "qty": "2",
+        "unit": "block",
+        "pack_size": "2 kg",
+        "unit_price": "58.00",
+        "line_total": "116.00"
+      },
+      {
+        "raw_name": "Condensed Milk حليب مكثف",
+        "line_kind": "stock_item",
+        "qty": "2",
+        "unit": "can",
+        "pack_size": "1 kg",
+        "unit_price": "18.00",
+        "line_total": "36.00"
+      },
+      {
+        "raw_name": "Whipping Cream كريمة خفق",
+        "line_kind": "stock_item",
+        "qty": "2",
+        "unit": "carton",
+        "pack_size": "1 L",
+        "unit_price": "18.00",
+        "line_total": "36.00"
+      },
+      {
+        "raw_name": "Feta Cheese جبنة فيتا",
+        "line_kind": "stock_item",
+        "qty": "8",
+        "unit": "tub",
+        "pack_size": "1 kg",
+        "unit_price": "32.00",
+        "line_total": "256.00"
+      },
+      {
+        "raw_name": "Halloumi Cheese جبنة حلوم",
+        "line_kind": "stock_item",
+        "qty": "12",
+        "unit": "block",
+        "pack_size": "1 kg",
+        "unit_price": "36.00",
+        "line_total": "432.00"
+      },
+      {
+        "raw_name": "Labneh لبنة",
+        "line_kind": "stock_item",
+        "qty": "3",
+        "unit": "tub",
+        "pack_size": "2 kg",
+        "unit_price": "40.00",
+        "line_total": "120.00"
+      },
+      {
+        "raw_name": "Whole Milk حليب كامل الدسم",
+        "line_kind": "stock_item",
+        "qty": "1",
+        "unit": "case",
+        "pack_size": "12 L",
+        "unit_price": "60.00",
+        "line_total": "60.00"
+      }
+    ],
+    "subtotal": "1128.00",
+    "tax": "56.40",
+    "total": "1184.40",
+    "discount_total": null,
+    "rounding_amount": null,
+    "tax_treatment": "exclusive",
+    "vat_rate": "5"
+  }
+}

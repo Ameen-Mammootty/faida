@@ -6,23 +6,27 @@ Run from the repo root: apps/api/.venv/bin/python -m pytest eval/tests -q
 
 from decimal import Decimal
 
-from eval.score import (
-    aggregate,
-    align_lines,
-    fuzzy_equal,
-    fuzzy_ratio,
-    invoice_reconciles,
-    score_case,
-)
 from faida_api.extraction.constants import (
     DOC_TOLERANCE_ABS,
     LINE_TOLERANCE_ABS,
 )
+from faida_api.extraction.provider import ProviderUsage
 from faida_api.extraction.schema import (
     Classification,
     ExtractedInvoice,
     ExtractedLine,
     ExtractionResult,
+    LineKind,
+)
+
+from eval.score import (
+    aggregate,
+    align_lines,
+    cost_usd,
+    fuzzy_equal,
+    fuzzy_ratio,
+    invoice_reconciles,
+    score_case,
 )
 
 
@@ -33,6 +37,7 @@ def line(
     line_total: str | None = None,
     unit: str | None = None,
     pack_size: str | None = None,
+    line_kind: LineKind = LineKind.STOCK_ITEM,
 ) -> ExtractedLine:
     return ExtractedLine(
         raw_name=raw_name,
@@ -41,6 +46,7 @@ def line(
         pack_size=pack_size,
         unit_price=Decimal(unit_price) if unit_price is not None else None,
         line_total=Decimal(line_total) if line_total is not None else None,
+        line_kind=line_kind,
     )
 
 
@@ -52,7 +58,13 @@ def invoice_result(lines: list[ExtractedLine], **headers) -> ExtractionResult:
 
 
 TRUTH_LINES = [
-    line("Tomato Local Box 5kg", qty="4", unit_price="18.50", line_total="74.00", unit="box"),
+    line(
+        "Tomato Local Box 5kg",
+        qty="4",
+        unit_price="18.50",
+        line_total="74.00",
+        unit="box",
+    ),
     line("Cucumber 5kg", qty="2", unit_price="12.00", line_total="24.00", unit="box"),
     line("Onion Red 10kg", qty="1", unit_price="22.00", line_total="22.00", unit="bag"),
 ]
@@ -185,7 +197,11 @@ def test_misclassification_scores_truth_fields_wrong():
     assert result["header_fields"]["tax"] is True
     assert result["lines"]["recall"] == 0.0
     assert result["lines"]["precision"] is None
-    assert result["reconciliation"] == {"applicable": False, "reconciled": None}
+    assert result["reconciliation"] == {
+        "applicable": False,
+        "reconciled": None,
+        "reconciled_before_repair": None,
+    }
 
 
 def test_aggregate_sums_counters_across_cases():
@@ -200,4 +216,73 @@ def test_aggregate_sums_counters_across_cases():
     assert agg["repair_lift"] == {
         "reconciliation_rate_before_repair": None,
         "reconciliation_rate_after_repair": None,
+    }
+
+
+def test_vat_inclusive_invoice_reconciles_like_the_shipped_validator():
+    """The regression that made this delegate to faida_api.extraction.validate
+    (WP-16). The eval carried its own copy of C4 that knew only the exclusive
+    identity, so after WP-17 a VAT-inclusive invoice - the GCC norm, and the
+    shape of TH-01 and EDGE-02 - scored as unreconciled off perfect ground
+    truth. Lines are gross here: 700.00 of lines IS the 700.00 total, with
+    33.33 of UAE 5% VAT already inside it."""
+    inclusive = ExtractedInvoice(
+        lines=[line("Milk Powder 2.5kg", qty="10", unit_price="70.00", line_total="700.00")],
+        tax=Decimal("33.33"),
+        total=Decimal("700.00"),
+    )
+    assert invoice_reconciles(inclusive)
+
+
+def test_trade_discount_invoice_reconciles_like_the_shipped_validator():
+    """The WP-18 half of the same regression (EDGE-01): lines sum to 834.00,
+    a 41.70 trade discount and a 25.00 delivery charge sit between that and
+    the total, and the old copy of C4 modelled none of it."""
+    discounted = ExtractedInvoice(
+        lines=[
+            line("Basmati Rice 20kg", qty="20", unit_price="41.70", line_total="834.00"),
+            line(
+                "Chilled delivery",
+                qty="1",
+                unit_price="25.00",
+                line_total="25.00",
+                line_kind=LineKind.CHARGE,
+            ),
+        ],
+        discount_total=Decimal("41.70"),
+        tax=Decimal("40.87"),
+        total=Decimal("858.17"),
+    )
+    assert invoice_reconciles(discounted)
+
+
+def test_cost_derives_from_tokens_and_is_null_for_an_unpriced_model():
+    priced = ProviderUsage(
+        model_id="claude-opus-5",
+        prompt_version="v1",
+        input_tokens=1_000_000,
+        output_tokens=1_000_000,
+        latency_ms=1000,
+    )
+    # $5/M in + $25/M out.
+    assert cost_usd(priced) == 30.0
+    # The API echoes back the model that served the request; a suffixed id
+    # still prices off its family rather than silently costing nothing.
+    suffixed = priced.model_copy(update={"model_id": "claude-opus-5-20260801"})
+    assert cost_usd(suffixed) == 30.0
+    unknown = priced.model_copy(update={"model_id": "some-other-model"})
+    assert cost_usd(unknown) is None
+    assert cost_usd(None) is None
+
+
+def test_repair_lift_reported_only_when_a_before_verdict_exists():
+    # 74.00 + 24.00 + 22.00, so this reconciles after repair either way.
+    truth = invoice_result(TRUTH_LINES, total=Decimal("120.00"))
+    broke = score_case(truth, truth, reconciled_before_repair=False)
+    held = score_case(truth, truth, reconciled_before_repair=True)
+    agg = aggregate([broke, held])
+    # Both reconcile after repair; one did not before it.
+    assert agg["repair_lift"] == {
+        "reconciliation_rate_before_repair": 0.5,
+        "reconciliation_rate_after_repair": 1.0,
     }

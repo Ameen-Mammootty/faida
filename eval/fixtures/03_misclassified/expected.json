@@ -49,7 +49,8 @@
   },
   "reconciliation": {
     "applicable": false,
-    "reconciled": null
+    "reconciled": null,
+    "reconciled_before_repair": null
   },
   "usage": {
     "model_id": "claude-opus-5",
@@ -57,5 +58,6 @@
     "input_tokens": 1450,
     "output_tokens": 40,
     "latency_ms": 2100
-  }
+  },
+  "cost_usd": 0.00825
 }

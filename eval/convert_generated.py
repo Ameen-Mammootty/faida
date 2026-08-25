@@ -11,6 +11,17 @@ does not model (inventory codes, base-unit conversions, hazard metadata) are
 dropped rather than smuggled in, because truth.json must describe what is *on
 the page*, not what we hope to derive from it.
 
+That rule was stated here from the start and broken in the same file: until
+WP-16 this mapped `pack_quantity` (a base-unit conversion, "2000") into C3's
+`pack_size` (a printed fact, "2 kg") and `purchase_unit_text` into `unit`,
+including for TH-01, a till receipt that prints no unit column at all. The
+first live eval run scored pack_size 19% and unit 90% on those two lines of
+code alone, with the model having read every cell correctly. Printed facts now
+come from `eval.printed`, which reads the prompt the image was generated from;
+money and quantities still come from this file, where they can be checked
+arithmetically. Every parsed row is cross-checked against the modelled line
+total, so a mis-parse fails the case instead of quietly rewriting truth.
+
     python -m eval.convert_generated           # write truth.json per case
     python -m eval.convert_generated --check    # report only, write nothing
 """
@@ -21,6 +32,7 @@ import pathlib
 import sys
 from decimal import Decimal
 
+from faida_api.extraction import units
 from faida_api.extraction.schema import (
     Classification,
     ExtractedInvoice,
@@ -29,6 +41,9 @@ from faida_api.extraction.schema import (
     LineKind,
     TaxTreatment,
 )
+
+from eval.printed import PrintedPage, PrintedPageError
+from eval.printed import read as read_printed_page
 
 GENERATED = pathlib.Path(__file__).parent / "fixtures" / "generated"
 
@@ -56,6 +71,27 @@ def _tax_treatment(header: dict) -> TaxTreatment | None:
     return None
 
 
+def _check_alignment(case_id: str, page: PrintedPage, modelled: list[dict]) -> None:
+    """The printed table and the modelled lines must describe the same
+    invoice. Row count and every amount are compared before a single printed
+    cell is trusted; a mismatch means the parse slipped and the case fails."""
+    if len(page.rows) != len(modelled):
+        raise PrintedPageError(
+            f"{case_id}: prompt shows {len(page.rows)} printed rows, "
+            f"expected.json models {len(modelled)}"
+        )
+    for index, line in enumerate(modelled):
+        printed = page.amount(index)
+        expected_total = _dec(line.get("line_total"))
+        if printed is None or expected_total is None:
+            continue
+        if printed != expected_total:
+            raise PrintedPageError(
+                f"{case_id}: printed row {index + 1} amount {printed} does not match "
+                f"the modelled line total {expected_total}"
+            )
+
+
 def convert(case_dir: pathlib.Path) -> ExtractionResult:
     case_id = case_dir.name
     expected = json.loads((case_dir / f"{case_id}.expected.json").read_text())
@@ -66,21 +102,36 @@ def convert(case_dir: pathlib.Path) -> ExtractionResult:
         return ExtractionResult(classification=classification, invoice=None)
 
     header = expected.get("header", {})
+    modelled = expected.get("lines", [])
+    page = read_printed_page(case_dir)
+    if page.has_table:
+        _check_alignment(case_id, page, modelled)
+
     lines = [
         ExtractedLine(
-            raw_name=line["description_raw"],
+            # Printed text comes from the page; money and quantities from the
+            # model file, where arithmetic can check them.
+            raw_name=(page.description(index) if page.has_table else None)
+            or line["description_raw"],
             line_kind=(
                 LineKind.CHARGE
                 if line.get("line_kind") == "non_stock_charge"
                 else LineKind.STOCK_ITEM
             ),
             qty=_dec(line.get("purchase_quantity")),
-            unit=line.get("purchase_unit_text"),
-            pack_size=line.get("pack_quantity"),
+            unit=page.unit(index) if page.has_table else None,
+            # A page with no pack-size column can still print the pack inside
+            # the item name ("RICE BASM 5KG"), and the catalog already reads it
+            # there, so truth records it there too.
+            pack_size=(
+                page.pack_size(index)
+                if page.has_table
+                else units.first_printed(line["description_raw"])
+            ),
             unit_price=_dec(line.get("unit_price")),
             line_total=_dec(line.get("line_total")),
         )
-        for line in expected.get("lines", [])
+        for index, line in enumerate(modelled)
     ]
     treatment = _tax_treatment(header)
     invoice = ExtractedInvoice(
@@ -88,7 +139,10 @@ def convert(case_dir: pathlib.Path) -> ExtractionResult:
         invoice_no=header.get("invoice_number"),
         invoice_date=header.get("invoice_date"),
         currency=header.get("currency"),
-        payment_kind="cash" if expected.get("expected_invoice_kind") == "cash_purchase" else None,
+        # Printed terms decide; the generator's own kind is the fallback for a
+        # receipt that states no terms (a till receipt is a cash purchase).
+        payment_kind=page.payment_kind()
+        or ("cash" if expected.get("expected_invoice_kind") == "cash_purchase" else None),
         lines=lines,
         subtotal=_dec(header.get("subtotal_before_discount")),
         tax=_dec(header.get("tax_total")),
@@ -105,7 +159,11 @@ def main() -> int:
     parser.add_argument("--check", action="store_true", help="report only, write nothing")
     args = parser.parse_args()
 
-    cases = sorted(d for d in GENERATED.iterdir() if d.is_dir())
+    # A directory without ground truth is not a case: `proposed/` holds
+    # prompts for images nobody has generated yet (see its README).
+    cases = sorted(
+        d for d in GENERATED.iterdir() if d.is_dir() and (d / f"{d.name}.expected.json").exists()
+    )
     failures = 0
     for case_dir in cases:
         case_id = case_dir.name

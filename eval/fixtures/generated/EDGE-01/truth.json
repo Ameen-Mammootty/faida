@@ -5,14 +5,14 @@
     "invoice_no": "FFP-INV-260706-0209",
     "invoice_date": "2026-07-06",
     "currency": "AED",
-    "payment_kind": null,
+    "payment_kind": "credit",
     "lines": [
       {
         "raw_name": "Avocado",
         "line_kind": "stock_item",
         "qty": "5",
         "unit": "box",
-        "pack_size": "4000",
+        "pack_size": "4 kg",
         "unit_price": "92.00",
         "line_total": "460.00"
       },
@@ -21,7 +21,7 @@
         "line_kind": "stock_item",
         "qty": "2",
         "unit": "box",
-        "pack_size": "2000",
+        "pack_size": "2 kg",
         "unit_price": "44.00",
         "line_total": "88.00"
       },
@@ -30,7 +30,7 @@
         "line_kind": "stock_item",
         "qty": "4",
         "unit": "box",
-        "pack_size": "2000",
+        "pack_size": "2 kg",
         "unit_price": "42.00",
         "line_total": "168.00"
       },
@@ -39,7 +39,7 @@
         "line_kind": "stock_item",
         "qty": "5",
         "unit": "box",
-        "pack_size": "1000",
+        "pack_size": "1 kg",
         "unit_price": "18.00",
         "line_total": "90.00"
       },
@@ -48,7 +48,7 @@
         "line_kind": "stock_item",
         "qty": "6",
         "unit": "box",
-        "pack_size": "500",
+        "pack_size": "500 g",
         "unit_price": "20.00",
         "line_total": "120.00"
       },
@@ -57,7 +57,7 @@
         "line_kind": "stock_item",
         "qty": "-1",
         "unit": "box",
-        "pack_size": "4000",
+        "pack_size": "4 kg",
         "unit_price": "92.00",
         "line_total": "-92.00"
       },

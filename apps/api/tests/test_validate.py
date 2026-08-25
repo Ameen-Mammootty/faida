@@ -347,6 +347,23 @@ def test_discount_ignored_would_fail_the_same_invoice():
     assert doc.expected - doc.extracted == Decimal("41.70")
 
 
+def test_discount_printed_negative_is_stored_as_a_magnitude():
+    """The first live eval run (2026-08-24) caught the model returning
+    discount_total -41.70 for EDGE-01, copying the sign the invoice prints.
+    C4 states the identity as `line sum - discount + rounding`, so a negative
+    D adds the discount instead: the invoice misses by 83.40 and a perfectly
+    read page fails into amber. The schema canonicalizes the sign, so this can
+    never depend on prompt wording."""
+    printed_negative = ExtractedInvoice(discount_total=Decimal("-41.70"))
+    assert printed_negative.discount_total == Decimal("41.70")
+
+    invoice = _edge01()
+    invoice.discount_total = Decimal("-41.70")
+    doc = validate_invoice(ExtractedInvoice(**invoice.model_dump())).document
+    assert doc.arith == CheckStatus.PASSED
+    assert doc.status == FieldStatus.GREEN
+
+
 def test_subtotal_may_be_printed_before_or_after_the_discount():
     invoice = _edge01()
     invoice.subtotal = Decimal("792.30")  # 834.00 - 41.70, equally legitimate

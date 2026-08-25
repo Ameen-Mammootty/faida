@@ -5,14 +5,14 @@
     "invoice_no": null,
     "invoice_date": "2026-07-08",
     "currency": null,
-    "payment_kind": null,
+    "payment_kind": "credit",
     "lines": [
       {
         "raw_name": "Plum Tomato",
         "line_kind": "stock_item",
         "qty": "4",
         "unit": "box",
-        "pack_size": "5000",
+        "pack_size": "5 kg",
         "unit_price": null,
         "line_total": null
       },
@@ -21,7 +21,7 @@
         "line_kind": "stock_item",
         "qty": "2",
         "unit": "box",
-        "pack_size": "3000",
+        "pack_size": "3 kg",
         "unit_price": null,
         "line_total": null
       },
@@ -30,7 +30,7 @@
         "line_kind": "stock_item",
         "qty": "2",
         "unit": "box",
-        "pack_size": "5000",
+        "pack_size": "5 kg",
         "unit_price": null,
         "line_total": null
       },
@@ -39,7 +39,7 @@
         "line_kind": "stock_item",
         "qty": "3",
         "unit": "box",
-        "pack_size": "3000",
+        "pack_size": "3 kg",
         "unit_price": null,
         "line_total": null
       },
@@ -48,7 +48,7 @@
         "line_kind": "stock_item",
         "qty": "3",
         "unit": "box",
-        "pack_size": "3000",
+        "pack_size": "3 kg",
         "unit_price": null,
         "line_total": null
       },
@@ -57,7 +57,7 @@
         "line_kind": "stock_item",
         "qty": "1",
         "unit": "box",
-        "pack_size": "5000",
+        "pack_size": "5 kg",
         "unit_price": null,
         "line_total": null
       },
@@ -66,7 +66,7 @@
         "line_kind": "stock_item",
         "qty": "3",
         "unit": "box",
-        "pack_size": "5000",
+        "pack_size": "5 kg",
         "unit_price": null,
         "line_total": null
       },
@@ -75,7 +75,7 @@
         "line_kind": "stock_item",
         "qty": "3",
         "unit": "box",
-        "pack_size": "5000",
+        "pack_size": "5 kg",
         "unit_price": null,
         "line_total": null
       },
@@ -84,7 +84,7 @@
         "line_kind": "stock_item",
         "qty": "6",
         "unit": "box",
-        "pack_size": "500",
+        "pack_size": "500 g",
         "unit_price": null,
         "line_total": null
       }

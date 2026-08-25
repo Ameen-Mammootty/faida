@@ -5,14 +5,14 @@
     "invoice_no": "ABL-INV-260703-0451",
     "invoice_date": "2026-07-03",
     "currency": "AED",
-    "payment_kind": null,
+    "payment_kind": "credit",
     "lines": [
       {
         "raw_name": "Brioche Burger Bun",
         "line_kind": "stock_item",
         "qty": "10",
         "unit": "pack",
-        "pack_size": "12",
+        "pack_size": "12 pcs",
         "unit_price": "22.00",
         "line_total": "220.00"
       },
@@ -21,7 +21,7 @@
         "line_kind": "stock_item",
         "qty": "15",
         "unit": "pack",
-        "pack_size": "8",
+        "pack_size": "8 pcs",
         "unit_price": "18.00",
         "line_total": "270.00"
       },
@@ -30,7 +30,7 @@
         "line_kind": "stock_item",
         "qty": "14",
         "unit": "pack",
-        "pack_size": "10",
+        "pack_size": "10 pcs",
         "unit_price": "12.00",
         "line_total": "168.00"
       },
@@ -39,7 +39,7 @@
         "line_kind": "stock_item",
         "qty": "10",
         "unit": "pack",
-        "pack_size": "10",
+        "pack_size": "10 pcs",
         "unit_price": "10.00",
         "line_total": "100.00"
       },
@@ -48,7 +48,7 @@
         "line_kind": "stock_item",
         "qty": "20",
         "unit": "loaf",
-        "pack_size": "20",
+        "pack_size": "20 pcs",
         "unit_price": "18.00",
         "line_total": "360.00"
       },
@@ -57,7 +57,7 @@
         "line_kind": "stock_item",
         "qty": "6",
         "unit": "tray",
-        "pack_size": "2000",
+        "pack_size": "2 kg",
         "unit_price": "60.00",
         "line_total": "360.00"
       }
