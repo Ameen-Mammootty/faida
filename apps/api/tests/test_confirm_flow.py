@@ -364,7 +364,7 @@ async def test_ok_with_nothing_pending_gets_onboarding(api, db):
 
 @requires_db
 async def test_cash_invoice_is_not_addressable_from_chat(api, db):
-    # WP-24/M6: a needs_review cash invoice never resolves from chat; the
+    # WP-24/M7: a needs_review cash invoice never resolves from chat; the
     # sender falls back to onboarding as if nothing were pending.
     app, client, *_ = api
     cash = good_invoice()

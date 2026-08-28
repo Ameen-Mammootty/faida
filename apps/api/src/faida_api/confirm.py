@@ -9,7 +9,7 @@ status tracking ingest only) and Database.record_confirmed_prices moves the
 price baseline (plan.md §5 layer 4). Corrections apply, re-validate, re-snap,
 re-alert, and re-reply with the WP-20 composer; the invoice stays
 awaiting_confirm. Cash invoices are needs_review and never addressable from
-chat (M6 owns approvals).
+chat (M7 owns approvals).
 
 The chat grammar, in full (all keywords case-insensitive):
 

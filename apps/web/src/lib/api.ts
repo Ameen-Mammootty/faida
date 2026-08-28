@@ -15,7 +15,7 @@
  *
  * Mock mode is the default: set NEXT_PUBLIC_MOCK_API=false plus
  * NEXT_PUBLIC_API_BASE and NEXT_PUBLIC_API_TOKEN to talk to the real thing.
- * The bearer token is the demo's shared secret (real auth arrives in M6).
+ * The bearer token is the demo's shared secret (real auth arrives in M7).
  * The mock serves byte-identical shapes, so components cannot tell the modes
  * apart.
  *

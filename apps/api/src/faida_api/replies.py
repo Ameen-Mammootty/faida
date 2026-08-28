@@ -42,7 +42,7 @@ REPLY_NOT_INVOICE = (
     "That doesn't look like a supplier invoice, so I'll leave it - forward an "
     "invoice photo and I'll read it."
 )
-# Z-report decline (sales reports arrive M5).
+# Z-report decline (sales reports arrive M8).
 REPLY_Z_REPORT = "I read supplier invoices for now - sales reports are coming soon."
 # Extraction failure (plan.md §5 layer 6: one message, never a dead end).
 REPLY_EXTRACTION_FAILED = "Couldn't read this one - try a straighter photo, or type the total."
@@ -51,7 +51,7 @@ REPLY_EXTRACTION_FAILED = "Couldn't read this one - try a straighter photo, or t
 
 CLOSING_ALL_GREEN = "Reply OK to confirm."
 CLOSING_WITH_AMBERS = "Reply with fixes (like: line 4 qty 16) or OK to confirm the rest."
-# Cash hold (WP-24, PRD §21): the distinction is captured now; approval UI is M6.
+# Cash hold (WP-24, PRD §21): the distinction is captured now; approval UI is M7.
 CASH_HOLD_NOTE = "This one is marked cash, so it needs the owner's approval before it's recorded."
 
 OVERFLOW_LINE = "...and {count} more to check on the review screen."

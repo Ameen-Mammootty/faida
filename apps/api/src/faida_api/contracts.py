@@ -46,7 +46,7 @@ DOCUMENT_TRANSITIONS: dict[DocumentStatus, set[DocumentStatus]] = {
 }
 
 # Corrections keep an invoice in AWAITING_CONFIRM (no transition); NEEDS_REVIEW
-# clears through the review screen (M3) or cash approval (M6).
+# clears through the review screen (M3) or cash approval (M7).
 INVOICE_TRANSITIONS: dict[InvoiceStatus, set[InvoiceStatus]] = {
     InvoiceStatus.DRAFT: {InvoiceStatus.AWAITING_CONFIRM, InvoiceStatus.NEEDS_REVIEW},
     InvoiceStatus.AWAITING_CONFIRM: {InvoiceStatus.CONFIRMED, InvoiceStatus.NEEDS_REVIEW},

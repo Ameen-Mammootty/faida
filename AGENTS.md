@@ -67,7 +67,7 @@ The ingest flow, which everything else builds on:
 
 Tenancy: every tenant-owned row carries `tenant_id` from day one.
 Branch is resolved from the sender phone (`branches.wa_phone_e164`), never from document text.
-RLS enforcement is deferred to M6; the demo runs single-tenant seeded.
+RLS enforcement is deferred to M7; the demo runs single-tenant seeded.
 
 Extraction (M1+): Claude Opus 5 (`claude-opus-5`) via the Anthropic SDK with structured outputs, behind one thin provider interface so the provider swaps in one place.
 Accuracy is a pipeline property, not a prompt property: deterministic arithmetic reconciliation, one scoped repair pass, supplier-memory snapping, and derived (never self-reported) confidence.

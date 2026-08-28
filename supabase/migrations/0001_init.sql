@@ -130,7 +130,7 @@ create index jobs_claim_idx on jobs (status, run_after);
 -- Deny-all RLS. Supabase exposes the `public` schema through PostgREST, so the anon key
 -- (public by design, and embedded in apps/web from M3) would otherwise read and write every
 -- table here. No policies yet: the backend connects as the table owner and storage.py uses
--- service_role, both of which bypass RLS. Real tenant policies arrive in M6 (plan §"M6").
+-- service_role, both of which bypass RLS. Real tenant policies arrive in M7 (plan §"M7").
 alter table tenants              enable row level security;
 alter table branches             enable row level security;
 alter table suppliers            enable row level security;
