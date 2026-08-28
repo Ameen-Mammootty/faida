@@ -272,8 +272,11 @@ plan (§7).
       fixed the same day: `extraction/currency.py` derives the ISO code (Dhs, dirhams, د.إ, the
       U+20C3 dirham sign, riyal marks incl. U+20C1) once in the pipeline, the manual path, and
       the eval scorer, while C3 keeps reading the currency as printed
-- [ ] Line-completeness guard: a short read fails loudly instead of persisting a partial invoice
-      whose header still reconciles (WP-19, ported from the old platform's post-mortem 2026-08-24)
+- [x] Line-completeness guard: a short read fails loudly instead of persisting a partial invoice
+      whose header still reconciles (WP-19, ported from the old platform's post-mortem 2026-08-24;
+      shipped 2026-08-28 - stop_reason='max_tokens' raises even when the cut-off JSON parses,
+      through extract and repair alike; the self-reported row count was foreclosed by the
+      measured schema ceiling, see the Decision Log)
 - **Done when:** eval report hits the accuracy targets, and a forwarded photo produces a stored
   draft invoice with per-field checks.
 
@@ -336,11 +339,15 @@ plan (§7).
       rendering, token auth 401/200, CORS preflight exact-origin, waitlist browser-to-database.
       Demo script steps 11-12 now have a real screen to open
 - [ ] Curate the 3 demo invoices; run each through the full loop 5× — flakiness is a bug
-- [ ] Latency pass: forward → reply under ~20s (stream nothing; the reply is one message)
+- [x] Latency pass: forward → reply under ~20s (stream nothing; the reply is one message) -
+      **18.7 s measured on a real forward at prompt v3, 2026-08-28**, no repair round, model time
+      6.9-11 s across the corpus; the 5x curated runs below re-verify it per paper
 - [ ] Failure demo path: forward a meme, get the polite decline (shows discipline, sells trust)
 - [ ] Full rehearsal of the loop portion of the script, twice, on the demo phones
-- [ ] Duplicate invoice hold: the same paper sent twice is held with a reply naming the first one,
-      `DUP-01` (WP-44)
+- [x] Duplicate invoice hold: the same paper sent twice is held with a reply naming the first one,
+      `DUP-01` (WP-44; shipped 2026-08-28 - same supplier + normalized number + total holds as
+      needs_review naming the earlier record; number alone, or date + total, appends a note
+      instead; rehearsal consequence written into `Docs/DEMO_RUNBOOK.md`: reset after every run)
 - **Done when:** the loop runs end-to-end twice in a row with zero intervention. This gates M5 —
   nothing gets mapped or costed on top of numbers the loop cannot produce flawlessly.
 
@@ -517,7 +524,7 @@ demonstrable, not documentary.
 | 17 | ~~**VAT treatment, inclusive + exclusive**~~ **done 2026-08-23** (C3/C4 as amended 2026-08-23): both identities in `validate.py` anchored on the line sum, GCC rate table in `constants.py`, `tax_treatment` + `vat_rate` through schema → persistence → eval ground truth (migration 0006), net-canonical price memory converted inside the confirm transaction, and no totals question when a treatment resolves. **Not blocked on the corpus** - deterministic money math with a real invoice already in hand, so it runs in parallel with F6 | M | C3, C4 | Deira T-0084417 (inclusive, UAE 5%) reconciles green with no question; an exclusive invoice still reconciles green; an inclusive invoice printing a *net* subtotal is not misread as exclusive; a supplier switching format produces **no** price alert |
 
 | 18 | ~~**Discounts and non-stock charges break C4 the same way VAT did.**~~ **done 2026-08-23**. Found by running the generated fixtures through the amended validator: `EDGE-01` reads perfectly and still fails, because the line sum misses the trade discount exactly (834.00 - 41.70 + 25.00 delivery + 40.87 tax = 858.17, but C3 models only subtotal/tax/total). Trade discounts are routine in GCC food supply, so this fails correct invoices into amber. Needs a C3 decision like the VAT one, not a prompt tweak | M | C3, C4 | `EDGE-01` reconciles green; a discounted invoice's price memory records the *post-discount* unit price, since that is what was paid |
-| 19 | **Line-completeness guard** (ported 2026-08-24 from the old platform's post-mortem, whose dominant real failure was a perfect header with 2 of 34 lines from an 8k output ceiling): a short read is a *failure*, not an amber - check the provider's stop reason for output truncation, compare the extracted line count with the rows the model reports seeing, and prove adaptive thinking cannot eat into the 16k output budget on a 34-line invoice. Reconciliation catches the symptom; this names the cause | S | 13 | `PH-01` extracts all 34 lines live; a simulated truncated response fails loudly instead of persisting a partial invoice whose header still reconciles |
+| 19 | ~~**Line-completeness guard**~~ **done 2026-08-28** (ported 2026-08-24 from the old platform's post-mortem, whose dominant real failure was a perfect header with 2 of 34 lines from an 8k output ceiling): a short read is a *failure*, not an amber - `stop_reason='max_tokens'` raises in the provider even when the cut-off JSON parses, for extract and repair alike, and the flow persists nothing. The "rows the model reports seeing" comparison is **foreclosed by the schema ceiling** (Decision Log 2026-08-28: the wire budget has room for zero new fields), and the budget proof is measured rather than asserted: `PH-01`, the 34-line corpus worst case, spends 2,638 of the 16,000 output tokens at v3, adaptive thinking included | S | 13 | `PH-01` extracts all 34 lines live; a simulated truncated response fails loudly instead of persisting a partial invoice whose header still reconciles |
 
 **M2 (confirm flow, supplier memory, alerts)**
 
@@ -552,7 +559,7 @@ demonstrable, not documentary.
 | 41 | Hardening: per-stage latency logs (webhook, download, extract, repair, reply); forward → reply under ~20 s; each demo invoice through the loop 5×; every flake fixed, never retried around | M |
 | 42 | Meme decline path, word-perfect | S |
 | 43 | Demo runbook with reset steps between rehearsals; founder rehearses twice (F7) | S |
-| 44 | **Duplicate invoice hold** (ported 2026-08-24): normalize the invoice number (lowercase, strip non-alphanumerics); same supplier + number + total against an existing invoice holds the new one with a reply naming the earlier one; number-or-date match adds a note. No new tables; `DUP-01` is already a fixture | S |
+| 44 | ~~**Duplicate invoice hold**~~ **done 2026-08-28** (ported 2026-08-24): normalize the invoice number (lowercase, strip non-alphanumerics - `matching.normalize_invoice_no`); same supplier + number + total against an existing invoice holds the new one as needs_review with a reply naming the earlier record; number alone, or date + total, appends a note instead of holding (a second same-day delivery is real). Same-supplier means matched ids when both rows have one, else equal normalized names, so an uncataloged supplier can still send the same paper twice. The hold outranks the cash hold; alerts and questions on a copy are noise. No new tables | S |
 
 ### 7.4 Delegation waves
 
@@ -786,6 +793,7 @@ pilot volume. Meta utility template cost applies only from M10 (verify live UAE 
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-08-28 | **WP-19 is amended: truncation is detected from the provider's stop reason alone; the self-reported row count is foreclosed** | The original brief asked to also compare the extracted line count with a count the model reports seeing - which is one more C3 field, and the ceiling A/B measured this same day found room for exactly zero more. stop_reason='max_tokens' is the transport's own ground truth for truncation and cannot disagree with itself, the guard raises even when the cut-off JSON happens to parse (the old platform's exact failure), and reconciliation still catches any partial read the transport misses. The budget half is proven by measurement: PH-01's 34 lines spend 2,638 of 16,000 output tokens at v3 with adaptive thinking on |
 | 2026-08-28 | **A bare "OK" may not confirm an invoice whose total is null** (WP-26, settling the open question the work package carried since 2026-08-25) | Founder call, in their own words: "a missing line qty is a small hole; a missing total is the invoice's headline number, and M5 will divide it into plate costs where no photo can catch it." The reply that caused it was honest and still wrong: it said "total unreadable" and then offered "or OK to confirm the rest", so one word recorded an invoice that contributes nothing to any total-based figure and looks complete from every screen. The rule is about the invoice, not the door: chat re-asks the question instead of confirming, the review screen's confirm returns 409 with the reason, and `total is not null` sits in the single confirm write so a third path written later cannot reopen it. What replaces the OK is a short conversation, never a calculation - the reply shows the line sum (the one figure the per-line arithmetic already proved) and asks the two facts C4 derives from a total and cannot derive without one: is that the whole invoice, and do the printed prices already include VAT. A total assembled from those answers is stamped C8 `reconstructed`; a total the sender reads off the page stays `corrected_chat`. The distinction is the point: from M5 a cost per gram built on the first must read *estimated* (C9), and nothing but the origin can tell them apart four sums downstream |
 | 2026-08-28 | **An invoice whose currency differs from the tenant's is held and asked about, and a confirmed foreign-currency invoice never moves price memory** (WP-28) | Founder call, after the live USD forward the same day: Levant Specialty Foods FZCO billed in USD and the confirm wrote 75.00 / 65.00 / 35.00 into `supplier_items.last_price`, which is a bare number with no currency beside it, on an AED tenant. Harmless while that supplier always bills in USD - alerts compare a supplier against its own history - and poison the moment M5 divides those numbers into a cost per gram or M8 adds them into a purchases figure, because nothing downstream can see that three of the numbers are a different kind of money. The hold is deliberately cheap: the reply asks (so a misread currency word is correctable from chat with `currency AED`), the invoice still confirms and still stores exactly as printed, and `record_confirmed_prices` simply returns before the catalog, with the ack saying so rather than promising to watch prices it dropped. Price alerts are suppressed on the same test, because subtracting an AED baseline from a USD price is the demo's money moment lying in the one moment it asks to be trusted. **Recording the currency per price row was considered and deferred** (§2 rule 8): no customer has asked for multi-currency price history, the column would need a backfill decision for every existing row, and a hold is reversible later without migration pain - where a half-built multi-currency baseline is not |
 | 2026-08-28 | **The demo bar is the complete end-to-end MVP chain, and the demo gate moves from M4 to the end of M6** | Founder call, in their own words: "we are not ready for the demo until we have the complete end-to-end MVP" - (1) an extraction layer with the exact invoice data, (2) extracted supplier nomenclature mapped to inventory raw materials, (3) raw materials tagged as ingredients of a menu, (4) the menu costed - so "the restaurant will be able to find a menu-wise profit margin, so that he can prioritize what to push and what not to push. That is the main functionality which you want to show in the demo." This completes the morning's resequencing rather than reversing it: M5 (raw materials) and M6 (menu costing) were already first in line; they now sit inside the demo boundary instead of after it. M4 keeps every hardening item and becomes the *loop* gate - the loop must run flawlessly twice before anything is mapped or costed on top of its numbers, because a wrong number that enters a plate cost cannot be seen next to its photo any more. Cost stated plainly: the demo waits for M5+M6, roughly weeks 4-7 instead of week 3. The trade bought: a demo of the loop alone sells trust in the data; a demo that ends on "push this item, fix that one" sells the product. New founder dependency created: one real menu with recipes and selling prices (F7) - without it M6 has nothing true to cost |
@@ -828,6 +836,15 @@ pilot volume. Meta utility template cost applies only from M10 (verify live UAE 
 ## 13. Progress Log
 
 *(newest first — one line per session: date, what shipped, what's next)*
+
+- 2026-08-28 - **M4 loop gate: WP-19 and WP-44 shipped and the latency box closes; what remains is phone work.**
+  Built in an isolated worktree (`m4-loop-gate`) with its own venv and test database while WP-26/WP-28 ran in a parallel session on the main tree, per §7.5.
+  **WP-19:** a truncated read now fails loudly at the provider - `stop_reason='max_tokens'` raises even when the cut-off JSON parses, for extract and repair alike - so the old platform's worst failure (a perfect header with 2 of 34 lines) cannot persist here. The model-reported row count half of the brief is foreclosed by the schema ceiling and logged as an amendment; the budget half is measured, not asserted (PH-01: 2,638 of 16,000 output tokens).
+  **WP-44:** the same paper sent twice is held as needs_review with a reply naming the earlier record ("This one is already recorded: ..."); a number-only or date+total match appends a note instead, because a second same-day delivery is real. Pure rule in `pipeline.find_duplicate` (testable without a database), number normalization in `matching.normalize_invoice_no`, headers fetched once per tenant.
+  **Latency** ticks on evidence: 18.7 s on a real forward at v3, no repair round; the 5x curated runs re-verify per paper.
+  `Docs/DEMO_RUNBOOK.md` is caught up with the week: the exact reply now carries the "dated" line, the wait narration says 15-20 s not 30, the grammar warm-up is a precondition, curated papers must print distinct invoice numbers and a date (the duplicate hold makes a reused number a rehearsal-breaker - reset after every run now), and the failure playbook gains the duplicate-hold pivot line.
+  13 new tests; 346 API tests, ruff clean.
+  Still open on the loop gate, all founder phone work: curate the three papers to the runbook's spec, run each through the loop 5x, the meme decline word-perfect, two rehearsals.
 
 - 2026-08-29 - **CUT-01 generated and put through the real model: the pipeline returned no total rather than inventing one, which is the whole bet WP-26 rests on.**
   The new fixture (`eval/fixtures/generated/proposed/CUT-01.prompt.txt` and its image) is an export invoice billed in USD with no totals block on the page: five lines that read green and sum to 710.50, and a true total of 710.50 that appears nowhere in the picture.

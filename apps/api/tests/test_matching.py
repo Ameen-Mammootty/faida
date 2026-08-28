@@ -5,7 +5,13 @@ real-Postgres tests for the on-confirm price machinery
 
 from decimal import Decimal
 
-from faida_api.matching import clean_name, match_supplier, normalize, snap_item
+from faida_api.matching import (
+    clean_name,
+    match_supplier,
+    normalize,
+    normalize_invoice_no,
+    snap_item,
+)
 
 from .conftest import DEMO_TENANT_ID, requires_db
 
@@ -576,3 +582,15 @@ async def test_trade_discount_reaches_the_recorded_price(db):
     # 92.00 less its pro-rata share of the discount, not the 92.00 on the page.
     # The charge is outside the discount base, so it cannot dilute the rate.
     assert (await _item_row(db, item_id))["last_price"] == Decimal("87.400")
+
+
+def test_normalize_invoice_no_makes_one_comparable_form():
+    # WP-44: "AAF 2214", "aaf-2214" and "AAF#2214" are the same paper.
+    assert normalize_invoice_no("AAF 2214") == "aaf2214"
+    assert normalize_invoice_no("aaf-2214") == "aaf2214"
+    assert normalize_invoice_no("AAF#2214!") == "aaf2214"
+    assert normalize_invoice_no("INV-1041") == "inv1041"
+    # An absent number must never equal another absent number.
+    assert normalize_invoice_no(None) is None
+    assert normalize_invoice_no("---") is None
+    assert normalize_invoice_no("  ") is None

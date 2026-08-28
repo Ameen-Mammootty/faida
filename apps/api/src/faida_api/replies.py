@@ -465,3 +465,40 @@ def compose_line_out_of_range(n: int, line_count: int) -> str:
         f"This invoice has {line_count} {line_word}, so I can't fix line {n} - "
         "check the line number and resend."
     )
+
+
+# --- WP-44: duplicate invoice hold ------------------------------------------
+
+
+def compose_duplicate_hold_reply(
+    supplier_name: str | None,
+    invoice_no: str | None,
+    currency: str | None,
+    total: Decimal | None,
+    received_on: datetime.date,
+) -> str:
+    """The same paper sent twice is held, naming the earlier record - never
+    silently double-counted, never silently dropped (WP-44). Replaces the
+    extraction reply entirely: alerts and questions on a copy are noise."""
+    supplier = supplier_name or "supplier unknown"
+    number = f" {invoice_no}" if invoice_no else ""
+    money = "" if total is None else f" for {currency or DEFAULT_CURRENCY} {_money(total)}"
+    return (
+        f"This one is already recorded: {supplier}{number}{money}, "
+        f"received {_date_words(received_on)}. I've held this copy so nothing is "
+        "counted twice - if it really is a new invoice, confirm it on the review screen."
+    )
+
+
+def render_duplicate_note(
+    supplier_name: str | None, invoice_no: str | None, received_on: datetime.date
+) -> str:
+    """The weaker WP-44 signal - the number alone, or the date and total,
+    matches an earlier invoice but not enough to hold on: noted, never held,
+    appended after the normal reply."""
+    supplier = supplier_name or "supplier unknown"
+    number = f" {invoice_no}" if invoice_no else ""
+    return (
+        f"Note: this looks close to {supplier}{number} received "
+        f"{_date_words(received_on)} - worth checking it isn't the same paper."
+    )

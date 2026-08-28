@@ -96,6 +96,19 @@ class AnthropicExtractionProvider:
         )
         latency_ms = int((time.monotonic() - started) * 1000)
 
+        if response.stop_reason == "max_tokens":
+            # WP-19, ported from the old platform's post-mortem: its dominant
+            # real failure was a perfect header with 2 of 34 lines from an 8k
+            # output ceiling, and the partial invoice persisted because its
+            # header still reconciled. A truncated read is a FAILURE, never a
+            # shorter answer - even when the cut-off JSON happens to parse.
+            # Headroom is measured, not assumed: PH-01 (34 lines, the corpus
+            # worst case) spends 2,638 output tokens of this 16,000 budget at
+            # prompt v3, adaptive thinking included.
+            raise ValueError(
+                f"output truncated at the {MAX_TOKENS}-token ceiling "
+                "(stop_reason='max_tokens'): refusing a partial read"
+            )
         parsed = response.parsed_output
         if parsed is None:
             # e.g. a refusal: no text block to parse. The pipeline's failure

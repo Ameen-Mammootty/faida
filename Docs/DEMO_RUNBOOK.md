@@ -1,7 +1,7 @@
-# Faida Demo Runbook (M4)
+# Faida Demo Runbook (M4 loop gate - act one of the demo)
 
-This is the operating manual for the 4-minute demo in plan.md §6 M4 and for the two rehearsals before it (F7).
-The gate: the demo runs end to end twice in a row with zero intervention.
+This is the operating manual for the invoice-loop portion of the demo (plan.md §6) and for the two loop rehearsals before the M4 gate (F7).
+Since 2026-08-28 the full demo is two acts and gates at M6 (§1: the loop, then materials and menu margins); this runbook owns act one, and the loop gate stands on its own: the loop runs end to end twice in a row with zero intervention before anything is built on its numbers.
 Every reply quoted below is the exact template from `apps/api/src/faida_api/replies.py`, so if the phone shows different words, something is wrong.
 
 ## A. Preconditions checklist
@@ -33,6 +33,7 @@ Run through this list the day before, and again 30 minutes before going on.
 - [ ] The founder phone is mapped to the demo chain: the commented UPDATE at the bottom of `supabase/demo_seed.sql` has been run once, so the sender resolves to Al Qusais Branch of Karak Al Khaleej Cafeterias.
 - [ ] The review screen loads real data with its API token configured, and the invoice list for the demo chain is empty (no rehearsal leftovers).
 - [ ] The 3 curated invoice photos and 1 meme image are saved on the demo phone, in order, first in the gallery.
+- [ ] **The extraction grammar is warm.** The first request after a schema or model change pays a one-time server-side compilation measured in minutes (155 s observed 2026-08-28), and the cache is not permanent. Within the hour before going on, run `apps/api/.venv/bin/python -m eval.schema_probe` from the repo root (needs `ANTHROPIC_API_KEY`), or forward one throwaway invoice and delete it. Never let the on-stage forward be the first request.
 - [ ] Phone details: full battery, full signal or stage wifi, notifications from every other app silenced.
 
 Staged catalog quick reference (from `supabase/demo_seed.sql`):
@@ -46,6 +47,10 @@ Staged catalog quick reference (from `supabase/demo_seed.sql`):
 
 Curated invoice 1 (Gulf Foods Trading LLC, 2 lines, total AED 745.76) is the on-stage invoice.
 Invoices 2 (Al Madina Trading) and 3 are rehearsal and backup material.
+What every curated paper must print (the reply echoes these, so they are part of the script):
+a distinct invoice number per paper (the same supplier + number + total sent twice is HELD as a duplicate since 2026-08-28 - correct in production, wrong on stage);
+a printed date (the reply now reads it out as "dated 20 Aug 2026" - printing it day-first, like 20/08/2026, quietly demos the date reading);
+AED amounts; credit terms or no terms line at all.
 Curate credit invoices only: an invoice marked cash gets the cash-hold closing instead of "Reply OK to confirm", and OK will not confirm it from chat.
 
 ## B. The 4-minute script
@@ -56,11 +61,11 @@ The script from plan.md §6 M4, verbatim: forward invoice, reply appears with pr
 2. Say: "This is a supplier invoice from this morning's delivery. Watch what the salesman does with it."
 3. Forward curated invoice 1.
 4. Within a couple of seconds the ack arrives: `Got it - invoice received and saved. I'll reply with the details here soon.`
-5. Now extraction runs, which takes roughly 30 seconds; do not stand in silence.
+5. Now extraction runs, which takes 15-20 seconds (18.7 s measured on a real forward 2026-08-28); do not stand in silence.
 6. While waiting, say: "It is reading the photo now: every line item, every price, and checking that the math on the page actually adds up. No typing, no app, and it compares every price against what this cafeteria paid last week."
-7. The parsed reply arrives, exactly:
+7. The parsed reply arrives, exactly (the date is whatever invoice 1 prints, read out in words):
    ```
-   Read it: Gulf Foods Trading LLC, 2 lines, total AED 745.76.
+   Read it: Gulf Foods Trading LLC, 2 lines, total AED 745.76, dated 20 Aug 2026.
    Milk Powder 2.5kg up AED 4.00 (50.50 to 54.50) since your last purchase.
    Karak Tea Dust down AED 3.25 (22.00 to 18.75) since your last purchase.
    Reply OK to confirm.
@@ -85,8 +90,7 @@ psql "$DATABASE_URL" -f supabase/demo_seed.sql
 
 `$DATABASE_URL` is the same session-pooler URI Railway uses (README §M0 step 2).
 The reset deletes every rehearsal trace for the demo chain (documents, invoices, lines, messages, jobs, runs, confirm-created catalog rows, appended price history) and re-stages the baselines; it cannot touch any other tenant, and it preserves the branch phone mapping.
-Run it after every rehearsal in which you replied OK: confirming moves `last_price` to 54.50, so without the reset the milk powder alert will not fire on the next run.
-Re-forwarding the same photo without confirming is safe, since dedupe is per WhatsApp message, not per image.
+Run it after EVERY rehearsal run, confirmed or not (this got stricter 2026-08-28): confirming moves `last_price` to 54.50 so the alert will not fire again, and even without confirming, re-forwarding the same paper now trips the duplicate hold (WP-44) - the second copy is held with "This one is already recorded..." instead of being read out. Both are correct product behavior and both ruin a rehearsal that expected the full reply.
 Rehearsal images stay in the storage bucket; that is intended, since originals are immutable and nothing references them after the reset.
 
 Re-check after the reset:
@@ -110,6 +114,10 @@ The reply arrived but without the price alert line.
 Almost always this means a rehearsal confirm moved the baseline: check `last_price` on the milk powder item (query in section C) and re-run the reset.
 If `last_price` is already 54.50, the previous run was confirmed and not reset.
 
+**The duplicate hold fired instead of the read-out.**
+The reply says `This one is already recorded: ...` - a previous rehearsal of the same paper was not reset.
+Run the section C reset and forward again; if it happens on stage, the pivot line writes itself: "and if a salesman sends the same invoice twice, it refuses to count it twice" - then forward the backup invoice.
+
 **WhatsApp is silent (no ack at all).**
 No ack within 10 seconds means the message never reached the worker.
 Check in this order, per the README §M0 troubleshooting table: `/health` returns `db:true`; the Railway logs show a `POST /webhook` at all; `META_APP_SECRET` matches (a logged POST returning 403 means the signature is being rejected); the access token has not expired; `WORKER_ENABLED` is true.
@@ -131,7 +139,7 @@ latency document=<id> webhook_to_reply_ms=<n> stages=ingest:<n>,extract:<n>,repa
 ```
 
 Grep the Railway logs for `latency document=` and divide `webhook_to_reply_ms` by 1000.
-The target is under about 20 seconds from forward to reply; a repair round roughly doubles the extract stage, so a curated invoice that keeps triggering repair should be swapped out.
+The target is under about 20 seconds from forward to reply; 18.7 s was measured on a real forward at prompt v3 (2026-08-28) with no repair round - a curated invoice that keeps triggering repair should be swapped out.
 
 | Run # | Date | Forward-to-reply (s) | Flakes seen (and the fix shipped) |
 |---|---|---|---|

@@ -64,6 +64,17 @@ def clean_name(name: str) -> str:
     return " ".join(name.split()).strip(" .,;:-_")
 
 
+def normalize_invoice_no(invoice_no: str | None) -> str | None:
+    """One comparable form for an invoice number (WP-44): lowercase, every
+    non-alphanumeric stripped, so "AAF 2214", "aaf-2214" and "AAF#2214" are
+    the same paper. None (and a number that is all punctuation) stays None -
+    an absent number must never equal another absent number."""
+    if invoice_no is None:
+        return None
+    normalized = "".join(ch for ch in invoice_no.casefold() if ch.isalnum())
+    return normalized or None
+
+
 def _similarity(a: str, b: str) -> float:
     """Fuzzy score over normalized names: the better of the whole-string ratio
     and the token-sorted ratio, so word order alone never sinks a match."""

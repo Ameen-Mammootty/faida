@@ -31,6 +31,8 @@ from faida_api.replies import (
     REPLY_MEDIA_RECEIVED,
     REPLY_NOT_INVOICE,
     REPLY_Z_REPORT,
+    compose_duplicate_hold_reply,
+    render_duplicate_note,
 )
 from faida_api.storage import Storage
 from faida_api.wa import WhatsAppClient
@@ -333,6 +335,29 @@ async def test_provider_down_retries_then_fails_with_one_reply(api, db):
     assert await outbound_bodies(db) == [REPLY_MEDIA_RECEIVED, REPLY_EXTRACTION_FAILED]
 
 
+async def test_truncated_read_fails_loudly_and_persists_no_partial_invoice(api, db):
+    """WP-19 acceptance: a simulated truncated response is a failure, never a
+    shorter answer - no draft invoice whose header still reconciles, document
+    failed, one honest reply. The provider raises on stop_reason='max_tokens'
+    (test_anthropic_provider), so the flow sees exactly this error shape."""
+    app, client, *_ = api
+    provider = FakeExtraction(
+        extract_error=ValueError(
+            "output truncated at the 16000-token ceiling "
+            "(stop_reason='max_tokens'): refusing a partial read"
+        )
+    )
+
+    await post_webhook(client, wa_image_payload())
+    await drain_jobs(db, app, provider, release_backoff=True)
+
+    doc = await db.get_document_by_wa_message("wamid.in1")
+    assert doc["status"] == "failed"
+    assert await db.pool.fetchval("select count(*) from invoices") == 0
+    assert await db.pool.fetchval("select count(*) from invoice_lines") == 0
+    assert await outbound_bodies(db) == [REPLY_MEDIA_RECEIVED, REPLY_EXTRACTION_FAILED]
+
+
 async def test_reextract_of_extracted_document_is_a_noop(api, db):
     app, client, *_ = api
     provider = FakeExtraction(result=invoice_result(good_invoice()))
@@ -579,3 +604,60 @@ async def test_printed_currency_is_stored_and_replied_as_iso_code(api, db):
     reply = (await outbound_bodies(db))[-1]
     assert "total AED 745.76" in reply
     assert "dirhams" not in reply
+
+
+# --- WP-44: duplicate invoice hold ------------------------------------------
+
+
+async def test_same_paper_twice_is_held_naming_the_first(api, db):
+    app, client, *_ = api
+    await post_webhook(client, wa_image_payload())
+    await drain_jobs(db, app, FakeExtraction(result=invoice_result(good_invoice())))
+    await post_webhook(client, wa_image_payload(message_id="wamid.dup2"))
+    await drain_jobs(db, app, FakeExtraction(result=invoice_result(good_invoice())))
+
+    rows = await db.pool.fetch("select * from invoices order by created_at, id")
+    assert [row["status"] for row in rows] == ["awaiting_confirm", "needs_review"]
+    # Both papers stay recorded - held, never dropped - and only the first is
+    # reachable from chat (C5 lists awaiting_confirm only).
+    assert (await outbound_bodies(db))[-1] == compose_duplicate_hold_reply(
+        "Gulf Foods Trading LLC",
+        "INV-1041",
+        "AED",
+        Decimal("745.76"),
+        rows[0]["created_at"].date(),
+    )
+
+
+async def test_similar_paper_gets_a_note_never_a_hold(api, db):
+    app, client, *_ = api
+    await post_webhook(client, wa_image_payload())
+    await drain_jobs(db, app, FakeExtraction(result=invoice_result(good_invoice())))
+    # Same supplier, same day, same total - but a different invoice number:
+    # plausibly a second delivery, so it proceeds with a note, never a hold.
+    second = good_invoice().model_copy(update={"invoice_no": "INV-2077"})
+    await post_webhook(client, wa_image_payload(message_id="wamid.sim2"))
+    await drain_jobs(db, app, FakeExtraction(result=invoice_result(second)))
+
+    rows = await db.pool.fetch("select * from invoices order by created_at, id")
+    assert [row["status"] for row in rows] == ["awaiting_confirm", "awaiting_confirm"]
+    reply = (await outbound_bodies(db))[-1]
+    assert reply.splitlines()[-1] == render_duplicate_note(
+        "Gulf Foods Trading LLC", "INV-1041", rows[0]["created_at"].date()
+    )
+    assert reply.splitlines()[-2] == CLOSING_ALL_GREEN
+
+
+async def test_another_suppliers_same_number_is_not_held(api, db):
+    app, client, *_ = api
+    await post_webhook(client, wa_image_payload())
+    await drain_jobs(db, app, FakeExtraction(result=invoice_result(good_invoice())))
+    other = good_invoice().model_copy(update={"supplier_name": "Al Madina Trading"})
+    await post_webhook(client, wa_image_payload(message_id="wamid.oth2"))
+    await drain_jobs(db, app, FakeExtraction(result=invoice_result(other)))
+
+    reply = (await outbound_bodies(db))[-1]
+    assert "already recorded" not in reply
+    assert "Note:" not in reply
+    statuses = await db.pool.fetch("select status from invoices")
+    assert [row["status"] for row in statuses] == ["awaiting_confirm", "awaiting_confirm"]
