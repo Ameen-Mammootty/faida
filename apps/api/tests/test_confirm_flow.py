@@ -17,16 +17,25 @@ import httpx
 import pytest
 
 from faida_api.confirm import (
+    AmbiguousDateEdit,
     Confirm,
     Corrections,
+    DateEdit,
+    InvoiceNoEdit,
     LineFieldEdit,
     LineNameEdit,
     TotalsEdit,
     apply_edits,
     parse_reply,
 )
-from faida_api.extraction.schema import ExtractedInvoice, ExtractedLine
-from faida_api.replies import REPLY_CLARIFY, REPLY_TEXT_ONBOARDING
+from faida_api.extraction.schema import ExtractedInvoice, ExtractedLine, LineKind
+from faida_api.replies import (
+    QUESTION_MISSING_DATE,
+    QUESTION_MISSING_INVOICE_NO,
+    REPLY_CLARIFY,
+    REPLY_TEXT_ONBOARDING,
+    compose_ambiguous_date_reply,
+)
 from faida_api.storage import Storage
 from faida_api.wa import WhatsAppClient
 from faida_api.webhook import router as webhook_router
@@ -163,6 +172,51 @@ def test_parse_rejects_garbage_negatives_and_nan():
         assert parse_reply(text) is None, text
 
 
+def test_parse_date_edits_use_the_extraction_day_first_rules():
+    assert parse_reply("date 5/7/26") == Corrections(
+        selector=None, edits=[DateEdit(value=datetime.date(2026, 7, 5))]
+    )
+    assert parse_reply("invoice date 9 July 2026") == Corrections(
+        selector=None, edits=[DateEdit(value=datetime.date(2026, 7, 9))]
+    )
+    assert parse_reply("2 date 2026-07-05") == Corrections(
+        selector=2, edits=[DateEdit(value=datetime.date(2026, 7, 5))]
+    )
+
+
+def test_parse_date_without_a_year_is_ambiguous_not_unparseable():
+    # Distinct from None: the flow answers with the year question, not the
+    # generic clarify (WP-27: "5/7" with no year is not a date).
+    assert parse_reply("date 5/7") == Corrections(
+        selector=None, edits=[AmbiguousDateEdit(text="5/7")]
+    )
+    assert parse_reply("date tomorrow") is None
+
+
+def test_parse_invoice_no_spellings_keep_the_value_verbatim():
+    for text in ("invoice no 4471", "invoice number 4471", "inv no 4471", "invoice # 4471"):
+        assert parse_reply(text) == Corrections(
+            selector=None, edits=[InvoiceNoEdit(value="4471")]
+        ), text
+    assert parse_reply("invoice no AAF 2214") == Corrections(
+        selector=None, edits=[InvoiceNoEdit(value="AAF 2214")]
+    )
+
+
+def test_apply_edits_sets_date_and_invoice_no():
+    invoice = ExtractedInvoice(total=Decimal("6"))
+    edited = apply_edits(
+        invoice,
+        [
+            DateEdit(value=datetime.date(2026, 7, 5)),
+            InvoiceNoEdit(value="AAF 2214"),
+        ],
+    )
+    assert edited.invoice_date == datetime.date(2026, 7, 5)
+    assert edited.invoice_no == "AAF 2214"
+    assert invoice.invoice_date is None and invoice.invoice_no is None
+
+
 def test_apply_edits_merges_and_never_mutates_the_input():
     invoice = ExtractedInvoice(
         lines=[
@@ -237,6 +291,7 @@ def madina_invoice() -> ExtractedInvoice:
     return ExtractedInvoice(
         supplier_name="Al Madina Trading",
         invoice_no="AM-77",
+        invoice_date=datetime.date(2026, 8, 21),
         currency="AED",
         payment_kind="credit",
         lines=[
@@ -310,7 +365,8 @@ async def test_correction_rereplies_then_ok_confirms_the_corrected_values(api, d
 
     # The re-reply is the composed reply of the corrected, now all-green state.
     assert (await outbound_bodies(db))[-1] == (
-        "Read it: Gulf Foods Trading LLC, 2 lines, total AED 745.76.\nReply OK to confirm."
+        "Read it: Gulf Foods Trading LLC, 2 lines, total AED 745.76, dated 20 Aug 2026.\n"
+        "Reply OK to confirm."
     )
     doc = await db.get_document_by_wa_message("wamid.in1")
     invoice = await db.get_invoice_by_document(str(doc["id"]))
@@ -491,7 +547,8 @@ async def test_selector_routes_a_correction_to_the_numbered_invoice(api, db):
     await drain_jobs(db, app, None)
 
     assert (await outbound_bodies(db))[-1] == (
-        "Read it: Gulf Foods Trading LLC, 2 lines, total AED 745.76.\nReply OK to confirm."
+        "Read it: Gulf Foods Trading LLC, 2 lines, total AED 745.76, dated 20 Aug 2026.\n"
+        "Reply OK to confirm."
     )
     gulf = await db.pool.fetchrow(
         "select * from invoices where supplier_name = 'Gulf Foods Trading LLC'"
@@ -611,7 +668,7 @@ async def test_m2_gate_price_alert_over_a_week(api, db):
 
     # The money moment: the extraction reply carries the correct alert.
     assert (await outbound_bodies(db))[-1] == (
-        "Read it: Gulf Foods Trading LLC, 2 lines, total AED 745.76.\n"
+        "Read it: Gulf Foods Trading LLC, 2 lines, total AED 745.76, dated 20 Aug 2026.\n"
         "MILK PWDR 2.5KG NIDO up AED 4.00 (50.50 to 54.50) since your last purchase.\n"
         "Reply OK to confirm."
     )
@@ -631,3 +688,101 @@ async def test_m2_gate_price_alert_over_a_week(api, db):
         milk["id"],
     )
     assert [row["price"] for row in history] == [Decimal("50.50"), Decimal("54.50")]
+
+
+# --- e2e: required-field ambers (WP-25) + dates beyond ISO (WP-27) ----------
+
+
+@requires_db
+async def test_missing_date_is_asked_and_the_answer_lands_via_the_grammar(api, db):
+    app, client, *_ = api
+    dateless = good_invoice().model_copy(update={"invoice_date": None})
+    await post_webhook(client, wa_image_payload())
+    await drain_jobs(db, app, FakeExtraction(result=invoice_result(dateless)))
+    reply = (await outbound_bodies(db))[-1]
+    assert QUESTION_MISSING_DATE in reply.splitlines()
+
+    # "5/7" has no year: the specific year question, and nothing applied.
+    await post_webhook(client, wa_text_payload("date 5/7", message_id="wamid.amb"))
+    await drain_jobs(db, app, None)
+    assert (await outbound_bodies(db))[-1] == compose_ambiguous_date_reply("5/7")
+    assert (await db.pool.fetchval("select invoice_date from invoices")) is None
+
+    # The full date lands via the correction grammar, read day-first.
+    await post_webhook(client, wa_text_payload("date 5/7/26", message_id="wamid.date"))
+    await drain_jobs(db, app, None)
+    reply = (await outbound_bodies(db))[-1]
+    assert "dated 5 Jul 2026" in reply.splitlines()[0]
+    assert QUESTION_MISSING_DATE not in reply.splitlines()
+    assert (await db.pool.fetchval("select invoice_date from invoices")) == datetime.date(
+        2026, 7, 5
+    )
+    # C8: the corrected date is stamped as a chat correction by its sender.
+    provenance = await db.pool.fetchval("select provenance from invoices")
+    assert provenance["invoice_date"]["origin"] == "corrected_chat"
+    assert provenance["invoice_date"]["actor"] == f"whatsapp:{DEMO_PHONE}"
+
+    # And the invoice proceeds.
+    await post_webhook(client, wa_text_payload("OK", message_id="wamid.ok9"))
+    await drain_jobs(db, app, None)
+    assert (await db.pool.fetchval("select status from invoices")) == "confirmed"
+
+
+@requires_db
+async def test_missing_invoice_no_is_asked_and_corrected(api, db):
+    app, client, *_ = api
+    numberless = good_invoice().model_copy(update={"invoice_no": None})
+    await post_webhook(client, wa_image_payload())
+    await drain_jobs(db, app, FakeExtraction(result=invoice_result(numberless)))
+    assert QUESTION_MISSING_INVOICE_NO in (await outbound_bodies(db))[-1].splitlines()
+
+    await post_webhook(client, wa_text_payload("invoice no INV-1041", message_id="wamid.no1"))
+    await drain_jobs(db, app, None)
+    reply = (await outbound_bodies(db))[-1]
+    assert QUESTION_MISSING_INVOICE_NO not in reply.splitlines()
+    assert (await db.pool.fetchval("select invoice_no from invoices")) == "INV-1041"
+
+
+@requires_db
+async def test_correction_keeps_discount_and_charge_lines_in_validation(api, db):
+    """The correction path rebuilds the C3 invoice from the rows; line_kind,
+    the discount and the rounding must ride along or a correction on a
+    discounted invoice re-validates against the wrong identity and fails a
+    correct invoice into amber (the WP-18 shape, resurfacing via chat)."""
+    app, client, *_ = api
+    invoice = ExtractedInvoice(
+        supplier_name="Al Karak Sweets",  # not in the seed: snapping stays out of the way
+        invoice_no="AKS-9",
+        invoice_date=datetime.date(2026, 8, 22),
+        currency="AED",
+        payment_kind="credit",
+        lines=[
+            ExtractedLine(
+                raw_name="Karak mix",
+                qty=Decimal("2"),
+                unit_price=Decimal("50.00"),
+                line_total=Decimal("100.00"),
+            ),
+            ExtractedLine(
+                raw_name="Chilled delivery",
+                line_kind=LineKind.CHARGE,
+                qty=Decimal("1"),
+                unit_price=Decimal("25.00"),
+                line_total=Decimal("25.00"),
+            ),
+        ],
+        subtotal=Decimal("100.00"),
+        tax=Decimal("0.00"),
+        discount_total=Decimal("10.00"),
+        total=Decimal("115.00"),
+    )
+    await post_webhook(client, wa_image_payload())
+    await drain_jobs(db, app, FakeExtraction(result=invoice_result(invoice)))
+    assert (await outbound_bodies(db))[-1].endswith("Reply OK to confirm.")
+
+    await post_webhook(client, wa_text_payload("line 1 qty 2", message_id="wamid.fix"))
+    await drain_jobs(db, app, None)
+    reply = (await outbound_bodies(db))[-1]
+    assert "don't add up" not in reply
+    assert "doesn't match" not in reply
+    assert reply.endswith("Reply OK to confirm.")

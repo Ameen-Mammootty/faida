@@ -157,6 +157,14 @@ def convert(case_dir: pathlib.Path) -> ExtractionResult:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true", help="report only, write nothing")
+    parser.add_argument(
+        "--only",
+        action="append",
+        metavar="CASE",
+        help="convert just this case (repeatable). Signed-off truth files must "
+        "not be rewritten wholesale - a serialization-order or schema-field "
+        "change would trip every SIGNOFF.json hash at once (test_signoff)",
+    )
     args = parser.parse_args()
 
     # A directory without ground truth is not a case: `proposed/` holds
@@ -164,6 +172,13 @@ def main() -> int:
     cases = sorted(
         d for d in GENERATED.iterdir() if d.is_dir() and (d / f"{d.name}.expected.json").exists()
     )
+    if args.only:
+        wanted = set(args.only)
+        cases = [d for d in cases if d.name in wanted]
+        missing = wanted - {d.name for d in cases}
+        if missing:
+            print(f"no such case: {', '.join(sorted(missing))}")
+            return 1
     failures = 0
     for case_dir in cases:
         case_id = case_dir.name

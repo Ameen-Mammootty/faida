@@ -6,7 +6,7 @@ any wording change so eval results and recorded CI fixtures stay comparable.
 
 from .schema import RepairTarget
 
-PROMPT_VERSION = "v2"
+PROMPT_VERSION = "v3"
 
 SYSTEM_PROMPT = """\
 You read supplier paperwork sent by GCC cafeterias over WhatsApp: supplier invoices and
@@ -26,7 +26,10 @@ Extraction rules:
   null - do not derive a missing line_total from qty and unit_price.
 - raw_name is the item name exactly as written, original language and spelling kept.
 - List the lines in the order they appear on the document.
-- invoice_date only when the printed date is unambiguous, else null.
+- invoice_date_text: the date exactly as printed ("2026-07-05", "5/7/26", "09.07.2026",
+  "9 July 2026", "٥/٧/٢٠٢٦"); null when the document shows none. Copy it exactly - do not
+  convert, reorder, or complete it. The calendar date is worked out from this text
+  downstream, so a faithful copy of an odd or incomplete date is exactly right.
 - currency as printed (AED, SAR, Dhs, ...); null when the document shows none.
 - payment_terms_text: the payment or terms line exactly as printed ("Payment terms: 14
   days", "Cash on delivery", "صافي 30 يوم"); null when the document shows none. Copy it,

@@ -13,8 +13,8 @@ eval/
   corpus/<id>/usage.json     matching ProviderUsage dump (tokens, latency)
   fixtures/<id>/             3 synthetic CI smoke cases: truth.json, recorded.json,
                              usage.json, expected.json (the case's expected score)
-  fixtures/generated/        15 prompt-generated cases across a hazard matrix, of which
-                             10 have images and can be scored; the other 5 are ground
+  fixtures/generated/        16 prompt-generated cases across a hazard matrix, of which
+                             10 have images and can be scored; the other 6 are ground
                              truth for images nobody has generated yet. SYNTHETIC:
                              development material, no substitute for F6. See its README.
   fixtures/expected_aggregate.json   expected corpus-level score for the fixtures
@@ -23,6 +23,9 @@ eval/
   live.py                    real provider runs: the pipeline's own layers 1-3 (WP-16)
   printed.py                 what a generated case actually prints, read from its prompt
   run.py                     python -m eval.run
+  schema_probe.py            python -m eval.schema_probe: does the C3 wire schema still
+                             compile? Run after ANY extraction-schema change (the ceiling
+                             is real and the failure mode is a 400 on every invoice)
   results/<date>.json        run outputs, gitignored
   tests/                     scorer, live-runner and printed-page unit tests
 ```
@@ -69,6 +72,7 @@ The smoke exits nonzero if any fixture score drifts from its `expected.json`, so
   There is one implementation of C4 and the eval scores against it.
 - Line units and pack sizes are compared through the units dictionary (`faida_api.extraction.units`), so a supplier writing "2 kg" where the catalog says "2000 g" is not scored as a miss.
 - Both the live and recorded paths run the pipeline's derivation seam (`normalize_extracted`) before scoring, so a recording cannot score differently depending on how it is read.
+- `01_perfect`'s recording deliberately carries its date as printed text only (`"10/08/2026"`, calendar field null), so the CI smoke fails the moment the day-first date derivation (WP-27) stops running in the scoring path.
 - Cost per invoice comes from token counts at the model's list price; an unpriced model scores a null cost rather than a guessed one.
 - Repair lift (reconciliation before versus after the scoped round) needs both calls, so it is reported on live runs and left null on recorded replays.
 

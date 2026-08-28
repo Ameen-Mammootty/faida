@@ -1,9 +1,10 @@
 {
   "classification": "invoice",
   "invoice": {
-    "supplier_name": "Dairy House Foodstuff LLC",
+    "supplier_name": "Dairy House Foodstuff LLC / بيت الألبان للمواد الغذائية ذ.م.م",
     "invoice_no": "2260",
-    "invoice_date": "2026-07-04",
+    "invoice_date": null,
+    "invoice_date_text": "2026-07-04",
     "currency": "AED",
     "payment_kind": "cash",
     "payment_terms_text": "Cash on delivery",

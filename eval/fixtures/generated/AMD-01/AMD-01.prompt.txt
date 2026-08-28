@@ -15,20 +15,24 @@ SUPPLIER ADDRESS (pre-printed, small): Block C Stall 44, Central Fruit & Vegetab
 SUPPLIER PHONE (pre-printed): 050 555 6612
 DOCUMENT TITLE (pre-printed): CASH BILL
 Bill No. (pre-printed in red at the top right): AAF 2214
-Date (written by hand in the pre-printed date box, exactly these five characters and two slashes, no year in full): 5/7/26
+Date (written by hand in the pre-printed date box, exactly these four digits and two slashes, no year in full): 5/7/26
 Time (written by hand): 6:15 AM
 Customer (written by hand): Cedar & Spice - Downtown
 Vehicle (written by hand): D 44192
 
 -- Line items, all 6 of them, in this exact order --
-COLUMNS of the pre-printed grid, left to right: Particulars | Qty | Rate | Amount
+COLUMNS, left to right: # | Particulars | Qty | Unit | Rate | Amount
 
-Tomato Local | 20 kg | 4.50 | 90.00
-Cucumber | 15 kg | 5.00 | 75.00     [in the Qty cell of this row only: the figure 12 is struck through with one ruled line and 15 is written above it, with the initials A.A. squeezed into the right of the cell. The Amount cell shows 75.00 written cleanly, with no struck figure]
-Iceberg Lettuce | 10 pc | 6.50 | 65.00
-Coriander Bunch | 30 bunch | 1.50 | 45.00
-Green Capsicum | 8 kg | 9.00 | 72.00     [in this row the Rate cell shows 8.00 struck through with one ruled line and 9.00 written beside it, and the Amount cell shows 64.00 struck through with one ruled line and 72.00 written above it, with the initials A.A. in the margin at the right edge of the row]
-Lemon | 5 kg | 11.00 | 55.00
+1 | Tomato Local | 20 | kg | 4.50 | 90.00
+2 | Cucumber | 15 | kg | 5.00 | 75.00
+3 | Iceberg Lettuce | 10 | pc | 6.50 | 65.00
+4 | Coriander Bunch | 30 | bunch | 1.50 | 45.00
+5 | Green Capsicum | 8 | kg | 9.00 | 72.00
+6 | Lemon | 5 | kg | 11.00 | 55.00
+
+-- Corrections written on the grid, exactly these two --
+In row 2 only, the Qty cell shows the figure 12 struck through with one ruled line and 15 written above it, with the initials A.A. squeezed into the right of the cell. The Amount cell of row 2 shows 75.00 written cleanly, with no struck figure.
+In row 5, the Rate cell shows 8.00 struck through with one ruled line and 9.00 written beside it, and the Amount cell shows 64.00 struck through with one ruled line and 72.00 written above it, with the initials A.A. in the margin at the right edge of the row.
 
 -- Foot of the page --
 There is no VAT line and no TRN anywhere on this document.
@@ -38,7 +42,7 @@ Received by (pre-printed label, left blank, an empty signature line under it)
 Signature (pre-printed label at the lower right, with an illegible ballpoint squiggle above the line)
 
 RULES
-- All 6 item rows must appear on the document, in the order given, none merged, none dropped, none repeated.
+- All 6 item rows must appear on the document, in the order given, none merged, none dropped, none repeated. The # column is pre-printed row numbering on the grid.
 - Every figure must be readable at full resolution. Prefer a slightly tighter row height over shrinking the digits.
 - Keep the whole document inside the frame, including all four corners.
 - Do not add sample, specimen, draft, void or watermark text, and do not add any row, column, tax line or charge that is not listed above.

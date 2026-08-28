@@ -56,6 +56,18 @@ CASH_HOLD_NOTE = "This one is marked cash, so it needs the owner's approval befo
 
 OVERFLOW_LINE = "...and {count} more to check on the review screen."
 
+# WP-25: a missing invoice date or number is asked for, exactly like a failed
+# line - never silently stored. The parenthetical teaches the correction form
+# (confirm.py parses it) so the answer lands first time.
+QUESTION_MISSING_DATE = (
+    "I couldn't read the invoice date - what does it say? (reply like: date 5/7/26)"
+)
+QUESTION_MISSING_INVOICE_NO = (
+    "I couldn't read the invoice number - what does it say? (reply like: invoice no 4471)"
+)
+
+_MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
 
 class PriceAlert(BaseModel):
     """One price movement for the extraction reply (the demo's money moment).
@@ -90,7 +102,10 @@ def render_price_alert(alert: PriceAlert) -> str:
 
 
 def summary_line(invoice: ExtractedInvoice) -> str:
-    """Supplier (or 'supplier unknown'), line count, total (or 'unreadable')."""
+    """Supplier (or 'supplier unknown'), line count, total (or 'unreadable'),
+    and the date when one was read - shown so a derived day-first reading can
+    be challenged from the chat instead of discovered on the review screen
+    (WP-27: a read date should be confirmable in the reply)."""
     count = len(invoice.lines)
     line_word = "line" if count == 1 else "lines"
     supplier = invoice.supplier_name or "supplier unknown"
@@ -98,7 +113,9 @@ def summary_line(invoice: ExtractedInvoice) -> str:
         total_part = "total unreadable"
     else:
         total_part = f"total {_currency(invoice)} {_money(invoice.total)}"
-    return f"Read it: {supplier}, {count} {line_word}, {total_part}."
+    dated = invoice.invoice_date
+    dated_part = "" if dated is None else f", dated {_date_words(dated)}"
+    return f"Read it: {supplier}, {count} {line_word}, {total_part}{dated_part}."
 
 
 def compose_invoice_reply(
@@ -107,7 +124,7 @@ def compose_invoice_reply(
     """The extraction reply: summary, price alerts, at most
     MAX_AMBER_QUESTIONS amber-field questions (most material first, overflow
     deferred to the review screen), then the confirm prompt."""
-    closing = CLOSING_WITH_AMBERS if _has_ambers(validation) else CLOSING_ALL_GREEN
+    closing = CLOSING_WITH_AMBERS if _has_ambers(invoice, validation) else CLOSING_ALL_GREEN
     return _compose(invoice, validation, alerts, closing)
 
 
@@ -140,10 +157,10 @@ def _compose(
     return "\n".join(parts)
 
 
-def _has_ambers(validation: ValidationResult) -> bool:
-    return validation.document.status is FieldStatus.AMBER or any(
-        check.status is FieldStatus.AMBER for check in validation.lines
-    )
+def _has_ambers(invoice: ExtractedInvoice, validation: ValidationResult) -> bool:
+    """Anything the reply will ask about - amber checks or a missing required
+    header field (WP-25) - flips the closing to the fixes form."""
+    return bool(_amber_questions(invoice, validation))
 
 
 def _amber_questions(invoice: ExtractedInvoice, validation: ValidationResult) -> list[str]:
@@ -154,6 +171,13 @@ def _amber_questions(invoice: ExtractedInvoice, validation: ValidationResult) ->
     document_question = _document_question(invoice, validation)
     if document_question is not None:
         questions.append(document_question)
+    # WP-25: required-field asks sit above the line questions so they can
+    # never overflow to the review screen - one document question plus these
+    # two is exactly the cap. A null date or number must always be asked for.
+    if invoice.invoice_date is None:
+        questions.append(QUESTION_MISSING_DATE)
+    if invoice.invoice_no is None:
+        questions.append(QUESTION_MISSING_INVOICE_NO)
 
     def materiality(check: LineCheck) -> tuple[int, Decimal, int]:
         line_total = invoice.lines[check.line_index].line_total
@@ -231,6 +255,11 @@ def _money(amount: Decimal) -> str:
     return f"{amount:.2f}"
 
 
+def _date_words(value: datetime.date) -> str:
+    """'5 Jul 2026' - words, so there is no digit order to re-litigate."""
+    return f"{value.day} {_MONTHS[value.month - 1]} {value.year}"
+
+
 def _qty(qty: Decimal) -> str:
     """Quantities are not money: '12' stays '12', '2.5' stays '2.5'."""
     return format(qty.normalize(), "f")
@@ -245,12 +274,18 @@ def _qty(qty: Decimal) -> str:
 # dead end, never silence) - it teaches every accepted form.
 REPLY_CLARIFY = (
     "Sorry, I didn't get that. Reply OK to confirm, or send fixes like: "
-    "line 1 qty 16, line 2 price 4.50, line 1 name Basmati Rice, or total 745.76."
+    "line 1 qty 16, line 2 price 4.50, line 1 name Basmati Rice, total 745.76, "
+    "date 5/7/26, or invoice no 4471."
 )
 
 DISAMBIGUATION_FOOTER = "Reply with the number first, like: 1 OK, or 1 line 2 qty 16."
 
-_MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+def compose_ambiguous_date_reply(text: str) -> str:
+    """A date-shaped answer with no year ("date 5/7") could be more than one
+    date, and a guessed year files the invoice into the wrong week of price
+    history - ask for the year instead (C3/WP-27: never guess)."""
+    return f'"{text}" needs a year to be a date - send it with the year, like: date 5/7/26.'
 
 
 class PendingInvoice(BaseModel):

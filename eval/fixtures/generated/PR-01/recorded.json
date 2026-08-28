@@ -3,7 +3,8 @@
   "invoice": {
     "supplier_name": "Cafe Beverage Supply LLC",
     "invoice_no": "CBS-INV-260702-1188",
-    "invoice_date": "2026-07-02",
+    "invoice_date": null,
+    "invoice_date_text": "2026-07-02",
     "currency": "AED",
     "payment_kind": "credit",
     "payment_terms_text": "14 days",

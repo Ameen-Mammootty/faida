@@ -235,6 +235,23 @@
       "expected_json": "DUP-01/DUP-01.expected.json",
       "prompt": "DUP-01/DUP-01.prompt.txt",
       "status": "dry-run"
+    },
+    {
+      "case_id": "AMD-01",
+      "title": "Handwritten carbon cash bill with struck-through corrections and a no-year date",
+      "medium": "handwritten_duplicate_book",
+      "hazards": [
+        "struck_through_correction",
+        "ambiguous_date_format",
+        "amount_in_words",
+        "no_trn",
+        "handwriting",
+        "no_vat_line"
+      ],
+      "line_count": 6,
+      "expected_json": "AMD-01/AMD-01.expected.json",
+      "prompt": "AMD-01/AMD-01.prompt.txt",
+      "status": "dry-run"
     }
   ],
   "generated_by": "scripts/receipt_fixtures"

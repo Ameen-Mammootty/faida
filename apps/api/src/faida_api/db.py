@@ -693,6 +693,8 @@ class Database:
         self,
         invoice_id: str,
         *,
+        invoice_no: str | None,
+        invoice_date: datetime.date | None,
         subtotal: Decimal | None,
         tax: Decimal | None,
         total: Decimal | None,
@@ -703,10 +705,11 @@ class Database:
         corrected_fields: list[str],
         message_id: str | None = None,
     ) -> None:
-        """Persist a correction (WP-21), one transaction: header money fields,
-        refreshed confidence and C8 provenance on the invoice, and per line the
-        fields the grammar can change plus the re-derived checks. Status is not
-        touched - corrections keep the invoice awaiting_confirm (C1).
+        """Persist a correction (WP-21/WP-25), one transaction: header fields
+        (invoice number and date included), refreshed confidence and C8
+        provenance on the invoice, and per line the fields the grammar can
+        change plus the re-derived checks. Status is not touched - corrections
+        keep the invoice awaiting_confirm (C1).
 
         `actor` and `corrected_fields` write the audit event in the same
         transaction, so a stored correction and the note of who made it cannot
@@ -714,12 +717,15 @@ class Database:
         async with self.pool.acquire() as conn, conn.transaction():
             tenant_id = await conn.fetchval(
                 """
-                update invoices set subtotal = $2, tax = $3, total = $4, confidence = $5,
-                                    provenance = $6
+                update invoices
+                set invoice_no = $2, invoice_date = $3, subtotal = $4, tax = $5, total = $6,
+                    confidence = $7, provenance = $8
                 where id = $1
                 returning tenant_id::text
                 """,
                 invoice_id,
+                invoice_no,
+                invoice_date,
                 subtotal,
                 tax,
                 total,

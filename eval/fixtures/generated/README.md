@@ -1,10 +1,11 @@
 # Generated receipt fixtures - synthetic, never scored against the §5 targets
 
-> **10 of the 15 cases have images.** `DUP-01`, `EDGE-02`, `EDGE-03`, `HW-03` and `NEG-01` are
-> ground truth and prompts for images that were never generated, so `--live` skips them and the
-> corpus that actually scores is ten. Generating those five images is the cheapest way to grow
-> phase 1, and two of them (`EDGE-02` VAT-inclusive, `EDGE-03` a delivery note with no prices)
-> cover reconciliation paths nothing else in the set reaches.
+> **10 of the 16 cases have images.** `AMD-01`, `DUP-01`, `EDGE-02`, `EDGE-03`, `HW-03` and
+> `NEG-01` are ground truth and prompts for images that were never generated, so `--live` skips
+> them and the corpus that actually scores is ten. Generating those six images is the cheapest
+> way to grow phase 1: two (`EDGE-02` VAT-inclusive, `EDGE-03` a delivery note with no prices)
+> cover reconciliation paths nothing else in the set reaches, and `AMD-01` is the only case
+> whose printed date is not `YYYY-MM-DD` (the WP-27 blind spot: `5/7/26`, no year in full).
 
 Every image in this directory was produced from a text prompt (`<case>.prompt.txt`), and
 every `expected.json` carries `"synthetic": true`.
@@ -59,7 +60,7 @@ database will.
 ## Layout
 
 ```
-<CASE-ID>/<CASE-ID>.jpg            the generated image (10 of 15 cases; 5 are still dry-run)
+<CASE-ID>/<CASE-ID>.jpg            the generated image (10 of 16 cases; 6 are still dry-run)
 <CASE-ID>/<CASE-ID>.prompt.txt     the prompt that produced it - proof of provenance
 <CASE-ID>/<CASE-ID>.expected.json  ground truth in the generator's own shape, not C3
 <CASE-ID>/<CASE-ID>.verify.json    a read-back check that the image matches the ground truth
@@ -74,5 +75,6 @@ apps/api/.venv/bin/python -m eval.convert_generated          # writes <CASE-ID>/
 apps/api/.venv/bin/python -m eval.convert_generated --check  # verify without writing
 ```
 
-Cases still marked `dry-run` in `manifest.json` have no image yet: `HW-03`, `EDGE-02`, `EDGE-03`,
-`NEG-01`, `DUP-01`. `EDGE-02` is one of the two VAT-inclusive cases, so it is worth generating.
+Cases still marked `dry-run` in `manifest.json` have no image yet: `AMD-01`, `HW-03`, `EDGE-02`,
+`EDGE-03`, `NEG-01`, `DUP-01`. `EDGE-02` (one of the two VAT-inclusive cases) and `AMD-01` (the
+only non-ISO printed date) are the two most worth generating.

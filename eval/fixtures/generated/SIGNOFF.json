@@ -17,6 +17,12 @@
       "verdict": "ok",
       "corrections": []
     },
+    "AMD-01": {
+      "truth_sha256": "12194f53b77893ef0c20aa21f109372f21385c325c1b1bb42a6977141a0e914a",
+      "has_image": false,
+      "verdict": "unverifiable",
+      "reason": "promoted from proposed/ 2026-08-28 for WP-27 (the 5/7/26 no-year date); no image generated yet, so there is nothing to check the key against"
+    },
     "AR-01": {
       "truth_sha256": "5d7fe05d892b848a129e4720b945d1095250c03eab4d2f5a9d10f14060473024",
       "has_image": true,

@@ -3,7 +3,8 @@
   "invoice": {
     "supplier_name": "Dairy House Foodstuff LLC",
     "invoice_no": "DHF-INV-260705-0688",
-    "invoice_date": "2026-07-05",
+    "invoice_date": null,
+    "invoice_date_text": "2026-07-05",
     "currency": "AED",
     "payment_kind": "credit",
     "payment_terms_text": "14 days",

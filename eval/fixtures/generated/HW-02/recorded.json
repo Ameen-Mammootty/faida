@@ -3,7 +3,8 @@
   "invoice": {
     "supplier_name": "Prime Protein Trading LLC",
     "invoice_no": "PPT/26/0913",
-    "invoice_date": "2026-07-03",
+    "invoice_date": null,
+    "invoice_date_text": "2026-07-03",
     "currency": "AED",
     "payment_kind": "credit",
     "payment_terms_text": "14 days",

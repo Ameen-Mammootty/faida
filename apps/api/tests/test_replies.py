@@ -23,6 +23,8 @@ from faida_api.replies import (
     CLOSING_WITH_AMBERS,
     DISAMBIGUATION_FOOTER,
     OVERFLOW_LINE,
+    QUESTION_MISSING_DATE,
+    QUESTION_MISSING_INVOICE_NO,
     REPLY_CLARIFY,
     REPLY_EXTRACTION_FAILED,
     REPLY_MEDIA_RECEIVED,
@@ -32,6 +34,7 @@ from faida_api.replies import (
     REPLY_Z_REPORT,
     PendingInvoice,
     PriceAlert,
+    compose_ambiguous_date_reply,
     compose_cash_hold_reply,
     compose_confirmation_ack,
     compose_disambiguation_reply,
@@ -60,9 +63,15 @@ def _invoice(
     subtotal: str | None = None,
     tax: str | None = None,
     total: str | None = None,
+    invoice_no: str | None = "4471",
+    invoice_date: datetime.date | None = datetime.date(2026, 7, 5),
 ) -> ExtractedInvoice:
+    # invoice_no and invoice_date default to present: a missing one is a
+    # WP-25 amber with its own question, tested explicitly below.
     return ExtractedInvoice(
         supplier_name=supplier,
+        invoice_no=invoice_no,
+        invoice_date=invoice_date,
         currency=currency,
         lines=lines,
         subtotal=Decimal(subtotal) if subtotal is not None else None,
@@ -174,33 +183,38 @@ def test_multi_alert_reply_keeps_alert_order_after_the_summary():
 
 def test_all_green_reply_exact_and_ends_with_ok_prompt():
     reply = _reply(_green_invoice())
-    assert reply == "Read it: Gulf Foods Trading, 2 lines, total AED 105.00.\nReply OK to confirm."
+    assert reply == (
+        "Read it: Gulf Foods Trading, 2 lines, total AED 105.00, dated 5 Jul 2026.\n"
+        "Reply OK to confirm."
+    )
     assert reply.endswith("Reply OK to confirm.")
 
 
 def test_single_line_invoice_uses_singular_line_word():
     invoice = _invoice([_line("1", "54.5", "54.5")], total="54.5")
-    assert summary_line(invoice) == "Read it: Gulf Foods Trading, 1 line, total AED 54.50."
+    assert summary_line(invoice) == (
+        "Read it: Gulf Foods Trading, 1 line, total AED 54.50, dated 5 Jul 2026."
+    )
 
 
 def test_total_with_one_decimal_renders_two():
     # Decimal("54.5") must render "54.50", never "54.5".
     invoice = _invoice([_line("1", "54.5", "54.5")], total="54.5")
-    assert "total AED 54.50." in _reply(invoice)
+    assert "total AED 54.50, dated 5 Jul 2026." in _reply(invoice)
 
 
 def test_default_currency_is_aed_and_invoice_currency_wins():
     no_currency = _invoice([_line("1", "10.00", "10.00")], currency=None, total="10.00")
-    assert "total AED 10.00." in summary_line(no_currency)
+    assert "total AED 10.00, dated 5 Jul 2026." in summary_line(no_currency)
     sar = _invoice([_line("1", "10.00", "10.00")], currency="SAR", total="10.00")
-    assert "total SAR 10.00." in summary_line(sar)
+    assert "total SAR 10.00, dated 5 Jul 2026." in summary_line(sar)
 
 
 def test_unknown_supplier_and_unreadable_total_fallbacks():
     invoice = _invoice([_line("1", "10.00", "10.00")], supplier=None)
     reply = _reply(invoice)
     assert reply.splitlines() == [
-        "Read it: supplier unknown, 1 line, total unreadable.",
+        "Read it: supplier unknown, 1 line, total unreadable, dated 5 Jul 2026.",
         "I couldn't read the invoice total - what does it say?",
         CLOSING_WITH_AMBERS,
     ]
@@ -220,7 +234,7 @@ def test_amber_ordering_doc_first_then_lines_by_materiality_with_cap_and_overflo
     invoice = _invoice(lines, tax=None, total="800.00")
     reply = _reply(invoice)
     assert reply.splitlines() == [
-        "Read it: Gulf Foods Trading, 4 lines, total AED 800.00.",
+        "Read it: Gulf Foods Trading, 4 lines, total AED 800.00, dated 5 Jul 2026.",
         "The totals don't add up (the lines come to 770.00 "
         "but the invoice total says 800.00) - which is right?",
         "Line 2: the math doesn't add up (10 x 45.00 = 450.00 "
@@ -239,7 +253,7 @@ def test_unreadable_line_total_is_most_material():
     invoice = _invoice(lines, total="920.00")
     reply = _reply(invoice)
     assert reply.splitlines() == [
-        "Read it: Gulf Foods Trading, 2 lines, total AED 920.00.",
+        "Read it: Gulf Foods Trading, 2 lines, total AED 920.00, dated 5 Jul 2026.",
         "Line 2: I couldn't read the line total - what does it say?",
         "Line 1: I couldn't read the quantity - how many were delivered?",
         CLOSING_WITH_AMBERS,
@@ -284,7 +298,7 @@ def test_taint_amber_document_does_not_burn_a_question_slot():
     invoice = _invoice([_line("2", "3.10", "6.26")], total="6.26")
     reply = _reply(invoice)
     assert reply.splitlines() == [
-        "Read it: Gulf Foods Trading, 1 line, total AED 6.26.",
+        "Read it: Gulf Foods Trading, 1 line, total AED 6.26, dated 5 Jul 2026.",
         "Line 1: the math doesn't add up (2 x 3.10 = 6.20 "
         "but the line says 6.26) - which is right?",
         CLOSING_WITH_AMBERS,
@@ -325,6 +339,47 @@ def test_snapping_failure_fallback_question():
     assert reply.endswith(CLOSING_WITH_AMBERS)
 
 
+# --- required-field ambers (WP-25) ---
+
+
+def test_missing_date_and_number_each_get_their_question_and_flip_the_closing():
+    invoice = _invoice(
+        [_line("2", "30.00", "60.00")],
+        tax="0",
+        total="60.00",
+        invoice_no=None,
+        invoice_date=None,
+    )
+    reply = _reply(invoice)
+    assert reply.splitlines() == [
+        "Read it: Gulf Foods Trading, 1 line, total AED 60.00.",
+        QUESTION_MISSING_DATE,
+        QUESTION_MISSING_INVOICE_NO,
+        CLOSING_WITH_AMBERS,
+    ]
+
+
+def test_missing_date_question_survives_a_pile_of_line_ambers():
+    # WP-27 acceptance: a null date always produces a question - line ambers
+    # overflow to the review screen before the date ask ever does.
+    lines = [_line(None, "5.00", str(10 * n)) for n in range(1, 5)]
+    invoice = _invoice(lines, tax="0", total="100.00", invoice_date=None)
+    reply = _reply(invoice)
+    assert QUESTION_MISSING_DATE in reply.splitlines()
+    assert OVERFLOW_LINE.format(count=2) in reply.splitlines()
+
+
+def test_present_date_and_number_ask_nothing():
+    assert QUESTION_MISSING_DATE not in _reply(_green_invoice())
+    assert QUESTION_MISSING_INVOICE_NO not in _reply(_green_invoice())
+
+
+def test_ambiguous_date_reply_exact():
+    assert compose_ambiguous_date_reply("5/7") == (
+        '"5/7" needs a year to be a date - send it with the year, like: date 5/7/26.'
+    )
+
+
 # --- cash hold ---
 
 
@@ -332,7 +387,7 @@ def test_cash_hold_reply_green_exact():
     invoice = _green_invoice()
     reply = compose_cash_hold_reply(invoice, validate_invoice(invoice), [])
     assert reply == (
-        "Read it: Gulf Foods Trading, 2 lines, total AED 105.00.\n"
+        "Read it: Gulf Foods Trading, 2 lines, total AED 105.00, dated 5 Jul 2026.\n"
         "This one is marked cash, so it needs the owner's approval before it's recorded."
     )
     assert "Reply OK" not in reply
@@ -436,7 +491,8 @@ def test_line_out_of_range_message():
 def test_clarify_exact_and_confirm_flow_messages_have_no_em_dashes():
     assert REPLY_CLARIFY == (
         "Sorry, I didn't get that. Reply OK to confirm, or send fixes like: "
-        "line 1 qty 16, line 2 price 4.50, line 1 name Basmati Rice, or total 745.76."
+        "line 1 qty 16, line 2 price 4.50, line 1 name Basmati Rice, total 745.76, "
+        "date 5/7/26, or invoice no 4471."
     )
     samples = [
         REPLY_CLARIFY,

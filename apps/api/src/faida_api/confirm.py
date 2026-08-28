@@ -22,13 +22,21 @@ The chat grammar, in full (all keywords case-insensitive):
     total <number>                     correct the totals block
     tax <number>
     subtotal <number>
+    date <date>                        the invoice date (WP-25); parsed by the
+                                       same day-first rules extraction uses
+                                       ("5/7/26", "2026-07-05", "9 July 2026");
+                                       "invoice date ..." also accepted
+    invoice no <text>                  the invoice number (WP-25); "invoice
+                                       number" / "inv no" / "invoice #" too
     <edit>[, <edit> | ; <edit> | newline <edit>]...   several in one message
     <K> <any of the above>             pick invoice K from the numbered list
                                        when several are pending ("2 OK")
 
 Numbers are unsigned decimals ("16", "4.50") - negatives, NaN, and anything
 else unparseable get the one clarify reply that shows the accepted forms:
-never a dead end, never silence.
+never a dead end, never silence. A date-shaped answer with no year ("date
+5/7") gets its own reply asking for the year, because parsing it any other
+way would be a guess (C3/WP-27).
 """
 
 import datetime
@@ -41,6 +49,7 @@ import asyncpg
 from pydantic import BaseModel, ConfigDict
 
 from .db import Database
+from .extraction.dates import parse_printed_date
 from .extraction.pipeline import price_alerts
 from .extraction.schema import ExtractedInvoice, ExtractedLine
 from .extraction.validate import validate_invoice
@@ -50,6 +59,7 @@ from .replies import (
     REPLY_CLARIFY,
     REPLY_TEXT_ONBOARDING,
     PendingInvoice,
+    compose_ambiguous_date_reply,
     compose_confirmation_ack,
     compose_disambiguation_reply,
     compose_invoice_reply,
@@ -99,7 +109,34 @@ class TotalsEdit(BaseModel):
     value: Decimal
 
 
-Edit = LineFieldEdit | LineNameEdit | TotalsEdit
+class DateEdit(BaseModel):
+    """ "date 5/7/26" - the invoice date (WP-25), read by the same day-first
+    rules extraction uses (extraction.dates)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    value: datetime.date
+
+
+class InvoiceNoEdit(BaseModel):
+    """ "invoice no 4471" - the invoice number, kept verbatim."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    value: str
+
+
+class AmbiguousDateEdit(BaseModel):
+    """ "date 5/7" - date-shaped but missing its year. Never applied: the flow
+    answers with the year question (compose_ambiguous_date_reply) instead of
+    guessing, per C3 (an ambiguous date is not a date)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    text: str
+
+
+Edit = LineFieldEdit | LineNameEdit | TotalsEdit | DateEdit | InvoiceNoEdit | AmbiguousDateEdit
 
 
 class Confirm(BaseModel):
@@ -130,6 +167,10 @@ _LINE_EDIT_RE = re.compile(
     re.IGNORECASE,
 )
 _TOTALS_EDIT_RE = re.compile(r"(subtotal|total|tax)\s+(.+)", re.IGNORECASE)
+_DATE_EDIT_RE = re.compile(r"(?:invoice\s+)?date\s+(.+)", re.IGNORECASE)
+_INVOICE_NO_EDIT_RE = re.compile(
+    r"(?:invoice|inv)\.?\s*(?:no|number|num|#)\.?\s*:?\s*(.+)", re.IGNORECASE
+)
 # Unsigned decimals only: no sign, no NaN, no exponent - anything else clarifies.
 _NUMBER_RE = re.compile(r"\d+(?:\.\d+)?")
 
@@ -192,6 +233,19 @@ def _parse_edit(segment: str) -> Edit | None:
         if number is None:
             return None
         return LineFieldEdit(line_index=n - 1, field=_LINE_FIELD_MAP[field], value=number)
+    date_edit = _DATE_EDIT_RE.fullmatch(segment)
+    if date_edit is not None:
+        text = date_edit.group(1).strip()
+        parsed = parse_printed_date(text)
+        if parsed.date is not None:
+            return DateEdit(value=parsed.date)
+        if parsed.ambiguous:
+            return AmbiguousDateEdit(text=text)
+        return None
+    number_edit = _INVOICE_NO_EDIT_RE.fullmatch(segment)
+    if number_edit is not None:
+        value = number_edit.group(1).strip()
+        return InvoiceNoEdit(value=value) if value else None
     totals_edit = _TOTALS_EDIT_RE.fullmatch(segment)
     if totals_edit is not None:
         number = _parse_number(totals_edit.group(2))
@@ -218,6 +272,12 @@ def edited_field_keys(edits: list[Edit]) -> list[str]:
     for edit in edits:
         if isinstance(edit, TotalsEdit):
             key = edit.field
+        elif isinstance(edit, DateEdit):
+            key = "invoice_date"
+        elif isinstance(edit, InvoiceNoEdit):
+            key = "invoice_no"
+        elif isinstance(edit, AmbiguousDateEdit):
+            raise ValueError("an ambiguous date is asked about, never applied")
         elif isinstance(edit, LineNameEdit):
             key = line_key(edit.line_index, "raw_name")
         else:
@@ -229,12 +289,20 @@ def edited_field_keys(edits: list[Edit]) -> list[str]:
 
 def apply_edits(invoice: ExtractedInvoice, edits: list[Edit]) -> ExtractedInvoice:
     """Pure merge of parsed edits over an extracted invoice; the input is
-    never mutated. Line indices must already be in range."""
+    never mutated. Line indices must already be in range, and an
+    AmbiguousDateEdit must already have been answered by the flow - it
+    carries no date to apply."""
     lines: list[ExtractedLine] = list(invoice.lines)
-    header: dict[str, Decimal] = {}
+    header: dict[str, object] = {}
     for edit in edits:
         if isinstance(edit, TotalsEdit):
             header[edit.field] = edit.value
+        elif isinstance(edit, DateEdit):
+            header["invoice_date"] = edit.value
+        elif isinstance(edit, InvoiceNoEdit):
+            header["invoice_no"] = edit.value
+        elif isinstance(edit, AmbiguousDateEdit):
+            raise ValueError("an ambiguous date is asked about, never applied")
         elif isinstance(edit, LineNameEdit):
             lines[edit.line_index] = lines[edit.line_index].model_copy(
                 update={"raw_name": edit.name}
@@ -294,6 +362,12 @@ async def handle_inbound_text(
         return REPLY_TEXT_ONBOARDING
     if parsed is None:
         return REPLY_CLARIFY
+    if isinstance(parsed, Corrections):
+        # A date with no year cannot apply anywhere - ask for the year before
+        # any invoice-picking, since no pick would make "5/7" a date.
+        ambiguous = next((e for e in parsed.edits if isinstance(e, AmbiguousDateEdit)), None)
+        if ambiguous is not None:
+            return compose_ambiguous_date_reply(ambiguous.text)
 
     if parsed.selector is not None:
         if not 1 <= parsed.selector <= len(pending):
@@ -390,6 +464,8 @@ async def _apply_correction(
     ]
     await db.apply_invoice_correction(
         invoice_id,
+        invoice_no=invoice.invoice_no,
+        invoice_date=invoice.invoice_date,
         subtotal=invoice.subtotal,
         tax=invoice.tax,
         total=invoice.total,
@@ -432,7 +508,10 @@ def _local_time(moment: datetime.datetime, timezone_name: str | None) -> datetim
 
 def _to_extracted(invoice_row: asyncpg.Record, line_rows: list[asyncpg.Record]) -> ExtractedInvoice:
     """Rebuild the C3 schema shape from the persisted rows so corrections
-    run through exactly the validation the pipeline used."""
+    run through exactly the validation the pipeline used. line_kind, the
+    discount and the rounding must ride along: without them a correction on a
+    discounted invoice re-validates against the wrong C4 identity and fails a
+    correct invoice into amber."""
     return ExtractedInvoice(
         supplier_name=invoice_row["supplier_name"],
         invoice_no=invoice_row["invoice_no"],
@@ -442,6 +521,7 @@ def _to_extracted(invoice_row: asyncpg.Record, line_rows: list[asyncpg.Record]) 
         lines=[
             ExtractedLine(
                 raw_name=row["raw_name"],
+                line_kind=row["line_kind"],
                 qty=row["qty"],
                 unit=row["unit"],
                 pack_size=row["pack_size"],
@@ -453,4 +533,6 @@ def _to_extracted(invoice_row: asyncpg.Record, line_rows: list[asyncpg.Record]) 
         subtotal=invoice_row["subtotal"],
         tax=invoice_row["tax"],
         total=invoice_row["total"],
+        discount_total=invoice_row["discount_total"],
+        rounding_amount=invoice_row["rounding_amount"],
     )

@@ -1,9 +1,10 @@
 """The one seam where a raw extraction becomes the invoice we work with.
 
-Two things happen between the model's answer and everything downstream, and
-both are derivations from printed facts rather than re-readings of the page:
-the printed currency word becomes an ISO code, and the printed payment terms
-become cash or credit.
+Three things happen between the model's answer and everything downstream, and
+all are derivations from printed facts rather than re-readings of the page:
+the printed currency word becomes an ISO code, the printed payment terms
+become cash or credit, and the printed date becomes a calendar date under the
+GCC day-first rule (an ambiguous date staying null, per C3).
 
 They live together here because they have to happen in every path that
 produces an invoice - the WhatsApp pipeline, manual entry, and the eval - and
@@ -12,6 +13,7 @@ by hand, which is how a harness ends up scoring a program nobody ships.
 """
 
 from .currency import normalize_currency
+from .dates import derive_invoice_date
 from .payment import derive_payment_kind
 from .schema import ExtractedInvoice
 
@@ -45,6 +47,7 @@ def normalize_extracted(invoice: ExtractedInvoice) -> ExtractedInvoice:
         update={
             "currency": normalize_currency(invoice.currency),
             "payment_kind": derive_payment_kind(invoice.payment_terms_text, invoice.payment_kind),
+            "invoice_date": derive_invoice_date(invoice.invoice_date_text, invoice.invoice_date),
             "lines": lines,
         }
     )

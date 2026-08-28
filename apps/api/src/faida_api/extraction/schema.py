@@ -10,6 +10,7 @@ from enum import StrEnum
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, WithJsonSchema, field_validator
+from pydantic.json_schema import SkipJsonSchema
 
 from .money import parse_money
 
@@ -72,7 +73,20 @@ class ExtractedInvoice(BaseModel):
 
     supplier_name: str | None = None
     invoice_no: str | None = None
-    invoice_date: datetime.date | None = None
+    # SkipJsonSchema: this field exists for persistence, ground truth and
+    # manual entry, and is deliberately ABSENT from the wire schema. The API's
+    # grammar budget fits exactly one date field (measured 2026-08-28: text
+    # plus even a plain-string date is "Schema is too complex", text alone
+    # compiles), and the one that earns the slot is the printed text below -
+    # the calendar date is derived from it in extraction.dates, never asked of
+    # the model.
+    invoice_date: SkipJsonSchema[datetime.date | None] = None
+    # The date exactly as printed ("5/7/26", "2026-07-05", "٩ يوليو ٢٠٢٦").
+    # A printed fact, copied not converted: extraction.dates derives the
+    # calendar date from it under the GCC day-first rule (WP-27), the same
+    # split as the currency word and the payment terms. Not persisted - it is
+    # an input to that derivation, not a column.
+    invoice_date_text: str | None = None
     currency: str | None = None
     payment_kind: Literal["credit", "cash"] | None = None
     # The terms line as printed ("Payment terms: 14 days", "Cash on delivery").

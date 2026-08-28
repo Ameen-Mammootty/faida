@@ -1,7 +1,7 @@
 {
   "model_id": "claude-opus-5",
-  "prompt_version": "v2",
-  "input_tokens": 7758,
-  "output_tokens": 904,
-  "latency_ms": 10245
+  "prompt_version": "v3",
+  "input_tokens": 7873,
+  "output_tokens": 906,
+  "latency_ms": 9868
 }

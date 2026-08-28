@@ -222,7 +222,8 @@ async def test_happy_path_photo_to_draft_invoice(api, db):
     bodies = await outbound_bodies(db)
     assert bodies == [
         REPLY_MEDIA_RECEIVED,
-        "Read it: Gulf Foods Trading LLC, 2 lines, total AED 745.76.\nReply OK to confirm.",
+        "Read it: Gulf Foods Trading LLC, 2 lines, total AED 745.76, dated 20 Aug 2026.\n"
+        "Reply OK to confirm.",
     ]
     assert [m["text"]["body"] for m in fake_meta.sent] == bodies
     assert fake_meta.sent[-1]["to"] == DEMO_PHONE
@@ -264,7 +265,8 @@ async def test_repair_path_fixes_wrong_line_with_one_call(api, db):
     assert (run["input_tokens"], run["output_tokens"], run["latency_ms"]) == (200, 100, 14)
 
     assert (await outbound_bodies(db))[-1] == (
-        "Read it: Gulf Foods Trading LLC, 2 lines, total AED 745.76.\nReply OK to confirm."
+        "Read it: Gulf Foods Trading LLC, 2 lines, total AED 745.76, dated 20 Aug 2026.\n"
+        "Reply OK to confirm."
     )
 
 
@@ -437,7 +439,7 @@ async def test_price_alert_fires_in_the_extraction_reply(api, db):
     # Alerts ordered by absolute delta descending: karak's 3.25 (a falling
     # price - still signal) before milk's 2.60, regardless of line order.
     assert (await outbound_bodies(db))[-1] == (
-        "Read it: Gulf Foods Trading LLC, 2 lines, total AED 745.76.\n"
+        "Read it: Gulf Foods Trading LLC, 2 lines, total AED 745.76, dated 20 Aug 2026.\n"
         "Karak Tea Dust down AED 3.25 (22.00 to 18.75) since your last purchase.\n"
         "Milk Powder 2.5kg up AED 2.60 (51.90 to 54.50) since your last purchase.\n"
         "Reply OK to confirm."
@@ -474,6 +476,8 @@ async def test_no_alert_when_either_threshold_is_unmet(api, db):
     )
     invoice = ExtractedInvoice(
         supplier_name="Gulf Foods Trading LLC",
+        invoice_no="INV-2044",
+        invoice_date=datetime.date(2026, 8, 20),
         currency="AED",
         payment_kind="credit",
         lines=[
@@ -498,7 +502,8 @@ async def test_no_alert_when_either_threshold_is_unmet(api, db):
     assert all(line["supplier_item_id"] is not None for line in lines)
 
     assert (await outbound_bodies(db))[-1] == (
-        "Read it: Gulf Foods Trading LLC, 2 lines, total AED 704.34.\nReply OK to confirm."
+        "Read it: Gulf Foods Trading LLC, 2 lines, total AED 704.34, dated 20 Aug 2026.\n"
+        "Reply OK to confirm."
     )
 
 
@@ -523,7 +528,8 @@ async def test_cash_invoice_is_held_for_review(api, db):
 
     reply = (await outbound_bodies(db))[-1]
     assert reply == (
-        "Read it: Gulf Foods Trading LLC, 2 lines, total AED 745.76.\n" + CASH_HOLD_NOTE
+        "Read it: Gulf Foods Trading LLC, 2 lines, total AED 745.76, dated 20 Aug 2026.\n"
+        + CASH_HOLD_NOTE
     )
     assert CLOSING_ALL_GREEN not in reply  # a cash invoice cannot confirm from chat
 

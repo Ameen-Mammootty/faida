@@ -1,0 +1,75 @@
+{
+  "classification": "invoice",
+  "invoice": {
+    "supplier_name": "Al Aweer Fresh Vegetable Trading",
+    "invoice_no": "AAF 2214",
+    "invoice_date": "2026-07-05",
+    "invoice_date_text": null,
+    "currency": "AED",
+    "payment_kind": "cash",
+    "payment_terms_text": null,
+    "lines": [
+      {
+        "raw_name": "Tomato Local",
+        "line_kind": "stock_item",
+        "qty": "20",
+        "unit": "kg",
+        "pack_size": null,
+        "unit_price": "4.50",
+        "line_total": "90.00"
+      },
+      {
+        "raw_name": "Cucumber",
+        "line_kind": "stock_item",
+        "qty": "15",
+        "unit": "kg",
+        "pack_size": null,
+        "unit_price": "5.00",
+        "line_total": "75.00"
+      },
+      {
+        "raw_name": "Iceberg Lettuce",
+        "line_kind": "stock_item",
+        "qty": "10",
+        "unit": "pc",
+        "pack_size": null,
+        "unit_price": "6.50",
+        "line_total": "65.00"
+      },
+      {
+        "raw_name": "Coriander Bunch",
+        "line_kind": "stock_item",
+        "qty": "30",
+        "unit": "bunch",
+        "pack_size": null,
+        "unit_price": "1.50",
+        "line_total": "45.00"
+      },
+      {
+        "raw_name": "Green Capsicum",
+        "line_kind": "stock_item",
+        "qty": "8",
+        "unit": "kg",
+        "pack_size": null,
+        "unit_price": "9.00",
+        "line_total": "72.00"
+      },
+      {
+        "raw_name": "Lemon",
+        "line_kind": "stock_item",
+        "qty": "5",
+        "unit": "kg",
+        "pack_size": null,
+        "unit_price": "11.00",
+        "line_total": "55.00"
+      }
+    ],
+    "subtotal": null,
+    "tax": null,
+    "total": "402.00",
+    "discount_total": null,
+    "rounding_amount": null,
+    "tax_treatment": null,
+    "vat_rate": null
+  }
+}
