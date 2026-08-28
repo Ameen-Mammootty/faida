@@ -841,8 +841,13 @@ pilot volume. Meta utility template cost applies only from M10 (verify live UAE 
   Price alerts are suppressed on the same test: subtracting an AED baseline from a USD price is the demo's money moment lying in the one moment it asks to be trusted.
   Recording currency per price row was deliberately not built (§2 rule 8): no customer has asked for multi-currency history, and a hold is reversible later without a migration.
   31 new tests, 364 green, eval smoke unchanged; an AED invoice's reply is byte-identical to yesterday's, which is the regression the whole thing had to avoid.
-  **Waiting on the founder:** three live `supplier_items` rows for Levant Specialty Foods FZCO still hold USD baselines (75.000 / 65.000 / 35.000) recorded before the fix, each with one price observation and no previous price.
-  The recommendation is to clear the three prices and delete the three observations, keeping the catalog rows themselves - nothing is lost, because the only history those rows have is the mistaken one - but nothing has been deleted without a go-ahead.
+  **Deployed and the live data cleaned, same session, on founder decisions.**
+  Five scenes were rehearsed locally through the real webhook-to-reply path first so the exact WhatsApp wording was seen before it could reach a phone; CI green in 1m24s, pushed, Railway health steady at `ok:true db:true` across the redeploy window.
+  Two sets of live rows were then deleted, both scoped by hand and executed with per-statement row counts asserted against what was expected:
+  the three Levant `supplier_items` carrying USD baselines (75.000 / 65.000 / 35.000) went entirely - three price observations deleted, three `invoice_lines` unlinked - while the Levant supplier and its USD invoice stay, correctly stored as printed;
+  and the Artisan Bakehouse invoice, confirmed on 2026-08-25 with a null total and unreachable by the new conversation because confirmed invoices are not editable, was wiped completely - invoice, 6 lines, 6 price observations, 6 catalog items, the supplier row, the extraction run, the document, its three jobs, the five WhatsApp messages of that exchange, and the stored original in Supabase Storage.
+  The live project now holds zero null-total invoices, no cross-currency price rows, and passes every referential check.
+  The one thing not yet proven on hardware: the deploy carries no version marker and the API token is not held locally, so **one real forward is still owed as the live proof** - the same standard M0 was held to.
   Next: WP-19 (the line-completeness guard) is the last M5 prerequisite still open, then the remaining M4 gate items - curate the three demo invoices and the two rehearsals.
 - 2026-08-28 - **The demo bar is raised to the complete end-to-end MVP: extraction → raw-material mapping → recipe ingredients → menu costing, closing on a menu-wise margin per item. The demo gate moves from M4 to the end of M6.**
   Founder call, quoted in the Decision Log: the demo must show a restaurant finding its menu-wise profit margin "so that he can prioritize what to push and what not to push" - the loop alone is act one, not the show.
