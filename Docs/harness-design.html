@@ -1,0 +1,531 @@
+<title>Provenance Before Autonomy</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&display=swap">
+<style>
+:root {
+  --bg:#fbf6ec; --panel:#ffffff; --ink:#172421; --muted:#52625d; --line:#e2dbcb;
+  --palm:#153e35; --gold:#8a6220; --gold-soft:#f6ecd8;
+  --good:#1d6d50; --good-soft:#e7efea; --warn:#80520a; --warn-soft:#f8eed7;
+  --stop:#65415f; --stop-soft:#f1e9ef;
+  --code:#f5f1e7; --box:#ffffff; --box-line:#cfc7b4;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:#14170f; --panel:#1c211a; --ink:#ece7da; --muted:#a09a89; --line:#2f342b;
+    --palm:#7fb8a4; --gold:#d9a752; --gold-soft:#241f14;
+    --good:#54ab86; --good-soft:#16251f; --warn:#d2a049; --warn-soft:#251e12;
+    --stop:#c294bb; --stop-soft:#241a23;
+    --code:#12150f; --box:#20261e; --box-line:#3b4238;
+  }
+}
+:root[data-theme="dark"] {
+  --bg:#14170f; --panel:#1c211a; --ink:#ece7da; --muted:#a09a89; --line:#2f342b;
+  --palm:#7fb8a4; --gold:#d9a752; --gold-soft:#241f14;
+  --good:#54ab86; --good-soft:#16251f; --warn:#d2a049; --warn-soft:#251e12;
+  --stop:#c294bb; --stop-soft:#241a23;
+  --code:#12150f; --box:#20261e; --box-line:#3b4238;
+}
+
+* { box-sizing:border-box; }
+body {
+  background:var(--bg); color:var(--ink); margin:0;
+  font:16px/1.65 ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+.wrap { max-width:960px; margin:0 auto; padding:48px 22px 110px; }
+
+h1, h2, h3, .eyebrow, .lede { font-family:Archivo,ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif; }
+h1 { font-size:2.3rem; line-height:1.12; margin:0 0 12px; letter-spacing:-.025em; font-weight:700; text-wrap:balance; }
+.lede { color:var(--muted); margin:0; font-size:1.1rem; font-weight:500; line-height:1.5; max-width:62ch; }
+header.top { border-bottom:3px solid var(--palm); padding-bottom:26px; }
+.meta { display:flex; flex-wrap:wrap; gap:8px; margin-top:20px; }
+.meta span {
+  background:var(--gold-soft); color:var(--gold); border:1px solid var(--line);
+  padding:3px 11px; border-radius:999px; font-size:.76rem; font-weight:600;
+  letter-spacing:.02em;
+}
+
+section { margin-top:52px; }
+h2 {
+  font-size:1.3rem; font-weight:700; margin:0 0 14px; padding-bottom:10px;
+  border-bottom:1px solid var(--line); display:flex; align-items:baseline; gap:12px;
+  letter-spacing:-.015em; text-wrap:balance;
+}
+h2 .n {
+  color:var(--gold); font-variant-numeric:tabular-nums; font-size:.8rem;
+  font-weight:600; letter-spacing:.08em; flex:none;
+}
+h3 { font-size:1.02rem; font-weight:600; margin:30px 0 8px; letter-spacing:-.01em; }
+p { margin:13px 0; max-width:68ch; }
+ul, ol { max-width:66ch; padding-left:22px; }
+li { margin:7px 0; }
+.eyebrow {
+  color:var(--muted); font-size:.72rem; font-weight:600; letter-spacing:.13em;
+  text-transform:uppercase; margin:0 0 6px;
+}
+
+.big {
+  font-size:1.13rem; line-height:1.55; border-left:3px solid var(--gold);
+  padding:5px 0 5px 20px; margin:22px 0; max-width:64ch; font-weight:500;
+}
+.callout {
+  border-left:3px solid var(--gold); background:var(--gold-soft);
+  padding:16px 22px; border-radius:0 8px 8px 0; margin:22px 0;
+}
+.callout p:first-child { margin-top:0; }
+.callout p:last-child { margin-bottom:0; }
+.callout.good { border-left-color:var(--good); background:var(--good-soft); }
+.callout.stop { border-left-color:var(--stop); background:var(--stop-soft); }
+
+code {
+  background:var(--code); border:1px solid var(--line); border-radius:4px;
+  padding:1px 5px; font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+
+.tablewrap { overflow-x:auto; margin:22px 0; border:1px solid var(--line); border-radius:8px; background:var(--panel); }
+table { border-collapse:collapse; width:100%; min-width:660px; font-size:.92rem; }
+th, td { text-align:left; padding:11px 15px; border-bottom:1px solid var(--line); vertical-align:top; }
+thead th {
+  font-size:.7rem; letter-spacing:.1em; text-transform:uppercase; color:var(--muted);
+  font-weight:600; border-bottom:2px solid var(--line); white-space:nowrap;
+}
+tbody tr:last-child td { border-bottom:none; }
+td strong { font-weight:600; }
+
+.tag {
+  display:inline-block; font-size:.68rem; font-weight:700; letter-spacing:.06em;
+  text-transform:uppercase; padding:2px 8px; border-radius:4px; white-space:nowrap;
+  border:1px solid currentColor;
+}
+.tag.have { color:var(--good); background:var(--good-soft); }
+.tag.part { color:var(--warn); background:var(--warn-soft); }
+.tag.gap  { color:var(--stop); background:var(--stop-soft); }
+
+figure { margin:28px 0; }
+.figbox { overflow-x:auto; background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:18px 14px; }
+figure svg { display:block; min-width:820px; width:100%; height:auto; color:var(--ink); }
+figcaption { color:var(--muted); font-size:.88rem; margin-top:12px; max-width:68ch; }
+
+.d-box { fill:var(--box); stroke:var(--box-line); stroke-width:1.2; }
+.d-group { fill:none; stroke:var(--box-line); stroke-width:1.2; stroke-dasharray:5 4; }
+.d-t { fill:var(--ink); font-size:12px; font-weight:600; font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif; }
+.d-s { fill:var(--muted); font-size:10.5px; font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif; }
+.d-lane { fill:var(--muted); font-size:9.5px; font-weight:700; letter-spacing:.1em; font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif; }
+.d-edge { stroke:var(--muted); stroke-width:1.3; fill:none; }
+.d-edgelabel { fill:var(--muted); font-size:10px; font-style:italic; font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif; }
+.d-head { fill:var(--muted); }
+.d-good { fill:var(--good-soft); stroke:var(--good); stroke-width:1.6; }
+.d-good-t { fill:var(--good); font-size:12px; font-weight:700; font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif; }
+.d-gap { fill:var(--stop-soft); stroke:var(--stop); stroke-width:1.6; stroke-dasharray:6 3; }
+.d-gap-t { fill:var(--stop); font-size:12px; font-weight:700; font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif; }
+.d-gap-s { fill:var(--stop); font-size:10.5px; font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif; }
+
+.changes { display:grid; gap:18px; margin:24px 0; }
+.change {
+  background:var(--panel); border:1px solid var(--line); border-left:3px solid var(--palm);
+  border-radius:0 8px 8px 0; padding:18px 22px;
+}
+.change h3 { margin:0 0 4px; font-size:1.05rem; }
+.change .cost { color:var(--muted); font-size:.85rem; margin:0 0 10px; font-weight:500; }
+.change p { margin:10px 0; }
+.change p:last-child { margin-bottom:0; }
+
+.rec { border:2px solid var(--palm); border-radius:10px; padding:22px 26px; background:var(--panel); margin:26px 0; }
+.rec .eyebrow { color:var(--palm); }
+.rec p:last-child { margin-bottom:0; }
+
+footer {
+  margin-top:70px; padding-top:22px; border-top:1px solid var(--line);
+  color:var(--muted); font-size:.85rem; font-style:italic;
+}
+footer p { max-width:70ch; }
+a { color:var(--gold); }
+a:focus-visible, [tabindex]:focus-visible { outline:2px solid var(--gold); outline-offset:2px; }
+</style>
+
+<div class="wrap">
+
+<header class="top">
+  <p class="eyebrow">Design memo · 28 August 2026</p>
+  <h1>Provenance before autonomy</h1>
+  <p class="lede">What the Rillet harness picture actually argues, which parts Faida already got right,
+  and the one thing the resequenced plan makes urgent: before we start turning invoice numbers into
+  cost per gram, every number needs to remember where it came from.</p>
+  <div class="meta">
+    <span>For the founder</span>
+    <span>Touches plan.md §7.2 and M5</span>
+    <span>Proposal — not yet decided</span>
+  </div>
+</header>
+
+<section>
+  <h2><span class="n">01</span> What the picture is really claiming</h2>
+
+  <p>Strip the accounting words out of that infographic and the argument is short. Most companies
+  bolt an AI onto software that was never designed for it: the model reads exports, guesses, and
+  writes suggestions back through a side door. Rillet's claim is that the value is not in the model
+  at all — it is in the <em>order of the layers underneath it</em>. Data arrives already structured.
+  There is exactly one copy of the truth. The same rules bind a person and a machine. And every
+  action can be walked back to who did it, on what evidence, under which rule.</p>
+
+  <p>Their four transferable rules, in their own words: <strong>structure at the door</strong>,
+  <strong>one source of truth</strong>, <strong>same rules for both</strong>, and
+  <strong>provenance before autonomy</strong> — "an action you cannot trace is an action you cannot
+  delegate."</p>
+
+  <p class="big">Faida already follows three of those four, and mostly by accident — they fall out of
+  the anti-over-engineering rules we wrote after the last build's post-mortem. The fourth one we do
+  not follow at all, and the milestone we just moved to the front of the queue is the one that
+  needs it.</p>
+</section>
+
+<section>
+  <h2><span class="n">02</span> Faida's version of that stack</h2>
+
+  <p>Here is the same picture drawn with our actual parts, as the code stands today. It is worth
+  seeing on one page, because the shape is genuinely good — the thing that is missing is missing in
+  one specific place, not spread everywhere.</p>
+
+  <figure>
+    <div class="figbox">
+      <svg viewBox="0 0 1000 548" role="img"
+           aria-label="Faida's ingest stack in five layers: sources, structured on arrival, system of record, the work layer that proposes, and control. The control layer has human confirmation in place but no audit trail of who set a number.">
+        <defs>
+          <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 1 L 9 5 L 0 9 z" class="d-head"/>
+          </marker>
+        </defs>
+
+        <!-- lane labels -->
+        <text x="122" y="56"  text-anchor="end" class="d-lane">SOURCES</text>
+        <text x="122" y="132" text-anchor="end" class="d-lane">AT THE DOOR</text>
+        <text x="122" y="226" text-anchor="end" class="d-lane">SYSTEM OF</text>
+        <text x="122" y="239" text-anchor="end" class="d-lane">RECORD</text>
+        <text x="122" y="348" text-anchor="end" class="d-lane">WORK LAYER</text>
+        <text x="122" y="452" text-anchor="end" class="d-lane">CONTROL</text>
+
+        <!-- sources -->
+        <rect x="140" y="28" width="192" height="52" rx="5" class="d-box"/>
+        <text x="236" y="49" text-anchor="middle" class="d-t">WhatsApp forward</text>
+        <text x="236" y="65" text-anchor="middle" class="d-s">a photo of the invoice</text>
+
+        <rect x="346" y="28" width="192" height="52" rx="5" class="d-box"/>
+        <text x="442" y="49" text-anchor="middle" class="d-t">Manual entry</text>
+        <text x="442" y="65" text-anchor="middle" class="d-s">typed, no model involved</text>
+
+        <rect x="552" y="28" width="192" height="52" rx="5" class="d-box"/>
+        <text x="648" y="49" text-anchor="middle" class="d-t">Web upload</text>
+        <text x="648" y="65" text-anchor="middle" class="d-s">from the review screen</text>
+
+        <rect x="758" y="28" width="192" height="52" rx="5" class="d-box"/>
+        <text x="854" y="49" text-anchor="middle" class="d-t">Sales and Z-reports</text>
+        <text x="854" y="65" text-anchor="middle" class="d-s">M8, not built yet</text>
+
+        <path d="M 545 80 L 545 100" class="d-edge" marker-end="url(#ar)"/>
+
+        <!-- door -->
+        <rect x="140" y="102" width="810" height="54" rx="5" class="d-box"/>
+        <text x="545" y="124" text-anchor="middle" class="d-t">Everything is parsed into one strict shape before any logic sees it</text>
+        <text x="545" y="142" text-anchor="middle" class="d-s">money as text, then a Decimal · currency, units, pack size and payment terms read by rule, not by prompt wording</text>
+
+        <path d="M 545 156 L 545 184" class="d-edge" marker-end="url(#ar)"/>
+        <text x="556" y="174" class="d-edgelabel">stored exactly as the paper prints it</text>
+
+        <!-- system of record -->
+        <rect x="130" y="184" width="830" height="96" rx="7" class="d-group"/>
+        <rect x="140" y="196" width="192" height="72" rx="5" class="d-box"/>
+        <text x="236" y="217" text-anchor="middle" class="d-t">the photo</text>
+        <text x="236" y="234" text-anchor="middle" class="d-s">immutable original,</text>
+        <text x="236" y="249" text-anchor="middle" class="d-s">hashed, never overwritten</text>
+
+        <rect x="346" y="196" width="192" height="72" rx="5" class="d-box"/>
+        <text x="442" y="217" text-anchor="middle" class="d-t">invoices and lines</text>
+        <text x="442" y="234" text-anchor="middle" class="d-s">as printed, with green or</text>
+        <text x="442" y="249" text-anchor="middle" class="d-s">amber worked out per field</text>
+
+        <rect x="552" y="196" width="192" height="72" rx="5" class="d-box"/>
+        <text x="648" y="217" text-anchor="middle" class="d-t">price memory</text>
+        <text x="648" y="234" text-anchor="middle" class="d-s">one price basis, ex-VAT,</text>
+        <text x="648" y="249" text-anchor="middle" class="d-s">plus the full history</text>
+
+        <rect x="758" y="196" width="192" height="72" rx="5" class="d-box"/>
+        <text x="854" y="217" text-anchor="middle" class="d-t">every model run</text>
+        <text x="854" y="234" text-anchor="middle" class="d-s">model, prompt version,</text>
+        <text x="854" y="249" text-anchor="middle" class="d-s">cost, latency, repair or not</text>
+
+        <path d="M 300 280 L 300 306" class="d-edge" marker-end="url(#ar)"/>
+        <text x="311" y="297" class="d-edgelabel">reads the record</text>
+        <path d="M 800 306 L 800 280" class="d-edge" marker-end="url(#ar)"/>
+        <text x="668" y="297" text-anchor="end" class="d-edgelabel">proposes — never writes on its own</text>
+
+        <!-- work layer -->
+        <rect x="130" y="306" width="830" height="96" rx="7" class="d-group"/>
+        <rect x="140" y="318" width="192" height="72" rx="5" class="d-box"/>
+        <text x="236" y="339" text-anchor="middle" class="d-t">read the page</text>
+        <text x="236" y="356" text-anchor="middle" class="d-s">one model call, plus one</text>
+        <text x="236" y="371" text-anchor="middle" class="d-s">scoped re-read at most</text>
+
+        <rect x="346" y="318" width="192" height="72" rx="5" class="d-box"/>
+        <text x="442" y="339" text-anchor="middle" class="d-t">does it add up</text>
+        <text x="442" y="356" text-anchor="middle" class="d-s">plain arithmetic; green</text>
+        <text x="442" y="371" text-anchor="middle" class="d-s">is earned, never claimed</text>
+
+        <rect x="552" y="318" width="192" height="72" rx="5" class="d-box"/>
+        <text x="648" y="339" text-anchor="middle" class="d-t">match the supplier item</text>
+        <text x="648" y="356" text-anchor="middle" class="d-s">suggests a match and a</text>
+        <text x="648" y="371" text-anchor="middle" class="d-s">price alert</text>
+
+        <rect x="758" y="318" width="192" height="72" rx="5" class="d-box"/>
+        <text x="854" y="339" text-anchor="middle" class="d-t">merge into one material</text>
+        <text x="854" y="356" text-anchor="middle" class="d-s">M5 — suggests, a person</text>
+        <text x="854" y="371" text-anchor="middle" class="d-s">approves, never automatic</text>
+
+        <path d="M 545 402 L 545 424" class="d-edge" marker-end="url(#ar)"/>
+        <text x="556" y="417" class="d-edgelabel">nothing counts until a person says so</text>
+
+        <!-- control -->
+        <rect x="140" y="424" width="490" height="66" rx="5" class="d-good"/>
+        <text x="385" y="447" text-anchor="middle" class="d-good-t">One word of approval — in place</text>
+        <text x="385" y="466" text-anchor="middle" class="d-s">"OK" in the chat, or Confirm on the screen. Both run the same code.</text>
+        <text x="385" y="481" text-anchor="middle" class="d-s">The price baseline moves here and nowhere else.</text>
+
+        <rect x="644" y="424" width="306" height="66" rx="5" class="d-gap"/>
+        <text x="797" y="447" text-anchor="middle" class="d-gap-t">Who set this number — missing</text>
+        <text x="797" y="466" text-anchor="middle" class="d-gap-s">We log everything the model did.</text>
+        <text x="797" y="481" text-anchor="middle" class="d-gap-s">We log nothing a person did.</text>
+
+        <path d="M 385 490 L 385 516 L 975 516 L 975 232 L 960 232" class="d-edge" marker-end="url(#ar)"/>
+        <text x="620" y="510" text-anchor="middle" class="d-edgelabel">approved work posts back into the record</text>
+      </svg>
+    </div>
+    <figcaption>Faida's ingest stack as the code stands on 28 August. Four of the five layers are
+    in good shape. The gap is in the bottom right: the machine's every move is on the record, the
+    person's moves are not.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <h2><span class="n">03</span> The scorecard, rule by rule</h2>
+
+  <div class="tablewrap">
+  <table>
+    <thead>
+      <tr><th>Their rule</th><th>Where Faida stands</th><th>Where it will break next</th><th></th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Structure at the door</strong><br>parse on arrival, never reason over a screenshot</td>
+        <td>Our strongest layer. One strict shape for every invoice, and the awkward stuff —
+        the currency word, the units, the pack size, cash-or-credit — is decided by testable
+        rules rather than by how the prompt is worded. Every one of those started as a prompt
+        instruction and was moved into code after it got something wrong.</td>
+        <td>Sales files in M8. A spreadsheet whose columns move is the classic version of this
+        failure, and the plan already says a layout change stops for review.</td>
+        <td><span class="tag have">Solid</span></td>
+      </tr>
+      <tr>
+        <td><strong>One source of truth</strong><br>one store, one implementation of the rules</td>
+        <td>We paid for this lesson already. The exam had its own private copy of the
+        "does it add up" rule, drifted from the shipped one, and spent a day marking correct
+        answers wrong. We deleted the copy. There is now one implementation and the exam scores
+        against it.</td>
+        <td>M6's plate cost. The moment a screen wants a live number, someone will be tempted to
+        reimplement the cost formula in the web app. Write the rule down before that happens.</td>
+        <td><span class="tag have">Solid</span></td>
+      </tr>
+      <tr>
+        <td><strong>Same rules for both</strong><br>a person and a machine cannot quietly disagree</td>
+        <td>Better than I expected. Correcting a field on the review screen does not have its own
+        code path — it runs through the very same function as typing "line 4 qty 16" into
+        WhatsApp, and manual entry runs the same checks as a photo. Nobody can type a number in
+        through a side door and have it come out green.</td>
+        <td>M5's mapping screen and M6's consultant spreadsheet loader are both human-only write
+        paths with no machine equivalent. That is exactly where a side door gets built.</td>
+        <td><span class="tag have">Solid</span></td>
+      </tr>
+      <tr>
+        <td><strong>Provenance before autonomy</strong><br>trace it before you delegate it</td>
+        <td>Half done, and the wrong half. We record what the model did in detail — which model,
+        which prompt version, what it cost, whether it needed a second look. We record nothing
+        about what a person did. A corrected total and an extracted total are the same number in
+        the same column.</td>
+        <td><em>Now.</em> M5 is the first milestone whose headline feature is a human approval,
+        and M5 is next.</td>
+        <td><span class="tag gap">The gap</span></td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section>
+  <h2><span class="n">04</span> Why the resequencing makes this urgent</h2>
+
+  <p>Until now, every number we store sits next to the photo it came from. If you doubt it, you
+  look at the picture. That is the whole basis of trust in the product, and it has been enough.</p>
+
+  <p>M5 and M6 end that. A cost per gram is an invoice price divided by a pack size. A plate cost
+  is a pile of those, converted and divided again by a batch yield. By the time an owner reads
+  "this biryani earns you AED 6.40", the number is three divisions away from any photograph. You
+  cannot check it by looking. You can only check it if the system can tell you what went into it.</p>
+
+  <p>And the plan already asks for exactly this, in three separate places, without a place to put it:</p>
+
+  <ul>
+    <li>A total we reconstructed by asking the owner "must be stored as such and must never look
+    like one read off the page" — but there is no field that distinguishes them.</li>
+    <li>Merging two suppliers' milk powder into one material is "recorded with its actor" and
+    "never auto-merged" — but there is nothing to record an actor into.</li>
+    <li>The table that would hold all of this, <code>audit_events</code>, is scheduled for M7 —
+    two milestones <em>after</em> the first thing that needs it.</li>
+  </ul>
+
+  <div class="callout stop">
+    <p><strong>The failure this prevents.</strong> The plan says it plainly about mapping: a wrong
+    merge quietly corrupts the cost of every menu item using that material, and unlike a bad
+    extraction <em>there is no photo to check it against</em>. That is the same shape as the old
+    platform's worst habit — a confidently wrong number that was never offered for review. We built
+    the whole green-and-amber machinery so that could not happen to an extracted number. It can
+    still happen to a derived one.</p>
+  </div>
+</section>
+
+<section>
+  <h2><span class="n">05</span> Three changes, and what each costs</h2>
+
+  <p>None of these is a subsystem. Two are a column and a table; the third is a sentence in the
+  contracts that stops a whole class of bug. Together I would size them at under a day, and they
+  slot in front of M5 rather than delaying it, because M5's first feature is the approval that
+  needs them.</p>
+
+  <div class="changes">
+
+    <div class="change">
+      <h3>1 · Every number remembers how it got there</h3>
+      <p class="cost">A new contract, C8 · one migration · roughly half a day · do it before M5 starts</p>
+      <p>Invoices already carry a small per-field record saying whether a field came out green or
+      amber. Widen it to also say <em>where the value came from</em>: read off the page, re-read on
+      the second pass, corrected in chat, corrected on the screen, reconstructed by asking, or
+      typed in by hand — plus who and when.</p>
+      <p>This is not a new store and not a new concept. It is the existing field record growing
+      two keys, and the same shape travelling with a cost per gram in M5 so that a derived number
+      can name the invoice lines behind it. Cheap now, while the schema is still squashable and
+      there is one seeded tenant. Expensive the day a real chain's costs depend on it.</p>
+      <p>It also settles the question left open in the plan — whether a bare "OK" should be allowed
+      to confirm an invoice whose total we never read. It should not, and the reason is this rule:
+      a missing total is invisible to everything downstream, while a reconstructed one is labelled
+      and can be trusted accordingly.</p>
+    </div>
+
+    <div class="change">
+      <h3>2 · The audit trail moves to the front of M5, without waiting for logins</h3>
+      <p class="cost">One table plus one helper · roughly two hours · currently scheduled for M7</p>
+      <p>The objection to moving it is that we have no login system until M7, so we do not know who
+      anyone is. That is true and it does not matter. Before real accounts exist, the actor is
+      "the consultant at the console" or the phone number that sent the message — and either of
+      those is a real answer to "who merged these two milk powders", where today the answer is
+      silence.</p>
+      <p>What goes in it from day one: invoice confirmations and corrections, material merges and
+      rejections, and every recipe or price loaded in bulk. Nothing else. When Supabase Auth lands
+      in M7, the actor becomes a real user id and the approvals gate keeps working unchanged.</p>
+    </div>
+
+    <div class="change">
+      <h3>3 · A calculated number is never more trustworthy than its worst ingredient</h3>
+      <p class="cost">A contract sentence, C9 · costs nothing now · saves a redesign in M6</p>
+      <p>We already say that a menu item with one uncosted ingredient must read
+      <em>incomplete</em>, never as a cheap item. Extend that from <em>missing</em> to
+      <em>shaky</em>: if a plate's cost leans on a pack size we could not parse, or an invoice total
+      we assembled from a conversation, the plate reads estimated, not verified — and it can say
+      which ingredient dragged it down.</p>
+      <p>Write it into the contracts before M6 rather than discovering it when the first margin
+      screen shows a confident number built on a guess.</p>
+    </div>
+
+  </div>
+</section>
+
+<section>
+  <h2><span class="n">06</span> What we should not copy</h2>
+
+  <p>Worth being explicit, because a picture from a company that just raised $200 million is a very
+  easy thing to over-learn from. Their layer diagram shows four specialised agents, a policy engine,
+  a continuous close. Faida has one model call and a demo next week.</p>
+
+  <div class="tablewrap">
+  <table>
+    <thead>
+      <tr><th>In their picture</th><th>Our version</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Four specialised agents — reconciliation, classification, anomaly review, close tasks</td>
+        <td><strong>One call.</strong> We already decided classification rides inside the extraction
+        call because a second call adds cost and delay for nothing. Reconciliation is arithmetic,
+        not an agent. Keep it that way.</td>
+      </tr>
+      <tr>
+        <td>A policy engine that binds people and agents</td>
+        <td><strong>A constants file.</strong> Our tolerances and thresholds live in one module and
+        the exam scores against the same one. That <em>is</em> the shared rule surface. A policy
+        engine at our size is the 329-contract mistake wearing new clothes.</td>
+      </tr>
+      <tr>
+        <td>An audit trail as an architectural layer</td>
+        <td><strong>One table and one rule</strong> — every write path names its actor. Recovery is
+        a screen, not a subsystem; so is this.</td>
+      </tr>
+      <tr>
+        <td>Approval as a finance-team workflow</td>
+        <td><strong>Approval costs one word.</strong> Their customer runs a finance team of three;
+        ours is an owner and whoever is at the till. Our gate is already the right size — "OK" in a
+        chat. Do not import a review queue.</td>
+      </tr>
+      <tr>
+        <td>Continuous close — the ledger never goes stale</td>
+        <td><strong>No equivalent, and none needed.</strong> The nearest thing we have is that a
+        confirmed invoice moves the price baseline immediately, which already happens.</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout good">
+    <p><strong>The honest read on their picture:</strong> the four rules transfer, the architecture
+    does not. Their moat is that building an accounting system this way is hard. Ours is that a
+    cafeteria owner will forward a photo to WhatsApp and believe the number that comes back. Same
+    principle, a hundredth of the machinery.</p>
+  </div>
+</section>
+
+<section>
+  <h2><span class="n">07</span> The call</h2>
+
+  <div class="rec">
+    <p class="eyebrow">Recommendation</p>
+    <p>Do all three, in front of M5, before the raw-material work starts. Under a day, one
+    migration, no milestone moves.</p>
+    <p>The argument in one line: <strong>we are about to start making numbers that no photograph can
+    check, and the plan already promises three times over to record things it currently has nowhere
+    to put.</strong> The cost of doing it now is a column and a table while the schema is still
+    disposable. The cost of doing it at M7 is a backfill over a real chain's cost history, and a
+    window in between where a bad merge is untraceable.</p>
+    <p>What I need from you is a yes or a no on the sequencing — the three changes are worthless
+    separately. On a yes, they go into the plan as contracts C8 and C9, an audit line at the top of
+    M5, and a Decision Log entry, in one commit.</p>
+  </div>
+
+  <p>The one thing I would not do is treat this as a rewrite. Three of the four rules are already
+  holding, and they are holding because of the rules we wrote after the last post-mortem, not
+  because anyone designed a harness. The work here is to notice that, write down the one that is
+  missing, and get back to costing a plate of biryani.</p>
+</section>
+
+<footer>
+  <p>Source for the pattern: Rillet's own product surface and announcement of 17 August 2026, plus
+  press coverage of the round. Their customer numbers are the company's own and are not independently
+  verified — nothing in this memo depends on them. Everything said about Faida's current state was
+  read from the code on this branch, not from the plan: where the two disagree, the code is right.</p>
+</footer>
+
+</div>
