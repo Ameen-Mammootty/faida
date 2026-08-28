@@ -28,7 +28,7 @@ class Settings(BaseSettings):
 
     # C6 web API (M3). One shared-secret bearer token for the review screen;
     # empty refuses every /api request (fail closed, like the webhook secret).
-    # Real auth arrives in M6.
+    # Real auth arrives in M7.
     api_token: str = ""
     # The review screen's origin (apps/web), allowed through CORS.
     web_origin: str = "http://localhost:3000"

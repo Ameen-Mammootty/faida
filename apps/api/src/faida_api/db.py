@@ -538,7 +538,7 @@ class Database:
         """C5: the awaiting_confirm invoices whose document traces back to
         sender phone, newest first (the flow's default target and the
         disambiguation list order). Cash invoices are needs_review and never
-        appear here - chat cannot confirm them (M6 owns approvals)."""
+        appear here - chat cannot confirm them (M7 owns approvals)."""
         return await self.pool.fetch(
             """
             select i.id, i.supplier_name, i.currency, i.total, i.created_at, b.timezone
@@ -615,7 +615,7 @@ class Database:
     async def confirm_reviewed_invoice(self, invoice_id: str) -> bool:
         """C1, the review-screen path (WP-30): invoice needs_review ->
         confirmed, stamping confirmed_at. The review screen is the cash
-        approval path until M6 (plan.md §6 M2). Returns False without touching
+        approval path until M7 (plan.md §6 M2). Returns False without touching
         anything when the invoice was not needs_review - safe to re-run."""
         return (
             await self.pool.fetchval(

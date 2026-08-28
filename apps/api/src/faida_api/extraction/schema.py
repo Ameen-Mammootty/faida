@@ -33,7 +33,7 @@ Money = Annotated[Decimal, BeforeValidator(parse_money), WithJsonSchema({"type":
 
 class Classification(StrEnum):
     INVOICE = "invoice"
-    Z_REPORT = "z_report"  # stored and politely declined until M5
+    Z_REPORT = "z_report"  # stored and politely declined until M8
     OTHER = "other"  # memes, chat screenshots, anything else
 
 

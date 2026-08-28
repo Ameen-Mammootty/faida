@@ -8,7 +8,7 @@
 - **Product:** Faida — profit visibility for GCC cafeterias and multi-branch karak/paratha chains, fed through WhatsApp.
 - **Reference:** `Docs/PRD.md` (v2). This plan sequences the build; the PRD owns product intent. Where they conflict on *scope timing*, this plan wins.
 - **Start date:** 2026-08-22
-- **Current milestone:** **M0 proven on real hardware 2026-08-23 (F1-F4 done)** - the live chain carried through M1 extraction and M2 confirm on the first real invoice. The live project's schema is at migration 0010 (applied 2026-08-24). Founder-gated: a permanent access token (the 24 h token expired 2026-08-23 19:00; replacement in progress), corpus photos (F6) for the accuracy loop (WP-15/16), demo rehearsals (M4 gate). The review screen is live at `https://faida-web-nine.vercel.app` (deployed 2026-08-24). Known gaps before the demo: **WP-26** (an invoice whose totals block is off-frame is confirmable with a null total) and **WP-27** (dates outside `YYYY-MM-DD` read null, and the corpus only prints ISO so the eval cannot see it), both found on live forwards 2026-08-25; the amber question still dead-ends on a plain-English answer. Forward-to-reply measured **19.9 s and 23.0 s** on 2026-08-25 against the ~20 s target, with no repair round on either - the 28.4 s figure is retired. WP-16 rounds 1-2 ran 2026-08-24/25 (`eval --live`): every §5 accuracy target is met *on the ten generated invoices* (phase 1, not pilot accuracy), with the rebuilt ground truth still needing F8 sign-off and five corpus images still ungenerated
+- **Current milestone:** **M0 proven on real hardware 2026-08-23 (F1-F4 done)** - the live chain carried through M1 extraction and M2 confirm on the first real invoice. The live project's schema is at migration 0010 (applied 2026-08-24). Founder-gated: a permanent access token (the 24 h token expired 2026-08-23 19:00; replacement in progress), corpus photos (F6) for the accuracy loop (WP-15/16), demo rehearsals (M4 gate). The review screen is live at `https://faida-web-nine.vercel.app` (deployed 2026-08-24). Known gaps before the demo: **WP-26** (an invoice whose totals block is off-frame is confirmable with a null total) and **WP-27** (dates outside `YYYY-MM-DD` read null, and the corpus only prints ISO so the eval cannot see it), both found on live forwards 2026-08-25; the amber question still dead-ends on a plain-English answer. Forward-to-reply measured **19.9 s and 23.0 s** on 2026-08-25 against the ~20 s target, with no repair round on either - the 28.4 s figure is retired. WP-16 rounds 1-2 ran 2026-08-24/25 (`eval --live`): every §5 accuracy target is met *on the ten generated invoices* (phase 1, not pilot accuracy), the rebuilt ground truth signed off by the founder on 2026-08-25 with zero corrections (F8), and five corpus images still ungenerated. **The post-demo track was resequenced 2026-08-28** (§8, Decision Log): raw materials → menu costing → auth → sales, because costing a plate needs no sales data and the raw-material layer the MVP depends on was in no milestone at all. Nothing in M0-M4 moved
 
 ---
 
@@ -73,7 +73,7 @@ Settled now so we never relitigate them mid-build. Changes go through the Decisi
 | Backend | **Python / FastAPI**, one small monolith | One process serves webhook + API + (initially) inline background tasks. Familiar stack, best SDK support for the extraction pipeline. |
 | Extraction model | **Claude Opus 5** (`claude-opus-5`) via the Anthropic Python SDK, structured outputs (`client.messages.parse()` with a strict Pydantic schema), adaptive thinking left on | Accuracy is the demo. Cost ≈ $0.05–0.15/invoice incl. repair pass — irrelevant at demo volume. Provider call sits behind one thin interface (PRD §25.1) so it swaps in one place. |
 | Database + storage + auth | **Supabase** (Postgres, Storage, later Auth + RLS) | Rented foundations. Free tier for the demo. |
-| Background work | **A `jobs` table + an async worker loop inside the same process** | Demo volume is one message at a time. A durable queue/broker is banned until job volume proves the need (revisit at M6). |
+| Background work | **A `jobs` table + an async worker loop inside the same process** | Demo volume is one message at a time. A durable queue/broker is banned until job volume proves the need (revisit at M7). |
 | Frontend | **Next.js** (single app), deployed on Vercel | One review screen for the demo; grows into the dashboard. |
 | Hosting (backend) | Railway or Fly, single always-on service | Webhook needs an always-on public URL; Vercel functions are wrong for the worker loop. |
 | Repo layout | Single repo: `apps/api` (FastAPI), `apps/web` (Next.js), `supabase/` (migrations), `eval/` (invoice eval harness), `plan.md` (this file) | |
@@ -92,7 +92,7 @@ door open; PRD §19).
 ## 4. Data model (initial — 8 tables)
 
 Every tenant-owned row carries `tenant_id` from day one (columns are cheap; retrofitting isn't).
-RLS enforcement is deferred to M6 — the demo runs single-tenant seeded.
+RLS enforcement is deferred to M7 — the demo runs single-tenant seeded.
 
 ```
 tenants            id, name, currency, created_at
@@ -113,7 +113,8 @@ invoice_lines      id, invoice_id, raw_name, supplier_item_id NULL, qty, unit, u
 
 Plus two operational tables: `wa_messages` (message_id UNIQUE, direction, from_phone, type,
 payload, status — the dedupe + audit spine) and `jobs` (id, kind, payload, status, attempts,
-last_error). Sales tables arrive in M5, users/roles in M6, recipes/costing in M7.
+last_error). Raw materials (ingredients + the supplier-item mapping) arrive in M5,
+recipes/menu costing in M6, users/roles in M7, sales tables in M8.
 
 Migration policy: plain SQL files in `supabase/migrations/`, squashed freely until first customer.
 
@@ -273,7 +274,7 @@ plan (§7).
       `last_price`/`prev_price` update only on confirm, so an unconfirmed invoice never pollutes
       the baseline (WP-23)
 - [x] Cash invoices (`payment_kind = 'cash'`) marked and held as `needs_review` — approval UI comes
-      later (M6); the distinction is captured now, per PRD §21 (WP-24)
+      later (M7); the distinction is captured now, per PRD §21 (WP-24)
 - [ ] Required-field ambers: a missing invoice date or number is asked for in the reply, never
       silently stored (WP-25, observed live 2026-08-24)
 - **Done when:** two invoices from the same supplier a week apart produce a correct
@@ -283,7 +284,7 @@ plan (§7).
 ### M3 — Review screen (Day 10–12)
 - [x] Backend API for the screen (C6): invoice list/detail with signed image URLs, field patch
       (re-validates), confirm, manual upload, price history; demo access via one shared-secret
-      bearer token, real auth arrives in M6 (WP-30)
+      bearer token, real auth arrives in M7 (WP-30)
 - [x] Next.js app with the one screen: invoice photo left, extracted fields right, green/amber per
       field (with an icon or label, never colour alone), edit-in-place for amber fields, confirm
       button (WP-31)
@@ -405,7 +406,7 @@ Log; a sub-agent never changes one unilaterally.
   `GET /api/invoices/{id}` (fields, checks, confidence, signed image URL),
   `PATCH /api/invoices/{id}/fields`, `POST /api/invoices/{id}/confirm`, `POST /api/documents`
   (manual upload), `GET /api/supplier-items/{id}/prices`. Demo access: one shared-secret bearer
-  token from an env var; real auth is M6. Pinned now so web work can start against a mock.
+  token from an env var; real auth is M7. Pinned now so web work can start against a mock.
 - **C7 - Migrations.** Each WP appends its own numbered SQL file; the manager squashes
   periodically (§4 policy). No two parallel agents touch the same migration file.
 
@@ -440,7 +441,7 @@ demonstrable, not documentary.
 | 23 | Price alerts per the §6 M2 rule (thresholds as constants in one module) | S | 20, 22 | alert shows in the extraction reply; baseline untouched until confirm |
 | 24 | Cash hold: `payment_kind = 'cash'` → `needs_review` + reply notes approval pending | S | 13, 20 | e2e test |
 | 25 | **Required-field ambers** (ported 2026-08-24; observed live the same day when AAF 2214 stored with no date and the reply asked nothing): a null invoice date or invoice number becomes one amber question in the reply, exactly like a failed line, answered through the WP-21 correction path. Never silently stored | S | 20, 21 | e2e: an invoice with no readable date is asked for it; the answer lands via the correction grammar and the invoice proceeds |
-| 26 | **Totals block absent from the page: reconstruct it by asking, not by computing** (founder call 2026-08-25, from a live forward). Artisan Bakehouse ABL-INV-260709-0517 arrived with its totals block outside the frame. Every line read green and summed to 930.00, and the reply said so honestly - "total unreadable, what does it say?" - but it also offered "or OK to confirm the rest", the founder answered `ok`, and the invoice is now recorded with a **null total**. It contributes nothing to M5's purchases figure and nothing to any total-based analytic. The fix is a short conversation, not a calculation: show the line sum, ask whether that is the subtotal or the whole invoice, and ask whether the prices already include VAT - the same two facts C4 normally derives from the arithmetic, which cannot be derived when there is no total to derive them against. **Never infer silently:** a total we assembled from questions must be stored as such and must never look like one read off the page. Open question for the manager: whether a bare `OK` should be allowed to confirm away a missing *total* at all, given a missing line qty is a small hole and a missing total is the invoice's headline number | M | 20, 21, C4 | a totals-less invoice reaches a stored total through the reply conversation; the stored figure is marked as reconstructed, not as printed; a bare OK does not silently record a null total |
+| 26 | **Totals block absent from the page: reconstruct it by asking, not by computing** (founder call 2026-08-25, from a live forward). Artisan Bakehouse ABL-INV-260709-0517 arrived with its totals block outside the frame. Every line read green and summed to 930.00, and the reply said so honestly - "total unreadable, what does it say?" - but it also offered "or OK to confirm the rest", the founder answered `ok`, and the invoice is now recorded with a **null total**. It contributes nothing to M8's purchases figure, nothing to any cost per gram M5 derives, and nothing to any total-based analytic. The fix is a short conversation, not a calculation: show the line sum, ask whether that is the subtotal or the whole invoice, and ask whether the prices already include VAT - the same two facts C4 normally derives from the arithmetic, which cannot be derived when there is no total to derive them against. **Never infer silently:** a total we assembled from questions must be stored as such and must never look like one read off the page. Open question for the manager: whether a bare `OK` should be allowed to confirm away a missing *total* at all, given a missing line qty is a small hole and a missing total is the invoice's headline number | M | 20, 21, C4 | a totals-less invoice reaches a stored total through the reply conversation; the stored figure is marked as reconstructed, not as printed; a bare OK does not silently record a null total |
 | 27 | **Date formats beyond ISO, and a question when the date is missed** (founder call 2026-08-25). Al Aweer AAF 2214 came back with `invoice_date` null **while the date was plainly printed on the page** - so this is a reading failure, not an absent field. The cause is almost certainly format: **all ten corpus invoices print `YYYY-MM-DD`** (verified 2026-08-25), which is the one format a GCC supplier is least likely to use, so the eval's 100% date accuracy measures a single shape and proves nothing about `09/07/2026`, `9-7-26`, `09.07.2026` or a written month. Same blind-spot shape as `pack_size` at 19%: the corpus agreed with itself. Needs the prompt to state the shapes explicitly, corpus cases that actually print them (the `AMD-01` proposed case already carries `ambiguous_date_format`), and the C3 rule that an ambiguous date stays null rather than being guessed - `5/7` with no year is not a date. Pairs with WP-25: a null date must ask, and a read date should be confirmable in the reply | M | C3, 25 | the eval carries non-ISO date cases and scores them; an unambiguous `09/07/2026` reads correctly; `5/7` with no year stays null and asks; a null date always produces a question |
 
 **M3 (review screen)**
@@ -491,27 +492,89 @@ on the demo path is a P0).
 
 ---
 
-## 8. Milestones — from demo to MVP (M5–M9)
+## 8. Milestones — from demo to MVP (M5–M11)
 
 Sequenced so each milestone ships something a pilot customer uses that week. Re-estimate at M4.
 
-### M5 — Sales ingestion + the first ratio (Week 4–5)
-The demo captures cost; profit visibility needs sales against it.
-- [ ] CSV/Excel sales upload (branch, date, net sales) with a reusable column mapping; layout
-      change stops for review, never silently shifts columns (PRD §10)
-- [ ] Z-report photo via WhatsApp → same extraction pipeline, `z_report` document type,
-      summary-level only — **never turned into fake receipts** (PRD §10)
-- [ ] `sales_daily` table (tenant, branch, business_date, net_sales, source, granularity)
-- [ ] First analytic on the dashboard: **purchases ÷ net sales (cash basis)** per branch per
-      period, ranked, with a completeness/freshness label on every row. Never labelled
-      "food cost %" — it isn't one.
+**Resequenced 2026-08-28** (founder call — see the Decision Log). The post-demo track now runs
+**raw materials → costing → auth → sales**, where it previously ran sales → auth → costing. The
+MVP's stated job is: photograph a receipt, harmonize its items into raw materials, cost a menu
+item from them. Costing a plate needs no sales data at all — a menu price is a fact the owner
+tells us in a sentence. Sales volume says which items to care about *most*; it is not an input to
+the cost. Old → new: **M5 sales → M8**, **M6 auth → M7**, **M7 recipes → split into M5 (raw
+materials) + M6 (costing)**, **M8 → M9**, **M9 → M10**, **M10 → M11**. Demo track M0–M4 is
+untouched. Milestone names are identifiers in code comments too ("real auth is M6"), so every
+forward-looking reference in `apps/api`, `apps/web`, the migrations and the READMEs was renumbered
+in the same commit; the two logs below keep the numbers they were written with.
+
+**What this ordering costs, plainly.** Purchases ÷ net sales — the first ratio — slips from week
+4 to week 10, and the dashboards behind it from week 10 to week 12. Two of those four weeks are
+new work, not padding: the old M7 was sized at two weeks on the assumption that the raw-material
+layer already existed, and it does not — the catalog built by M2 is scoped to one supplier and
+knows nothing about ingredients. The Meta production chain, which is external, serial and slow,
+still starts in the first post-demo milestone so the daily brief does not slip with the rest.
+
+### M5 — Raw materials: one shelf per ingredient (Week 4–5)
+Extraction fills a catalog scoped to a single supplier: Al Madina's milk powder and Gulf Foods'
+milk powder are two unrelated rows with two separate price histories, and nothing in the schema
+represents "milk powder" as a thing you cook with. Costing cannot start until something does.
+The mechanical half of this already exists and is tested — `extraction/units.py` reduces any
+printed pack to a base quantity ("2kg" and "2000g" are provably one shelf, "6 ctn" and "6 pc"
+deliberately are not), and `matching.py` snaps messy printed names — so this is a layer above
+them, not a rewrite of them.
+- [ ] `ingredients` (tenant, name, base unit, category): the culinary concept, kept separate from
+      the purchasable pack, exactly as PRD §17–18 already specifies
+- [ ] `supplier_items.ingredient_id`: many packs from many suppliers → one raw material. The
+      existing fuzzy matcher **proposes**, a human approves, and the approval is recorded with its
+      actor. **Never auto-merged.** A wrong merge quietly corrupts the cost of every menu item
+      using that material, and unlike a bad extraction there is no photo to check it against
+- [ ] Mapping screen: unmapped supplier items ranked by money spent, approve or reject one
+      keystroke each — the same propose-then-confirm shape as the invoice review screen, so
+      nothing new is invented for it
+- [ ] **Cost per base unit, derived and traceable:** `unit_price ÷ parsed pack size` → AED per
+      gram / millilitre / piece, ex-VAT per C4's net-canonical rule, recorded per confirmed
+      invoice line so every cost drills back to a photo. `pack_size` reads 99% *on generated
+      invoices* (phase 1), which is what makes this arithmetic rather than guesswork
+- [ ] Container conversions, consultant-entered and versioned ("1 carton = 10 kg chicken"):
+      `units.py` deliberately refuses to guess what is inside a carton, so a human says once
+- [ ] An unparseable pack size is an **issue on a screen** (PRD §24), never a guessed number: it
+      blocks that material's cost and says which invoice line it came from
+- [ ] `ingredient_costs`: latest purchase price per base unit (PRD §19), one per tenant.
+      Per-branch cost waits for a chain that actually shows different branch prices (§2 rule 8)
+- [ ] **Prerequisite, not optional: WP-19 and WP-26 close first.** A short read that drops a line,
+      or a null total confirmed away by a bare OK, makes a material look cheaper than it is — and
+      once it is a cost per gram, nothing downstream can tell
 - [ ] **Start the Meta production chain now (external, slow):** legal entity docs → Meta Business
       verification → WABA → purchased verified sender → submit daily-brief template in the
       **utility** category. Track status here: `[ ] entity  [ ] verification  [ ] WABA  [ ] sender  [ ] template`
-- **Done when:** a week of real sales + real invoices for one branch renders a ranked branch table
-  where every purchase number drills down to an invoice photo.
+- **Done when:** milk powder bought from two suppliers in three pack sizes reads as one material
+  at one price per kilo, and every figure inside that price drills to the invoice photo behind it.
 
-### M6 — Auth, tenancy enforcement, approvals (Week 6–7)
+### M6 — Recipes and menu costing (Week 6–7)
+The layer the landing page already sells: *"when an ingredient's price climbs, every item using it
+earns less."* Done-for-you onboarding per PRD §16 — the customer never touches a recipe form.
+- [ ] `menu_items` (tenant, name, selling price + price history). The selling price is something
+      the owner says out loud — **no POS and no sales feed is needed to cost a plate**
+- [ ] `recipes` / `recipe_components`: ingredient, quantity, unit, with **batch yields as the
+      norm** ("one pot → 40 cups"), not the exception (PRD §16)
+- [ ] Versioned recipes and conversions; every cost result names the recipe version and cost
+      snapshot behind it, so "why did this change?" is answerable (PRD §8, §23)
+- [ ] Deterministic cost: plate cost = Σ (component qty converted to base units × ingredient cost
+      per base unit) ÷ batch yield, packaging as a component. `Decimal` throughout, never float (C4)
+- [ ] **Margin per item at its menu price:** cost, margin in AED, margin %, and what is missing.
+      Never labelled "food cost %". An item with one uncosted ingredient reads *incomplete* — it
+      must never read as a cheap item
+- [ ] **The money screen:** when a raw material's price moves, which menu items just lost margin
+      and by how much. This is the M2 price alert finally carried through to the plate
+- [ ] Internal batch loader: CSV in + a review grid, the consultant recorded as the actor;
+      recipe templates applied across branches with per-branch overrides (PRD §16)
+- [ ] Coverage by **item count** here; coverage by **sales value** — the number that tells a
+      consultant what to cost first — needs sales and arrives in M8
+- **Done when:** one real menu loads in under a day of consultant time; every costed item shows
+  its cost, its margin at its own menu price, and the invoice photo behind each ingredient in it;
+  and confirming one supplier invoice at a new price visibly moves the items that use it.
+
+### M7 — Auth, tenancy enforcement, approvals (Week 8–9)
 The demo ran seeded and single-tenant; a pilot cannot.
 - [ ] Supabase Auth; three roles: tenant / brand / branch (PRD §4) — memberships + branch access
 - [ ] RLS policies on all tenant-owned tables; the API takes tenant scope from the authenticated
@@ -522,39 +585,46 @@ The demo ran seeded and single-tenant; a pilot cannot.
       rejected. This is the one security test that matters most.
 - [ ] Cash-purchase approval: branch raises → tenant approves with reason → audit event
       (actor, approver, reason, before/after) — the PRD's one non-negotiable approval gate (§21)
-- [ ] `audit_events` table wired to: invoice confirm/correct, cash approval, price change, role change
+- [ ] `audit_events` table wired to: invoice confirm/correct, cash approval, price change, role
+      change, **and the M5 raw-material mapping approvals** (a merge changes every cost above it)
 - **Done when:** two seeded tenants cannot see each other's data through API, storage URL, or
   worker path; a cash invoice cannot post without an approval record.
 
-### M7 — Recipes + costing, consultant-loaded (Week 8–9)
-Done-for-you onboarding (PRD §16) — the customer never touches a recipe form.
-- [ ] Internal-only batch loader: ingredients, recipes (batch-yield as the norm: "one pot → 40
-      cups"), packaging, unit conversions — CSV in + a review grid, consultant is the recorded actor
-- [ ] Recipe templates applied across branches with per-branch overrides
-- [ ] Latest-purchase-price cost per ingredient (PRD §19) — already accumulating since M2
-- [ ] Recipe cost + **coverage-by-sales-value** ("complete costing covers 78% of sales value") so
-      consultants prioritise high-impact items
-- **Done when:** one real menu loads from a spreadsheet in under a day of consultant time and every
-  costed item shows its cost basis and coverage.
+### M8 — Sales ingestion + the first ratio (Week 10–11)
+Cost is now known per item; sales says which items and which branches it matters on.
+- [ ] CSV/Excel sales upload (branch, date, net sales) with a reusable column mapping; layout
+      change stops for review, never silently shifts columns (PRD §10)
+- [ ] Z-report photo via WhatsApp → same extraction pipeline, `z_report` document type,
+      summary-level only — **never turned into fake receipts** (PRD §10)
+- [ ] `sales_daily` table (tenant, branch, business_date, net_sales, source, granularity)
+- [ ] First analytic on the dashboard: **purchases ÷ net sales (cash basis)** per branch per
+      period, ranked, with a completeness/freshness label on every row. Never labelled
+      "food cost %" — it isn't one.
+- [ ] **Recipe coverage by sales value** ("complete costing covers 78% of sales value"), which
+      M6 could not compute: it is the consultant's priority queue for what to cost next
+- **Done when:** a week of real sales + real invoices for one branch renders a ranked branch table
+  where every purchase number drills down to an invoice photo.
 
-### M8 — Contribution, signals, dashboards (Week 10–11)
+### M9 — Contribution, signals, dashboards (Week 12–13)
+Costing exists from M6; this milestone is what sales adds on top of it.
 - [ ] Item contribution = net item sales − ingredient cost − packaging (deterministic, versioned
       calculation runs with lineage back to invoices + recipe versions — PRD §23)
 - [ ] Branch contribution estimate — **never labelled net profit**
 - [ ] Deterministic signals: popular-low-margin items, supplier price spikes, branch gaps (PRD §25.3)
-- [ ] Owner dashboard: yesterday's sales, branch league (now backed by real costing), top/bottom
-      items, pending approvals, data freshness; branch dashboard: my sales, invoices to confirm
+- [ ] Owner dashboard: yesterday's sales, branch league (backed by the real costing from M6),
+      top/bottom items, pending approvals, data freshness; branch dashboard: my sales, invoices
+      to confirm
 - [ ] Every headline carries its §24-style quality status (verified / estimated / incomplete)
 - **Done when:** an owner can answer "which item and which branch is hurting me" from one screen,
   and every number traces to source.
 
-### M9 — Daily WhatsApp brief (gated on Meta approval from M5)
+### M10 — Daily WhatsApp brief (gated on Meta approval from M5)
 - [ ] Deterministic template filler: net sales, est. food-cost %, biggest price move, one flagged
       issue (PRD §27.4) — fixed sentence shapes, number slots, no generation
 - [ ] Send via approved utility template outside the 24-h window; tap-through opens the dashboard
 - **Done when:** the owner's phone receives a real brief at 7am with yesterday's real numbers.
 
-### M10 — Pilot hardening → first paying chain
+### M11 — Pilot hardening → first paying chain
 - [ ] 2-week live pilot on one real branch: invoices arrive unprompted (≥3 on days we sent nothing)
 - [ ] Error budget: every `failed` document reviewed weekly; top failure mode fixed each week
 - [ ] Pricing conversation with real value numbers from the pilot
@@ -571,7 +641,7 @@ multi-brand layer, item-level menu engineering as self-serve, moving-average cos
 | Layer | What | Gate |
 |---|---|---|
 | Eval harness | Real-invoice corpus, ground truth, scored per §5 | Accuracy targets before M4; no regression after |
-| E2E (few, real) | Webhook→extract→confirm→record; duplicate send; meme decline; provider-outage fallback; (M6+) cross-tenant worker rejection | Green in CI on every PR |
+| E2E (few, real) | Webhook→extract→confirm→record; duplicate send; meme decline; provider-outage fallback; (M7+) cross-tenant worker rejection | Green in CI on every PR |
 | Unit | Deterministic money math, reconciliation, snapping, template filler | Cheap and thorough — this is where determinism pays |
 | Manual, on a phone | The full demo script | Before every demo and every milestone close |
 
@@ -583,7 +653,7 @@ own sake.
 Supabase free tier → $25/mo; Railway/Fly ~$5–10/mo; Vercel free; WhatsApp in-window replies free,
 test number free; extraction ≈ $0.05–0.15/invoice (Opus 5, incl. repair pass) → a 75-branch chain
 at ~10 invoices/branch/day is ~$40–110/day at scale pricing — fine at AED 99/branch, trivial at
-pilot volume. Meta utility template cost applies only from M9 (verify live UAE rate then).
+pilot volume. Meta utility template cost applies only from M10 (verify live UAE rate then).
 
 ## 11. Risks
 
@@ -591,7 +661,7 @@ pilot volume. Meta utility template cost applies only from M9 (verify live UAE r
 |---|---|
 | Meta/WABA production chain is slow, external, serial | Start it at M5, track in this file; demo runs on the free test number meanwhile |
 | Real invoices are worse than the eval corpus (handwriting, mixed language) | Grow the corpus from every pilot failure; the repair pass + amber-question flow degrades gracefully instead of silently |
-| Invoice forwarding doesn't become a habit (the behavioral risk) | Pilot gate in M10 measures *unprompted* forwards; if the habit doesn't form, that's a product finding to face, not to engineer around |
+| Invoice forwarding doesn't become a habit (the behavioral risk) | Pilot gate in M11 measures *unprompted* forwards; if the habit doesn't form, that's a product finding to face, not to engineer around |
 | Central purchasing at target chains (no per-branch invoices) | First question asked of any pilot chain, before onboarding them |
 | Scope creep back toward the old build | §2 rules; anything not in a milestone needs a customer quote and a Decision Log entry |
 | Founder track stalls (Meta setup, corpus) while agents sprint ahead | F1-F4 scheduled as one sitting now; F6 corpus growth checked at every milestone close |
@@ -603,6 +673,7 @@ pilot volume. Meta utility template cost applies only from M9 (verify live UAE r
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-08-28 | **The post-demo track is resequenced to raw materials (M5) → menu costing (M6) → auth (M7) → sales (M8); the old M7 recipes milestone is split in two and the sales milestone moves from first to fourth** | Founder call, restating the MVP as: photograph a receipt, harmonize the extracted items into raw materials, cost a menu item from them. The plan had sequenced sales first because its post-demo north star was purchases ÷ net sales, and costing sat behind both sales and auth at M7 - about five weeks after the demo gate. Costing a plate needs no sales data: a menu price is a fact the owner tells us, so menu price minus recipe cost is a margin per item that is deliverable with nothing but the invoices already flowing. Sales volume weights which items matter; it is not an input to the number. Two supporting facts: the landing page has led with per-item margin since 2026-08-24 (Decision Log, same date) while the build plan deferred it to M7, and the raw-material layer the founder named **did not exist in the plan at all** - M7 assumed ingredients arriving pre-costed from a consultant spreadsheet, when today's catalog is scoped per supplier (`supplier_items` is unique on supplier + name), so the same material bought from two suppliers is two rows with two price histories and no cost per gram anywhere. The cost of the reorder, stated plainly: purchases ÷ net sales slips from week 4 to week 10 and the dashboards from week 10 to week 12; the Meta production chain still starts in the first post-demo milestone so the daily brief does not slip with them. Milestone names are identifiers in code comments as well as in this file, so the renumbering (M5 sales → M8, M6 auth → M7, M8/M9/M10 → M9/M10/M11) was applied to every forward-looking reference in the same commit; Decision Log and Progress Log entries keep the numbers they were written with |
 | 2026-08-25 | **Money crosses the provider boundary as a string, not a JSON number, and the printed form is parsed deterministically (`extraction/money.py`)** | Adding one optional field to C3 made the API reject every request outright: `400 Schema is too complex` / `Grammar compilation timed out`, a hard failure on every invoice rather than a degraded read. Cause found by A/B against the live API: Pydantic renders each `Decimal \| None` as a three-branch union carrying a negative-lookahead regex, and C3 has fourteen of them inside an unbounded array of lines. Declaring one concrete type removed all fourteen lookaheads and 500 characters of grammar. It also closes a real gap - a JSON number is a float on the wire, which C4 bans everywhere else - and the string form invites the printed one, so "AED 332.00", "1,240.50", "(41.70)", the dirham sign's own dot and Arabic-Indic digits are all parsed in one module. Anything with no number in it is rejected loudly rather than read as zero |
 | 2026-08-25 | **Cash or credit is derived from the printed terms line by rule (`extraction/payment.py`), not by prompt wording; C3 gains `payment_terms_text`** | Founder call, closing the question escalated 2026-08-24. The field decides which purchases need owner approval (WP-24, PRD §21) and was returning null on invoices a human reads at a glance, because the prompt said "only when the document states cash or credit" and a page printing "Payment terms: 14 days" never prints the word "credit". The model now copies the terms as printed and the rules live in testable code: an explicit cash marker means cash, a due period means credit, printed terms outrank the model's own reading, and anything unrecognized stays null so an unmarked document is never routed around the approval gate. Same split as the printed currency word and its ISO code. `payment_kind` went 60% -> 100% |
 | 2026-08-25 | **One units dictionary (`extraction/units.py`) harmonizes pack sizes for the catalog and the eval; a pack size printed inside an item name counts as one** | Founder call. "2 kg", "2000 g", "2.5K" on a receipt too narrow for the second letter and Arabic "كجم" are one pack, and read as several the catalog doubles, price history splits, and the price alert fires on a supplier who changed only their printing - the same failure shape that made price memory net-canonical. The dictionary was private to `matching.py`, so the eval had no way to ask and would have needed a second copy; it now covers mass, volume, count, Arabic units and container words, with containers deliberately their own dimension ("6 ctn" must never equal "6 pc"). `matching.snap_item` already read pack sizes out of item names, so ground truth records them there too, which is what a till receipt printing "RICE BASM 5KG" needs. `pack_size` went 19% -> 99% across this and the printed-page rebuild |
@@ -638,6 +709,15 @@ pilot volume. Meta utility template cost applies only from M9 (verify live UAE r
 
 *(newest first — one line per session: date, what shipped, what's next)*
 
+- 2026-08-28 - **The post-demo track is resequenced: raw materials and menu costing now come first, sales moves to fourth.**
+  Read the whole codebase against the founder's restatement of the MVP - extract a receipt, harmonize the items into raw materials, cost a menu item - and the three layers are in very different states.
+  **Layer 1 is built and is the strongest part of the codebase**: per line we already extract name, qty, unit, pack size, unit price, line total and stock-vs-charge, with arithmetic reconciliation, one scoped repair round and derived green/amber, at ~20 s on real forwards.
+  **Layer 2 is half-built at the wrong altitude**: `extraction/units.py` and `matching.py` already harmonize pack sizes and messy names - the mechanically hard part - but the catalog they fill is scoped to one supplier, nothing represents a tenant-level raw material, and nothing anywhere computes a cost per gram. That last step is one division away from data we already store (`unit_price ÷ parsed pack size`), and it is written down nowhere.
+  **Layer 3 did not exist**: no recipes, no menu items, no costing, in code or in schema - and it sat at M7, behind sales and auth, roughly five weeks past the demo gate, while the landing page has been selling per-item margin since 2026-08-24.
+  §8 now runs M5 raw materials → M6 recipes and costing → M7 auth → M8 sales → M9 contribution → M10 brief → M11 pilot, with the Meta production chain still starting in the first post-demo milestone. The reorder's cost is stated in §8 rather than buried: the first ratio slips from week 4 to week 10.
+  Two existing work packages are promoted to prerequisites of M5 rather than backlog: **WP-19** (a short read that drops a line) and **WP-26** (a null total confirmed away by a bare OK). Both make a material look cheaper than it is, and once the number is a cost per gram there is nothing downstream that can notice.
+  Milestone identifiers appear in code comments, so the renumbering was applied to 24 references across `apps/api`, `apps/web`, the migrations and the READMEs in this commit; the two logs keep the numbers they were written with.
+  Next: the M4 gate items still stand (curate the three demo invoices, two rehearsals, WP-26 and WP-27 with the founder). M5/M6 get their WP decomposition at the M4 retro per §7, not before - the schema sketch in §8 is deliberately not a work-package list yet.
 - 2026-08-25 - **Latency measured on real forwards and the target is essentially met; two real invoices exposed two gaps, both now written up as WP-26 and WP-27.**
   The Meta token had expired again (a 2-hour USER token, the fourth in three days); exchanged it for a long-lived one valid **59 days, to 2026-10-24**, written to `apps/api/.env` and handed over for Railway. The permanent system-user token is still the real fix and still founder-gated.
   **Two live forwards, prompt v2 in production:** Artisan Bakehouse **23.0 s** (ingest 5.0 s, model 11.23 s) and Al Aweer **19.9 s** (ingest 2.9 s, model 11.19 s). The ~20 s target is met on one and missed by 3 s on the other, and the whole difference is how long Meta took to hand over the photo, not anything we control.

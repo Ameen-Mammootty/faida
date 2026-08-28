@@ -27,7 +27,7 @@ Returns 201 with the standard detail payload.
 
 Access control is the C6 demo scheme: one shared-secret bearer token
 (settings.api_token) compared in constant time. An empty setting refuses every
-request - fail closed, exactly like the webhook app secret. Real auth is M6.
+request - fail closed, exactly like the webhook app secret. Real auth is M7.
 
 Money is serialized as strings ("745.76"), never floats: every amount is
 Decimal in Python and numeric in Postgres (C4), and a float round-trip could
@@ -77,7 +77,7 @@ _HEADER_FIELDS = {"subtotal", "tax", "total"}
 
 # The invoice states the review screen may edit or confirm: awaiting_confirm
 # (the normal path) and needs_review (cash holds - the review screen IS the
-# cash approval path until M6, plan.md §6 M2).
+# cash approval path until M7, plan.md §6 M2).
 _EDITABLE_STATUSES = {InvoiceStatus.AWAITING_CONFIRM, InvoiceStatus.NEEDS_REVIEW}
 
 
@@ -303,7 +303,7 @@ async def confirm_invoice(invoice_id: uuid.UUID, request: Request) -> dict:
     """The chat "OK", from the screen: flip to confirmed (stamping
     confirmed_at) and move the price baseline. Allowed from awaiting_confirm
     and - unlike chat - from needs_review: the review screen is the cash
-    approval path until M6 (plan.md §6 M2)."""
+    approval path until M7 (plan.md §6 M2)."""
     db: Database = request.app.state.db
     invoice = await db.get_invoice(str(invoice_id))
     if invoice is None:
@@ -524,7 +524,7 @@ async def upload_document(
 ) -> dict:
     """C6 manual upload - the vision-outage fallback's entry point (WP-34):
     store the immutable original exactly like the WhatsApp path and enqueue
-    the same extract job. Tenant is the seeded default until M6 auth."""
+    the same extract job. Tenant is the seeded default until M7 auth."""
     mime = (file.content_type or "").split(";")[0].strip().lower()
     if mime not in ALLOWED_UPLOAD_MIMES:
         raise HTTPException(

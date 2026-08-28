@@ -4,7 +4,7 @@
 -- Every tenant-owned row carries tenant_id from day one (plan.md §4), but
 -- invoice_lines, supplier_item_prices and extraction_runs each found their
 -- tenant only through a parent: invoice_id -> invoices, supplier_item_id ->
--- supplier_items, document_id -> documents. M6 puts real RLS policies on a
+-- supplier_items, document_id -> documents. M7 puts real RLS policies on a
 -- schema PostgREST already serves, and a policy that has to reach the tenant
 -- through a parent is a subquery per row plus one more predicate to get wrong
 -- on exactly the tables that must not leak. The column makes each policy a
@@ -31,5 +31,5 @@ alter table supplier_item_prices alter column tenant_id set not null;
 alter table extraction_runs      alter column tenant_id set not null;
 
 -- No index on these columns yet: nothing queries by tenant_id alone today, and
--- the indexes that RLS wants depend on the policy predicates M6 writes. They
+-- the indexes that RLS wants depend on the policy predicates M7 writes. They
 -- arrive with those policies, not ahead of them.

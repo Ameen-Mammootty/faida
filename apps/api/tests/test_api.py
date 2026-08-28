@@ -370,8 +370,8 @@ async def test_confirm_flips_status_and_records_prices(api, db):
 
 @requires_db
 async def test_confirm_from_needs_review_is_the_cash_approval_path(api, db):
-    # Chat cannot confirm a cash hold (M6 owns approvals); the review screen
-    # can - it IS the cash review path until M6 (plan.md §6 M2).
+    # Chat cannot confirm a cash hold (M7 owns approvals); the review screen
+    # can - it IS the cash review path until M7 (plan.md §6 M2).
     app, client, *_ = api
     cash = good_invoice()
     cash.payment_kind = "cash"

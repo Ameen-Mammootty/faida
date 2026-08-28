@@ -114,7 +114,7 @@ Cost is roughly $5/month for an always-on service.
 **Deploy the web app (Vercel).**
 Create the Vercel project with **Root Directory** `apps/web` (standalone npm project, stock `next build`, no monorepo config).
 Set four Production environment variables: `NEXT_PUBLIC_MOCK_API=false` (the exact string), `NEXT_PUBLIC_API_BASE` (the Railway host, `https://`, no trailing slash), `NEXT_PUBLIC_API_TOKEN` (same value as Railway's `API_TOKEN`), and `FAIDA_API_URL` (the Railway host again; server-only, powers the waitlist proxy - forgetting it silently 503s every signup).
-The three `NEXT_PUBLIC_*` values are baked into the bundle at build time, so any change to them needs a redeploy; the token is readable in the shipped JS (accepted C6 demo posture until M6).
+The three `NEXT_PUBLIC_*` values are baked into the bundle at build time, so any change to them needs a redeploy; the token is readable in the shipped JS (accepted C6 demo posture until M7).
 Then set `WEB_ORIGIN` on Railway to the Vercel production origin - preview deployments will fail CORS by design, demo from the production URL only.
 
 ### 3. Meta WhatsApp Cloud API (free test number)
