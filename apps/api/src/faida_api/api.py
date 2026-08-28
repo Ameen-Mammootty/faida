@@ -65,6 +65,7 @@ from .extraction.normalize import normalize_extracted
 from .extraction.schema import ExtractedInvoice, ExtractedLine
 from .extraction.validate import validate_invoice
 from .matching import Row, match_supplier, snap_item
+from .provenance import Origin, initial
 from .replies import DEFAULT_CURRENCY
 
 logger = logging.getLogger(__name__)
@@ -79,6 +80,15 @@ _HEADER_FIELDS = {"subtotal", "tax", "total"}
 # (the normal path) and needs_review (cash holds - the review screen IS the
 # cash approval path until M7, plan.md §6 M2).
 _EDITABLE_STATUSES = {InvoiceStatus.AWAITING_CONFIRM, InvoiceStatus.NEEDS_REVIEW}
+
+
+#: C8 actor for the review screen. The demo API is one shared bearer token, so
+#: there is no person to name yet - "console" is the honest answer, and it
+#: becomes a real user id when M7 brings Supabase Auth. Deliberately not taken
+#: from a client-supplied header: a name anyone holding the token can choose
+#: looks like identity without being it, which is worse than admitting we do
+#: not know yet.
+CONSOLE_ACTOR = "console"
 
 
 def require_api_token(request: Request) -> None:
@@ -175,6 +185,9 @@ async def _invoice_detail(request: Request, invoice_id: str) -> dict:
         "tax": _dec(invoice["tax"]),
         "payment_kind": invoice["payment_kind"],
         "confidence": invoice["confidence"],
+        # C8, sanctioned C6 extension: where each field came from, so the
+        # screen can show a reconstructed total as reconstructed.
+        "provenance": invoice["provenance"],
         "confirmed_at": _iso(invoice["confirmed_at"]),
         "lines": [
             {
@@ -257,7 +270,13 @@ async def patch_invoice_fields(
 
     # The chat reply string is composed but unused: the screen gets the
     # re-validated detail payload instead.
-    await _apply_correction(db, str(invoice_id), edits)
+    await _apply_correction(
+        db,
+        str(invoice_id),
+        edits,
+        actor=CONSOLE_ACTOR,
+        origin=Origin.CORRECTED_SCREEN,
+    )
     return await _invoice_detail(request, str(invoice_id))
 
 
@@ -310,9 +329,9 @@ async def confirm_invoice(invoice_id: uuid.UUID, request: Request) -> dict:
         raise HTTPException(status_code=404, detail="invoice not found")
 
     if invoice["status"] == InvoiceStatus.AWAITING_CONFIRM:
-        confirmed = await db.confirm_invoice(str(invoice_id))
+        confirmed = await db.confirm_invoice(str(invoice_id), actor=CONSOLE_ACTOR)
     elif invoice["status"] == InvoiceStatus.NEEDS_REVIEW:
-        confirmed = await db.confirm_reviewed_invoice(str(invoice_id))
+        confirmed = await db.confirm_reviewed_invoice(str(invoice_id), actor=CONSOLE_ACTOR)
     else:
         confirmed = False
     if not confirmed:
@@ -507,8 +526,16 @@ async def create_manual_invoice(body: ManualInvoice, request: Request) -> dict:
         payment_kind=invoice.payment_kind,
         status=status,
         confidence=confidence,
+        # C8: no model ran, so every value here is one a person typed.
+        provenance=initial(
+            invoice,
+            origin=Origin.MANUAL,
+            actor=CONSOLE_ACTOR,
+            at=datetime.datetime.now(datetime.UTC),
+        ),
         lines=lines,
         document_classification=None,
+        created_by=CONSOLE_ACTOR,
     )
     return await _invoice_detail(request, invoice_id)
 

@@ -49,7 +49,9 @@ async def process_wa_message(
         # WP-21 (C5): the text may confirm or correct an awaiting invoice;
         # onboarding stays the fallback when nothing is pending.
         text = (raw.get("text") or {}).get("body") or ""
-        reply = await handle_inbound_text(db, from_phone, text, msg_row["created_at"])
+        reply = await handle_inbound_text(
+            db, from_phone, text, msg_row["created_at"], message_id=msg_row["message_id"]
+        )
     else:
         reply = REPLY_UNSUPPORTED_TYPE
 

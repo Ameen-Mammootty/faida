@@ -45,6 +45,7 @@ from .extraction.pipeline import price_alerts
 from .extraction.schema import ExtractedInvoice, ExtractedLine
 from .extraction.validate import validate_invoice
 from .matching import Row, snap_item
+from .provenance import Origin, line_key, mark
 from .replies import (
     REPLY_CLARIFY,
     REPLY_TEXT_ONBOARDING,
@@ -58,6 +59,14 @@ from .replies import (
 # Branches carry their own timezone; this is the schema default, used when an
 # unknown sender's invoice has no branch.
 DEFAULT_TIMEZONE = "Asia/Dubai"
+
+
+def chat_actor(from_phone: str) -> str:
+    """C8/M5 actor for someone acting over WhatsApp. Real accounts arrive in
+    M7; until then the phone that sent the message is who did it, which is a
+    real answer where the alternative is silence."""
+    return f"whatsapp:{from_phone}"
+
 
 # --- parsed shapes ----------------------------------------------------------
 
@@ -200,6 +209,24 @@ def _parse_number(text: str) -> Decimal | None:
     return Decimal(text)
 
 
+def edited_field_keys(edits: list[Edit]) -> list[str]:
+    """The C8 field paths this batch of edits writes to, in order and without
+    duplicates. Lives here rather than in provenance.py because it is the chat
+    grammar's edit shapes that are being mapped, and provenance.py stays free
+    of them."""
+    keys: list[str] = []
+    for edit in edits:
+        if isinstance(edit, TotalsEdit):
+            key = edit.field
+        elif isinstance(edit, LineNameEdit):
+            key = line_key(edit.line_index, "raw_name")
+        else:
+            key = line_key(edit.line_index, edit.field)
+        if key not in keys:
+            keys.append(key)
+    return keys
+
+
 def apply_edits(invoice: ExtractedInvoice, edits: list[Edit]) -> ExtractedInvoice:
     """Pure merge of parsed edits over an extracted invoice; the input is
     never mutated. Line indices must already be in range."""
@@ -223,12 +250,25 @@ def apply_edits(invoice: ExtractedInvoice, edits: list[Edit]) -> ExtractedInvoic
 
 
 async def handle_inbound_text(
-    db: Database, from_phone: str | None, text: str, received_at: datetime.datetime
+    db: Database,
+    from_phone: str | None,
+    text: str,
+    received_at: datetime.datetime,
+    *,
+    message_id: str | None = None,
 ) -> str:
     """Resolve one inbound text per C5 and return the reply to send.
     `received_at` is the wa_messages arrival time of this text: the retry
     guard compares it against invoices.confirmed_at so a re-run job re-sends
-    the ack instead of confirming a second invoice."""
+    the ack instead of confirming a second invoice.
+
+    `message_id` is that text's WhatsApp id, recorded on the audit event. A
+    correction has no confirm-style retry guard - re-applying the same edits
+    is harmless because the values are identical - so a job that retries after
+    a failed send does write a second `invoice.corrected` row. Carrying the
+    message id makes those two rows visibly one retried message rather than
+    two decisions, which is cheaper and more honest than a dedupe guard for
+    something that costs a duplicate line in a log."""
     if not from_phone:
         return REPLY_TEXT_ONBOARDING
     parsed = parse_reply(text)
@@ -269,17 +309,37 @@ async def handle_inbound_text(
     if isinstance(parsed, Confirm):
         # Ambers still open confirm too - the closing promised "OK to
         # confirm the rest".
-        await db.confirm_invoice(str(target["id"]))
+        await db.confirm_invoice(str(target["id"]), actor=chat_actor(from_phone))
         await db.record_confirmed_prices(str(target["id"]))
         return _ack(target)
-    return await _apply_correction(db, str(target["id"]), parsed.edits)
+    return await _apply_correction(
+        db,
+        str(target["id"]),
+        parsed.edits,
+        actor=chat_actor(from_phone),
+        message_id=message_id,
+    )
 
 
-async def _apply_correction(db: Database, invoice_id: str, edits: list[Edit]) -> str:
+async def _apply_correction(
+    db: Database,
+    invoice_id: str,
+    edits: list[Edit],
+    *,
+    actor: str,
+    origin: Origin = Origin.CORRECTED_CHAT,
+    message_id: str | None = None,
+) -> str:
     """Apply parsed edits: re-validate, re-snap against the supplier catalog
     (the pipeline's convention - snapped flags folded into the checks, never
     recomputing status), recompute price alerts the same way the pipeline
-    does, persist, and re-reply. Status stays awaiting_confirm."""
+    does, persist, and re-reply. Status stays awaiting_confirm.
+
+    `actor` and `origin` are C8: the same function serves the chat grammar and
+    the review screen's PATCH (one door for both, plan.md §7.2 C8), so the
+    caller says which door this correction came through and who was at it. The
+    edited fields are re-stamped; every field the edits did not touch keeps the
+    origin it already had."""
     invoice_row = await db.get_invoice(invoice_id)
     line_rows = await db.get_invoice_lines(invoice_id)
     line_count = len(line_rows)
@@ -306,6 +366,14 @@ async def _apply_correction(db: Database, invoice_id: str, edits: list[Edit]) ->
         "document": validation.document.model_dump(mode="json"),
         "lines": [check.status.value for check in line_checks],
     }
+    corrected = edited_field_keys(edits)
+    provenance = mark(
+        invoice_row["provenance"] or {},
+        corrected,
+        origin=origin,
+        actor=actor,
+        at=datetime.datetime.now(datetime.UTC),
+    )
     lines = [
         {
             "position": line_rows[index]["position"],
@@ -326,7 +394,11 @@ async def _apply_correction(db: Database, invoice_id: str, edits: list[Edit]) ->
         tax=invoice.tax,
         total=invoice.total,
         confidence=confidence,
+        provenance=provenance,
         lines=lines,
+        actor=actor,
+        corrected_fields=corrected,
+        message_id=message_id,
     )
     return compose_invoice_reply(invoice, validation, alerts)
 

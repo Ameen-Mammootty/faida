@@ -1,0 +1,522 @@
+<title>Where Numbers Come From</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&display=swap">
+<style>
+:root {
+  --bg:#fbf6ec; --panel:#ffffff; --ink:#172421; --muted:#52625d; --line:#e2dbcb;
+  --palm:#153e35; --gold:#8a6220; --gold-soft:#f6ecd8;
+  --good:#1d6d50; --good-soft:#e7efea; --warn:#80520a; --warn-soft:#f8eed7;
+  --stop:#65415f; --stop-soft:#f1e9ef;
+  --code:#f5f1e7; --box:#ffffff; --box-line:#cfc7b4; --paper:#fdfbf5;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:#14170f; --panel:#1c211a; --ink:#ece7da; --muted:#a09a89; --line:#2f342b;
+    --palm:#7fb8a4; --gold:#d9a752; --gold-soft:#241f14;
+    --good:#54ab86; --good-soft:#16251f; --warn:#d2a049; --warn-soft:#251e12;
+    --stop:#c294bb; --stop-soft:#241a23;
+    --code:#12150f; --box:#20261e; --box-line:#3b4238; --paper:#252b23;
+  }
+}
+:root[data-theme="dark"] {
+  --bg:#14170f; --panel:#1c211a; --ink:#ece7da; --muted:#a09a89; --line:#2f342b;
+  --palm:#7fb8a4; --gold:#d9a752; --gold-soft:#241f14;
+  --good:#54ab86; --good-soft:#16251f; --warn:#d2a049; --warn-soft:#251e12;
+  --stop:#c294bb; --stop-soft:#241a23;
+  --code:#12150f; --box:#20261e; --box-line:#3b4238; --paper:#252b23;
+}
+
+* { box-sizing:border-box; }
+body {
+  background:var(--bg); color:var(--ink); margin:0;
+  font:17px/1.7 ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+.wrap { max-width:1000px; margin:0 auto; padding:52px 22px 120px; }
+h1, h2, h3, .eyebrow, .lede, .step-n { font-family:Archivo,ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif; }
+
+header.top { border-bottom:3px solid var(--palm); padding-bottom:30px; }
+h1 { font-size:2.7rem; line-height:1.08; margin:0 0 16px; letter-spacing:-.03em; font-weight:700; text-wrap:balance; }
+.lede { color:var(--muted); margin:0; font-size:1.22rem; font-weight:500; line-height:1.5; max-width:60ch; }
+.eyebrow { color:var(--muted); font-size:.73rem; font-weight:600; letter-spacing:.14em; text-transform:uppercase; margin:0 0 8px; }
+.note { margin-top:20px; font-size:.9rem; color:var(--muted); }
+.note a { color:var(--gold); }
+
+section { margin-top:66px; }
+h2 {
+  font-size:1.65rem; font-weight:700; margin:0 0 10px; letter-spacing:-.025em;
+  text-wrap:balance; line-height:1.2; display:flex; align-items:baseline; gap:14px;
+}
+.step-n {
+  color:var(--gold); font-size:.85rem; font-weight:700; letter-spacing:.1em;
+  flex:none; padding-top:6px;
+}
+.subhead { color:var(--muted); margin:0 0 4px 0; font-size:1.05rem; max-width:62ch; }
+p { margin:16px 0; max-width:64ch; }
+p.wide { max-width:72ch; }
+ul { max-width:62ch; padding-left:24px; }
+li { margin:9px 0; }
+strong { font-weight:600; }
+
+.punch {
+  font-size:1.3rem; line-height:1.45; font-weight:500;
+  border-left:4px solid var(--gold); padding:8px 0 8px 22px; margin:26px 0; max-width:56ch;
+  font-family:Archivo,ui-sans-serif,-apple-system,sans-serif; letter-spacing:-.015em;
+}
+.callout { border-left:4px solid var(--gold); background:var(--gold-soft); padding:18px 24px; border-radius:0 10px 10px 0; margin:26px 0; }
+.callout.stop { border-left-color:var(--stop); background:var(--stop-soft); }
+.callout.good { border-left-color:var(--good); background:var(--good-soft); }
+.callout p { margin:8px 0; }
+.callout p:first-child { margin-top:0; }
+.callout p:last-child { margin-bottom:0; }
+
+figure { margin:32px 0; }
+.figbox { overflow-x:auto; background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:22px 18px; }
+figure svg { display:block; width:100%; height:auto; color:var(--ink); }
+.figbox.w1 svg { min-width:900px; }
+.figbox.w2 svg { min-width:760px; }
+figcaption { color:var(--muted); font-size:.9rem; margin-top:14px; max-width:66ch; }
+
+/* diagram tokens */
+.d-t { fill:var(--ink); font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif; }
+.d-s { fill:var(--muted); font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif; }
+.d-lane { fill:var(--muted); font-size:10px; font-weight:700; letter-spacing:.12em; font-family:ui-sans-serif,-apple-system,sans-serif; }
+.d-paper { fill:var(--paper); stroke:var(--box-line); stroke-width:1.3; }
+.d-box { fill:var(--box); stroke:var(--box-line); stroke-width:1.3; }
+.d-rule { stroke:var(--box-line); stroke-width:1.1; }
+.d-ink { stroke:var(--muted); stroke-width:1.1; }
+.d-edge { stroke:var(--muted); stroke-width:1.5; fill:none; }
+.d-head { fill:var(--muted); }
+.d-num { fill:var(--ink); font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-weight:700; }
+.d-mono { fill:var(--muted); font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+.chip-good { fill:var(--good-soft); stroke:var(--good); stroke-width:1.4; }
+.chip-good-t { fill:var(--good); font-weight:700; font-family:ui-sans-serif,-apple-system,sans-serif; }
+.chip-warn { fill:var(--warn-soft); stroke:var(--warn); stroke-width:1.4; }
+.chip-warn-t { fill:var(--warn); font-weight:700; font-family:ui-sans-serif,-apple-system,sans-serif; }
+.chip-stop { fill:var(--stop-soft); stroke:var(--stop); stroke-width:1.4; }
+.chip-stop-t { fill:var(--stop); font-weight:700; font-family:ui-sans-serif,-apple-system,sans-serif; }
+.band-stop { fill:var(--stop-soft); stroke:var(--stop); stroke-width:1.4; stroke-dasharray:6 4; }
+.t-stop { fill:var(--stop); font-family:ui-sans-serif,-apple-system,sans-serif; }
+.t-good { fill:var(--good); font-family:ui-sans-serif,-apple-system,sans-serif; }
+.hl { fill:var(--gold-soft); stroke:var(--gold); stroke-width:1.4; }
+.hl-t { fill:var(--gold); font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-weight:700; }
+.divider { stroke:var(--box-line); stroke-width:1.2; stroke-dasharray:5 5; }
+
+/* rule cards */
+.rules { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:18px; margin:30px 0; }
+.rule {
+  background:var(--panel); border:1px solid var(--line); border-radius:12px;
+  padding:20px 22px 22px; display:flex; flex-direction:column; gap:12px;
+}
+.rule.miss { border-color:var(--stop); border-width:2px; }
+.rule svg { width:100%; max-width:230px; height:auto; color:var(--ink); }
+.rule h3 { margin:0; font-size:1.08rem; font-weight:700; letter-spacing:-.015em; }
+.rule p { margin:0; font-size:.95rem; line-height:1.55; max-width:none; color:var(--muted); }
+.verdict { display:flex; align-items:center; gap:9px; font-size:.92rem; font-weight:600; margin-top:auto; padding-top:4px; }
+.verdict.yes { color:var(--good); }
+.verdict.no { color:var(--stop); }
+.mark {
+  width:22px; height:22px; border-radius:50%; flex:none;
+  display:inline-flex; align-items:center; justify-content:center;
+  font-size:.8rem; font-weight:700; border:1.5px solid currentColor;
+}
+.verdict.yes .mark { background:var(--good-soft); }
+.verdict.no .mark { background:var(--stop-soft); }
+
+/* fix cards */
+.fixes { display:grid; gap:20px; margin:30px 0; }
+.fix { background:var(--panel); border:1px solid var(--line); border-left:4px solid var(--palm); border-radius:0 12px 12px 0; padding:22px 26px; }
+.fix h3 { margin:0 0 6px; font-size:1.15rem; font-weight:700; letter-spacing:-.015em; }
+.fix .cost { margin:0 0 12px; font-size:.88rem; color:var(--muted); font-weight:500; }
+.fix p { margin:12px 0 0; max-width:66ch; }
+.ba { display:flex; flex-wrap:wrap; align-items:center; gap:14px; margin-top:16px; font-size:.9rem; }
+.ba .cell {
+  border:1px solid var(--line); border-radius:8px; padding:9px 14px; background:var(--code);
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:.84rem; line-height:1.5;
+}
+.ba .cell.after { background:var(--good-soft); border-color:var(--good); color:var(--good); }
+.ba .arrow { color:var(--muted); font-size:1.2rem; }
+.ba .lbl { color:var(--muted); font-size:.75rem; text-transform:uppercase; letter-spacing:.1em; font-weight:600; display:block; margin-bottom:5px; font-family:Archivo,sans-serif; }
+
+.decide { border:2px solid var(--palm); border-radius:12px; padding:26px 30px; background:var(--panel); margin:30px 0; }
+.decide .eyebrow { color:var(--palm); }
+.decide p { margin:14px 0; }
+.decide p:first-of-type { margin-top:0; }
+.decide p:last-child { margin-bottom:0; }
+.big-num { font-family:Archivo,sans-serif; font-size:2.1rem; font-weight:700; color:var(--palm); letter-spacing:-.03em; line-height:1.1; }
+
+footer { margin-top:80px; padding-top:24px; border-top:1px solid var(--line); color:var(--muted); font-size:.88rem; font-style:italic; }
+footer p { max-width:70ch; }
+a:focus-visible { outline:2px solid var(--gold); outline-offset:3px; }
+</style>
+
+<div class="wrap">
+
+<header class="top">
+  <p class="eyebrow">The plain version · 28 August 2026 · shipped</p>
+  <h1>Where numbers come from</h1>
+  <p class="lede">Faida's whole promise is that you can believe the number. That works today
+  because every number sits right next to the photo it came from. We are about to start making
+  numbers you cannot look at — and there is one small thing to fix first.</p>
+  <p class="note">This is the short, visual version.
+  <a href="https://claude.ai/code/artifact/0bc7502a-fe92-40ee-b299-19e00e9e5877">The longer memo</a>
+  has the code details and the full argument.</p>
+</header>
+
+<section>
+  <h2><span class="step-n">01</span> A number moves away from its photo</h2>
+  <p class="subhead">Follow one figure — AED 402.00 off a real invoice — as the product grows.</p>
+
+  <figure>
+    <div class="figbox w1">
+      <svg viewBox="0 0 980 268" role="img"
+           aria-label="One number, AED 402.00, at four stages: printed on the paper, shown beside the photo on the review screen, divided into a cost per kilo in milestone 5, and folded into a plate margin in milestone 6. You can check it by eye at the first two stages, partly at the third, and not at all at the fourth.">
+        <defs>
+          <marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 1 L 9 5 L 0 9 z" class="d-head"/>
+          </marker>
+        </defs>
+
+        <text x="130" y="20" text-anchor="middle" class="d-lane">ON THE PAPER</text>
+        <text x="370" y="20" text-anchor="middle" class="d-lane">TODAY</text>
+        <text x="610" y="20" text-anchor="middle" class="d-lane">NEXT — RAW MATERIALS</text>
+        <text x="850" y="20" text-anchor="middle" class="d-lane">AFTER THAT — MENU COSTING</text>
+
+        <!-- 1. the receipt -->
+        <rect x="70" y="40" width="120" height="104" rx="3" class="d-paper"/>
+        <line x1="84" y1="58" x2="176" y2="58" class="d-rule"/>
+        <line x1="84" y1="70" x2="158" y2="70" class="d-rule"/>
+        <line x1="84" y1="82" x2="170" y2="82" class="d-rule"/>
+        <line x1="84" y1="94" x2="150" y2="94" class="d-rule"/>
+        <line x1="84" y1="108" x2="176" y2="108" class="d-ink"/>
+        <text x="84" y="129" class="d-s" font-size="10">TOTAL</text>
+        <text x="176" y="130" text-anchor="end" class="d-num" font-size="15">402.00</text>
+
+        <path d="M 196 92 L 268 92" class="d-edge" marker-end="url(#a1)"/>
+
+        <!-- 2. the review screen -->
+        <rect x="274" y="40" width="192" height="104" rx="4" class="d-box"/>
+        <line x1="366" y1="40" x2="366" y2="144" class="d-rule"/>
+        <rect x="288" y="54" width="64" height="76" rx="2" class="d-paper"/>
+        <line x1="296" y1="66" x2="344" y2="66" class="d-rule"/>
+        <line x1="296" y1="76" x2="336" y2="76" class="d-rule"/>
+        <line x1="296" y1="86" x2="344" y2="86" class="d-rule"/>
+        <line x1="296" y1="96" x2="330" y2="96" class="d-rule"/>
+        <line x1="296" y1="112" x2="344" y2="112" class="d-ink"/>
+        <text x="378" y="66" class="d-s" font-size="9.5">supplier</text>
+        <text x="378" y="82" class="d-s" font-size="9.5">12 lines</text>
+        <rect x="374" y="92" width="80" height="20" rx="3" class="hl"/>
+        <text x="414" y="106" text-anchor="middle" class="hl-t" font-size="12">402.00</text>
+        <text x="378" y="128" class="d-s" font-size="9.5">tap to fix</text>
+
+        <path d="M 472 92 L 508 92" class="d-edge" marker-end="url(#a1)"/>
+
+        <!-- 3. cost per kilo -->
+        <rect x="514" y="40" width="192" height="104" rx="4" class="d-box"/>
+        <text x="610" y="70" text-anchor="middle" class="d-t" font-size="15" font-weight="600">AED 8.38 a kilo</text>
+        <text x="610" y="92" text-anchor="middle" class="d-mono" font-size="10.5">402.00 ÷ 24 packs</text>
+        <text x="610" y="107" text-anchor="middle" class="d-mono" font-size="10.5">÷ 2 kg a pack</text>
+        <text x="610" y="128" text-anchor="middle" class="d-s" font-size="10">one sum away from the paper</text>
+
+        <path d="M 712 92 L 748 92" class="d-edge" marker-end="url(#a1)"/>
+
+        <!-- 4. plate margin -->
+        <rect x="754" y="40" width="192" height="104" rx="4" class="d-box"/>
+        <text x="850" y="70" text-anchor="middle" class="d-t" font-size="15" font-weight="600">Biryani earns 6.40</text>
+        <text x="850" y="92" text-anchor="middle" class="d-mono" font-size="10.5">9 ingredients, each</text>
+        <text x="850" y="107" text-anchor="middle" class="d-mono" font-size="10.5">costed, ÷ a pot of 40</text>
+        <text x="850" y="128" text-anchor="middle" class="d-s" font-size="10">four sums away from the paper</text>
+
+        <line x1="20" y1="172" x2="960" y2="172" class="divider"/>
+        <text x="490" y="196" text-anchor="middle" class="d-t" font-size="13" font-weight="600">Can the owner check that number by looking at the photo?</text>
+
+        <rect x="52" y="212" width="156" height="34" rx="17" class="chip-good"/>
+        <text x="130" y="234" text-anchor="middle" class="chip-good-t" font-size="12.5">It is the photo</text>
+
+        <rect x="292" y="212" width="156" height="34" rx="17" class="chip-good"/>
+        <text x="370" y="234" text-anchor="middle" class="chip-good-t" font-size="12.5">Yes — side by side</text>
+
+        <rect x="532" y="212" width="156" height="34" rx="17" class="chip-warn"/>
+        <text x="610" y="234" text-anchor="middle" class="chip-warn-t" font-size="12.5">Only with a calculator</text>
+
+        <rect x="772" y="212" width="156" height="34" rx="17" class="chip-stop"/>
+        <text x="850" y="234" text-anchor="middle" class="chip-stop-t" font-size="12.5">No. Nothing to look at</text>
+      </svg>
+    </div>
+    <figcaption>The same 402.00, four stages on. Everything we have built so far lives in the two
+    green columns, where doubting a number and checking a number are the same action.</figcaption>
+  </figure>
+
+  <p>Everything Faida does today lands in the first two columns. The owner forwards a photo, gets a
+  number back, and if he doubts it he looks at the picture. That is the entire basis of trust in the
+  product, and so far it has been enough.</p>
+
+  <p>The next two milestones move us into the other two columns. A cost per kilo is one division
+  away from the paper. A plate's margin is four. By the time the screen says
+  <strong>"this biryani earns you AED 6.40"</strong>, there is no photograph that shows you that.</p>
+
+  <p class="punch">You can only trust a number you cannot see if the system can tell you what went
+  into it.</p>
+</section>
+
+<section>
+  <h2><span class="step-n">02</span> Two numbers that look identical</h2>
+  <p class="subhead">This is the whole problem, as small as I can make it.</p>
+
+  <figure>
+    <div class="figbox w2">
+      <svg viewBox="0 0 900 430" role="img"
+           aria-label="Two stored invoice totals both reading 402.00. One was read off the paper by the model, the other was typed by the owner in chat because the total was cut off the photo. Today the database stores them identically. With the fix, each number carries one extra word saying where it came from.">
+        <text x="30" y="22" class="d-lane">HOW IT WORKS TODAY</text>
+
+        <rect x="30" y="38" width="390" height="86" rx="8" class="d-box"/>
+        <text x="54" y="70" class="d-s" font-size="12">Invoice 1 · total</text>
+        <text x="396" y="88" text-anchor="end" class="d-num" font-size="30">402.00</text>
+
+        <rect x="480" y="38" width="390" height="86" rx="8" class="d-box"/>
+        <text x="504" y="70" class="d-s" font-size="12">Invoice 2 · total</text>
+        <text x="846" y="88" text-anchor="end" class="d-num" font-size="30">402.00</text>
+
+        <text x="54" y="150" class="d-t" font-size="13" font-weight="600">Printed on the paper.</text>
+        <text x="54" y="170" class="d-s" font-size="12.5">The model read it, and the arithmetic on the page agreed.</text>
+
+        <text x="504" y="150" class="d-t" font-size="13" font-weight="600">Never on the photo at all.</text>
+        <text x="504" y="170" class="d-s" font-size="12.5">The bottom of the invoice was out of frame. We asked.</text>
+        <text x="504" y="188" class="d-s" font-size="12.5">The owner typed it into WhatsApp. We wrote it down.</text>
+
+        <rect x="30" y="208" width="840" height="44" rx="8" class="band-stop"/>
+        <text x="450" y="236" text-anchor="middle" class="t-stop" font-size="14.5" font-weight="700">Faida stores these two numbers exactly the same way. Nothing can tell them apart.</text>
+
+        <line x1="30" y1="284" x2="870" y2="284" class="divider"/>
+        <text x="30" y="310" class="d-lane">WITH THE FIX — ONE EXTRA WORD SAVED BESIDE EACH</text>
+
+        <rect x="30" y="324" width="390" height="86" rx="8" class="d-box"/>
+        <text x="54" y="352" class="d-s" font-size="12">Invoice 1 · total</text>
+        <text x="396" y="366" text-anchor="end" class="d-num" font-size="26">402.00</text>
+        <rect x="54" y="374" width="170" height="24" rx="12" class="chip-good"/>
+        <text x="139" y="390" text-anchor="middle" class="chip-good-t" font-size="11.5">read off the photo</text>
+
+        <rect x="480" y="324" width="390" height="86" rx="8" class="d-box"/>
+        <text x="504" y="352" class="d-s" font-size="12">Invoice 2 · total</text>
+        <text x="846" y="366" text-anchor="end" class="d-num" font-size="26">402.00</text>
+        <rect x="504" y="374" width="212" height="24" rx="12" class="chip-warn"/>
+        <text x="610" y="390" text-anchor="middle" class="chip-warn-t" font-size="11.5">told to us in chat, 25 Aug</text>
+      </svg>
+    </div>
+    <figcaption>Both numbers are honest. Only one of them can be checked against anything. Today
+    the system has no way to say which is which — and everything built on top inherits that.</figcaption>
+  </figure>
+
+  <p>Neither number is wrong. The second one is the right thing to do — the plan already says so:
+  when the total is off the edge of the photo, ask rather than guess. The problem is only that
+  afterwards the two look identical.</p>
+
+  <p>That does not matter much while an invoice is a page you can pull up. It matters a great deal
+  once that 402.00 has been divided twice and is quietly sitting inside a plate cost, because
+  <strong>nothing downstream can tell that this particular biryani's margin rests on something
+  somebody remembered rather than something a camera saw.</strong></p>
+
+  <div class="callout stop">
+    <p><strong>The same problem, one size larger.</strong> Next milestone we start merging supplier
+    items into single ingredients — Al Madina's milk powder and Gulf Foods' milk powder becoming
+    one thing you cook with. A person approves each merge, one keystroke.</p>
+    <p>Get one of those merges wrong and the cost of every dish using that ingredient is quietly
+    wrong. And unlike a misread invoice, <strong>there is no photo to check it against.</strong> Today
+    we would not even be able to say who approved it.</p>
+  </div>
+</section>
+
+<section>
+  <h2><span class="step-n">03</span> We are not the first to hit this</h2>
+  <p class="subhead">Four rules, and how Faida already scores against them.</p>
+
+  <p class="wide">The picture you sent is an accounting company explaining how they built software that
+  lets machines do real work with real consequences. Take the accounting words out and their advice
+  is four rules. I checked all four against our actual code. We already follow three — not because
+  anyone copied them, but because they fall out of the rules we wrote after the last build went wrong.</p>
+
+  <div class="rules">
+
+    <div class="rule">
+      <svg viewBox="0 0 230 60" role="img" aria-label="A messy photo passes through a tidying step and comes out as neat rows of fields.">
+        <defs><marker id="b1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 1 L 9 5 L 0 9 z" class="d-head"/></marker></defs>
+        <rect x="4" y="12" width="38" height="38" rx="3" class="d-paper"/>
+        <path d="M 12 24 q 8 -6 14 0 t 12 2" class="d-ink" fill="none"/>
+        <path d="M 12 34 q 10 5 16 -1 t 10 3" class="d-ink" fill="none"/>
+        <path d="M 46 31 L 68 31" class="d-edge" marker-end="url(#b1)"/>
+        <rect x="72" y="16" width="74" height="30" rx="4" class="hl"/>
+        <text x="109" y="35" text-anchor="middle" class="hl-t" font-size="10.5">tidied up</text>
+        <path d="M 150 31 L 172 31" class="d-edge" marker-end="url(#b1)"/>
+        <rect x="176" y="12" width="50" height="38" rx="3" class="d-box"/>
+        <line x1="183" y1="22" x2="219" y2="22" class="d-rule"/>
+        <line x1="183" y1="31" x2="219" y2="31" class="d-rule"/>
+        <line x1="183" y1="40" x2="205" y2="40" class="d-rule"/>
+      </svg>
+      <h3>Tidy it at the door</h3>
+      <p>Nothing downstream should ever have to squint at a photo. Sort out the mess once, on the
+      way in.</p>
+      <p>Ours is the strongest part of the build. The awkward things — which currency, which unit,
+      how big the pack is, cash or credit — are all decided by rules we can test, not by how nicely
+      the prompt is worded. Every one of those got moved into code after it got something wrong.</p>
+      <div class="verdict yes"><span class="mark">✓</span> We do this</div>
+    </div>
+
+    <div class="rule">
+      <svg viewBox="0 0 230 60" role="img" aria-label="The chat and the screen both write into one single store.">
+        <defs><marker id="b2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 1 L 9 5 L 0 9 z" class="d-head"/></marker></defs>
+        <rect x="4" y="4" width="56" height="20" rx="4" class="d-box"/>
+        <text x="32" y="18" text-anchor="middle" class="d-s" font-size="9.5">chat</text>
+        <rect x="4" y="36" width="56" height="20" rx="4" class="d-box"/>
+        <text x="32" y="50" text-anchor="middle" class="d-s" font-size="9.5">screen</text>
+        <path d="M 64 14 L 92 26" class="d-edge" marker-end="url(#b2)"/>
+        <path d="M 64 46 L 92 34" class="d-edge" marker-end="url(#b2)"/>
+        <rect x="100" y="16" width="126" height="30" rx="4" class="hl"/>
+        <text x="163" y="35" text-anchor="middle" class="hl-t" font-size="10.5">one set of books</text>
+      </svg>
+      <h3>Keep one set of books</h3>
+      <p>One place holds the truth, and one piece of code decides what is correct. Two copies drift,
+      and then you spend your life reconciling them.</p>
+      <p>We learned this the hard way in August: our exam had a private copy of the "does this
+      invoice add up" rule, it drifted, and it spent a day marking correct answers wrong. We
+      deleted the copy.</p>
+      <div class="verdict yes"><span class="mark">✓</span> We do this</div>
+    </div>
+
+    <div class="rule">
+      <svg viewBox="0 0 230 60" role="img" aria-label="A person typing and the model both pass through the same single check before anything is saved.">
+        <defs><marker id="b3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 1 L 9 5 L 0 9 z" class="d-head"/></marker></defs>
+        <rect x="4" y="4" width="52" height="20" rx="4" class="d-box"/>
+        <text x="30" y="18" text-anchor="middle" class="d-s" font-size="9.5">a person</text>
+        <rect x="4" y="36" width="52" height="20" rx="4" class="d-box"/>
+        <text x="30" y="50" text-anchor="middle" class="d-s" font-size="9.5">the model</text>
+        <path d="M 60 14 L 84 26" class="d-edge" marker-end="url(#b3)"/>
+        <path d="M 60 46 L 84 34" class="d-edge" marker-end="url(#b3)"/>
+        <rect x="92" y="16" width="80" height="30" rx="4" class="hl"/>
+        <text x="132" y="35" text-anchor="middle" class="hl-t" font-size="10.5">same check</text>
+        <path d="M 176 31 L 198 31" class="d-edge" marker-end="url(#b3)"/>
+        <rect x="202" y="21" width="24" height="20" rx="4" class="d-box"/>
+      </svg>
+      <h3>One door for everyone</h3>
+      <p>A person and a machine should not be able to quietly disagree. Both go through the same
+      check, or somebody has built a side door.</p>
+      <p>This one surprised me. Fixing a field on the review screen does not have its own code —
+      it runs the exact same function as texting "line 4 qty 16" into WhatsApp, and typing an
+      invoice in by hand runs the same checks as a photo.</p>
+      <div class="verdict yes"><span class="mark">✓</span> We do this</div>
+    </div>
+
+    <div class="rule miss">
+      <svg viewBox="0 0 230 60" role="img" aria-label="A stored number with an empty tag hanging from it, marked with a cross: nothing records who put it there.">
+        <rect x="4" y="18" width="96" height="26" rx="4" class="d-box"/>
+        <text x="52" y="36" text-anchor="middle" class="d-num" font-size="13">402.00</text>
+        <path d="M 100 31 L 124 31" class="d-edge"/>
+        <rect x="126" y="17" width="62" height="28" rx="4" class="band-stop"/>
+        <text x="157" y="36" text-anchor="middle" class="t-stop" font-size="15" font-weight="700">?</text>
+        <circle cx="209" cy="31" r="13" class="band-stop"/>
+        <path d="M 204 26 L 214 36 M 214 26 L 204 36" stroke="var(--stop)" stroke-width="2" fill="none"/>
+      </svg>
+      <h3>Know who did it, before you let anything act alone</h3>
+      <p>Anything you cannot trace, you cannot safely hand over. Write down who did what first;
+      widen what the machine is allowed to do afterwards.</p>
+      <p>We do half of this, and it is the wrong half. We keep a detailed record of everything the
+      <em>model</em> did. We keep nothing about what a <em>person</em> did.</p>
+      <div class="verdict no"><span class="mark">✕</span> This is the gap</div>
+    </div>
+
+  </div>
+
+  <div class="callout good">
+    <p><strong>Worth saying out loud:</strong> three out of four, in working code, is a good place to
+    be. The last build had a hundred and thirty thousand lines and never sent a single real WhatsApp
+    message. This one has under five thousand and already gets the architecture mostly right.</p>
+  </div>
+</section>
+
+<section>
+  <h2><span class="step-n">04</span> Three small fixes</h2>
+  <p class="subhead">None of these is a new system. Two are a column and a table.</p>
+
+  <div class="fixes">
+
+    <div class="fix">
+      <h3>1 · Save one extra word next to every number</h3>
+      <p class="cost">About half a day · do it before the raw-materials work starts</p>
+      <p>Every stored figure also records how it got there: read off the page, re-read on a second
+      look, corrected in chat, corrected on the screen, told to us because it was missing, or typed
+      in by hand — plus who and when.</p>
+      <div class="ba">
+        <div><span class="lbl">Today</span><div class="cell">total &nbsp;402.00</div></div>
+        <div class="arrow" aria-hidden="true">→</div>
+        <div><span class="lbl">With the fix</span><div class="cell after">total &nbsp;402.00<br>from &nbsp;the photo · checked</div></div>
+      </div>
+      <p>It also settles a question the plan left open: whether a plain "OK" should be allowed to
+      confirm an invoice whose total we never read. It should not — a missing total is invisible to
+      everything downstream, while one we asked for is labelled and can be trusted for what it is.</p>
+    </div>
+
+    <div class="fix">
+      <h3>2 · Start keeping a note of who approved what — now, not in two months</h3>
+      <p class="cost">About two hours · currently scheduled two milestones too late</p>
+      <p>Confirmations, corrections, and above all the merging of two suppliers' items into one
+      ingredient, each with a name against it.</p>
+      <div class="ba">
+        <div><span class="lbl">Today</span><div class="cell">milk powder &nbsp;merged<br>by &nbsp;—</div></div>
+        <div class="arrow" aria-hidden="true">→</div>
+        <div><span class="lbl">With the fix</span><div class="cell after">milk powder &nbsp;merged<br>by &nbsp;the consultant · 3 Sept</div></div>
+      </div>
+      <p>The objection is that we have no logins until later, so we do not know who anyone is. True,
+      and it does not matter. "The consultant at the console", or the phone number that sent the
+      message, is a real answer where today the answer is silence. When real logins arrive, the name
+      simply gets more precise.</p>
+    </div>
+
+    <div class="fix">
+      <h3>3 · A calculated number is never safer than its shakiest ingredient</h3>
+      <p class="cost">A written rule · costs nothing now · saves a rebuild later</p>
+      <p>We already say a dish with one uncosted ingredient must read <em>incomplete</em>, never as
+      a cheap dish. This widens that from <em>missing</em> to <em>shaky</em>: if a plate's cost leans
+      on a pack size we could not read, or a total we had to ask for, the plate says so — and says
+      which ingredient dragged it down.</p>
+      <div class="ba">
+        <div><span class="lbl">Today's rule</span><div class="cell">one ingredient missing<br>→ dish reads incomplete</div></div>
+        <div class="arrow" aria-hidden="true">→</div>
+        <div><span class="lbl">Widened</span><div class="cell after">one ingredient shaky<br>→ dish reads estimated</div></div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<section>
+  <h2><span class="step-n">05</span> Done — this is now how it works</h2>
+
+  <div class="decide">
+    <p class="eyebrow">Shipped 28 August</p>
+    <p class="big-num">All three, in front of M5.</p>
+    <p>Every number a photo produces now records that a camera saw it. Every number a person types
+    — in chat, on the screen, or into the manual form — records that a person said it, and which
+    person. Fields nobody touched keep the model's reading, so a one-field correction marks one
+    field and nothing else.</p>
+    <p>Every confirmation, correction and hand-entered invoice now leaves a line saying who did it,
+    written in the same breath as the change itself — so an invoice that is confirmed but has
+    nobody's name against it is not a thing that can exist. Material merges will write the same
+    line the moment that screen is built.</p>
+    <p>The rule about calculated numbers is written down and waiting: nothing yet computes a cost
+    per kilo, so there is nothing yet to apply it to. It is there so the first thing that does
+    inherits it, rather than us discovering the need after a margin screen shows a confident number
+    built on a guess.</p>
+  </div>
+
+  <p>The thing I did <em>not</em> do is treat this as a rewrite. Three of the four rules already
+  held. The job was to notice that, write down the one that was missing, and get back to costing a
+  plate of biryani — which is what happens next.</p>
+</section>
+
+<footer>
+  <p>Everything said here about how Faida works today was read from the code on 28 August, not from
+  the plan — where the two disagree, the code is right. The four rules come from Rillet's own
+  description of their product; their customer numbers are the company's own and nothing here
+  depends on them.</p>
+</footer>
+
+</div>
