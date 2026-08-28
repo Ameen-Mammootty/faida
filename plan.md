@@ -8,7 +8,7 @@
 - **Product:** Faida — profit visibility for GCC cafeterias and multi-branch karak/paratha chains, fed through WhatsApp.
 - **Reference:** `Docs/PRD.md` (v2). This plan sequences the build; the PRD owns product intent. Where they conflict on *scope timing*, this plan wins.
 - **Start date:** 2026-08-22
-- **Current milestone:** **M0 proven on real hardware 2026-08-23 (F1-F4 done)** - the live chain carried through M1 extraction and M2 confirm on the first real invoice. The live project's schema is at migration 0011 (applied 2026-08-28), so the C8 code on master is safe to deploy. Founder-gated: a permanent access token (the 24 h token expired 2026-08-23 19:00; replacement in progress), corpus photos (F6) for the accuracy loop (WP-15/16), demo rehearsals (M4 gate). The review screen is live at `https://faida-web-nine.vercel.app` (deployed 2026-08-24). Known gaps before the demo: **WP-26** (an invoice whose totals block is off-frame is confirmable with a null total), found on a live forward 2026-08-25; the amber question still dead-ends on a plain-English answer (dates and invoice numbers now have their own grammar and a year question, closed 2026-08-28 with WP-25/WP-27 - free-text answers to *other* questions still clarify). Forward-to-reply measured **19.9 s and 23.0 s** on 2026-08-25 against the ~20 s target, with no repair round on either - the 28.4 s figure is retired. WP-16 rounds 1-2 ran 2026-08-24/25 (`eval --live`): every §5 accuracy target is met *on the ten generated invoices* (phase 1, not pilot accuracy), the rebuilt ground truth signed off by the founder on 2026-08-25 with zero corrections (F8), and six corpus images still ungenerated (AMD-01 joined the corpus 2026-08-28). **The post-demo track was resequenced 2026-08-28** (§8, Decision Log): raw materials → menu costing → auth → sales, because costing a plate needs no sales data and the raw-material layer the MVP depends on was in no milestone at all. Nothing in M0-M4 moved
+- **Current milestone:** **M0 proven on real hardware 2026-08-23 (F1-F4 done)** - the live chain carried through M1 extraction and M2 confirm on the first real invoice. The live project's schema is at migration 0011 (applied 2026-08-28), so the C8 code on master is safe to deploy. **The demo bar was raised 2026-08-28 (founder call): the demo is the complete end-to-end MVP chain - exact invoice data → supplier items mapped to raw materials → raw materials as recipe ingredients → menu costed, closing on a menu-wise margin per item - so the demo gate moved from M4 to the end of M6; M4 is now the loop gate.** Founder-gated: a permanent access token (the 24 h token expired 2026-08-23 19:00; replacement in progress), corpus photos (F6) for the accuracy loop (WP-15/16), loop rehearsals (M4 gate), one real menu with recipes and selling prices (F7, for M6's costing and the demo). The review screen is live at `https://faida-web-nine.vercel.app` (deployed 2026-08-24). Known gaps before the demo: **WP-26** (an invoice whose totals block is off-frame is confirmable with a null total), found on a live forward 2026-08-25; the amber question still dead-ends on a plain-English answer (dates and invoice numbers now have their own grammar and a year question, closed 2026-08-28 with WP-25/WP-27 - free-text answers to *other* questions still clarify). Forward-to-reply measured **19.9 s and 23.0 s** on 2026-08-25 against the ~20 s target, with no repair round on either - the 28.4 s figure is retired. WP-16 rounds 1-2 ran 2026-08-24/25 (`eval --live`): every §5 accuracy target is met *on the ten generated invoices* (phase 1, not pilot accuracy), the rebuilt ground truth signed off by the founder on 2026-08-25 with zero corrections (F8), and six corpus images still ungenerated (AMD-01 joined the corpus 2026-08-28). **The post-demo track was resequenced 2026-08-28** (§8, Decision Log): raw materials → menu costing → auth → sales, because costing a plate needs no sales data and the raw-material layer the MVP depends on was in no milestone at all. Nothing in M0-M4 moved
 
 ---
 
@@ -18,18 +18,28 @@ The MVP proves one thing (PRD §1): *a cafeteria forwards supplier invoices and 
 WhatsApp number and understands which items, ingredients, and branches are helping or harming
 profit.*
 
-The **near-term goal is a demo** whose entire job is to make one loop look effortless and
-provably accurate:
+**The demo bar is the complete end-to-end MVP chain** (founder call 2026-08-28 — see the
+Decision Log; the earlier bar, the invoice loop alone, is now act one of the demo, not the demo):
+
+1. an extraction layer that captures the **exact invoice data**;
+2. extracted supplier nomenclature **mapped to inventory raw materials**;
+3. raw materials **tagged as ingredients of menu recipes**;
+4. the **menu costed** — so the restaurant sees a menu-wise profit margin per item and knows
+   what to push and what to quietly stop pushing.
 
 ```
 Forward invoice photo on WhatsApp
    → parsed reply in chat, with a price alert   ("Milk powder up AED 4 since last week")
-   → reply "OK"
-   → invoice recorded; web screen shows photo beside extracted fields, green per field
+   → reply "OK" → invoice recorded; web screen shows photo beside extracted fields, green per field
+   → extracted items mapped to raw materials (proposed by the matcher, approved one keystroke each)
+   → raw materials sit inside menu recipes
+   → every menu item shows its cost and its margin at its own menu price, ranked
+   → the owner sees which items to push — and which popular item quietly loses money
 ```
 
-Everything in M0–M4 serves that loop. Everything after it grows the loop into the MVP without
-rewriting it.
+Everything in M0–M6 serves that demo: M0–M4 build and harden the invoice loop, M5 maps
+materials, M6 costs the menu. **The demo gate is the end of M6.** Everything after it grows the
+demo into the full MVP without rewriting it.
 
 ---
 
@@ -168,14 +178,19 @@ Migration policy: plain SQL files in `supabase/migrations/`, squashed freely unt
 - **CI policy:** the CI smoke runs 3 fixture invoices against *recorded* provider responses - no
   API key, no spend, no flakiness in CI. The full live eval runs on demand before any pipeline
   change merges; recorded fixtures are regenerated whenever the prompt version bumps.
-- **Targets (demo gate):** totals and amounts ≥98% field accuracy; line-item fields ≥95%;
+- **Targets (M4 loop gate):** totals and amounts ≥98% field accuracy; line-item fields ≥95%;
   100% of confirmed invoices arithmetically reconciled; zero silent wrong numbers (a wrong value
   must be amber, never green).
 - Every pipeline change runs the eval before merge. Prompt tweaks without the eval are guessing.
 
 ---
 
-## 6. Milestones — demo track (M0–M4)
+## 6. Milestones — the invoice loop (M0–M4)
+
+> The demo track is M0–M6: the loop below, then §8's M5 (raw materials) and M6 (menu costing).
+> **The demo gate moved from M4 to the end of M6** (founder call 2026-08-28): the demo closes on
+> a menu-wise margin screen, not on the loop alone. M4 remains the *loop* gate — the loop must
+> run flawlessly before anything is built on top of its numbers.
 
 Sized for focused build days with CC assistance. Each has a **Done when** that is demonstrable,
 not documentary. The WP-, F-, and C-identifiers in the checklists are defined in the execution
@@ -300,7 +315,7 @@ plan (§7).
   fixed and confirmed in the browser; with the Anthropic key revoked, upload + manual entry +
   all screens still work.
 
-### M4 — Demo hardening + rehearsal (Day 13–15) — **DEMO GATE**
+### M4 — Loop hardening + rehearsal (Day 13–15) — **LOOP GATE** (demo gate moved to M6, 2026-08-28)
 - [x] Seed demo tenant: 1 chain, 3 branches, 2 suppliers with 3 weeks of price history (so the
       live alert fires on stage) - `supabase/demo_seed.sql`, idempotent, doubles as the
       one-command rehearsal reset (WP-40)
@@ -313,15 +328,22 @@ plan (§7).
 - [ ] Curate the 3 demo invoices; run each through the full loop 5× — flakiness is a bug
 - [ ] Latency pass: forward → reply under ~20s (stream nothing; the reply is one message)
 - [ ] Failure demo path: forward a meme, get the polite decline (shows discipline, sells trust)
-- [ ] Full rehearsal of the exact script, twice, on the demo phones
+- [ ] Full rehearsal of the loop portion of the script, twice, on the demo phones
 - [ ] Duplicate invoice hold: the same paper sent twice is held with a reply naming the first one,
       `DUP-01` (WP-44)
-- **Done when:** the demo runs end-to-end twice in a row with zero intervention.
+- **Done when:** the loop runs end-to-end twice in a row with zero intervention. This gates M5 —
+  nothing gets mapped or costed on top of numbers the loop cannot produce flawlessly.
 
-**Demo script (keep to 4 minutes):** forward invoice → reply appears with price alert → "OK" →
-open review screen: photo beside data, all green → show the sparkline for the item that moved →
-forward a meme → polite decline. Close on: "no app, no login, no training — the salesman already
-knows how to do this."
+**Demo script (keep to ~5 minutes; the full run rehearses at the M6 gate):**
+Act one, the loop — forward invoice → reply appears with price alert → "OK" → open review
+screen: photo beside data, all green → sparkline for the item that moved → forward a meme →
+polite decline.
+Act two, the money — open the materials screen: today's invoice items already sitting under
+their raw materials → open the menu screen: every item with its cost and margin at its own menu
+price, ranked → point at the popular item that quietly loses money and the sleeper that earns
+the most → "push this, fix that."
+Close on: "no app, no login, no training — the salesman already knows how to do this, and the
+owner finally knows what every plate earns."
 
 ---
 
@@ -342,7 +364,7 @@ and the accuracy loop (WP-16). Everything else is predictable engineering.
 | F1-F4 | ~~Meta app + demo phones, deploy, prove M0 on a real phone~~ **all done 2026-08-23**. F2 2026-08-22, F3 2026-08-23, F1+F4 2026-08-23 (see M0 §6 and the Progress Log) | done | end-to-end reality for everything |
 | F5 | ~~Anthropic API key with billing enabled~~ done 2026-08-23, verified live | ~10 min | running extraction (WP-16); building it needs nothing |
 | F6 | Corpus growth: photograph the invoices in hand (flat + angled + crumpled variants of each); keep collecting toward 20-25 real ones from pilot contacts. **Deliberately collect both VAT-inclusive and VAT-exclusive invoices** - the first invoice through was inclusive and broke C4 (WP-17), so a corpus of one kind would hide the other. **No longer blocks M1** (2026-08-23): the generated set carries phase 1 while these are collected, ~1-2 weeks out | ongoing, not blocking | phase 2 of the §5 corpus; re-scoring WP-16 |
-| F7 | Pilot logistics: pick the target chain; ask the central-purchasing question (§11) before any onboarding talk; schedule the demo only after the M4 gate passes | ongoing | M4 |
+| F7 | Pilot logistics: pick the target chain; ask the central-purchasing question (§11) before any onboarding talk; schedule the demo only after the **M6** gate passes (amended 2026-08-28: the demo closes on the menu-margin screen). New founder input this creates: one real menu with recipes and selling prices, so M6 has something true to cost | ongoing | M6 |
 | F8 | Hand-verify every ground-truth file the labeling agent produces. Truth no human checked is not truth. **Tooling ready 2026-08-25**: `Docs/f8-review.html` (built by `Docs/build_f8_review.py`) puts each invoice photo beside the key and marks the **134 values of 680 that were decided rather than copied** - the other 546 are either proven by arithmetic or copied verbatim from a printed column, so the review is a few dozen judgements, not 680 comparisons. Plain-English brief for the task: `Docs/f8-signoff-plan.html` | ~30 min | eval validity |
 
 ### 7.2 Pinned contracts (C1-C7)
@@ -511,7 +533,7 @@ demonstrable, not documentary.
 | 34 | Manual entry + upload fallback (`source = 'upload' / 'manual'`) | M | 30 | revoked-key drill: with no Anthropic key, upload + manual entry + every screen still work |
 | 35 | Web CI job (lint + typecheck + build) | S | 31 | total CI stays under 5 minutes |
 
-**M4 (demo gate)**
+**M4 (loop gate)**
 
 | WP | What | Size |
 |---|---|---|
@@ -530,8 +552,9 @@ Wave 2  WP-12 + WP-15
 Wave 3  WP-13, then WP-16 accuracy loop (needs F5+F6)
 Wave 4  WP-20 + WP-22, then WP-21 + WP-23 + WP-24     (overlaps WP-16: product code does not wait on prompt tuning)
 Wave 5  WP-30 + WP-31, then WP-32-35                  (web starts against the C6 mock)
-Wave 6  WP-40-43 → M4 gate → demo                     | founder: F7 rehearsals
-Wave 7  WP-17 VAT treatment (both identities)         (parallel with F6; blocks the demo)
+Wave 6  WP-40-43 → M4 loop gate                       | founder: F7 loop rehearsals
+Wave 7  ~~WP-17 VAT treatment~~ done 2026-08-23
+Wave 8  M5 + M6 work packages (decomposed at the M4 retro) → M6 DEMO GATE → demo
 ```
 
 ### 7.5 Delegation protocol
@@ -548,17 +571,21 @@ on the demo path is a P0).
 
 ---
 
-## 8. Milestones — from demo to MVP (M5–M11)
+## 8. Milestones — completing the demo, then the MVP (M5–M11)
 
 Sequenced so each milestone ships something a pilot customer uses that week. Re-estimate at M4.
 
-**Resequenced 2026-08-28** (founder call — see the Decision Log). The post-demo track now runs
+**M5 and M6 are demo track** (founder call 2026-08-28, second amendment of the day — see the
+Decision Log): the demo bar is the complete end-to-end MVP chain, closing on a menu-wise margin
+per item, so the demo gate sits at the end of M6, not M4. M7 onward is post-demo.
+
+**Resequenced 2026-08-28** (founder call — see the Decision Log). The track now runs
 **raw materials → costing → auth → sales**, where it previously ran sales → auth → costing. The
 MVP's stated job is: photograph a receipt, harmonize its items into raw materials, cost a menu
 item from them. Costing a plate needs no sales data at all — a menu price is a fact the owner
 tells us in a sentence. Sales volume says which items to care about *most*; it is not an input to
 the cost. Old → new: **M5 sales → M8**, **M6 auth → M7**, **M7 recipes → split into M5 (raw
-materials) + M6 (costing)**, **M8 → M9**, **M9 → M10**, **M10 → M11**. Demo track M0–M4 is
+materials) + M6 (costing)**, **M8 → M9**, **M9 → M10**, **M10 → M11**. The M0–M4 loop is
 untouched. Milestone names are identifiers in code comments too ("real auth is M6"), so every
 forward-looking reference in `apps/api`, `apps/web`, the migrations and the READMEs was renumbered
 in the same commit; the two logs below keep the numbers they were written with.
@@ -568,7 +595,10 @@ in the same commit; the two logs below keep the numbers they were written with.
 new work, not padding: the old M7 was sized at two weeks on the assumption that the raw-material
 layer already existed, and it does not — the catalog built by M2 is scoped to one supplier and
 knows nothing about ingredients. The Meta production chain, which is external, serial and slow,
-still starts in the first post-demo milestone so the daily brief does not slip with the rest.
+still starts in M5 so the daily brief does not slip with the rest. **And the demo-bar amendment
+costs on top:** the demo itself now waits for M5+M6 — roughly weeks 4–7 instead of week 3. That
+is the deliberate trade: a demo of the loop alone sells trust in the data; a demo that ends on
+"push this item, fix that one" sells the product.
 
 ### M5 — Raw materials: one shelf per ingredient (Week 4–5)
 Extraction fills a catalog scoped to a single supplier: Al Madina's milk powder and Gulf Foods'
@@ -615,9 +645,11 @@ them, not a rewrite of them.
 - **Done when:** milk powder bought from two suppliers in three pack sizes reads as one material
   at one price per kilo, and every figure inside that price drills to the invoice photo behind it.
 
-### M6 — Recipes and menu costing (Week 6–7)
+### M6 — Recipes and menu costing (Week 6–7) — **DEMO GATE**
 The layer the landing page already sells: *"when an ingredient's price climbs, every item using it
 earns less."* Done-for-you onboarding per PRD §16 — the customer never touches a recipe form.
+This milestone ends in the demo: the §6 script's act two runs on a real menu (F7 supplies it),
+with margins ranked and one clear "push this, fix that" moment.
 - [ ] `menu_items` (tenant, name, selling price + price history). The selling price is something
       the owner says out loud — **no POS and no sales feed is needed to cost a plate**
 - [ ] `recipes` / `recipe_components`: ingredient, quantity, unit, with **batch yields as the
@@ -638,6 +670,8 @@ earns less."* Done-for-you onboarding per PRD §16 — the customer never touche
 - **Done when:** one real menu loads in under a day of consultant time; every costed item shows
   its cost, its margin at its own menu price, and the invoice photo behind each ingredient in it;
   and confirming one supplier invoice at a new price visibly moves the items that use it.
+  **Demo gate:** the full §6 script — loop, mapping, menu margins, "push this, fix that" — runs
+  end-to-end twice in a row with zero intervention, on the demo phones and a real menu.
 
 ### M7 — Auth, tenancy enforcement, approvals (Week 8–9)
 The demo ran seeded and single-tenant; a pilot cannot.
@@ -740,6 +774,7 @@ pilot volume. Meta utility template cost applies only from M10 (verify live UAE 
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-08-28 | **The demo bar is the complete end-to-end MVP chain, and the demo gate moves from M4 to the end of M6** | Founder call, in their own words: "we are not ready for the demo until we have the complete end-to-end MVP" - (1) an extraction layer with the exact invoice data, (2) extracted supplier nomenclature mapped to inventory raw materials, (3) raw materials tagged as ingredients of a menu, (4) the menu costed - so "the restaurant will be able to find a menu-wise profit margin, so that he can prioritize what to push and what not to push. That is the main functionality which you want to show in the demo." This completes the morning's resequencing rather than reversing it: M5 (raw materials) and M6 (menu costing) were already first in line; they now sit inside the demo boundary instead of after it. M4 keeps every hardening item and becomes the *loop* gate - the loop must run flawlessly twice before anything is mapped or costed on top of its numbers, because a wrong number that enters a plate cost cannot be seen next to its photo any more. Cost stated plainly: the demo waits for M5+M6, roughly weeks 4-7 instead of week 3. The trade bought: a demo of the loop alone sells trust in the data; a demo that ends on "push this item, fix that one" sells the product. New founder dependency created: one real menu with recipes and selling prices (F7) - without it M6 has nothing true to cost |
 | 2026-08-28 | **The invoice date is read from the printed text by rule (`extraction/dates.py`), day-first, and an ambiguous date stays null; C3 gains `invoice_date_text`** (WP-27, with WP-25's required-field asks) | Al Aweer AAF 2214 read null with the date plainly printed, and the corpus could not see it: all ten generated invoices print `YYYY-MM-DD`, so the 100% date score measured one shape. The model now copies the date exactly as printed and the rules live in testable code: GCC dates are day-first (09/07/2026 is 9 July; the swapped reading only when it is the sole valid calendar date), written months in English and Arabic resolve, Arabic-Indic digits translate, and "5/7" with no year stays null and becomes a question - in the reply (WP-25) and in chat ("date 5/7" gets the year question, not the generic clarify). The read date renders in the reply ("dated 5 Jul 2026") so a wrong derivation is challengeable from the phone. Fourth instance of the printed-fact/derivation split: currency, payment terms, units, now dates |
 | 2026-08-28 | **The calendar date is absent from the wire schema (`SkipJsonSchema`); `invoice_date_text` is the only date field the model returns** | Adding `invoice_date_text` beside the existing `invoice_date` reproduced the 2026-08-25 failure exactly: `400 Schema is too complex` on every request. An A/B against the live API measured the ceiling precisely - text plus a date field fails *even with the date as a plain string*, text alone compiles, v2 compiles - so the grammar budget fits exactly one date field, and the printed text earns the slot because the calendar date can be derived from it deterministically but not the reverse. `invoice_date` stays on the C3 model for persistence, ground truth and manual entry; it is simply never asked of the model. Consequence accepted: a printing `dates.py` does not recognize resolves to null and is asked for (WP-25), rather than falling back to a model reading that no longer exists on the wire. The schema remains at the ceiling: **the next optional field added to C3 must re-run the schema probe before merge** |
 | 2026-08-28 | **C8 (per-field provenance) and C9 (a derived number is never greener than its worst input) are pinned, and the `audit_events` spine moves from M7 to the front of M5** | Founder call, on a design review of the shipped code against the four rules in the agent-native harness pattern (`Docs/harness-design.html`, plain-English version `Docs/harness-explained.html`). Three of the four already held **in code, not in intention**: the review screen's PATCH routes through `confirm._apply_correction`, so a screen edit and a "line 4 qty 16" text are literally the same function; manual entry runs the same `validate_invoice` + `snap_item` and derives the same confidence dump; and the eval's private copy of C4 was deleted on 2026-08-24, leaving one implementation. The fourth did not hold at all, and the half that was missing was the wrong half: `extraction_runs` records the model's every move - model id, prompt version, tokens, latency, repair or not - while nothing recorded a person's, so a total the model read off the page and a total the owner typed into WhatsApp because the paper was out of frame were **the same number in the same column**. Survivable while every figure sits beside its photo; not survivable from M5, where a figure is divided into a cost per base unit and, by M6, folded four sums deep into a plate margin that no photograph shows. The plan was already asking for this in three places with nowhere to put it - WP-26's reconstructed total that "must never look like one read off the page", M5's merge "recorded with its actor", and the audit table itself scheduled two milestones after its first use. Cost of doing it now: one column, one table, ~a day, while the schema is still squashable and the only tenant is seeded. Cost of doing it at M7: a backfill over a real chain's cost history, plus a window in which a bad material merge - which corrupts every cost above it, with no photo to check it against - is untraceable. Deliberately **not** copied from the same picture: a policy engine (our constants module is the shared rule surface), specialised agents per task (C3 keeps classification inside the one extraction call), an audit subsystem (one table, one rule: every write path names its actor), and an approvals workflow (our gate costs one word in a chat, and the customer has no finance team) |
@@ -780,6 +815,12 @@ pilot volume. Meta utility template cost applies only from M10 (verify live UAE 
 
 *(newest first — one line per session: date, what shipped, what's next)*
 
+- 2026-08-28 - **The demo bar is raised to the complete end-to-end MVP: extraction → raw-material mapping → recipe ingredients → menu costing, closing on a menu-wise margin per item. The demo gate moves from M4 to the end of M6.**
+  Founder call, quoted in the Decision Log: the demo must show a restaurant finding its menu-wise profit margin "so that he can prioritize what to push and what not to push" - the loop alone is act one, not the show.
+  The plan is amended throughout: §1 states the four-layer chain as the north star, §6 is the invoice loop with M4 as its *loop* gate (every hardening item kept - the loop must run flawlessly twice before anything is costed on top of it), §8's M5+M6 join the demo track with the **DEMO GATE** at M6's end, the demo script gains act two (materials screen → ranked menu margins → "push this, fix that"), and F7 gains the founder input M6 cannot run without: one real menu with recipes and selling prices.
+  `CLAUDE.md`/`AGENTS.md` now carry the MVP chain definition so every future session builds toward it.
+  Cost stated in §8: the demo waits for M5+M6, roughly weeks 4-7 instead of week 3.
+  Next, unchanged in content but re-motivated: close WP-26 and the currency question (both now feed M5's cost integrity), finish the M4 loop-gate items, then decompose M5/M6 into work packages at the M4 retro.
 - 2026-08-28 - **First real forward through the v3 pipeline: 18.7 s photo-to-reply, confirmed from chat in 5 s, and the first real C8 audit row - plus one finding: a USD invoice walked into AED price memory unlabeled.**
   The founder forwarded Levant Specialty Foods FZCO LSF-EXP-260716-0098 (a PNG sent as a WhatsApp *document*, which the ingest handled): ack at +8 s, full reading at **+18.7 s** - under the ~20 s target, at prompt v3 with no repair round, 6.9 s model time, warm grammar.
   The reply carried WP-27's "dated 16 Jul 2026" line live for the first time; all three lines green, 150+65+35 = 250.00 exclusive, every provenance field `extracted` by `model:claude-opus-5`.

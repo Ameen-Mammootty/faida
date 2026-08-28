@@ -18,6 +18,13 @@ If `plan.md` and the code disagree, the code is right and the plan has a bug: fi
 Faida: profit visibility for GCC cafeterias and multi-branch chains, fed through WhatsApp.
 Cafeterias forward supplier invoice photos to a WhatsApp number; the pipeline extracts, validates, and records them, then surfaces price alerts and profit analytics.
 
+The complete end-to-end MVP - and the demo bar (founder call 2026-08-28, plan.md §1) - is a four-layer chain, and every session builds toward it:
+(1) an extraction layer that captures the exact invoice data;
+(2) extracted supplier nomenclature mapped to inventory raw materials;
+(3) raw materials tagged as ingredients of menu recipes;
+(4) the menu costed - so the restaurant sees a menu-wise profit margin per item and knows what to push and what not to push.
+The invoice loop (M0-M4) is act one of that demo, gated on its own flawlessness; the demo gate is the end of M6 (menu costing).
+
 ```
 apps/api    FastAPI backend: WhatsApp webhook, Postgres job queue + worker, (M1+) extraction pipeline
 apps/web    Next.js review screen + dashboard (arrives M3)
