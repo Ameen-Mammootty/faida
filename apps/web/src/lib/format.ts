@@ -95,3 +95,39 @@ export const BASIS_LABEL: Record<string, string> = {
   pack_size: "from the printed pack size",
   item_name: "from the pack size in the item name",
 };
+
+/**
+ * C9 in a sentence: why a cost is estimated rather than verified. Every one of
+ * these is honest - somebody typed a real number - but none of them can be
+ * checked against a photograph, and that is the difference the reader needs.
+ */
+const ORIGIN_PHRASE: Record<string, string> = {
+  corrected_screen: "was corrected on this screen",
+  corrected_chat: "was corrected over WhatsApp",
+  reconstructed: "was supplied by a person - it was not on the page",
+  manual: "was typed in by hand",
+  stated_conversion: "was stated by a person",
+  untraced: "has no confirmed invoice behind it",
+};
+
+const FIELD_PHRASE: Record<string, string> = {
+  unit_price: "The price",
+  unit: "The unit",
+  pack_size: "The pack size",
+  total: "The invoice total",
+  tax: "The VAT",
+  discount_total: "The discount",
+  "pack contents": "What one pack holds",
+  price: "This price",
+};
+
+export function estimatedReason(reason: {
+  field: string;
+  origin: string;
+  invoice_no: string | null;
+}): string {
+  const what = FIELD_PHRASE[reason.field] ?? `The ${reason.field}`;
+  const how = ORIGIN_PHRASE[reason.origin] ?? "was not read off the page";
+  const where = reason.invoice_no ? ` on ${reason.invoice_no}` : "";
+  return `${what}${where} ${how}.`;
+}

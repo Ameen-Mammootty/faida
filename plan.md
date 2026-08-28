@@ -607,9 +607,14 @@ them, not a rewrite of them.
       branch prices (§2 rule 8)
 - [ ] **Prerequisite for trusting these numbers: WP-19 and WP-26.** The layer is built ahead of
       them (2026-08-28) but must not be leaned on until they close: a short read that drops a line,
-- [ ] **C9 applied to the first derived number:** a cost per base unit inherits the quality of the
-      invoice line under it, so one built on a reconstructed total or a corrected quantity reads
-      *estimated* and names the line that made it so — `provenance.asserted_fields()` is the read
+- [x] **C9 applied to the first derived number** (2026-08-28): a cost per base unit inherits the
+      quality of the invoice line under it. A price corrected on the screen, a total reconstructed
+      over WhatsApp on a VAT-inclusive invoice (where C4's net conversion divides by it), or a
+      carton whose contents a person stated — any of them and the cost reads **estimated** and
+      says which input made it so, in a sentence ("What one pack holds was stated by a person").
+      `costing.cost_input_keys` is deliberately conditional: `total`/`tax` only count when the
+      invoice was inclusive and `discount_total` only when there was one, or half the catalog
+      would read estimated over fields its arithmetic never touched
       or a null total confirmed away by a bare OK, makes a material look cheaper than it is — and
       once it is a cost per gram, nothing downstream can tell. **M6 costing does not start until
       both are closed**
@@ -787,6 +792,14 @@ pilot volume. Meta utility template cost applies only from M10 (verify live UAE 
 ## 13. Progress Log
 
 *(newest first — one line per session: date, what shipped, what's next)*
+
+- 2026-08-28 - **M5 rebased onto the provenance work, and the two things C8 asked of it are now in: every mapping decision is on the audit trail, and the first derived number carries C9.**
+  Two agents built in parallel on the same day and both claimed migration 0011 - the §11 risk, arriving exactly as written. Nothing was lost: the raw-material work rebased onto master, its migration renumbered to **0012**, and the two suites now run together (**324 green**, 300 + PR #3's 18 + 6 new).
+  **What the merge actually changed, beyond the number.** PR #3 left M5 two open boxes, and both were real gaps in what shipped yesterday: the mapping screen approved merges with nowhere to record the decision, and the cost per kilo looked identical whether the price under it came off a photo or out of somebody's memory.
+  **C8 wired in:** every merge, every undo and every stated conversion writes one `audit_events` row through the helper PR #3 left for exactly this (`record_audit_event`), naming the pack, the material, and whether the material was created by that click. The actor is `console`, C8's word for the review screen, not the `shared-token` placeholder invented in isolation yesterday - one vocabulary, one column for M7's auth to fill.
+  **C9 wired in:** `costing.cost_quality` reads `provenance.asserted_fields()` for the invoice line the price came from and marks the cost *estimated* when any input was asserted rather than seen. The input list is conditional, which is the whole trick - a reconstructed total only reaches a cost on a VAT-inclusive invoice, because that is the only time C4's net conversion divides by it. The screen shows the chip and the sentence beside the money; verified stays quiet.
+  Proven: a corrected unit price on a real invoice, confirmed, makes its material read estimated and names `unit_price` on `INV-15`; an untouched one reads verified.
+  Next: WP-19 and WP-26 (still the gate on trusting any of these numbers), then M6.
 
 - 2026-08-28 - **M5 raw materials: the layer that turns invoice lines into a cost per kilo is built, schema through screen.**
   A cafeteria buys milk powder from two suppliers in three pack sizes. Until today that was three unrelated rows with three price histories, and nothing in the product could say what milk powder costs. Now it is one material at one price per kilo, and every figure inside that price links to the invoice photo it came from.

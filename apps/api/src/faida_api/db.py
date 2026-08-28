@@ -764,6 +764,37 @@ class Database:
         )
         return {str(row["supplier_item_id"]): row for row in rows}
 
+    async def latest_price_provenance(self, tenant_id: str) -> dict[str, asyncpg.Record]:
+        """Per supplier item, the C8 record behind its newest confirmed price.
+
+        This is what C9 reads: a cost per base unit is a division over an
+        invoice line, and whether that line was read off a photo or supplied
+        by a person is invisible by the time it is AED per gram. The join
+        walks price -> invoice -> the line that priced it, because the
+        provenance keys are line-indexed (`lines.3.unit_price`).
+
+        `tax_treatment` and `discount_total` ride along because they change
+        which fields the cost actually depends on: an inclusive invoice's net
+        conversion uses the printed total and tax, so a *reconstructed total*
+        (WP-26) reaches the cost even though no line was touched.
+        """
+        rows = await self.pool.fetch(
+            """
+            select distinct on (p.supplier_item_id)
+                   p.supplier_item_id, p.observed_at,
+                   l.position, i.id as invoice_id, i.invoice_no, i.provenance,
+                   i.tax_treatment, i.discount_total
+            from supplier_item_prices p
+            join invoices i on i.id = p.invoice_id
+            join invoice_lines l
+              on l.invoice_id = i.id and l.supplier_item_id = p.supplier_item_id
+            where p.tenant_id = $1
+            order by p.supplier_item_id, p.observed_at desc, p.id desc
+            """,
+            tenant_id,
+        )
+        return {str(row["supplier_item_id"]): row for row in rows}
+
     async def ingredient_price_lineage(self, ingredient_id: str) -> list[asyncpg.Record]:
         """Every confirmed price observation behind a material's cost, newest
         first, each carrying the invoice and document it came from - so a cost

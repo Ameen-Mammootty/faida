@@ -15,6 +15,7 @@
 import { ApiError } from "../errors";
 import type {
   ConversionInput,
+  EstimatedBecause,
   IngredientDetail,
   IngredientPrice,
   IngredientSummary,
@@ -269,6 +270,21 @@ function costOf(pack: MockPack): UnitCost | null {
 
 function packPayload(pack: MockPack): Pack {
   const cost = costOf(pack);
+  // C9 in the mock: only the stated-conversion case is reachable here, since
+  // the mock has no correction path - but the screen must render it the same
+  // way it renders the real thing.
+  const reasons: EstimatedBecause[] =
+    pack.conversion === null
+      ? []
+      : [
+          {
+            field: "pack contents",
+            origin: "stated_conversion",
+            actor: pack.conversion.actor,
+            at: pack.conversion.created_at,
+            invoice_no: null,
+          },
+        ];
   return {
     id: pack.id,
     canonical_name: pack.canonical_name,
@@ -280,6 +296,8 @@ function packPayload(pack: MockPack): Pack {
     last_price_at: pack.last_price_at,
     cost,
     blocked: cost === null ? "unknown_pack" : null,
+    quality: cost === null ? null : reasons.length > 0 ? "estimated" : "verified",
+    estimated_because: reasons,
     conversion: pack.conversion,
   };
 }
@@ -365,6 +383,8 @@ function ingredientCost(packs: Pack[]): IngredientSummary["cost"] {
   );
   return {
     ...(newest.cost as UnitCost),
+    quality: newest.quality ?? "verified",
+    estimated_because: newest.estimated_because,
     as_of: newest.last_price_at as string,
     supplier_item_id: newest.id,
     supplier_name: newest.supplier_name,

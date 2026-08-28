@@ -262,6 +262,18 @@ export type CostBlocked = "no_price" | "unknown_pack" | "ambiguous_pack";
  * both correct and are not the same claim. */
 export type CostBasis = "conversion" | "unit" | "pack_size" | "item_name";
 
+/** C9: a derived number is never greener than its worst input. */
+export type CostQuality = "verified" | "estimated";
+
+/** One input a person asserted rather than a camera saw. */
+export interface EstimatedBecause {
+  field: string;
+  origin: string;
+  actor: string;
+  at: string;
+  invoice_no: string | null;
+}
+
 export interface UnitCost {
   per_base: string;
   base_unit: BaseUnit;
@@ -273,6 +285,8 @@ export interface UnitCost {
 
 /** A material's cost: its most recent purchase, and which pack that was. */
 export interface IngredientCost extends UnitCost {
+  quality: CostQuality;
+  estimated_because: EstimatedBecause[];
   as_of: string;
   supplier_item_id: string;
   supplier_name: string | null;
@@ -299,6 +313,9 @@ export interface Pack {
   last_price_at: string | null;
   cost: UnitCost | null;
   blocked: CostBlocked | null;
+  /** null when there is no cost to qualify. */
+  quality: CostQuality | null;
+  estimated_because: EstimatedBecause[];
   conversion: Conversion | null;
 }
 

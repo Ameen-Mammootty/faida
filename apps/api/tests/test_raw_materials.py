@@ -287,7 +287,7 @@ async def test_mapping_records_who_approved_it_and_when(api, db):
     row = await db.pool.fetchrow(
         "select mapped_by, mapped_at from supplier_items where id = $1", item["id"]
     )
-    assert row["mapped_by"] == "shared-token"
+    assert row["mapped_by"] == "console"
     assert row["mapped_at"] is not None
 
 
@@ -425,3 +425,171 @@ async def test_creating_the_same_material_twice_is_not_an_error(api, db):
         )
         == 1
     )
+
+
+# --- C8 and C9: who decided, and what the number rests on --------------------
+
+
+async def test_every_merge_and_undo_lands_on_the_audit_trail(api, db):
+    """C8: a wrong merge corrupts the cost of every menu item above it and
+    there is no photo to check it against, so the decision itself is recorded -
+    not just its result on the row."""
+    _, client = api
+    await ingest_and_confirm(
+        api,
+        db,
+        invoice("Gulf Foods Trading LLC", "INV-12", [line("SUGAR 50KG", "1", "150.00", "150.00")]),
+        "wamid.audit",
+    )
+    item = find(await queue(client), "SUGAR 50KG")
+    mapped = await client.post(
+        f"/api/supplier-items/{item['id']}/ingredient",
+        headers=AUTH,
+        json={"name": "Sugar", "base_unit": "g"},
+    )
+    ingredient_id = mapped.json()["ingredient"]["id"]
+
+    events = await db.audit_events_for_subject("ingredient", ingredient_id)
+    assert [event["action"] for event in events] == ["material.mapped"]
+    assert events[0]["actor"] == "console"
+    assert events[0]["detail"]["supplier_item_name"] == "SUGAR 50KG"
+    assert events[0]["detail"]["created_ingredient"] is True
+
+    await client.delete(f"/api/supplier-items/{item['id']}/ingredient", headers=AUTH)
+    events = await db.audit_events_for_subject("ingredient", ingredient_id)
+    assert [event["action"] for event in events] == ["material.unmapped", "material.mapped"]
+
+
+async def test_a_stated_conversion_is_a_decision_on_the_record(api, db):
+    _, client = api
+    await ingest_and_confirm(
+        api,
+        db,
+        invoice(
+            "Gulf Foods Trading LLC",
+            "INV-13",
+            [line("CHICKEN FRESH", "3", "120.00", "360.00", unit="ctn")],
+        ),
+        "wamid.audit2",
+    )
+    item = find(await queue(client), "CHICKEN FRESH")
+    await client.post(
+        f"/api/supplier-items/{item['id']}/conversion",
+        headers=AUTH,
+        json={"base_quantity": "10000", "base_unit": "g"},
+    )
+    events = await db.audit_events_for_subject("supplier_item", item["id"])
+    assert [event["action"] for event in events] == ["conversion.stated"]
+    assert events[0]["detail"]["base_quantity"] == "10000"
+
+
+async def test_a_cost_read_off_the_page_is_verified(api, db):
+    _, client = api
+    await ingest_and_confirm(
+        api,
+        db,
+        invoice(
+            "Gulf Foods Trading LLC",
+            "INV-14",
+            [line("MILK PWDR", "4", "50.50", "202.00", unit="ctn", pack_size="2.5kg")],
+        ),
+        "wamid.c9ok",
+    )
+    item = find(await queue(client), "MILK PWDR")
+    assert item["quality"] == "verified"
+    assert item["estimated_because"] == []
+
+
+async def test_a_corrected_price_makes_every_cost_built_on_it_estimated(api, db):
+    """C9: the derived number is never greener than its worst input. A person
+    fixing a misread is honest and still not checkable against the photo."""
+    app, client = api
+    # The real order: a person fixes the misread on the review screen, and the
+    # confirm that follows is what writes the price into memory.
+    await post_webhook(client, wa_image_payload(message_id="wamid.c9"))
+    await drain_jobs(
+        db,
+        app,
+        FakeExtraction(
+            result=invoice_result(
+                invoice(
+                    "Gulf Foods Trading LLC",
+                    "INV-15",
+                    [line("MILK PWDR", "4", "50.50", "202.00", unit="ctn", pack_size="2.5kg")],
+                )
+            )
+        ),
+    )
+    invoice_id = await db.pool.fetchval("select id from invoices limit 1")
+    patched = await client.patch(
+        f"/api/invoices/{invoice_id}/fields",
+        headers=AUTH,
+        json={"corrections": [{"line_index": 0, "field": "unit_price", "value": "52.00"}]},
+    )
+    assert patched.status_code == 200, patched.text
+    confirmed = await client.post(f"/api/invoices/{invoice_id}/confirm", headers=AUTH)
+    assert confirmed.status_code == 200, confirmed.text
+
+    item = find(await queue(client), "MILK PWDR")
+    assert item["quality"] == "estimated"
+    reasons = {reason["field"]: reason for reason in item["estimated_because"]}
+    assert "unit_price" in reasons
+    assert reasons["unit_price"]["origin"] == "corrected_screen"
+    assert reasons["unit_price"]["invoice_no"] == "INV-15"
+
+
+async def test_a_cost_resting_on_a_stated_conversion_reads_estimated(api, db):
+    """Nothing on the page says what a carton holds - which is exactly why a
+    human had to say it, and exactly why the cost cannot be called verified."""
+    _, client = api
+    await ingest_and_confirm(
+        api,
+        db,
+        invoice(
+            "Gulf Foods Trading LLC",
+            "INV-16",
+            [line("CHICKEN FRESH", "3", "120.00", "360.00", unit="ctn")],
+        ),
+        "wamid.c9conv",
+    )
+    item = find(await queue(client), "CHICKEN FRESH")
+    response = await client.post(
+        f"/api/supplier-items/{item['id']}/conversion",
+        headers=AUTH,
+        json={"base_quantity": "10000", "base_unit": "g"},
+    )
+    costed = response.json()["item"]
+    assert costed["cost"]["basis"] == "conversion"
+    assert costed["quality"] == "estimated"
+    assert costed["estimated_because"][0]["origin"] == "stated_conversion"
+    assert costed["estimated_because"][0]["actor"] == "console"
+
+
+async def test_the_material_inherits_the_quality_of_the_pack_that_priced_it(api, db):
+    _, client = api
+    await ingest_and_confirm(
+        api,
+        db,
+        invoice(
+            "Gulf Foods Trading LLC",
+            "INV-17",
+            [line("CHICKEN FRESH", "3", "120.00", "360.00", unit="ctn")],
+        ),
+        "wamid.c9mat",
+    )
+    item = find(await queue(client), "CHICKEN FRESH")
+    await client.post(
+        f"/api/supplier-items/{item['id']}/conversion",
+        headers=AUTH,
+        json={"base_quantity": "10000", "base_unit": "g"},
+    )
+    mapped = await client.post(
+        f"/api/supplier-items/{item['id']}/ingredient",
+        headers=AUTH,
+        json={"name": "Chicken", "base_unit": "g"},
+    )
+    ingredient_id = mapped.json()["ingredient"]["id"]
+    listing = await client.get("/api/ingredients", headers=AUTH)
+    material = next(row for row in listing.json()["ingredients"] if row["id"] == ingredient_id)
+    assert material["cost"]["quality"] == "estimated"
+    assert material["cost"]["estimated_because"][0]["origin"] == "stated_conversion"

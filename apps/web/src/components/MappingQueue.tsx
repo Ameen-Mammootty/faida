@@ -129,6 +129,8 @@ export default function MappingQueue() {
                     <CostBadge
                       cost={ingredient.cost}
                       blocked={ingredient.cost === null ? "no_price" : null}
+                      quality={ingredient.cost?.quality ?? null}
+                      reasons={ingredient.cost?.estimated_because ?? []}
                       showBasis={false}
                     />
                   </div>
@@ -224,7 +226,12 @@ function QueueRow({
           </p>
         </div>
         <div className="text-right">
-          <CostBadge cost={item.cost} blocked={item.blocked} />
+          <CostBadge
+            cost={item.cost}
+            blocked={item.blocked}
+            quality={item.quality}
+            reasons={item.estimated_because}
+          />
         </div>
       </div>
 

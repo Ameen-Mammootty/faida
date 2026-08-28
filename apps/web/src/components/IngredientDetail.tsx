@@ -70,6 +70,8 @@ export default function IngredientDetail({ ingredientId }: { ingredientId: strin
           <CostBadge
             cost={detail.cost}
             blocked={detail.cost === null ? "no_price" : null}
+            quality={detail.cost?.quality ?? null}
+            reasons={detail.cost?.estimated_because ?? []}
             showBasis={false}
           />
         </div>
@@ -112,7 +114,12 @@ export default function IngredientDetail({ ingredientId }: { ingredientId: strin
                 ) : null}
               </div>
               <div className="flex items-start gap-4">
-                <CostBadge cost={pack.cost} blocked={pack.blocked} />
+                <CostBadge
+                  cost={pack.cost}
+                  blocked={pack.blocked}
+                  quality={pack.quality}
+                  reasons={pack.estimated_because}
+                />
                 <button
                   type="button"
                   onClick={async () => {

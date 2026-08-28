@@ -36,7 +36,9 @@ inputs always produce the same cost.
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 from enum import StrEnum
+from typing import Any
 
+from . import provenance
 from .extraction import units
 
 # Cost per base unit is a small number by construction: AED per gram, per
@@ -152,3 +154,108 @@ def unit_cost(
             )
 
     return Blocked.UNKNOWN_PACK
+
+
+# --- C9: a derived number is never greener than its worst input --------------
+#
+# A cost per base unit is the first number in this product no photograph shows.
+# The price under it may have been read off a page, or typed into WhatsApp by an
+# owner whose totals block was out of frame (WP-26) - both honest, only one
+# checkable. By the time it is AED per gram, and by M6 four sums deep inside a
+# plate margin, nothing downstream can tell. So the cost carries the quality of
+# its inputs, and says which input dragged it down.
+
+
+class Quality(StrEnum):
+    VERIFIED = "verified"  # every input was read off the page and reconciled
+    ESTIMATED = "estimated"  # at least one input a person asserted
+
+
+@dataclass(frozen=True)
+class Reason:
+    """One input that a person asserted, in the words a reader needs: which
+    field, how it got there, who, and on which invoice."""
+
+    field: str
+    origin: str
+    actor: str
+    at: str
+    invoice_no: str | None = None
+
+
+#: The line fields a cost divides: the price itself, and the two cells that say
+#: what one purchase unit is.
+LINE_INPUTS: tuple[str, ...] = ("unit_price", "unit", "pack_size")
+
+
+def cost_input_keys(
+    position: int, *, tax_treatment: str | None = None, has_discount: bool = False
+) -> list[str]:
+    """The C8 field paths a cost per base unit actually depends on.
+
+    The header fields are conditional and that is the point: `total` and `tax`
+    only reach the cost when the invoice was VAT-inclusive, because that is
+    when C4's net conversion divides by them (`db._net_price_factor`), and
+    `discount_total` only when there was a discount to spread across the lines.
+    Listing them unconditionally would mark half the catalog estimated over
+    fields its arithmetic never touched.
+    """
+    keys = [provenance.line_key(position, field) for field in LINE_INPUTS]
+    if tax_treatment == "inclusive":
+        keys.extend(("total", "tax"))
+    if has_discount:
+        keys.append("discount_total")
+    return keys
+
+
+def cost_quality(
+    record: dict[str, Any] | None,
+    *,
+    position: int | None = None,
+    tax_treatment: str | None = None,
+    has_discount: bool = False,
+    invoice_no: str | None = None,
+    conversion_actor: str | None = None,
+    conversion_at: str | None = None,
+) -> tuple[Quality, list[Reason]]:
+    """(quality, reasons) for one pack's cost per base unit.
+
+    `record` is the invoice's `provenance` jsonb; None means we could not trace
+    the price to an invoice line at all - a seeded or hand-loaded catalog row -
+    which is itself unverifiable and reads estimated rather than silently green.
+
+    A stated conversion is always an assertion: nothing on the page says what a
+    carton holds, which is exactly why a human had to say it.
+    """
+    reasons: list[Reason] = []
+    if conversion_actor is not None:
+        reasons.append(
+            Reason(
+                field="pack contents",
+                origin="stated_conversion",
+                actor=conversion_actor,
+                at=conversion_at or "",
+            )
+        )
+    if record is None or position is None:
+        if not reasons:
+            reasons.append(
+                Reason(field="price", origin="untraced", actor="", at="", invoice_no=invoice_no)
+            )
+        return Quality.ESTIMATED, reasons
+
+    asserted = set(provenance.asserted_fields(record))
+    for key in cost_input_keys(position, tax_treatment=tax_treatment, has_discount=has_discount):
+        if key not in asserted:
+            continue
+        stamp = record[key]
+        reasons.append(
+            Reason(
+                field=key.split(".")[-1],
+                origin=stamp.get("origin", ""),
+                actor=stamp.get("actor", ""),
+                at=stamp.get("at", ""),
+                invoice_no=invoice_no,
+            )
+        )
+    return (Quality.ESTIMATED if reasons else Quality.VERIFIED), reasons

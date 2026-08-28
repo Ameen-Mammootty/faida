@@ -654,11 +654,11 @@ async def supplier_item_prices(item_id: uuid.UUID, request: Request) -> dict:
 # adds immutable cost snapshots when versioned calculations need lineage of
 # their own; until then there is one number and one place it comes from.
 
-# Every mapping is a human decision, so the row records who made it. With one
-# shared bearer token (C6) we cannot know which human, and inventing a name
-# would be a worse record than an honest one. M7's auth replaces this with the
-# authenticated user, and the column is ready for it.
-MAPPING_ACTOR = "shared-token"
+# Every mapping is a human decision, so the row records who made it, on the
+# supplier_items row and as an audit_events entry (C8). With one shared bearer
+# token (C6) we cannot know which human; `console` is C8's actor for anything
+# done on the review screen, and M7's auth swaps the string for a user id.
+MAPPING_ACTOR = "console"
 
 BASE_UNITS = {"g", "ml", "pc"}
 # What a base unit is shown as: nobody prices rice per gram out loud.
@@ -720,8 +720,36 @@ def _conversion_for(row: asyncpg.Record | None) -> costing.Conversion | None:
     return costing.Conversion(base_quantity=row["base_quantity"], base_unit=row["base_unit"])
 
 
-def _item_cost(item: Row, conversion: asyncpg.Record | None) -> tuple[dict | None, str | None]:
-    return _cost_payload(
+def _quality_payload(
+    conversion: asyncpg.Record | None, price: asyncpg.Record | None
+) -> tuple[str, list[dict]]:
+    """C9: a cost is never greener than its worst input. `price` is the C8
+    record behind the observation the cost divides (db.latest_price_provenance)."""
+    quality, reasons = costing.cost_quality(
+        None if price is None else price["provenance"],
+        position=None if price is None else price["position"],
+        tax_treatment=None if price is None else price["tax_treatment"],
+        has_discount=price is not None and price["discount_total"] is not None,
+        invoice_no=None if price is None else price["invoice_no"],
+        conversion_actor=None if conversion is None else conversion["actor"],
+        conversion_at=None if conversion is None else _iso(conversion["created_at"]),
+    )
+    return quality.value, [
+        {
+            "field": reason.field,
+            "origin": reason.origin,
+            "actor": reason.actor,
+            "at": reason.at,
+            "invoice_no": reason.invoice_no,
+        }
+        for reason in reasons
+    ]
+
+
+def _pack_payload(
+    item: Row, conversion: asyncpg.Record | None, price: asyncpg.Record | None = None
+) -> dict:
+    cost, blocked = _cost_payload(
         costing.unit_cost(
             item["last_price"],
             unit=item["unit"],
@@ -730,10 +758,7 @@ def _item_cost(item: Row, conversion: asyncpg.Record | None) -> tuple[dict | Non
             conversion=_conversion_for(conversion),
         )
     )
-
-
-def _pack_payload(item: Row, conversion: asyncpg.Record | None) -> dict:
-    cost, blocked = _item_cost(item, conversion)
+    quality, reasons = _quality_payload(conversion, price)
     return {
         "id": str(item["id"]),
         "canonical_name": item["canonical_name"],
@@ -745,6 +770,10 @@ def _pack_payload(item: Row, conversion: asyncpg.Record | None) -> dict:
         "last_price_at": _iso(item["last_price_at"]),
         "cost": cost,
         "blocked": blocked,
+        # C9 travels with the cost, not beside it: a reader who sees the number
+        # must see what it rests on.
+        "quality": None if cost is None else quality,
+        "estimated_because": [] if cost is None else reasons,
         "conversion": None
         if conversion is None
         else {
@@ -776,6 +805,10 @@ def _ingredient_cost(packs: list[dict]) -> dict | None:
     newest = max(priced, key=lambda pack: pack["last_price_at"])
     return {
         **newest["cost"],
+        # C9 rides with the number wherever it goes: a material priced off a
+        # pack whose cost is estimated is estimated, and says why.
+        "quality": newest["quality"],
+        "estimated_because": newest["estimated_because"],
         "as_of": newest["last_price_at"],
         "supplier_item_id": newest["id"],
         "supplier_name": newest["supplier_name"],
@@ -794,10 +827,11 @@ async def raw_material_queue(request: Request) -> dict:
     ingredients = await db.list_ingredients(tenant_id)
     mapped = await db.mapped_supplier_items(tenant_id)
     conversions = await db.latest_conversions(tenant_id)
+    prices = await db.latest_price_provenance(tenant_id)
 
     items = []
     for row in rows:
-        payload = _pack_payload(row, conversions.get(str(row["id"])))
+        payload = _pack_payload(row, conversions.get(str(row["id"])), prices.get(str(row["id"])))
         proposal = propose_ingredient(ingredients, mapped, row["canonical_name"])
         items.append(
             {
@@ -836,12 +870,13 @@ async def list_ingredients(request: Request) -> dict:
     ingredients = await db.list_ingredients(tenant_id)
     mapped = await db.mapped_supplier_items(tenant_id)
     conversions = await db.latest_conversions(tenant_id)
+    prices = await db.latest_price_provenance(tenant_id)
 
     packs_by_ingredient: dict[str, list[dict]] = {}
     for item in mapped:
         key = str(item["ingredient_id"])
         packs_by_ingredient.setdefault(key, []).append(
-            _pack_payload(item, conversions.get(str(item["id"])))
+            _pack_payload(item, conversions.get(str(item["id"])), prices.get(str(item["id"])))
         )
 
     out = []
@@ -879,8 +914,9 @@ async def get_ingredient(ingredient_id: uuid.UUID, request: Request) -> dict:
         raise HTTPException(status_code=404, detail="ingredient not found")
 
     conversions = await db.latest_conversions(tenant_id)
+    prices = await db.latest_price_provenance(tenant_id)
     packs = [
-        _pack_payload(item, conversions.get(str(item["id"])))
+        _pack_payload(item, conversions.get(str(item["id"])), prices.get(str(item["id"])))
         for item in await db.mapped_supplier_items(tenant_id)
         if str(item["ingredient_id"]) == str(ingredient_id)
     ]
@@ -958,9 +994,27 @@ async def map_supplier_item(item_id: uuid.UUID, body: MapItem, request: Request)
 
     if not await db.map_supplier_item(str(item_id), str(ingredient["id"]), MAPPING_ACTOR):
         raise HTTPException(status_code=404, detail="supplier item not found")
+    # C8: the decision, not just its result. A merge changes the cost of every
+    # menu item above it and there is no photo to check it against, so the row
+    # says who merged what into what, and what the machine had suggested.
+    await db.record_audit_event(
+        tenant_id=tenant_id,
+        actor=MAPPING_ACTOR,
+        action="material.mapped",
+        subject_type="ingredient",
+        subject_id=str(ingredient["id"]),
+        detail={
+            "supplier_item_id": str(item_id),
+            "supplier_item_name": item["canonical_name"],
+            "supplier_name": item["supplier_name"],
+            "ingredient_name": ingredient["name"],
+            "created_ingredient": body.ingredient_id is None,
+        },
+    )
     updated = await _item_for_tenant(db, str(item_id), tenant_id)
+    prices = await db.latest_price_provenance(tenant_id)
     return {
-        "item": _pack_payload(updated, conversions.get(str(item_id))),
+        "item": _pack_payload(updated, conversions.get(str(item_id)), prices.get(str(item_id))),
         "ingredient": _ingredient_summary(ingredient),
     }
 
@@ -971,12 +1025,28 @@ async def unmap_supplier_item(item_id: uuid.UUID, request: Request) -> dict:
     Price history is untouched: the mapping never wrote to it."""
     db: Database = request.app.state.db
     tenant_id = await _tenant_id(db)
-    await _item_for_tenant(db, str(item_id), tenant_id)
+    item = await _item_for_tenant(db, str(item_id), tenant_id)
     if not await db.unmap_supplier_item(str(item_id)):
         raise HTTPException(status_code=409, detail="supplier item is not mapped")
+    # Undoing a merge is as much a decision as making one, and the row it
+    # corrects is already gone from the item - so the event carries what was
+    # undone (C8).
+    await db.record_audit_event(
+        tenant_id=tenant_id,
+        actor=MAPPING_ACTOR,
+        action="material.unmapped",
+        subject_type="ingredient",
+        subject_id=str(item["ingredient_id"]),
+        detail={
+            "supplier_item_id": str(item_id),
+            "supplier_item_name": item["canonical_name"],
+            "ingredient_name": item["ingredient_name"],
+        },
+    )
     conversions = await db.latest_conversions(tenant_id)
+    prices = await db.latest_price_provenance(tenant_id)
     updated = await _item_for_tenant(db, str(item_id), tenant_id)
-    return {"item": _pack_payload(updated, conversions.get(str(item_id)))}
+    return {"item": _pack_payload(updated, conversions.get(str(item_id)), prices.get(str(item_id)))}
 
 
 @router.post("/supplier-items/{item_id}/conversion", status_code=201)
@@ -1008,5 +1078,22 @@ async def add_conversion(item_id: uuid.UUID, body: NewConversion, request: Reque
         actor=MAPPING_ACTOR,
         note=body.note,
     )
+    # A conversion is an assertion about the world that no invoice states, so
+    # it is a human decision on the record like a merge (C8) - and C9 makes
+    # every cost resting on it read estimated.
+    await db.record_audit_event(
+        tenant_id=tenant_id,
+        actor=MAPPING_ACTOR,
+        action="conversion.stated",
+        subject_type="supplier_item",
+        subject_id=str(item_id),
+        detail={
+            "supplier_item_name": item["canonical_name"],
+            "base_quantity": str(quantity),
+            "base_unit": body.base_unit,
+            "note": body.note,
+        },
+    )
     conversions = await db.latest_conversions(tenant_id)
-    return {"item": _pack_payload(item, conversions.get(str(item_id)))}
+    prices = await db.latest_price_provenance(tenant_id)
+    return {"item": _pack_payload(item, conversions.get(str(item_id)), prices.get(str(item_id)))}
