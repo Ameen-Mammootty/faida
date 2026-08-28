@@ -154,7 +154,7 @@ a:focus-visible, [tabindex]:focus-visible { outline:2px solid var(--gold); outli
   <div class="meta">
     <span>For the founder</span>
     <span>Touches plan.md §7.2 and M5</span>
-    <span>Proposal — not yet decided</span>
+    <span>Decided and shipped</span>
   </div>
 </header>
 
@@ -502,7 +502,10 @@ a:focus-visible, [tabindex]:focus-visible { outline:2px solid var(--gold); outli
   <h2><span class="n">07</span> The call</h2>
 
   <div class="rec">
-    <p class="eyebrow">Recommendation</p>
+    <p class="eyebrow">Decided and shipped, 28 August</p>
+    <p>All three landed in front of M5 — migration 0011, one new module, 18 new tests, 282 green.
+    C8 and C9 are pinned in <code>plan.md</code> §7.2, the audit line sits at the top of M5, and
+    both logs carry it. What follows is the case that was made for them.</p>
     <p>Do all three, in front of M5, before the raw-material work starts. Under a day, one
     migration, no milestone moves.</p>
     <p>The argument in one line: <strong>we are about to start making numbers that no photograph can
@@ -513,6 +516,11 @@ a:focus-visible, [tabindex]:focus-visible { outline:2px solid var(--gold); outli
     <p>What I need from you is a yes or a no on the sequencing — the three changes are worthless
     separately. On a yes, they go into the plan as contracts C8 and C9, an audit line at the top of
     M5, and a Decision Log entry, in one commit.</p>
+    <p><strong>Answered yes.</strong> One thing the build surfaced that this memo did not
+    anticipate: a chat correction has no retry guard the way a confirmation does, so a job that
+    retries after a failed send writes a second "corrected" line. The inbound message id now rides
+    on the event, which makes those two lines visibly one retried message rather than two
+    decisions — cheaper and more honest than a dedupe guard.</p>
   </div>
 
   <p>The one thing I would not do is treat this as a rewrite. Three of the four rules are already
