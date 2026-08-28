@@ -23,7 +23,10 @@ import { checkDocument, checkLine, deriveConfidence } from "./validate";
 import { ApiError } from "../errors";
 import type {
   Correction,
+  DocumentSource,
   DocumentStatus,
+  FieldOrigin,
+  FieldSource,
   InvoiceDetail,
   InvoiceFilters,
   InvoiceLine,
@@ -31,10 +34,51 @@ import type {
   InvoiceSummary,
   ManualInvoiceInput,
   PriceHistory,
+  Provenance,
   UploadResult,
 } from "../types";
 
 const HEADER_FIELDS = new Set(["subtotal", "tax", "total"]);
+
+/** C8 field paths, matching faida_api/provenance.py exactly. */
+const PROVENANCE_HEADER_FIELDS = [
+  "supplier_name",
+  "invoice_no",
+  "invoice_date",
+  "currency",
+  "payment_kind",
+  "subtotal",
+  "tax",
+  "total",
+  "discount_total",
+  "rounding_amount",
+];
+const PROVENANCE_LINE_FIELDS = ["raw_name", "qty", "unit", "unit_price", "line_total", "pack_size"];
+
+const lineKey = (index: number, field: string) => `lines.${index}.${field}`;
+
+/**
+ * C8 for the offline mock: a fixture arrived the way a photo does, so every
+ * field reads as extracted - except a manual entry, where a person typed all
+ * of it. Deliberately not a second implementation of anything: the server
+ * derives origins from what the pipeline and the repair round actually did,
+ * and this only has to keep the shape honest so the screen is not built
+ * against a payload the API does not send.
+ */
+function deriveProvenance(
+  fixture: { source: DocumentSource; created_at: string },
+  lines: InvoiceLine[],
+): Provenance {
+  const origin: FieldOrigin = fixture.source === "manual" ? "manual" : "extracted";
+  const actor = origin === "manual" ? "console" : "model:mock";
+  const source: FieldSource = { origin, actor, at: fixture.created_at };
+  const provenance: Provenance = {};
+  for (const field of PROVENANCE_HEADER_FIELDS) provenance[field] = { ...source };
+  lines.forEach((_line, index) => {
+    for (const field of PROVENANCE_LINE_FIELDS) provenance[lineKey(index, field)] = { ...source };
+  });
+  return provenance;
+}
 const EDITABLE_STATUSES = new Set<InvoiceStatus>(["awaiting_confirm", "needs_review"]);
 
 /** C1: the document status implied by the invoice status. */
@@ -73,6 +117,7 @@ function buildDetail(fixture: Fixture): InvoiceDetail {
     tax: fixture.tax,
     payment_kind: fixture.payment_kind,
     confidence: deriveConfidence(document, lineChecks),
+    provenance: deriveProvenance(fixture, lines),
     confirmed_at: null,
     lines,
     document: {
@@ -264,6 +309,14 @@ export async function mockPatchInvoiceFields(
     } else {
       next.lines[edit.line_index][edit.field] = edit.value;
     }
+  }
+  const at = new Date().toISOString();
+  for (const edit of edits) {
+    const key =
+      edit.kind === "totals"
+        ? edit.field
+        : lineKey(edit.line_index, edit.kind === "line_name" ? "raw_name" : edit.field);
+    next.provenance[key] = { origin: "corrected_screen", actor: "console", at };
   }
   const revalidated = revalidate(next);
   invoices.set(id, revalidated);

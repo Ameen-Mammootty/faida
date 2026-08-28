@@ -61,6 +61,36 @@ export interface Confidence {
   lines: FieldStatus[];
 }
 
+/**
+ * C8 origins: how a stored value got there. `extracted` and `repaired` are
+ * values a camera saw and the arithmetic could check; the rest a person
+ * asserted. Neither is worse - `reconstructed` is the right answer when the
+ * totals block was off the edge of the photo - but only the first pair can be
+ * checked against the image beside it, which is what the screen must not blur.
+ */
+export type FieldOrigin =
+  | "extracted"
+  | "repaired"
+  | "corrected_chat"
+  | "corrected_screen"
+  | "reconstructed"
+  | "manual";
+
+export interface FieldSource {
+  origin: FieldOrigin;
+  /** Free text until M7 brings real accounts: "whatsapp:+9715...", "console". */
+  actor: string;
+  /** ISO datetime. */
+  at: string;
+}
+
+/**
+ * invoices.provenance: field path -> where that value came from. Flat keys,
+ * "total" and "lines.3.qty", matching faida_api/provenance.py. Empty for rows
+ * that predate C8 (the seeded demo data), which reads as "not recorded".
+ */
+export type Provenance = Record<string, FieldSource>;
+
 /** One row of GET /api/invoices (the list envelope is {"invoices": [...]}). */
 export interface InvoiceSummary {
   id: string;
@@ -112,6 +142,7 @@ export interface InvoiceDetail extends InvoiceSummary {
   tax: string | null;
   payment_kind: PaymentKind | null;
   confidence: Confidence;
+  provenance: Provenance;
   confirmed_at: string | null;
   lines: InvoiceLine[];
   document: InvoiceDocument | null;

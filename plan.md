@@ -111,9 +111,11 @@ invoice_lines      id, invoice_id, raw_name, supplier_item_id NULL, qty, unit, u
                    checks jsonb ('arith_ok', 'snapped', ...)
 ```
 
-Plus two operational tables: `wa_messages` (message_id UNIQUE, direction, from_phone, type,
-payload, status — the dedupe + audit spine) and `jobs` (id, kind, payload, status, attempts,
-last_error). Raw materials (ingredients + the supplier-item mapping) arrive in M5,
+Plus three operational tables: `wa_messages` (message_id UNIQUE, direction, from_phone, type,
+payload, status — the dedupe + message spine), `jobs` (id, kind, payload, status, attempts,
+last_error), and `audit_events` (tenant, actor, action, subject_type, subject_id, detail — every
+human decision, C8; `extraction_runs` is its counterpart for model runs). `invoices` also carries
+`provenance` jsonb: per field, where that value came from (C8). Raw materials (ingredients + the supplier-item mapping) arrive in M5,
 recipes/menu costing in M6, users/roles in M7, sales tables in M8.
 
 Migration policy: plain SQL files in `supabase/migrations/`, squashed freely until first customer.
@@ -409,6 +411,50 @@ Log; a sub-agent never changes one unilaterally.
   token from an env var; real auth is M7. Pinned now so web work can start against a mock.
 - **C7 - Migrations.** Each WP appends its own numbered SQL file; the manager squashes
   periodically (§4 policy). No two parallel agents touch the same migration file.
+- **C8 - Provenance: every stored number says how it got there** (added 2026-08-28, see the
+  Decision Log). `invoices.confidence` says whether a value survived the arithmetic; C8 says where
+  it came from, which is a different question and the one nothing could answer. Shape:
+  `invoices.provenance`, a flat jsonb keyed by field path (`total`, `lines.3.qty`), each carrying
+  `origin`, `actor` and `at` (`faida_api/provenance.py`). Origins: `extracted` (the model read it
+  off the image), `repaired` (re-read in the scoped round), `corrected_chat`, `corrected_screen`,
+  `reconstructed` (never on the page - a person supplied it, WP-26), `manual` (typed wholesale,
+  WP-34). Flat keys because every write is a merge over a subset of fields.
+  **Derived, not self-reported, exactly like confidence.** The repair round is attributed by
+  diffing the invoice before and after the merge - a scoped re-read of three cells routinely hands
+  two back unchanged, and only the one that moved was re-read to any effect.
+  **The two sets that matter downstream** are `READ_ORIGINS` (a camera saw it, the arithmetic could
+  check it) and `ASSERTED_ORIGINS` (a person said so). Neither is worse - `reconstructed` is
+  precisely what WP-26 asks for - but only one is checkable against the photo, and that is what C9
+  propagates. The vocabulary is partitioned by a test, so an origin added later cannot fall through
+  both sets.
+  **Actors are free text until M7.** `whatsapp:<phone>` from chat, `console` from the review
+  screen. Deliberately *not* taken from a client header: a name anyone holding the shared token can
+  choose looks like identity without being it, which is worse than admitting we do not know yet.
+  When Supabase Auth lands the string becomes a user id and nothing else changes.
+  **The audit trail is the other half.** `audit_events` (tenant, actor, action, subject, detail)
+  records *human decisions*; `extraction_runs` records *model runs*. Neither duplicates the other,
+  and together they answer "who did this". Confirmations, corrections and hand-entry write their
+  event **inside the same transaction as the thing they record**, so a confirmed invoice with no
+  note of who confirmed it is unreachable rather than merely unlikely.
+  **One honest limit.** A correction has no confirm-style retry guard - re-applying identical edits
+  is harmless - so a job that retries after a failed send writes a second `invoice.corrected` row.
+  The inbound WhatsApp message id rides on the event, which makes those two rows visibly one
+  retried message rather than two decisions. A dedupe guard would be new machinery for a duplicated
+  line in a log; the failure that matters (a confirmation with nobody's name on it) is unreachable,
+  because those writes share the transaction.
+  C8 also settles WP-26's open question: a bare `OK` must not confirm away a missing total, because
+  a null total is invisible to everything downstream while a reconstructed one is labelled. The
+  totals conversation itself is still WP-26's to build.
+- **C9 - A derived number is never greener than its worst input** (added 2026-08-28). From M5 the
+  figures a user reads are derived - cost per base unit, plate cost, margin - and no photograph
+  shows them. Every derivation therefore carries the quality of its inputs: if a plate's cost leans
+  on a pack size that would not parse, or a total assembled from a WhatsApp conversation, the plate
+  reads **estimated**, never verified, and names the ingredient that dragged it down.
+  This widens M6's existing rule from *missing* to *shaky*: "an item with one uncosted ingredient
+  reads incomplete" already covers the absent input; C9 covers the present-but-unverifiable one.
+  `provenance.asserted_fields()` is the read a derivation makes. Deliberately written before the
+  first derived number exists, because the alternative is discovering it when a margin screen shows
+  a confident figure built on a guess - the old platform's dominant failure, in a new place.
 
 ### 7.3 Work packages
 
@@ -522,11 +568,17 @@ The mechanical half of this already exists and is tested — `extraction/units.p
 printed pack to a base quantity ("2kg" and "2000g" are provably one shelf, "6 ctn" and "6 pc"
 deliberately are not), and `matching.py` snaps messy printed names — so this is a layer above
 them, not a rewrite of them.
+- [x] **Provenance and the audit spine first** (C8, done 2026-08-28, migration 0011): every stored
+      number records how it got there, and every human decision lands one `audit_events` row inside
+      the transaction that made it. Done before the mapping screen rather than after it, because
+      the first thing this milestone builds is an approval and there was nowhere to record one —
+      `audit_events` had been scheduled for M7, two milestones after its first use
 - [ ] `ingredients` (tenant, name, base unit, category): the culinary concept, kept separate from
       the purchasable pack, exactly as PRD §17–18 already specifies
 - [ ] `supplier_items.ingredient_id`: many packs from many suppliers → one raw material. The
       existing fuzzy matcher **proposes**, a human approves, and the approval is recorded with its
-      actor. **Never auto-merged.** A wrong merge quietly corrupts the cost of every menu item
+      actor — one `audit_events` row per merge and per rejection (C8, in place). **Never
+      auto-merged.** A wrong merge quietly corrupts the cost of every menu item
       using that material, and unlike a bad extraction there is no photo to check it against
 - [ ] Mapping screen: unmapped supplier items ranked by money spent, approve or reject one
       keystroke each — the same propose-then-confirm shape as the invoice review screen, so
@@ -539,6 +591,9 @@ them, not a rewrite of them.
       `units.py` deliberately refuses to guess what is inside a carton, so a human says once
 - [ ] An unparseable pack size is an **issue on a screen** (PRD §24), never a guessed number: it
       blocks that material's cost and says which invoice line it came from
+- [ ] **C9 applied to the first derived number:** a cost per base unit inherits the quality of the
+      invoice line under it, so one built on a reconstructed total or a corrected quantity reads
+      *estimated* and names the line that made it so — `provenance.asserted_fields()` is the read
 - [ ] `ingredient_costs`: latest purchase price per base unit (PRD §19), one per tenant.
       Per-branch cost waits for a chain that actually shows different branch prices (§2 rule 8)
 - [ ] **Prerequisite, not optional: WP-19 and WP-26 close first.** A short read that drops a line,
@@ -585,8 +640,10 @@ The demo ran seeded and single-tenant; a pilot cannot.
       rejected. This is the one security test that matters most.
 - [ ] Cash-purchase approval: branch raises → tenant approves with reason → audit event
       (actor, approver, reason, before/after) — the PRD's one non-negotiable approval gate (§21)
-- [ ] `audit_events` table wired to: invoice confirm/correct, cash approval, price change, role
-      change, **and the M5 raw-material mapping approvals** (a merge changes every cost above it)
+- [ ] `audit_events` **extended**, not created: the table and its confirm/correct/hand-entry and
+      M5 mapping-approval writes have existed since 2026-08-28 (C8). M7 adds the events only it can
+      have — cash approval, price change, role change — swaps the free-text actor for a real user
+      id, and brings the table under the same RLS policies as everything else
 - **Done when:** two seeded tenants cannot see each other's data through API, storage URL, or
   worker path; a cash invoice cannot post without an approval record.
 
@@ -673,6 +730,8 @@ pilot volume. Meta utility template cost applies only from M10 (verify live UAE 
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-08-28 | **C8 (per-field provenance) and C9 (a derived number is never greener than its worst input) are pinned, and the `audit_events` spine moves from M7 to the front of M5** | Founder call, on a design review of the shipped code against the four rules in the agent-native harness pattern (`Docs/harness-design.html`, plain-English version `Docs/harness-explained.html`). Three of the four already held **in code, not in intention**: the review screen's PATCH routes through `confirm._apply_correction`, so a screen edit and a "line 4 qty 16" text are literally the same function; manual entry runs the same `validate_invoice` + `snap_item` and derives the same confidence dump; and the eval's private copy of C4 was deleted on 2026-08-24, leaving one implementation. The fourth did not hold at all, and the half that was missing was the wrong half: `extraction_runs` records the model's every move - model id, prompt version, tokens, latency, repair or not - while nothing recorded a person's, so a total the model read off the page and a total the owner typed into WhatsApp because the paper was out of frame were **the same number in the same column**. Survivable while every figure sits beside its photo; not survivable from M5, where a figure is divided into a cost per base unit and, by M6, folded four sums deep into a plate margin that no photograph shows. The plan was already asking for this in three places with nowhere to put it - WP-26's reconstructed total that "must never look like one read off the page", M5's merge "recorded with its actor", and the audit table itself scheduled two milestones after its first use. Cost of doing it now: one column, one table, ~a day, while the schema is still squashable and the only tenant is seeded. Cost of doing it at M7: a backfill over a real chain's cost history, plus a window in which a bad material merge - which corrupts every cost above it, with no photo to check it against - is untraceable. Deliberately **not** copied from the same picture: a policy engine (our constants module is the shared rule surface), specialised agents per task (C3 keeps classification inside the one extraction call), an audit subsystem (one table, one rule: every write path names its actor), and an approvals workflow (our gate costs one word in a chat, and the customer has no finance team) |
+| 2026-08-28 | **C6 extended: the invoice detail payload carries `provenance`** | The screen is where a reconstructed total has to *look* reconstructed (C8's whole point), so the field origins travel with the fields. Same shape as `confidence` beside it; no new endpoint |
 | 2026-08-28 | **The post-demo track is resequenced to raw materials (M5) → menu costing (M6) → auth (M7) → sales (M8); the old M7 recipes milestone is split in two and the sales milestone moves from first to fourth** | Founder call, restating the MVP as: photograph a receipt, harmonize the extracted items into raw materials, cost a menu item from them. The plan had sequenced sales first because its post-demo north star was purchases ÷ net sales, and costing sat behind both sales and auth at M7 - about five weeks after the demo gate. Costing a plate needs no sales data: a menu price is a fact the owner tells us, so menu price minus recipe cost is a margin per item that is deliverable with nothing but the invoices already flowing. Sales volume weights which items matter; it is not an input to the number. Two supporting facts: the landing page has led with per-item margin since 2026-08-24 (Decision Log, same date) while the build plan deferred it to M7, and the raw-material layer the founder named **did not exist in the plan at all** - M7 assumed ingredients arriving pre-costed from a consultant spreadsheet, when today's catalog is scoped per supplier (`supplier_items` is unique on supplier + name), so the same material bought from two suppliers is two rows with two price histories and no cost per gram anywhere. The cost of the reorder, stated plainly: purchases ÷ net sales slips from week 4 to week 10 and the dashboards from week 10 to week 12; the Meta production chain still starts in the first post-demo milestone so the daily brief does not slip with them. Milestone names are identifiers in code comments as well as in this file, so the renumbering (M5 sales → M8, M6 auth → M7, M8/M9/M10 → M9/M10/M11) was applied to every forward-looking reference in the same commit; Decision Log and Progress Log entries keep the numbers they were written with |
 | 2026-08-25 | **Money crosses the provider boundary as a string, not a JSON number, and the printed form is parsed deterministically (`extraction/money.py`)** | Adding one optional field to C3 made the API reject every request outright: `400 Schema is too complex` / `Grammar compilation timed out`, a hard failure on every invoice rather than a degraded read. Cause found by A/B against the live API: Pydantic renders each `Decimal \| None` as a three-branch union carrying a negative-lookahead regex, and C3 has fourteen of them inside an unbounded array of lines. Declaring one concrete type removed all fourteen lookaheads and 500 characters of grammar. It also closes a real gap - a JSON number is a float on the wire, which C4 bans everywhere else - and the string form invites the printed one, so "AED 332.00", "1,240.50", "(41.70)", the dirham sign's own dot and Arabic-Indic digits are all parsed in one module. Anything with no number in it is rejected loudly rather than read as zero |
 | 2026-08-25 | **Cash or credit is derived from the printed terms line by rule (`extraction/payment.py`), not by prompt wording; C3 gains `payment_terms_text`** | Founder call, closing the question escalated 2026-08-24. The field decides which purchases need owner approval (WP-24, PRD §21) and was returning null on invoices a human reads at a glance, because the prompt said "only when the document states cash or credit" and a page printing "Payment terms: 14 days" never prints the word "credit". The model now copies the terms as printed and the rules live in testable code: an explicit cash marker means cash, a due period means credit, printed terms outrank the model's own reading, and anything unrecognized stays null so an unmarked document is never routed around the approval gate. Same split as the printed currency word and its ISO code. `payment_kind` went 60% -> 100% |
@@ -709,11 +768,12 @@ pilot volume. Meta utility template cost applies only from M10 (verify live UAE 
 
 *(newest first — one line per session: date, what shipped, what's next)*
 
-- 2026-08-28 - **Harness design review against the agent-native pattern; three changes proposed, none decided yet.**
-  Read the shipped code against the four rules in the Rillet harness picture the founder shared (structure at the door, one source of truth, same rules for a person and a machine, provenance before autonomy). Three of the four already hold, and hold in code rather than in intention: the web PATCH path routes through `confirm._apply_correction`, so a screen edit and a "line 4 qty 16" text run the same function; manual entry runs the same `validate_invoice` + `snap_item` and derives the same confidence dump; and the eval's private copy of C4 was deleted back in August, leaving one implementation.
-  **The fourth does not hold at all, and the resequencing is what makes it urgent.** `extraction_runs` records the model's every move - model id, prompt version, tokens, latency, whether it needed a repair - while nothing records a human's: a corrected total and an extracted total are the same number in the same column, `audit_events` is scheduled for M7, and M5's headline feature is an approval. The plan already asks for this in three places with nowhere to put it (WP-26's reconstructed total "must never look like one read off the page"; M5's merge "recorded with its actor"; M7's audit table two milestones late).
-  **Proposed, not applied:** C8 (per-field origin beside the existing green/amber record), the `audit_events` spine moved to the front of M5 with a string actor until M7 brings real accounts, and C9 (a derived number is never greener than its worst input - extending M6's "incomplete" rule from *missing* to *shaky*). Sized under a day and in front of M5, not delaying it. Written up for the founder in `Docs/harness-design.html`, with a plain-English visual version in `Docs/harness-explained.html` (one number's journey from the photo to a plate margin, the two identical-looking totals, the four rules scored, the three fixes); §7.2 contracts are manager-only, so nothing in §7 or §8 was touched.
-  **Next:** founder yes/no on the sequencing. On a yes: C8 + C9 into §7.2, an audit line at the top of M5, and a Decision Log entry, in one commit with the migration.
+- 2026-08-28 - **Provenance shipped: every stored number now records how it got there, and every human decision lands on the record.** Founder said yes to the harness review's three changes; all three are in, in front of M5 rather than delaying it.
+  **What was wrong.** `extraction_runs` recorded the model's every move while nothing recorded a person's, so a total read off the page and a total the owner typed into WhatsApp because the paper was out of frame were the same number in the same column. Fine while every figure sits beside its photo; useless from M5, where it becomes a cost per gram three divisions away from anything you can look at.
+  **What shipped** (migration 0011, 18 new tests, 282 green): `invoices.provenance` - flat jsonb keyed by field path, each field carrying origin, actor and time (`provenance.py`, C8). The repair round is attributed by **diffing** the invoice before and after the merge, not by asking the repair what it touched - a scoped re-read of three cells routinely hands two back unchanged. Chat corrections stamp `corrected_chat` with the sender's phone, the screen stamps `corrected_screen` with `console`, manual entry stamps the whole document `manual`, and every field the edit did not touch keeps the model's reading. `audit_events` records human decisions (confirm, correct, hand-entry, and M5's merges when they land) while `extraction_runs` keeps recording model runs - neither duplicates the other. The audit row is written **inside the same transaction** as the thing it records, so a confirmed invoice with no note of who confirmed it is unreachable, and a retried job that re-sends its ack still leaves exactly one confirmation in the trail (tested).
+  **C9 is a written rule, not code yet**, because no derived number exists to carry it: a plate cost leaning on a reconstructed total reads *estimated*, never verified. `asserted_fields()` is the read it will make. Written now because the alternative is discovering it when a margin screen shows a confident figure built on a guess.
+  **What was deliberately not built:** a policy engine, an agent per task, an audit subsystem, an approvals workflow. Three of the four harness rules already held in shipped code - the job was to name the missing one, not to rewrite anything.
+  **Next:** M5 proper - `ingredients`, the supplier-item mapping and its approval screen, which now has somewhere to record what it approves.
 
 - 2026-08-28 - **The post-demo track is resequenced: raw materials and menu costing now come first, sales moves to fourth.**
   Read the whole codebase against the founder's restatement of the MVP - extract a receipt, harmonize the items into raw materials, cost a menu item - and the three layers are in very different states.

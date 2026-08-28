@@ -66,6 +66,34 @@ def _to_net_price(unit_price: Decimal | None, factor: Decimal | None) -> Decimal
     return (unit_price * factor).quantize(PRICE_QUANTUM)
 
 
+async def _insert_audit_event(
+    conn: asyncpg.Connection,
+    *,
+    tenant_id: str,
+    actor: str,
+    action: str,
+    subject_type: str,
+    subject_id: str | None = None,
+    detail: dict | None = None,
+) -> None:
+    """One audit row on the caller's connection, so it commits with whatever
+    it is recording. Takes a connection rather than the pool for exactly that
+    reason: a confirmed invoice with no note of who confirmed it is the state
+    this table exists to make unreachable."""
+    await conn.execute(
+        """
+        insert into audit_events (tenant_id, actor, action, subject_type, subject_id, detail)
+        values ($1, $2, $3, $4, $5, $6)
+        """,
+        tenant_id,
+        actor,
+        action,
+        subject_type,
+        subject_id,
+        detail or {},
+    )
+
+
 class Database:
     def __init__(self, dsn: str):
         self._dsn = dsn
@@ -260,8 +288,10 @@ class Database:
         rounding_amount: Decimal | None = None,
         status: str = InvoiceStatus.AWAITING_CONFIRM,
         confidence: dict,
+        provenance: dict,
         lines: list[dict],
         document_classification: str | None = "invoice",
+        created_by: str | None = None,
     ) -> str:
         """Draft invoice + lines + the document transition, one transaction:
         C1 says 'extracted' means a draft invoice with checks exists, so the
@@ -273,16 +303,24 @@ class Database:
         only after the model classified the document as one). The manual-entry
         path (WP-34) passes None: no AI ran, so no classification is claimed -
         the document still lands 'extracted', because a draft invoice with
-        checks now exists for it."""
+        checks now exists for it.
+
+        `provenance` is C8's per-field record of where each value came from.
+        `created_by` names a *person* who created this invoice by hand, and
+        writes the audit event in the same transaction; the pipeline leaves it
+        None because a model run is recorded in extraction_runs instead - the
+        two tables split machine actions from human decisions and neither
+        duplicates the other."""
         async with self.pool.acquire() as conn, conn.transaction():
             invoice_id = await conn.fetchval(
                 """
                 insert into invoices (tenant_id, branch_id, document_id, supplier_id,
                                       supplier_name, invoice_no, invoice_date, currency,
                                       subtotal, tax, total, payment_kind, status, confidence,
-                                      tax_treatment, vat_rate, discount_total, rounding_amount)
+                                      tax_treatment, vat_rate, discount_total, rounding_amount,
+                                      provenance)
                 values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
-                        $17, $18)
+                        $17, $18, $19)
                 returning id::text
                 """,
                 tenant_id,
@@ -303,6 +341,7 @@ class Database:
                 vat_rate,
                 discount_total,
                 rounding_amount,
+                provenance,
             )
             await conn.executemany(
                 """
@@ -334,6 +373,15 @@ class Database:
                 document_id,
                 document_classification,
             )
+            if created_by is not None:
+                await _insert_audit_event(
+                    conn,
+                    tenant_id=tenant_id,
+                    actor=created_by,
+                    action="invoice.created_by_hand",
+                    subject_type="invoice",
+                    subject_id=invoice_id,
+                )
         return invoice_id
 
     # -- Review screen API (WP-30, C6) ---------------------------------------
@@ -593,41 +641,53 @@ class Database:
             "select * from invoice_lines where invoice_id = $1 order by position", invoice_id
         )
 
-    async def confirm_invoice(self, invoice_id: str) -> bool:
+    async def confirm_invoice(self, invoice_id: str, *, actor: str) -> bool:
         """C1: invoice awaiting_confirm -> confirmed, stamping confirmed_at.
         The document is left at 'extracted' - its status tracks ingest only,
         and confirmation is read back through invoices.document_id. Returns
         False without touching anything when the invoice was not
         awaiting_confirm (already confirmed, or held needs_review) - safe to
-        re-run."""
-        return (
-            await self.pool.fetchval(
-                """
-                update invoices set status = 'confirmed', confirmed_at = now()
-                where id = $1 and status = 'awaiting_confirm'
-                returning id
-                """,
-                invoice_id,
-            )
-            is not None
-        )
+        re-run.
 
-    async def confirm_reviewed_invoice(self, invoice_id: str) -> bool:
+        `actor` is who said OK. The audit event is written inside the same
+        transaction and only when the status actually flipped, so a retried
+        job re-sending its ack cannot leave a second confirmation in the
+        trail."""
+        return await self._confirm(invoice_id, from_status="awaiting_confirm", actor=actor)
+
+    async def confirm_reviewed_invoice(self, invoice_id: str, *, actor: str) -> bool:
         """C1, the review-screen path (WP-30): invoice needs_review ->
         confirmed, stamping confirmed_at. The review screen is the cash
         approval path until M7 (plan.md §6 M2). Returns False without touching
         anything when the invoice was not needs_review - safe to re-run."""
-        return (
-            await self.pool.fetchval(
+        return await self._confirm(invoice_id, from_status="needs_review", actor=actor)
+
+    async def _confirm(self, invoice_id: str, *, from_status: str, actor: str) -> bool:
+        """The one confirm write, shared by both paths: flip the status if it
+        is still the expected one, and record who did it in the same
+        transaction. One gate, one trail entry, whichever door it came in."""
+        async with self.pool.acquire() as conn, conn.transaction():
+            row = await conn.fetchrow(
                 """
                 update invoices set status = 'confirmed', confirmed_at = now()
-                where id = $1 and status = 'needs_review'
-                returning id
+                where id = $1 and status = $2
+                returning tenant_id::text
                 """,
                 invoice_id,
+                from_status,
             )
-            is not None
-        )
+            if row is None:
+                return False
+            await _insert_audit_event(
+                conn,
+                tenant_id=row["tenant_id"],
+                actor=actor,
+                action="invoice.confirmed",
+                subject_type="invoice",
+                subject_id=invoice_id,
+                detail={"from_status": from_status},
+            )
+        return True
 
     async def apply_invoice_correction(
         self,
@@ -637,23 +697,34 @@ class Database:
         tax: Decimal | None,
         total: Decimal | None,
         confidence: dict,
+        provenance: dict,
         lines: list[dict],
+        actor: str,
+        corrected_fields: list[str],
+        message_id: str | None = None,
     ) -> None:
-        """Persist a chat correction (WP-21), one transaction: header money
-        fields + refreshed confidence on the invoice, and per line the fields
-        the grammar can change plus the re-derived checks. Status is not
-        touched - corrections keep the invoice awaiting_confirm (C1)."""
+        """Persist a correction (WP-21), one transaction: header money fields,
+        refreshed confidence and C8 provenance on the invoice, and per line the
+        fields the grammar can change plus the re-derived checks. Status is not
+        touched - corrections keep the invoice awaiting_confirm (C1).
+
+        `actor` and `corrected_fields` write the audit event in the same
+        transaction, so a stored correction and the note of who made it cannot
+        be observed apart."""
         async with self.pool.acquire() as conn, conn.transaction():
-            await conn.execute(
+            tenant_id = await conn.fetchval(
                 """
-                update invoices set subtotal = $2, tax = $3, total = $4, confidence = $5
+                update invoices set subtotal = $2, tax = $3, total = $4, confidence = $5,
+                                    provenance = $6
                 where id = $1
+                returning tenant_id::text
                 """,
                 invoice_id,
                 subtotal,
                 tax,
                 total,
                 confidence,
+                provenance,
             )
             await conn.executemany(
                 """
@@ -676,6 +747,60 @@ class Database:
                     for line in lines
                 ],
             )
+            if tenant_id is not None:
+                await _insert_audit_event(
+                    conn,
+                    tenant_id=tenant_id,
+                    actor=actor,
+                    action="invoice.corrected",
+                    subject_type="invoice",
+                    subject_id=invoice_id,
+                    detail={"fields": corrected_fields, "message_id": message_id},
+                )
+
+    # -- Audit trail (C8, plan.md §8 M5) -------------------------------------
+
+    async def record_audit_event(
+        self,
+        *,
+        tenant_id: str,
+        actor: str,
+        action: str,
+        subject_type: str,
+        subject_id: str | None = None,
+        detail: dict | None = None,
+    ) -> None:
+        """One human decision, on the record. The writes that must not be
+        observable without their trail entry (confirm, correct, hand-entry) go
+        through the private helper inside their own transaction instead; this
+        is for callers with nothing to be atomic with - M5's material merges
+        among them."""
+        async with self.pool.acquire() as conn:
+            await _insert_audit_event(
+                conn,
+                tenant_id=tenant_id,
+                actor=actor,
+                action=action,
+                subject_type=subject_type,
+                subject_id=subject_id,
+                detail=detail,
+            )
+
+    async def audit_events_for_subject(
+        self, subject_type: str, subject_id: str
+    ) -> list[asyncpg.Record]:
+        """The history of one invoice or one raw material, newest first."""
+        return list(
+            await self.pool.fetch(
+                """
+                select * from audit_events
+                where subject_type = $1 and subject_id = $2
+                order by created_at desc, id desc
+                """,
+                subject_type,
+                subject_id,
+            )
+        )
 
     # -- Extraction runs (WP-13) ---------------------------------------------
 

@@ -18,6 +18,7 @@ import asyncpg
 from ..contracts import DocumentStatus, InvoiceStatus
 from ..db import RETRY_LIMIT, Database
 from ..matching import Row, match_supplier, snap_item
+from ..provenance import Origin, changed_fields, initial, mark
 from ..replies import (
     DEFAULT_CURRENCY,
     REPLY_EXTRACTION_FAILED,
@@ -214,6 +215,26 @@ async def _persist_extracted(
         "document": validation.document.model_dump(mode="json"),
         "lines": [check.status.value for check in line_checks],
     }
+    # C8: where each value came from. Everything starts as read off the image,
+    # then the fields the scoped repair round actually moved are re-stamped -
+    # diffed rather than self-reported, because a repair asked for three cells
+    # routinely hands back two of them unchanged, and only the one that moved
+    # was re-read to any effect.
+    now = datetime.datetime.now(datetime.UTC)
+    actor = f"model:{extract_usage.model_id}"
+    provenance = initial(extracted, origin=Origin.EXTRACTED, actor=actor, at=now)
+    if outcome.applied:
+        # The repair round's own model id, not the extract call's: they are the
+        # same provider today, and attributing a re-read to the wrong model the
+        # day that stops being true is exactly the silence C8 exists to close.
+        repair_actor = f"model:{outcome.usage.model_id}" if outcome.usage else actor
+        provenance = mark(
+            provenance,
+            changed_fields(extracted, invoice),
+            origin=Origin.REPAIRED,
+            actor=repair_actor,
+            at=now,
+        )
     lines = [
         {
             "position": index,
@@ -266,6 +287,7 @@ async def _persist_extracted(
         rounding_amount=invoice.rounding_amount,
         status=status,
         confidence=confidence,
+        provenance=provenance,
         lines=lines,
     )
     await _record_run(
