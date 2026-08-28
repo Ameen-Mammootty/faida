@@ -41,3 +41,57 @@ export const PAYMENT_LABEL: Record<PaymentKind, string> = {
   credit: "Credit",
   cash: "Cash",
 };
+
+/**
+ * Rounded AED for a headline figure (plan.md §3: rounded headline numbers,
+ * exact figures only in detail). String and BigInt only - money never becomes
+ * a float here. "1818.00" -> "1,818"; "42.60" -> "43".
+ */
+export function roundedMoney(value: string): string {
+  const negative = value.startsWith("-");
+  const [whole, fraction = ""] = value.replace("-", "").split(".");
+  let units = BigInt(whole || "0");
+  if (fraction.charCodeAt(0) >= 53) units += 1n; // first decimal digit >= 5
+  const grouped = units.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return negative && units !== 0n ? `-${grouped}` : grouped;
+}
+
+/**
+ * A cost per kilo / litre / piece. The API sends three decimals; a price
+ * somebody says out loud has two ("AED 22.44 / kg"), but a piece cost under
+ * one dirham is all decimals and rounding it to 0.03 would throw the number
+ * away - so values below AED 1 keep what they were sent. String and BigInt
+ * only: money never becomes a float (C4).
+ */
+export function unitCost(value: string): string {
+  const [whole, fraction = ""] = value.split(".");
+  if (whole === "0") return money(value);
+  const digits = (fraction + "000").slice(0, 3);
+  let cents = BigInt(whole) * 100n + BigInt(digits.slice(0, 2));
+  if (digits.charCodeAt(2) >= 53) cents += 1n; // round half up, never down
+  const text = cents.toString().padStart(3, "0");
+  const units = text.slice(0, -2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return `${units}.${text.slice(-2)}`;
+}
+
+/** How a cost per base unit is said out loud: "/ kg", "/ litre", "each". */
+export const DISPLAY_UNIT_LABEL: Record<string, string> = {
+  kg: "/ kg",
+  l: "/ litre",
+  pc: "each",
+};
+
+/** Why a pack has no cost yet, and what to do about it - never a bare code. */
+export const BLOCKED_LABEL: Record<string, string> = {
+  unknown_pack: "Say what one pack holds",
+  ambiguous_pack: "The name gives two pack sizes",
+  no_price: "No confirmed price yet",
+};
+
+/** What the cost was derived from, for the reader who asks "says who?". */
+export const BASIS_LABEL: Record<string, string> = {
+  conversion: "from a stated conversion",
+  unit: "priced by the unit",
+  pack_size: "from the printed pack size",
+  item_name: "from the pack size in the item name",
+};

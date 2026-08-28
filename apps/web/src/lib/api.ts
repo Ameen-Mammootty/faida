@@ -24,6 +24,15 @@
 
 import { ApiError } from "./errors";
 import {
+  mockAddConversion,
+  mockCreateIngredient,
+  mockGetIngredient,
+  mockListIngredients,
+  mockMapSupplierItem,
+  mockRawMaterialQueue,
+  mockUnmapSupplierItem,
+} from "./mock/materials";
+import {
   mockConfirmInvoice,
   mockCreateManualInvoice,
   mockGetInvoice,
@@ -33,12 +42,21 @@ import {
   mockUploadDocument,
 } from "./mock/store";
 import type {
+  BaseUnit,
+  ConversionInput,
   Correction,
+  Ingredient,
+  IngredientDetail,
+  IngredientSummary,
   InvoiceDetail,
   InvoiceFilters,
   InvoiceSummary,
   ManualInvoiceInput,
+  MapItemInput,
+  MapItemResult,
+  Pack,
   PriceHistory,
+  QueueItem,
   UploadResult,
 } from "./types";
 
@@ -142,4 +160,75 @@ export async function createManualInvoice(body: ManualInvoiceInput): Promise<Inv
 export async function getSupplierItemPrices(supplierItemId: string): Promise<PriceHistory> {
   if (MOCK) return mockGetSupplierItemPrices(supplierItemId);
   return request<PriceHistory>(`/api/supplier-items/${encodeURIComponent(supplierItemId)}/prices`);
+}
+
+/* --- raw materials (M5) ---------------------------------------------------
+ *
+ *   GET    /api/raw-materials/queue              {"items": [...]} ranked by spend
+ *   GET    /api/ingredients                      {"ingredients": [...]}
+ *   POST   /api/ingredients                      create; 201
+ *   GET    /api/ingredients/{id}                 packs, costs, price lineage
+ *   POST   /api/supplier-items/{id}/ingredient   approve a mapping
+ *   DELETE /api/supplier-items/{id}/ingredient   undo one
+ *   POST   /api/supplier-items/{id}/conversion   state what one carton holds
+ *
+ * Every write returns the updated pack, so the queue never refetches after a
+ * click - the same convention as PATCH and confirm above.
+ */
+
+export async function listRawMaterialQueue(): Promise<QueueItem[]> {
+  if (MOCK) return mockRawMaterialQueue();
+  const body = await request<{ items: QueueItem[] }>("/api/raw-materials/queue");
+  return body.items;
+}
+
+export async function listIngredients(): Promise<IngredientSummary[]> {
+  if (MOCK) return mockListIngredients();
+  const body = await request<{ ingredients: IngredientSummary[] }>("/api/ingredients");
+  return body.ingredients;
+}
+
+export async function getIngredient(id: string): Promise<IngredientDetail> {
+  if (MOCK) return mockGetIngredient(id);
+  return request<IngredientDetail>(`/api/ingredients/${encodeURIComponent(id)}`);
+}
+
+export async function createIngredient(body: {
+  name: string;
+  base_unit: BaseUnit;
+  category?: string | null;
+}): Promise<Ingredient> {
+  if (MOCK) return mockCreateIngredient(body);
+  return request<Ingredient>("/api/ingredients", jsonInit("POST", body));
+}
+
+/** Approve one mapping: name an existing material, or create one in the same click. */
+export async function mapSupplierItem(
+  itemId: string,
+  body: MapItemInput,
+): Promise<MapItemResult> {
+  if (MOCK) return mockMapSupplierItem(itemId, body);
+  return request<MapItemResult>(
+    `/api/supplier-items/${encodeURIComponent(itemId)}/ingredient`,
+    jsonInit("POST", body),
+  );
+}
+
+export async function unmapSupplierItem(itemId: string): Promise<{ item: Pack }> {
+  if (MOCK) return mockUnmapSupplierItem(itemId);
+  return request<{ item: Pack }>(`/api/supplier-items/${encodeURIComponent(itemId)}/ingredient`, {
+    method: "DELETE",
+  });
+}
+
+/** "1 carton = 10 kg" - the fix for a pack blocked as unknown_pack. */
+export async function addConversion(
+  itemId: string,
+  body: ConversionInput,
+): Promise<{ item: Pack }> {
+  if (MOCK) return mockAddConversion(itemId, body);
+  return request<{ item: Pack }>(
+    `/api/supplier-items/${encodeURIComponent(itemId)}/conversion`,
+    jsonInit("POST", body),
+  );
 }

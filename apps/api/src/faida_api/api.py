@@ -11,6 +11,16 @@ Routes, all under /api and all requiring `Authorization: Bearer <api_token>`:
     POST  /api/documents                      manual upload -> extract job
     GET   /api/supplier-items/{id}/prices     price history for the sparkline
 
+Extended for the M5 mapping screen (plan.md §8 M5) - the raw-material layer:
+
+    GET    /api/raw-materials/queue             unmapped packs, ranked by spend
+    GET    /api/ingredients                     materials + cost per base unit
+    POST   /api/ingredients                     create a material
+    GET    /api/ingredients/{id}                packs, costs, and the price lineage
+    POST   /api/supplier-items/{id}/ingredient  approve a mapping
+    DELETE /api/supplier-items/{id}/ingredient  undo one
+    POST   /api/supplier-items/{id}/conversion  state what one carton holds
+
 POST /api/invoices/manual is the sanctioned WP-34 extension of C6: the
 vision-outage fallback's typed path. Body:
 
@@ -51,6 +61,7 @@ import asyncpg
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 
+from . import costing
 from .confirm import (
     Edit,
     LineFieldEdit,
@@ -64,7 +75,7 @@ from .db import Database
 from .extraction.normalize import normalize_extracted
 from .extraction.schema import ExtractedInvoice, ExtractedLine
 from .extraction.validate import validate_invoice
-from .matching import Row, match_supplier, snap_item
+from .matching import Row, match_supplier, propose_ingredient, snap_item
 from .provenance import Origin, initial
 from .replies import DEFAULT_CURRENCY
 
@@ -623,3 +634,379 @@ async def supplier_item_prices(item_id: uuid.UUID, request: Request) -> dict:
             for row in rows
         ],
     }
+
+
+# --- raw materials (M5) -----------------------------------------------------
+#
+# The C6 surface, extended for the mapping screen (plan.md §8 M5):
+#
+#     GET    /api/raw-materials/queue              unmapped packs, ranked by spend
+#     GET    /api/ingredients                      materials + cost per base unit
+#     POST   /api/ingredients                      create a material
+#     GET    /api/ingredients/{id}                 packs, costs, and the price lineage
+#     POST   /api/supplier-items/{id}/ingredient   approve a mapping
+#     DELETE /api/supplier-items/{id}/ingredient   undo one
+#     POST   /api/supplier-items/{id}/conversion   state what one carton holds
+#
+# Costs are computed in Python from stored prices rather than stored: the
+# derivation is one division (costing.py) over rows we already keep, and a
+# stored snapshot would need a write path kept in step with every confirm. M6
+# adds immutable cost snapshots when versioned calculations need lineage of
+# their own; until then there is one number and one place it comes from.
+
+# Every mapping is a human decision, so the row records who made it. With one
+# shared bearer token (C6) we cannot know which human, and inventing a name
+# would be a worse record than an honest one. M7's auth replaces this with the
+# authenticated user, and the column is ready for it.
+MAPPING_ACTOR = "shared-token"
+
+BASE_UNITS = {"g", "ml", "pc"}
+# What a base unit is shown as: nobody prices rice per gram out loud.
+DISPLAY_UNITS = {"g": ("kg", Decimal(1000)), "ml": ("l", Decimal(1000)), "pc": ("pc", Decimal(1))}
+DISPLAY_QUANTUM = Decimal("0.001")
+
+
+class NewIngredient(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=200)
+    base_unit: Literal["g", "ml", "pc"]
+    category: str | None = Field(default=None, max_length=100)
+
+
+class MapItem(BaseModel):
+    """Approve a mapping against an existing material, or create one and map
+    in the same click - the queue's common case is a material that does not
+    exist yet, and making the consultant leave the queue to create it first is
+    how a queue stops being worked."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    ingredient_id: uuid.UUID | None = None
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    base_unit: Literal["g", "ml", "pc"] | None = None
+    category: str | None = Field(default=None, max_length=100)
+
+
+class NewConversion(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    base_quantity: str
+    base_unit: Literal["g", "ml", "pc"]
+    note: str | None = Field(default=None, max_length=200)
+
+
+def _cost_payload(cost: costing.UnitCost | costing.Blocked) -> tuple[dict | None, str | None]:
+    """(cost, blocked) - exactly one is ever set. `per_display` is the same
+    number in the unit a person says out loud (AED per kg, not per gram),
+    computed here because money math stays in Python (C4): the screen renders
+    strings and never multiplies them."""
+    if isinstance(cost, costing.Blocked):
+        return None, cost.value
+    display_unit, factor = DISPLAY_UNITS[cost.base_unit]
+    return {
+        "per_base": str(cost.per_base),
+        "base_unit": cost.base_unit,
+        "per_display": str((cost.per_base * factor).quantize(DISPLAY_QUANTUM)),
+        "display_unit": display_unit,
+        "basis": cost.basis,
+        "pack_display": cost.pack_display,
+    }, None
+
+
+def _conversion_for(row: asyncpg.Record | None) -> costing.Conversion | None:
+    if row is None:
+        return None
+    return costing.Conversion(base_quantity=row["base_quantity"], base_unit=row["base_unit"])
+
+
+def _item_cost(item: Row, conversion: asyncpg.Record | None) -> tuple[dict | None, str | None]:
+    return _cost_payload(
+        costing.unit_cost(
+            item["last_price"],
+            unit=item["unit"],
+            pack_size=item["pack_size"],
+            item_name=item["canonical_name"],
+            conversion=_conversion_for(conversion),
+        )
+    )
+
+
+def _pack_payload(item: Row, conversion: asyncpg.Record | None) -> dict:
+    cost, blocked = _item_cost(item, conversion)
+    return {
+        "id": str(item["id"]),
+        "canonical_name": item["canonical_name"],
+        "unit": item["unit"],
+        "pack_size": item["pack_size"],
+        "supplier_id": _maybe_str(item["supplier_id"]),
+        "supplier_name": item["supplier_name"],
+        "last_price": _dec(item["last_price"]),
+        "last_price_at": _iso(item["last_price_at"]),
+        "cost": cost,
+        "blocked": blocked,
+        "conversion": None
+        if conversion is None
+        else {
+            "base_quantity": _dec(conversion["base_quantity"]),
+            "base_unit": conversion["base_unit"],
+            "note": conversion["note"],
+            "actor": conversion["actor"],
+            "created_at": _iso(conversion["created_at"]),
+        },
+    }
+
+
+async def _tenant_id(db: Database) -> str:
+    tenant_id = await db.default_tenant_id()
+    if tenant_id is None:
+        raise HTTPException(status_code=500, detail="no tenant configured")
+    return tenant_id
+
+
+def _ingredient_cost(packs: list[dict]) -> dict | None:
+    """A material's cost is its most recent purchase (PRD §19): of the packs
+    that have a cost, the one priced most recently wins - not the cheapest and
+    not an average. Buying the same rice from a dearer supplier today IS the
+    cost of cooking with it today, and averaging would hide exactly the move
+    the price alert exists to show."""
+    priced = [pack for pack in packs if pack["cost"] is not None and pack["last_price_at"]]
+    if not priced:
+        return None
+    newest = max(priced, key=lambda pack: pack["last_price_at"])
+    return {
+        **newest["cost"],
+        "as_of": newest["last_price_at"],
+        "supplier_item_id": newest["id"],
+        "supplier_name": newest["supplier_name"],
+        "pack_name": newest["canonical_name"],
+    }
+
+
+@router.get("/raw-materials/queue")
+async def raw_material_queue(request: Request) -> dict:
+    """The mapping screen's work list: every purchasable pack with no material
+    yet, biggest spend first, each with its derived cost per base unit (or the
+    reason it has none) and a near-certain proposal when one exists."""
+    db: Database = request.app.state.db
+    tenant_id = await _tenant_id(db)
+    rows = await db.unmapped_supplier_items(tenant_id)
+    ingredients = await db.list_ingredients(tenant_id)
+    mapped = await db.mapped_supplier_items(tenant_id)
+    conversions = await db.latest_conversions(tenant_id)
+
+    items = []
+    for row in rows:
+        payload = _pack_payload(row, conversions.get(str(row["id"])))
+        proposal = propose_ingredient(ingredients, mapped, row["canonical_name"])
+        items.append(
+            {
+                **payload,
+                "spend": _dec(row["spend"]),
+                "invoices": row["invoices"],
+                "proposal": None
+                if proposal is None
+                else {
+                    "ingredient_id": proposal.ingredient_id,
+                    "name": proposal.name,
+                    "score": round(proposal.score, 3),
+                    "via": proposal.via,
+                    "evidence": proposal.evidence,
+                },
+            }
+        )
+    return {"items": items}
+
+
+def _ingredient_summary(row: asyncpg.Record) -> dict:
+    return {
+        "id": str(row["id"]),
+        "name": row["name"],
+        "base_unit": row["base_unit"],
+        "category": row["category"],
+    }
+
+
+@router.get("/ingredients")
+async def list_ingredients(request: Request) -> dict:
+    """Every raw material with one cost per base unit, whatever it was bought
+    as - the M5 done-when, in one payload."""
+    db: Database = request.app.state.db
+    tenant_id = await _tenant_id(db)
+    ingredients = await db.list_ingredients(tenant_id)
+    mapped = await db.mapped_supplier_items(tenant_id)
+    conversions = await db.latest_conversions(tenant_id)
+
+    packs_by_ingredient: dict[str, list[dict]] = {}
+    for item in mapped:
+        key = str(item["ingredient_id"])
+        packs_by_ingredient.setdefault(key, []).append(
+            _pack_payload(item, conversions.get(str(item["id"])))
+        )
+
+    out = []
+    for row in ingredients:
+        packs = packs_by_ingredient.get(str(row["id"]), [])
+        out.append(
+            {
+                **_ingredient_summary(row),
+                "packs": row["packs"],
+                "blocked_packs": sum(1 for pack in packs if pack["blocked"] is not None),
+                "cost": _ingredient_cost(packs),
+            }
+        )
+    return {"ingredients": out}
+
+
+@router.post("/ingredients", status_code=201)
+async def create_ingredient(body: NewIngredient, request: Request) -> dict:
+    db: Database = request.app.state.db
+    tenant_id = await _tenant_id(db)
+    row = await db.create_ingredient(tenant_id, body.name, body.base_unit, body.category)
+    return _ingredient_summary(row)
+
+
+@router.get("/ingredients/{ingredient_id}")
+async def get_ingredient(ingredient_id: uuid.UUID, request: Request) -> dict:
+    """One material: every pack that maps to it with each pack's cost per base
+    unit, and the confirmed price observations behind them - each carrying the
+    invoice and document it was read off, so a cost per kilo drills to a
+    photo."""
+    db: Database = request.app.state.db
+    tenant_id = await _tenant_id(db)
+    row = await db.get_ingredient(str(ingredient_id))
+    if row is None or str(row["tenant_id"]) != tenant_id:
+        raise HTTPException(status_code=404, detail="ingredient not found")
+
+    conversions = await db.latest_conversions(tenant_id)
+    packs = [
+        _pack_payload(item, conversions.get(str(item["id"])))
+        for item in await db.mapped_supplier_items(tenant_id)
+        if str(item["ingredient_id"]) == str(ingredient_id)
+    ]
+    lineage = await db.ingredient_price_lineage(str(ingredient_id))
+    return {
+        **_ingredient_summary(row),
+        "cost": _ingredient_cost(packs),
+        "packs": packs,
+        "prices": [
+            {
+                "price": _dec(price["price"]),
+                "observed_at": _iso(price["observed_at"]),
+                "supplier_item_id": str(price["supplier_item_id"]),
+                "canonical_name": price["canonical_name"],
+                "supplier_name": price["supplier_name"],
+                "invoice_id": _maybe_str(price["invoice_id"]),
+                "invoice_no": price["invoice_no"],
+                "invoice_date": _iso(price["invoice_date"]),
+                "document_id": _maybe_str(price["document_id"]),
+            }
+            for price in lineage
+        ],
+    }
+
+
+async def _item_for_tenant(db: Database, item_id: str, tenant_id: str) -> asyncpg.Record:
+    item = await db.get_supplier_item_with_supplier(item_id)
+    if item is None or str(item["tenant_id"]) != tenant_id:
+        raise HTTPException(status_code=404, detail="supplier item not found")
+    return item
+
+
+@router.post("/supplier-items/{item_id}/ingredient")
+async def map_supplier_item(item_id: uuid.UUID, body: MapItem, request: Request) -> dict:
+    """Approve one mapping. Either name an existing material or give a name
+    and base unit to create one in the same click.
+
+    The base units must agree: a pack priced per litre cannot be a material
+    measured in grams, and letting it through would put millilitres and grams
+    in one average and quietly wreck every recipe below it. A pack with no
+    derivable cost still maps - that is a carton waiting for its conversion,
+    not a mistake."""
+    db: Database = request.app.state.db
+    tenant_id = await _tenant_id(db)
+    item = await _item_for_tenant(db, str(item_id), tenant_id)
+
+    if body.ingredient_id is not None:
+        ingredient = await db.get_ingredient(str(body.ingredient_id))
+        if ingredient is None or str(ingredient["tenant_id"]) != tenant_id:
+            raise HTTPException(status_code=404, detail="ingredient not found")
+    elif body.name and body.base_unit:
+        ingredient = await db.create_ingredient(tenant_id, body.name, body.base_unit, body.category)
+    else:
+        raise HTTPException(
+            status_code=422,
+            detail="give an ingredient_id, or a name and base_unit to create one",
+        )
+
+    conversions = await db.latest_conversions(tenant_id)
+    cost = costing.unit_cost(
+        item["last_price"],
+        unit=item["unit"],
+        pack_size=item["pack_size"],
+        item_name=item["canonical_name"],
+        conversion=_conversion_for(conversions.get(str(item_id))),
+    )
+    if isinstance(cost, costing.UnitCost) and cost.base_unit != ingredient["base_unit"]:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"'{item['canonical_name']}' is priced per {cost.base_unit}, but "
+                f"'{ingredient['name']}' is measured in {ingredient['base_unit']}"
+            ),
+        )
+
+    if not await db.map_supplier_item(str(item_id), str(ingredient["id"]), MAPPING_ACTOR):
+        raise HTTPException(status_code=404, detail="supplier item not found")
+    updated = await _item_for_tenant(db, str(item_id), tenant_id)
+    return {
+        "item": _pack_payload(updated, conversions.get(str(item_id))),
+        "ingredient": _ingredient_summary(ingredient),
+    }
+
+
+@router.delete("/supplier-items/{item_id}/ingredient")
+async def unmap_supplier_item(item_id: uuid.UUID, request: Request) -> dict:
+    """Undo a mapping - the queue's escape hatch when a merge was wrong.
+    Price history is untouched: the mapping never wrote to it."""
+    db: Database = request.app.state.db
+    tenant_id = await _tenant_id(db)
+    await _item_for_tenant(db, str(item_id), tenant_id)
+    if not await db.unmap_supplier_item(str(item_id)):
+        raise HTTPException(status_code=409, detail="supplier item is not mapped")
+    conversions = await db.latest_conversions(tenant_id)
+    updated = await _item_for_tenant(db, str(item_id), tenant_id)
+    return {"item": _pack_payload(updated, conversions.get(str(item_id)))}
+
+
+@router.post("/supplier-items/{item_id}/conversion", status_code=201)
+async def add_conversion(item_id: uuid.UUID, body: NewConversion, request: Request) -> dict:
+    """State what one purchase unit of this pack contains ("1 carton = 10 kg").
+    Nothing but a human knows this - units.py refuses to guess a carton's
+    contents - so it is the fix for a pack blocked as `unknown_pack`."""
+    db: Database = request.app.state.db
+    tenant_id = await _tenant_id(db)
+    item = await _item_for_tenant(db, str(item_id), tenant_id)
+
+    quantity = _manual_number(body.base_quantity, "base_quantity")
+    if quantity is None or quantity <= 0:
+        raise HTTPException(status_code=422, detail="base_quantity must be greater than zero")
+    if item["ingredient_id"] is not None and body.base_unit != item["base_unit"]:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"'{item['ingredient_name']}' is measured in {item['base_unit']}, "
+                f"so this conversion cannot be in {body.base_unit}"
+            ),
+        )
+
+    await db.insert_conversion(
+        tenant_id=tenant_id,
+        supplier_item_id=str(item_id),
+        base_quantity=quantity,
+        base_unit=body.base_unit,
+        actor=MAPPING_ACTOR,
+        note=body.note,
+    )
+    conversions = await db.latest_conversions(tenant_id)
+    return {"item": _pack_payload(item, conversions.get(str(item_id)))}

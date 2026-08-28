@@ -242,3 +242,129 @@ export interface PriceHistory {
 export interface UploadResult {
   document_id: string;
 }
+
+/* --- raw materials (M5) ---------------------------------------------------
+ *
+ * The mapping layer's wire shapes (apps/api src/faida_api/api.py, pinned by
+ * tests/test_raw_materials.py). Costs are strings like every other money
+ * value here: `per_base` is AED per gram / millilitre / piece, `per_display`
+ * the same number per kilo / litre / piece because that is how a person says
+ * it. Both are computed in Python - this app never multiplies money.
+ */
+
+/** The base unit a material is measured in: g (mass), ml (volume), pc (count). */
+export type BaseUnit = "g" | "ml" | "pc";
+
+/** Why a pack has no cost per base unit. Each is a different fix. */
+export type CostBlocked = "no_price" | "unknown_pack" | "ambiguous_pack";
+
+/** How the cost was derived - a stated conversion and a printed pack size are
+ * both correct and are not the same claim. */
+export type CostBasis = "conversion" | "unit" | "pack_size" | "item_name";
+
+export interface UnitCost {
+  per_base: string;
+  base_unit: BaseUnit;
+  per_display: string;
+  display_unit: "kg" | "l" | "pc";
+  basis: CostBasis;
+  pack_display: string;
+}
+
+/** A material's cost: its most recent purchase, and which pack that was. */
+export interface IngredientCost extends UnitCost {
+  as_of: string;
+  supplier_item_id: string;
+  supplier_name: string | null;
+  pack_name: string;
+}
+
+export interface Conversion {
+  base_quantity: string;
+  base_unit: BaseUnit;
+  note: string | null;
+  actor: string;
+  created_at: string;
+}
+
+/** One purchasable pack: a supplier_items row, costed. */
+export interface Pack {
+  id: string;
+  canonical_name: string;
+  unit: string | null;
+  pack_size: string | null;
+  supplier_id: string | null;
+  supplier_name: string | null;
+  last_price: string | null;
+  last_price_at: string | null;
+  cost: UnitCost | null;
+  blocked: CostBlocked | null;
+  conversion: Conversion | null;
+}
+
+/** A near-certain suggestion, with the evidence for it. */
+export interface IngredientProposal {
+  ingredient_id: string;
+  name: string;
+  score: number;
+  via: "ingredient" | "sibling";
+  evidence: string;
+}
+
+/** A queue row: a pack with nothing to cook with yet. */
+export interface QueueItem extends Pack {
+  spend: string;
+  invoices: number;
+  proposal: IngredientProposal | null;
+}
+
+export interface Ingredient {
+  id: string;
+  name: string;
+  base_unit: BaseUnit;
+  category: string | null;
+}
+
+export interface IngredientSummary extends Ingredient {
+  packs: number;
+  blocked_packs: number;
+  cost: IngredientCost | null;
+}
+
+/** One confirmed price observation, carrying the invoice it was read off. */
+export interface IngredientPrice {
+  price: string;
+  observed_at: string;
+  supplier_item_id: string;
+  canonical_name: string;
+  supplier_name: string | null;
+  invoice_id: string | null;
+  invoice_no: string | null;
+  invoice_date: string | null;
+  document_id: string | null;
+}
+
+export interface IngredientDetail extends Ingredient {
+  cost: IngredientCost | null;
+  packs: Pack[];
+  prices: IngredientPrice[];
+}
+
+export interface MapItemResult {
+  item: Pack;
+  ingredient: Ingredient;
+}
+
+/** Create a material, or name an existing one - the queue does both. */
+export interface MapItemInput {
+  ingredient_id?: string;
+  name?: string;
+  base_unit?: BaseUnit;
+  category?: string | null;
+}
+
+export interface ConversionInput {
+  base_quantity: string;
+  base_unit: BaseUnit;
+  note?: string | null;
+}

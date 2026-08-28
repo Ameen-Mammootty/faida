@@ -5,7 +5,13 @@ real-Postgres tests for the on-confirm price machinery
 
 from decimal import Decimal
 
-from faida_api.matching import clean_name, match_supplier, normalize, snap_item
+from faida_api.matching import (
+    clean_name,
+    match_supplier,
+    normalize,
+    propose_ingredient,
+    snap_item,
+)
 
 from .conftest import DEMO_TENANT_ID, requires_db
 
@@ -576,3 +582,66 @@ async def test_trade_discount_reaches_the_recorded_price(db):
     # 92.00 less its pro-rata share of the discount, not the 92.00 on the page.
     # The charge is outside the discount base, so it cannot dilute the rate.
     assert (await _item_row(db, item_id))["last_price"] == Decimal("87.400")
+
+
+# --- ingredient proposals (M5) ----------------------------------------------
+#
+# The inverse of snapping: snapping must never cross pack sizes, mapping must
+# ignore them, because a 2.5 kg sack and a 5 kg sack are the same milk powder.
+
+
+def ingredient(name: str, ingredient_id: str = "ing-1", base_unit: str = "g") -> dict:
+    return {"id": ingredient_id, "name": name, "base_unit": base_unit}
+
+
+def mapped(canonical_name: str, ingredient_id: str = "ing-1", name: str = "Milk Powder") -> dict:
+    return {
+        "id": f"item-{canonical_name}",
+        "canonical_name": canonical_name,
+        "ingredient_id": ingredient_id,
+        "ingredient_name": name,
+    }
+
+
+def test_proposal_ignores_pack_size_where_snapping_refuses_to():
+    """The two rules pull opposite ways on purpose, and both are right."""
+    items = [{"canonical_name": "Milk Powder 5kg", "pack_size": "5kg"}]
+    assert snap_item(items, "Milk Powder 2.5kg") is None
+
+    proposal = propose_ingredient([ingredient("Milk Powder")], [], "Milk Powder 2.5kg")
+    assert proposal is not None and proposal.name == "Milk Powder"
+    assert proposal.via == "ingredient"
+
+
+def test_an_abbreviated_name_finds_the_material_through_a_mapped_sibling():
+    proposal = propose_ingredient([], [mapped("Milk Powder 2.5kg")], "MILK POWDER 5KG")
+    assert proposal is not None
+    assert proposal.ingredient_id == "ing-1"
+    assert proposal.via == "sibling"
+    assert proposal.evidence == "Milk Powder 2.5kg"
+
+
+def test_different_materials_are_not_proposed_for_each_other():
+    ingredients = [ingredient("Chickpeas", "ing-2"), ingredient("Chicken", "ing-3")]
+    assert propose_ingredient(ingredients, [], "Cardamom Pods 500g") is None
+
+
+def test_a_near_miss_stays_blank_rather_than_guessing():
+    """Below the threshold the screen shows no suggestion and the consultant
+    searches - the cheap failure. A wrong suggestion that gets approved is the
+    expensive one."""
+    assert propose_ingredient([ingredient("Tea Dust")], [], "Karak Masala 1kg") is None
+
+
+def test_the_best_of_several_candidates_wins():
+    ingredients = [
+        ingredient("Basmati Rice", "ing-4"),
+        ingredient("Rice Flour", "ing-5"),
+    ]
+    proposal = propose_ingredient(ingredients, [], "BASMATI RICE 20KG")
+    assert proposal is not None and proposal.ingredient_id == "ing-4"
+    assert proposal.score >= 0.85
+
+
+def test_a_name_that_is_only_a_pack_size_proposes_nothing():
+    assert propose_ingredient([ingredient("Milk Powder")], [], "5KG") is None

@@ -580,6 +580,211 @@ class Database:
                     net_price,
                 )
 
+    # -- Raw materials (M5) ---------------------------------------------------
+
+    async def list_ingredients(self, tenant_id: str) -> list[asyncpg.Record]:
+        """Every raw material for the tenant with how many purchasable packs
+        map to it, name order. `packs` is the count the mapping screen shows:
+        a material with one pack has one supplier's price, not a market."""
+        return await self.pool.fetch(
+            """
+            select i.id, i.name, i.base_unit, i.category, i.created_at,
+                   count(si.id) as packs
+            from ingredients i
+            left join supplier_items si on si.ingredient_id = i.id
+            where i.tenant_id = $1
+            group by i.id
+            order by i.name
+            """,
+            tenant_id,
+        )
+
+    async def get_ingredient(self, ingredient_id: str) -> asyncpg.Record | None:
+        return await self.pool.fetchrow(
+            "select id, tenant_id, name, base_unit, category, created_at "
+            "from ingredients where id = $1",
+            ingredient_id,
+        )
+
+    async def create_ingredient(
+        self, tenant_id: str, name: str, base_unit: str, category: str | None = None
+    ) -> asyncpg.Record:
+        """Create the material, or return the existing one of that name.
+        Idempotent because the mapping screen creates materials as a side
+        effect of approving a pack, and a double-submit must not become an
+        error the consultant has to think about."""
+        row = await self.pool.fetchrow(
+            """
+            insert into ingredients (tenant_id, name, base_unit, category)
+            values ($1, $2, $3, $4)
+            on conflict (tenant_id, name) do update set name = excluded.name
+            returning id, tenant_id, name, base_unit, category, created_at
+            """,
+            tenant_id,
+            clean_name(name),
+            base_unit,
+            category,
+        )
+        assert row is not None
+        return row
+
+    async def mapped_supplier_items(self, tenant_id: str) -> list[asyncpg.Record]:
+        """Packs already mapped, with their material - the second candidate
+        pool for a proposal (matching.propose_ingredient) and the rows the
+        ingredient detail costs."""
+        return await self.pool.fetch(
+            """
+            select si.id, si.canonical_name, si.unit, si.pack_size,
+                   si.last_price, si.prev_price, si.last_price_at,
+                   si.ingredient_id, si.mapped_at, si.mapped_by,
+                   i.name as ingredient_name, i.base_unit,
+                   s.id as supplier_id, s.name as supplier_name
+            from supplier_items si
+            join ingredients i on i.id = si.ingredient_id
+            join suppliers s on s.id = si.supplier_id
+            where si.tenant_id = $1
+            order by i.name, s.name, si.canonical_name
+            """,
+            tenant_id,
+        )
+
+    async def unmapped_supplier_items(self, tenant_id: str) -> list[asyncpg.Record]:
+        """The mapping queue: packs with no material yet, **ranked by money
+        spent on them**, biggest first.
+
+        Ranking by spend rather than by age is the whole point of the screen.
+        A catalog that self-builds from invoices grows a long tail of
+        one-off purchases, and an alphabetical queue spends a consultant's
+        afternoon on a jar of food colouring while the rice nobody mapped
+        holds up every recipe that uses it. Spend counts confirmed invoices
+        only - an unconfirmed draft is not a purchase (plan.md §5 layer 4).
+        """
+        return await self.pool.fetch(
+            """
+            select si.id, si.canonical_name, si.unit, si.pack_size,
+                   si.last_price, si.last_price_at, si.created_at,
+                   s.id as supplier_id, s.name as supplier_name,
+                   coalesce(sum(l.line_total) filter (where inv.status = 'confirmed'), 0) as spend,
+                   count(distinct inv.id) filter (where inv.status = 'confirmed') as invoices
+            from supplier_items si
+            join suppliers s on s.id = si.supplier_id
+            left join invoice_lines l on l.supplier_item_id = si.id
+            left join invoices inv on inv.id = l.invoice_id
+            where si.tenant_id = $1 and si.ingredient_id is null
+            group by si.id, s.id
+            order by spend desc, si.last_price desc nulls last, si.canonical_name
+            """,
+            tenant_id,
+        )
+
+    async def map_supplier_item(self, item_id: str, ingredient_id: str, actor: str) -> bool:
+        """Record an approved mapping. Returns False when the item does not
+        exist. The tenant check is the caller's (api.py); it is repeated in
+        the predicate so a mapping can never cross tenants even if it isn't."""
+        result = await self.pool.execute(
+            """
+            update supplier_items si
+            set ingredient_id = $2, mapped_at = now(), mapped_by = $3
+            from ingredients i
+            where si.id = $1 and i.id = $2 and i.tenant_id = si.tenant_id
+            """,
+            item_id,
+            ingredient_id,
+            actor,
+        )
+        return result.endswith(" 1")
+
+    async def unmap_supplier_item(self, item_id: str) -> bool:
+        """Undo a mapping. The pack returns to the queue; nothing about its
+        price history changes, because the mapping never touched it."""
+        result = await self.pool.execute(
+            "update supplier_items set ingredient_id = null, mapped_at = null, "
+            "mapped_by = null where id = $1 and ingredient_id is not null",
+            item_id,
+        )
+        return result.endswith(" 1")
+
+    async def get_supplier_item_with_supplier(self, item_id: str) -> asyncpg.Record | None:
+        return await self.pool.fetchrow(
+            """
+            select si.id, si.tenant_id, si.canonical_name, si.unit, si.pack_size,
+                   si.last_price, si.prev_price, si.last_price_at,
+                   si.ingredient_id, si.mapped_at, si.mapped_by,
+                   s.id as supplier_id, s.name as supplier_name,
+                   i.name as ingredient_name, i.base_unit
+            from supplier_items si
+            join suppliers s on s.id = si.supplier_id
+            left join ingredients i on i.id = si.ingredient_id
+            where si.id = $1
+            """,
+            item_id,
+        )
+
+    async def insert_conversion(
+        self,
+        *,
+        tenant_id: str,
+        supplier_item_id: str,
+        base_quantity: Decimal,
+        base_unit: str,
+        actor: str,
+        note: str | None = None,
+    ) -> asyncpg.Record:
+        """State what one purchase unit contains ("1 carton = 10 kg"). Append
+        only: the newest row wins and the older ones stay, so a cost computed
+        before somebody corrected a conversion is still reconstructible."""
+        row = await self.pool.fetchrow(
+            """
+            insert into supplier_item_conversions
+                (tenant_id, supplier_item_id, base_quantity, base_unit, note, actor)
+            values ($1, $2, $3, $4, $5, $6)
+            returning id, supplier_item_id, base_quantity, base_unit, note, actor, created_at
+            """,
+            tenant_id,
+            supplier_item_id,
+            base_quantity,
+            base_unit,
+            note,
+            actor,
+        )
+        assert row is not None
+        return row
+
+    async def latest_conversions(self, tenant_id: str) -> dict[str, asyncpg.Record]:
+        """The current conversion per item: newest row per supplier_item_id."""
+        rows = await self.pool.fetch(
+            """
+            select distinct on (supplier_item_id)
+                   supplier_item_id, base_quantity, base_unit, note, actor, created_at
+            from supplier_item_conversions
+            where tenant_id = $1
+            order by supplier_item_id, created_at desc, id desc
+            """,
+            tenant_id,
+        )
+        return {str(row["supplier_item_id"]): row for row in rows}
+
+    async def ingredient_price_lineage(self, ingredient_id: str) -> list[asyncpg.Record]:
+        """Every confirmed price observation behind a material's cost, newest
+        first, each carrying the invoice and document it came from - so a cost
+        per kilo drills back to the photo it was read off (plan.md §8 M5)."""
+        return await self.pool.fetch(
+            """
+            select p.price, p.observed_at, p.supplier_item_id,
+                   si.canonical_name, si.unit, si.pack_size,
+                   s.name as supplier_name,
+                   inv.id as invoice_id, inv.invoice_no, inv.invoice_date, inv.currency,
+                   inv.document_id
+            from supplier_item_prices p
+            join supplier_items si on si.id = p.supplier_item_id
+            join suppliers s on s.id = si.supplier_id
+            left join invoices inv on inv.id = p.invoice_id
+            where si.ingredient_id = $1
+            order by p.observed_at desc, p.id desc
+            """,
+            ingredient_id,
+        )
+
     # -- Confirm flow (WP-21, C5) --------------------------------------------
 
     async def awaiting_confirm_invoices_for_phone(self, phone: str) -> list[asyncpg.Record]:

@@ -20,7 +20,7 @@ Cafeterias forward supplier invoice photos to a WhatsApp number; the pipeline ex
 
 ```
 apps/api    FastAPI backend: WhatsApp webhook, Postgres job queue + worker, (M1+) extraction pipeline
-apps/web    Next.js review screen + dashboard (arrives M3)
+apps/web    Next.js review screen, raw-material mapping (M5), dashboard (later)
 supabase/   plain SQL migrations + demo seed
 eval/       invoice extraction eval harness (arrives M1)
 ```
@@ -67,6 +67,13 @@ The ingest flow, which everything else builds on:
 5. `provenance.py` records where every stored number came from (C8): a flat jsonb on `invoices.provenance` keyed by field path, each carrying `origin` (`extracted` / `repaired` / `corrected_chat` / `corrected_screen` / `reconstructed` / `manual`), actor and time. Derived, never self-reported - the repair round is attributed by diffing the invoice before and after the merge. `audit_events` is the matching record of *human* decisions and is written inside the transaction it describes; `extraction_runs` stays the record of *model* runs. Actors are free text (`whatsapp:<phone>`, `console`) until M7 brings real accounts, and are never taken from a client header.
 
 One door for everyone: a correction from the review screen and a "line 4 qty 16" text run the same function (`confirm._apply_correction`), and manual entry runs the same validation and snapping as a photo. A new write path - human or model - goes through that door too, and names its actor.
+
+Raw materials (M5): `supplier_items` is what a supplier sells; `ingredients` is what you cook
+with, and many packs map to one material. The mapping is a human decision recorded on the row -
+`matching.propose_ingredient` only ever proposes, because a wrong merge changes the cost of every
+menu item above it with no photo to check against. `costing.py` turns a stored unit price into a
+cost per gram / millilitre / piece; a pack whose contents nothing states (a carton of chicken) is
+blocked until a human states them, never guessed.
 
 Tenancy: every tenant-owned row carries `tenant_id` from day one.
 Branch is resolved from the sender phone (`branches.wa_phone_e164`), never from document text.

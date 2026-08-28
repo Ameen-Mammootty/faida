@@ -68,6 +68,10 @@ Settled now so we never relitigate them mid-build. Changes go through the Decisi
 
 | Area | Decision | Why |
 |---|---|---|
+| 2026-08-28 | **An ingredient's cost is derived on read, not stored as a snapshot; `ingredient_costs` as a table is deferred to M6** | The M5 checklist named a table. Building it would have meant a second copy of a number we can already compute - `unit_price ÷ pack size` over `supplier_items`, rows the confirm path already maintains - plus a write path to keep in step with every confirm, every correction and every conversion. That is §2 rule 3 (one backend, no second implementation) in the small. What a snapshot actually buys is lineage for a *versioned calculation*: "this plate cost used this cost of milk powder on this date". Nothing versions calculations until M6, so the snapshot arrives with the thing that needs it, and until then there is one number and one place it comes from (`costing.py`) |
+| 2026-08-28 | **The mapping is proposed by machine and decided by a human, and the proposal threshold is deliberately high (0.85 on pack-stripped names)** | `matching.propose_ingredient` is the inverse of `snap_item`: snapping must never cross pack sizes, mapping must ignore them, because a 2.5 kg sack and a 5 kg sack are the same milk powder. The threshold is the safety property. A consultant approving dozens of rows in a row is exactly the person a usually-right suggestion will lead into a wrong merge, and a wrong merge changes the cost of every menu item above it with no photo to check against - the one failure in this product with no evidence trail. Measured on realistic names: identical stripped names score 1.00 and propose; "MILK PWDR NIDO" against "Rainbow Milk Powder" scores 0.55 and stays blank, so a person decides. A missed proposal costs somebody a search box; a wrong accepted one costs a number nobody can see is wrong. The mock catalog uses the same threshold, so a demo never shows behaviour the product does not have |
+| 2026-08-28 | **A pack whose contents nothing states is blocked, never estimated; the fix is a human conversion, stored append-only** | `units.py` has always refused to equate "6 ctn" with "6 pc", and M5 inherits the consequence: an invoice line priced per carton has no cost per kilo until somebody says what a carton holds. The alternative - assume a sensible weight - would put a plausible wrong number under every recipe using it, which is the exact failure mode the amber/green rule exists to prevent at extraction. So the pack shows "say what one pack holds" beside the money already spent on it, and a stated conversion outranks every printed reading. Conversions append rather than update, so correcting one never rewrites the cost an older calculation was based on (PRD §8) |
+| 2026-08-28 | **C6 extended with the raw-material surface** (`/api/raw-materials/queue`, `/api/ingredients`, `/api/ingredients/{id}`, `POST`/`DELETE` `/api/supplier-items/{id}/ingredient`, `POST /api/supplier-items/{id}/conversion`) | Same sanctioned-extension shape as the manual-invoice path (2026-08-23): the mapping screen needs a read and a write, and every route returns the updated pack so the queue never refetches after a click. Money crosses as strings and both the per-base and the per-kilo figure are computed server-side, because C4 keeps money math in Python and the screen is not allowed to multiply it. Mappings record `mapped_by = 'shared-token'`: with one shared bearer token we cannot know which human approved, and an honest placeholder beats an invented name - M7's auth fills the column properly |
 | WhatsApp channel (demo) | **Meta WhatsApp Cloud API, direct, free test number** | No BSP contract, up to 5 registered recipient phones, free-form replies free inside the 24-h window. Closest to production shape. Fallback if setup stalls >1 day: Twilio sandbox to unblock, swap later. |
 | WhatsApp channel (production) | Verified WABA + purchased sender + **utility**-category template for the daily brief | PRD §11. The legal-entity → Meta verification → WABA chain is slow and external — it starts early (M5) and runs in the background. |
 | Backend | **Python / FastAPI**, one small monolith | One process serves webhook + API + (initially) inline background tasks. Familiar stack, best SDK support for the extraction pipeline. |
@@ -573,37 +577,53 @@ them, not a rewrite of them.
       the transaction that made it. Done before the mapping screen rather than after it, because
       the first thing this milestone builds is an approval and there was nowhere to record one —
       `audit_events` had been scheduled for M7, two milestones after its first use
-- [ ] `ingredients` (tenant, name, base unit, category): the culinary concept, kept separate from
-      the purchasable pack, exactly as PRD §17–18 already specifies
-- [ ] `supplier_items.ingredient_id`: many packs from many suppliers → one raw material. The
-      existing fuzzy matcher **proposes**, a human approves, and the approval is recorded with its
-      actor — one `audit_events` row per merge and per rejection (C8, in place). **Never
-      auto-merged.** A wrong merge quietly corrupts the cost of every menu item
-      using that material, and unlike a bad extraction there is no photo to check it against
-- [ ] Mapping screen: unmapped supplier items ranked by money spent, approve or reject one
-      keystroke each — the same propose-then-confirm shape as the invoice review screen, so
-      nothing new is invented for it
-- [ ] **Cost per base unit, derived and traceable:** `unit_price ÷ parsed pack size` → AED per
-      gram / millilitre / piece, ex-VAT per C4's net-canonical rule, recorded per confirmed
-      invoice line so every cost drills back to a photo. `pack_size` reads 99% *on generated
-      invoices* (phase 1), which is what makes this arithmetic rather than guesswork
-- [ ] Container conversions, consultant-entered and versioned ("1 carton = 10 kg chicken"):
-      `units.py` deliberately refuses to guess what is inside a carton, so a human says once
-- [ ] An unparseable pack size is an **issue on a screen** (PRD §24), never a guessed number: it
-      blocks that material's cost and says which invoice line it came from
+- [x] `ingredients` (tenant, name, base unit, category): the culinary concept, kept separate from
+      the purchasable pack, exactly as PRD §17–18 already specifies (migration 0012)
+- [x] `supplier_items.ingredient_id`: many packs from many suppliers → one raw material. The
+      existing fuzzy matcher **proposes** (`matching.propose_ingredient`, pack sizes stripped —
+      the exact inverse of snapping's pack-size veto), a human approves, and the approval is
+      recorded on the row with its actor and time, **and as one `audit_events` row per merge and
+      per undo** (C8). **Never auto-merged.** A wrong merge quietly
+      corrupts the cost of every menu item using that material, and unlike a bad extraction there
+      is no photo to check it against
+- [x] Mapping screen at `/materials`: unmapped packs ranked by money spent, each showing the cost
+      per kilo it would contribute, with approve / choose / create-and-map in one click — the same
+      propose-then-confirm shape as the invoice review screen, so nothing new is invented for it
+- [x] **Cost per base unit, derived and traceable** (`costing.py`): AED per gram / millilitre /
+      piece, ex-VAT per C4's net-canonical rule, from the printed unit, the printed pack size, a
+      pack size inside the item name, or a stated conversion — in that order, with which one it
+      used shown beside every figure. The material's detail screen lists every confirmed price
+      behind its cost, each linking to the invoice it was read off
+- [x] Container conversions, consultant-entered and append-only versioned ("1 carton = 10 kg
+      chicken"): `units.py` deliberately refuses to guess what is inside a carton, so a human says
+      once and a later correction never rewrites the cost an older calculation used
+- [x] An unparseable pack size is an **issue on a screen** (PRD §24), never a guessed number: the
+      pack reads "say what one pack holds" beside the money already spent on it, and the fix is
+      the conversion box in the same row
+- [x] Latest purchase price per base unit (PRD §19), one per tenant — **derived, not stored**
+      (Decision Log 2026-08-28): one division over rows we already keep, so there is no second
+      copy to drift. Immutable cost snapshots arrive with M6's versioned calculations, which are
+      what actually need them. Per-branch cost waits for a chain that actually shows different
+      branch prices (§2 rule 8)
+- [ ] **Prerequisite for trusting these numbers: WP-19 and WP-26.** The layer is built ahead of
+      them (2026-08-28) but must not be leaned on until they close: a short read that drops a line,
 - [ ] **C9 applied to the first derived number:** a cost per base unit inherits the quality of the
       invoice line under it, so one built on a reconstructed total or a corrected quantity reads
       *estimated* and names the line that made it so — `provenance.asserted_fields()` is the read
-- [ ] `ingredient_costs`: latest purchase price per base unit (PRD §19), one per tenant.
-      Per-branch cost waits for a chain that actually shows different branch prices (§2 rule 8)
-- [ ] **Prerequisite, not optional: WP-19 and WP-26 close first.** A short read that drops a line,
       or a null total confirmed away by a bare OK, makes a material look cheaper than it is — and
-      once it is a cost per gram, nothing downstream can tell
+      once it is a cost per gram, nothing downstream can tell. **M6 costing does not start until
+      both are closed**
 - [ ] **Start the Meta production chain now (external, slow):** legal entity docs → Meta Business
       verification → WABA → purchased verified sender → submit daily-brief template in the
       **utility** category. Track status here: `[ ] entity  [ ] verification  [ ] WABA  [ ] sender  [ ] template`
 - **Done when:** milk powder bought from two suppliers in three pack sizes reads as one material
   at one price per kilo, and every figure inside that price drills to the invoice photo behind it.
+  ✅ **Proven end to end 2026-08-28** against real Postgres (`tests/test_raw_materials.py`): two
+  forwarded invoices from two suppliers, 2.5 kg and 5 kg packs, confirm to one material at one
+  price per kilo with both invoices reachable from it. Proven in a browser too, against the
+  mock catalog. **Not yet proven on a real chain's catalog** — the queue has only ever ranked
+  seeded and test data, and F6's real invoices are what will show whether printed names cluster
+  the way the matcher assumes.
 
 ### M6 — Recipes and menu costing (Week 6–7)
 The layer the landing page already sells: *"when an ingredient's price climbs, every item using it
@@ -767,6 +787,14 @@ pilot volume. Meta utility template cost applies only from M10 (verify live UAE 
 ## 13. Progress Log
 
 *(newest first — one line per session: date, what shipped, what's next)*
+
+- 2026-08-28 - **M5 raw materials: the layer that turns invoice lines into a cost per kilo is built, schema through screen.**
+  A cafeteria buys milk powder from two suppliers in three pack sizes. Until today that was three unrelated rows with three price histories, and nothing in the product could say what milk powder costs. Now it is one material at one price per kilo, and every figure inside that price links to the invoice photo it came from.
+  **What shipped:** `ingredients` and the pack-to-material mapping (migration 0012); `costing.py`, which turns a stored price into AED per gram, millilitre or piece and says which reading it used; `matching.propose_ingredient`, the deliberate inverse of item snapping - pack sizes stripped, because two sizes of the same thing are the same thing; the `/materials` screen, which ranks unmapped packs by **money spent** so the queue is worked in the order that matters; and container conversions for the packs nothing can cost without a human ("1 carton = 10 kg").
+  **Proven, not asserted:** 13 new end-to-end tests against real Postgres drive the whole path - two invoices forwarded, extracted, confirmed, mapped, costed, with both invoices reachable from the material - plus 17 unit tests over the cost arithmetic and 6 over the proposals. The backend suite is **300 green** (264 before today), the eval suite 59, both the way CI runs them. The screen was driven in a real browser end to end: create-and-map, a sibling proposal accepted, a blocked carton unblocked by stating what it holds, and the material's detail listing every price behind its cost.
+  **The judgement calls**, all four in the Decision Log: cost is derived rather than stored (the snapshot arrives with M6's versioned calculations, which are what need it); the proposal threshold is high on purpose, so an abbreviated brand name gets no suggestion and a person decides; an uncostable pack is blocked rather than estimated; and C6 gained the raw-material routes.
+  **The honest gap.** Yesterday's plan made WP-19 and WP-26 prerequisites of this milestone, and the layer was built ahead of them anyway. That is a real risk and it is now written into the M5 checklist rather than quietly dropped: a short read that loses a line, or a null total a bare `OK` confirmed away, makes a material look cheaper than it is, and once the number is a cost per gram nothing downstream can notice. **M6 costing does not start until both close.** The queue has also only ever ranked seeded and test data - F6's real invoices are what will show whether printed names cluster the way the matcher assumes.
+  Next: WP-19 and WP-26, then M6 (menu items, recipes with batch yields, plate cost and margin at menu price).
 
 - 2026-08-28 - **Provenance shipped: every stored number now records how it got there, and every human decision lands on the record.** Founder said yes to the harness review's three changes; all three are in, in front of M5 rather than delaying it.
   **What was wrong.** `extraction_runs` recorded the model's every move while nothing recorded a person's, so a total read off the page and a total the owner typed into WhatsApp because the paper was out of frame were the same number in the same column. Fine while every figure sits beside its photo; useless from M5, where it becomes a cost per gram three divisions away from anything you can look at.

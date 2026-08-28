@@ -294,6 +294,21 @@ def first_printed(text: str | None) -> str | None:
     return None if match is None else match.group(0).strip()
 
 
+def strip_pack_sizes(text: str | None) -> str:
+    """The item name with every pack size removed: "MILK PWDR 2.5KG NIDO" ->
+    "MILK PWDR NIDO".
+
+    Item snapping needs pack sizes and vetoes across them - a 5 kg bag and a
+    20 kg bag are different catalog rows at different prices. Raw-material
+    mapping needs the opposite: they are the same milk powder, and the pack
+    size is the one part of the name guaranteed to differ between the two rows
+    we are trying to put on one shelf (M5).
+    """
+    if not text:
+        return ""
+    return " ".join(_PACK_RE.sub(" ", text).split())
+
+
 def same_pack_size(left: str | None, right: str | None) -> bool:
     """Do two printed pack sizes describe the same pack? Unparseable on either
     side falls back to a normalized string comparison, so an unknown unit is

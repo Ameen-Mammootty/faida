@@ -1,6 +1,7 @@
 # Faida web
 
-The public waitlist landing page plus the review screen and invoice list (plan.md M3).
+The public waitlist landing page, the invoice review screen and list (plan.md M3), and the
+raw-material mapping screen (plan.md M5).
 Next.js App Router + TypeScript + Tailwind, deployable to Vercel untouched.
 
 ## Run it
@@ -22,8 +23,9 @@ FAIDA_API_URL=http://127.0.0.1:8000
 The FastAPI service persists normalized email addresses in `waitlist_signups` and gives new and duplicate signups the same response.
 The table has row-level security enabled with no public policy, making the endpoint write-only to anonymous visitors.
 
-With no invoice environment variables set, the invoice review experience runs in **mock mode**: an in-memory dataset of three invoices (all green, amber fields, cash hold) served through the same typed client the real API uses.
-Edits and confirms persist for the browser session and reset on reload.
+With no invoice environment variables set, the working screens run in **mock mode**: an in-memory dataset of three invoices (all green, amber fields, cash hold) and a catalog of seven purchasable packs, served through the same typed client the real API uses.
+Edits, confirms and mappings persist for the browser session and reset on reload.
+The mock catalog is deliberately the awkward one - milk powder from two suppliers in two pack sizes, a carton of chicken with nothing stated - and it never proposes a mapping more freely than the real matcher does.
 
 ## Talking to the real API
 

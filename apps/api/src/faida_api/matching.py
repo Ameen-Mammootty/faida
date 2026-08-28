@@ -29,6 +29,7 @@ the price alert.
 
 import re
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from decimal import Decimal
 from difflib import SequenceMatcher
 from typing import Any
@@ -122,3 +123,79 @@ def snap_item(items: Sequence[Row], raw_name: str) -> Row | None:
         if score > best_score:
             best, best_score = item, score
     return best if best_score >= SNAP_THRESHOLD else None
+
+
+# Ingredient proposals score names with pack sizes stripped, so the threshold
+# means something different from SNAP_THRESHOLD and gets its own constant.
+# It sits HIGH on purpose. This proposal is shown to a person who will approve
+# dozens in a row, and an approve button that is usually right is the most
+# reliable way to get a wrong merge approved - which corrupts the cost of every
+# menu item above it with no photo to check it against. A missed proposal costs
+# somebody a search box; a wrong accepted one costs a number nobody can see is
+# wrong. So: propose only near-certainties, and leave the rest blank.
+INGREDIENT_PROPOSAL_THRESHOLD = 0.85
+
+
+@dataclass(frozen=True)
+class IngredientProposal:
+    """A suggested raw material for an unmapped supplier item, and why. `via`
+    is the evidence shown beside the suggestion: 'ingredient' means the name
+    matched the material itself, 'sibling' means it matched another pack
+    somebody already mapped there - a stronger argument, and the one that
+    makes a catalog converge as it grows."""
+
+    ingredient_id: str
+    name: str
+    score: float
+    via: str  # 'ingredient' | 'sibling'
+    evidence: str
+
+
+def propose_ingredient(
+    ingredients: Sequence[Row],
+    mapped_items: Sequence[Row],
+    raw_name: str,
+) -> IngredientProposal | None:
+    """The raw material an unmapped supplier item most likely belongs to, or
+    None when nothing is near-certain.
+
+    Pack sizes are stripped from BOTH sides before scoring (`units.strip_pack_sizes`):
+    "Milk Powder 2.5kg" and "MILK PWDR 5KG NIDO" are the same material bought
+    in two sizes, and the pack size is the part of the name most likely to
+    differ. This is the exact inverse of `snap_item`'s pack-size veto, and the
+    two must never be collapsed into one function: one decides whether two
+    lines are the same *purchase*, this decides whether they are the same
+    *thing to cook with*.
+    """
+    stripped = units.strip_pack_sizes(raw_name)
+    if not stripped:
+        return None
+
+    best: IngredientProposal | None = None
+    for ingredient in ingredients:
+        score = _similarity(stripped, units.strip_pack_sizes(ingredient["name"]))
+        if best is None or score > best.score:
+            best = IngredientProposal(
+                ingredient_id=str(ingredient["id"]),
+                name=ingredient["name"],
+                score=score,
+                via="ingredient",
+                evidence=ingredient["name"],
+            )
+
+    for item in mapped_items:
+        if item["ingredient_id"] is None:
+            continue
+        score = _similarity(stripped, units.strip_pack_sizes(item["canonical_name"]))
+        if best is None or score > best.score:
+            best = IngredientProposal(
+                ingredient_id=str(item["ingredient_id"]),
+                name=item["ingredient_name"],
+                score=score,
+                via="sibling",
+                evidence=item["canonical_name"],
+            )
+
+    if best is None or best.score < INGREDIENT_PROPOSAL_THRESHOLD:
+        return None
+    return best
