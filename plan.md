@@ -780,6 +780,15 @@ pilot volume. Meta utility template cost applies only from M10 (verify live UAE 
 
 *(newest first — one line per session: date, what shipped, what's next)*
 
+- 2026-08-28 - **First real forward through the v3 pipeline: 18.7 s photo-to-reply, confirmed from chat in 5 s, and the first real C8 audit row - plus one finding: a USD invoice walked into AED price memory unlabeled.**
+  The founder forwarded Levant Specialty Foods FZCO LSF-EXP-260716-0098 (a PNG sent as a WhatsApp *document*, which the ingest handled): ack at +8 s, full reading at **+18.7 s** - under the ~20 s target, at prompt v3 with no repair round, 6.9 s model time, warm grammar.
+  The reply carried WP-27's "dated 16 Jul 2026" line live for the first time; all three lines green, 150+65+35 = 250.00 exclusive, every provenance field `extracted` by `model:claude-opus-5`.
+  "ok" confirmed it 2 s after arriving, the ack followed 3 s later, and `audit_events` now holds its first real row: `whatsapp:971509772702 | invoice.confirmed` - who confirmed, written in the same transaction as the confirm.
+  **The finding:** the invoice bills in **USD** and the confirm recorded 75.00 / 65.00 / 35.00 into `supplier_items.last_price`, which is a bare number with no currency dimension, on an AED tenant.
+  Harmless while a supplier always bills one currency (alerts compare that supplier's own history), but a supplier switching currency would fire nonsense alerts, and any M5 purchases roll-up would add these as if they were dirhams.
+  This is exactly the "tenant-currency mismatch amber" the old-platform review listed as a cheap fourth port (2026-08-24) and we declined; it now has a live occurrence. Founder call wanted: hold-and-ask on a currency that differs from the tenant's, or record the currency beside the price - before M5 makes these numbers load-bearing.
+  Next: unchanged - WP-26's bare-OK question, demo invoice curation, rehearsals, the six corpus images, the bilingual supplier gap, and now the currency question.
+
 - 2026-08-28 - **Migration 0011 applied to the live project; the C8 deploy-order debt is cleared.**
   Pre-flight confirmed the live schema at exactly 0010 (no `provenance` column, no `audit_events`, 4 invoice rows); 0011 then ran in one transaction and verified clean: `invoices.provenance` defaulting `{}` on all 4 existing rows, `audit_events` with both indexes, RLS enabled with zero policies per the 0001 convention.
   The risk window between the code push and this migration was never exercised - the last live job ran 2026-08-25 18:10 (the channel has been quiet), so nothing on master ever wrote against the old schema.
