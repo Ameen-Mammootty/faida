@@ -22,6 +22,14 @@ The chat grammar, in full (all keywords case-insensitive):
     total <number>                     correct the totals block
     tax <number>
     subtotal <number>
+    total <number> inc vat <rate>%     WP-26: the totals block is not on the
+    total <number> no vat              page and the sender is saying what it
+                                       would have said - <number> is the whole
+                                       invoice, with VAT inside it at <rate> or
+                                       with none charged. Stored as
+                                       `reconstructed` (C8), never as printed
+    currency <code>                    the invoice currency (WP-28); an ISO
+                                       code or a printed word ("dirhams")
     date <date>                        the invoice date (WP-25); parsed by the
                                        same day-first rules extraction uses
                                        ("5/7/26", "2026-07-05", "9 July 2026");
@@ -36,19 +44,27 @@ Numbers are unsigned decimals ("16", "4.50") - negatives, NaN, and anything
 else unparseable get the one clarify reply that shows the accepted forms:
 never a dead end, never silence. A date-shaped answer with no year ("date
 5/7") gets its own reply asking for the year, because parsing it any other
-way would be a guess (C3/WP-27).
+way would be a guess (C3/WP-27), and "inc vat" with no rate gets its own reply
+asking for the rate, for the same reason.
+
+A bare "OK" confirms an invoice with open ambers - the reply promised "or OK to
+confirm the rest" - but never one with no total (WP-26, founder call
+2026-08-28): a missing line quantity is a small hole, while the total is the
+invoice's headline number and M5 divides it into plate costs no photograph can
+check. That OK gets the totals question again, not a confirmation.
 """
 
 import datetime
 import re
 import zoneinfo
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Literal
 
 import asyncpg
 from pydantic import BaseModel, ConfigDict
 
 from .db import Database
+from .extraction.currency import normalize_currency
 from .extraction.dates import parse_printed_date
 from .extraction.pipeline import price_alerts
 from .extraction.schema import ExtractedInvoice, ExtractedLine
@@ -64,6 +80,8 @@ from .replies import (
     compose_disambiguation_reply,
     compose_invoice_reply,
     compose_line_out_of_range,
+    compose_total_needed_reply,
+    compose_vat_rate_reply,
 )
 
 # Branches carry their own timezone; this is the schema default, used when an
@@ -109,6 +127,43 @@ class TotalsEdit(BaseModel):
     value: Decimal
 
 
+class ReconstructedTotalEdit(BaseModel):
+    """ "total 930.00 inc vat 5%" / "total 930.00 no vat" - WP-26.
+
+    Not a correction of a misread number: the totals block was never in the
+    frame, so this is the sender telling us what the invoice adds up to. It
+    carries the tax with it, because the two facts arrive together and C4
+    cannot resolve the treatment from a total alone - `vat_rate` None means no
+    VAT was charged, and the tax stored is 0.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    value: Decimal
+    vat_rate: Decimal | None  # a fraction: 5% arrives as Decimal("0.05")
+
+    @property
+    def tax(self) -> Decimal:
+        """The VAT inside `value` at `vat_rate`, to the fil.
+
+        Arithmetic on an asserted fact, not a reading of the page - which is
+        exactly what the `reconstructed` origin labels. Stated as
+        total - total/(1+r) because the sender said the printed prices already
+        include the VAT, so the total is the gross figure."""
+        if self.vat_rate is None or self.vat_rate <= 0:
+            return Decimal("0.00")
+        net = self.value / (1 + self.vat_rate)
+        return (self.value - net).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+class CurrencyEdit(BaseModel):
+    """ "currency AED" - the invoice's own currency (WP-28), as an ISO code."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    value: str
+
+
 class DateEdit(BaseModel):
     """ "date 5/7/26" - the invoice date (WP-25), read by the same day-first
     rules extraction uses (extraction.dates)."""
@@ -136,7 +191,27 @@ class AmbiguousDateEdit(BaseModel):
     text: str
 
 
-Edit = LineFieldEdit | LineNameEdit | TotalsEdit | DateEdit | InvoiceNoEdit | AmbiguousDateEdit
+class MissingVatRateEdit(BaseModel):
+    """ "total 930 inc vat" - VAT is in there, but at what rate? Never applied,
+    for the same reason as an ambiguous date: the GCC prints five different
+    rates and picking one would be a guess stored as a fact."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    total: Decimal
+
+
+Edit = (
+    LineFieldEdit
+    | LineNameEdit
+    | TotalsEdit
+    | ReconstructedTotalEdit
+    | CurrencyEdit
+    | DateEdit
+    | InvoiceNoEdit
+    | AmbiguousDateEdit
+    | MissingVatRateEdit
+)
 
 
 class Confirm(BaseModel):
@@ -167,6 +242,18 @@ _LINE_EDIT_RE = re.compile(
     re.IGNORECASE,
 )
 _TOTALS_EDIT_RE = re.compile(r"(subtotal|total|tax)\s+(.+)", re.IGNORECASE)
+# WP-26: "total 930.00 inc vat 5%" / "total 930 including vat 5" / "total 930
+# no vat" / "total 930 without vat". The rate is optional in the pattern so a
+# rate-less "inc vat" can be *asked about* rather than silently rejected into
+# the generic clarify.
+_RECONSTRUCTED_TOTAL_RE = re.compile(
+    r"total\s+(\d+(?:\.\d+)?)\s+"
+    r"(?:(?P<inc>inc|incl|including|includes|with)\s+vat(?:\s+(?P<rate>\d+(?:\.\d+)?)\s*%?)?"
+    r"|(?P<none>no|zero|nil|without|excl|excluding)\s+vat)",
+    re.IGNORECASE,
+)
+_CURRENCY_EDIT_RE = re.compile(r"currency\s+(.+)", re.IGNORECASE)
+_ISO_CODE_RE = re.compile(r"[A-Za-z]{3}")
 _DATE_EDIT_RE = re.compile(r"(?:invoice\s+)?date\s+(.+)", re.IGNORECASE)
 _INVOICE_NO_EDIT_RE = re.compile(
     r"(?:invoice|inv)\.?\s*(?:no|number|num|#)\.?\s*:?\s*(.+)", re.IGNORECASE
@@ -246,6 +333,25 @@ def _parse_edit(segment: str) -> Edit | None:
     if number_edit is not None:
         value = number_edit.group(1).strip()
         return InvoiceNoEdit(value=value) if value else None
+    currency_edit = _CURRENCY_EDIT_RE.fullmatch(segment)
+    if currency_edit is not None:
+        return _parse_currency(currency_edit.group(1))
+    # Before the plain totals rule: "total 930 no vat" would otherwise reach
+    # _parse_number as "930 no vat" and clarify.
+    reconstructed = _RECONSTRUCTED_TOTAL_RE.fullmatch(segment)
+    if reconstructed is not None:
+        total = Decimal(reconstructed.group(1))
+        if reconstructed.group("none") is not None:
+            return ReconstructedTotalEdit(value=total, vat_rate=None)
+        rate = reconstructed.group("rate")
+        if rate is None:
+            return MissingVatRateEdit(total=total)
+        percent = Decimal(rate)
+        if not 0 <= percent < 100:
+            return None
+        if percent == 0:
+            return ReconstructedTotalEdit(value=total, vat_rate=None)
+        return ReconstructedTotalEdit(value=total, vat_rate=percent / Decimal("100"))
     totals_edit = _TOTALS_EDIT_RE.fullmatch(segment)
     if totals_edit is not None:
         number = _parse_number(totals_edit.group(2))
@@ -253,6 +359,18 @@ def _parse_edit(segment: str) -> Edit | None:
             return None
         return TotalsEdit(field=totals_edit.group(1).casefold(), value=number)
     return None
+
+
+def _parse_currency(text: str) -> CurrencyEdit | None:
+    """ "currency AED", "currency usd", "currency dirhams" - the printed word
+    goes through the same table the pipeline uses (extraction/currency.py), so
+    chat and extraction can never disagree about what "Dhs" means. Anything
+    that does not land on a three-letter code is refused rather than stored:
+    an invented currency is worse than a clarify."""
+    code = normalize_currency(text.strip())
+    if code is None or _ISO_CODE_RE.fullmatch(code) is None:
+        return None
+    return CurrencyEdit(value=code.upper())
 
 
 def _parse_number(text: str) -> Decimal | None:
@@ -271,19 +389,36 @@ def edited_field_keys(edits: list[Edit]) -> list[str]:
     keys: list[str] = []
     for edit in edits:
         if isinstance(edit, TotalsEdit):
-            key = edit.field
+            new_keys = [edit.field]
+        elif isinstance(edit, ReconstructedTotalEdit):
+            # Both, always: the sender asserted the totals block, and the tax
+            # is derived from the same sentence as the total.
+            new_keys = ["total", "tax"]
+        elif isinstance(edit, CurrencyEdit):
+            new_keys = ["currency"]
         elif isinstance(edit, DateEdit):
-            key = "invoice_date"
+            new_keys = ["invoice_date"]
         elif isinstance(edit, InvoiceNoEdit):
-            key = "invoice_no"
-        elif isinstance(edit, AmbiguousDateEdit):
-            raise ValueError("an ambiguous date is asked about, never applied")
+            new_keys = ["invoice_no"]
+        elif isinstance(edit, AmbiguousDateEdit | MissingVatRateEdit):
+            raise ValueError("an unanswerable edit is asked about, never applied")
         elif isinstance(edit, LineNameEdit):
-            key = line_key(edit.line_index, "raw_name")
+            new_keys = [line_key(edit.line_index, "raw_name")]
         else:
-            key = line_key(edit.line_index, edit.field)
-        if key not in keys:
-            keys.append(key)
+            new_keys = [line_key(edit.line_index, edit.field)]
+        keys.extend(key for key in new_keys if key not in keys)
+    return keys
+
+
+def reconstructed_field_keys(edits: list[Edit]) -> list[str]:
+    """The subset of `edited_field_keys` that no camera ever saw (C8's
+    `reconstructed`). A total the sender read off the page is a correction like
+    any other; a total assembled from "930 is the whole invoice, VAT included"
+    is not, and C9 has to be able to tell them apart four sums downstream."""
+    keys: list[str] = []
+    for edit in edits:
+        if isinstance(edit, ReconstructedTotalEdit):
+            keys.extend(key for key in ("total", "tax") if key not in keys)
     return keys
 
 
@@ -297,12 +432,17 @@ def apply_edits(invoice: ExtractedInvoice, edits: list[Edit]) -> ExtractedInvoic
     for edit in edits:
         if isinstance(edit, TotalsEdit):
             header[edit.field] = edit.value
+        elif isinstance(edit, ReconstructedTotalEdit):
+            header["total"] = edit.value
+            header["tax"] = edit.tax
+        elif isinstance(edit, CurrencyEdit):
+            header["currency"] = edit.value
         elif isinstance(edit, DateEdit):
             header["invoice_date"] = edit.value
         elif isinstance(edit, InvoiceNoEdit):
             header["invoice_no"] = edit.value
-        elif isinstance(edit, AmbiguousDateEdit):
-            raise ValueError("an ambiguous date is asked about, never applied")
+        elif isinstance(edit, AmbiguousDateEdit | MissingVatRateEdit):
+            raise ValueError("an unanswerable edit is asked about, never applied")
         elif isinstance(edit, LineNameEdit):
             lines[edit.line_index] = lines[edit.line_index].model_copy(
                 update={"raw_name": edit.name}
@@ -363,11 +503,15 @@ async def handle_inbound_text(
     if parsed is None:
         return REPLY_CLARIFY
     if isinstance(parsed, Corrections):
-        # A date with no year cannot apply anywhere - ask for the year before
-        # any invoice-picking, since no pick would make "5/7" a date.
+        # An answer that is still missing a fact cannot apply anywhere - ask
+        # for the missing half before any invoice-picking, since no pick would
+        # make "5/7" a date or "inc vat" a rate.
         ambiguous = next((e for e in parsed.edits if isinstance(e, AmbiguousDateEdit)), None)
         if ambiguous is not None:
             return compose_ambiguous_date_reply(ambiguous.text)
+        rateless = next((e for e in parsed.edits if isinstance(e, MissingVatRateEdit)), None)
+        if rateless is not None:
+            return compose_vat_rate_reply(rateless.total)
 
     if parsed.selector is not None:
         if not 1 <= parsed.selector <= len(pending):
@@ -381,8 +525,12 @@ async def handle_inbound_text(
         target = pending[0]
 
     if isinstance(parsed, Confirm):
-        # Ambers still open confirm too - the closing promised "OK to
-        # confirm the rest".
+        if target["total"] is None:
+            # WP-26: open ambers still confirm - the closing promised "OK to
+            # confirm the rest" - but a missing total is not one of them. It is
+            # the invoice's headline number, invisible to everything
+            # downstream, and by M5 it is a plate cost nobody can check.
+            return await _total_needed(db, str(target["id"]))
         await db.confirm_invoice(str(target["id"]), actor=chat_actor(from_phone))
         await db.record_confirmed_prices(str(target["id"]))
         return _ack(target)
@@ -435,19 +583,31 @@ async def _apply_correction(
         ]
         validation = validation.model_copy(update={"lines": line_checks})
 
-    alerts = price_alerts(invoice, snapped_items)
+    tenant_currency = invoice_row["tenant_currency"]
+    alerts = price_alerts(invoice, snapped_items, tenant_currency=tenant_currency)
     confidence = {
         "document": validation.document.model_dump(mode="json"),
         "lines": [check.status.value for check in line_checks],
     }
     corrected = edited_field_keys(edits)
+    now = datetime.datetime.now(datetime.UTC)
     provenance = mark(
         invoice_row["provenance"] or {},
         corrected,
         origin=origin,
         actor=actor,
-        at=datetime.datetime.now(datetime.UTC),
+        at=now,
     )
+    # WP-26: within one message, a total read off the page and a total
+    # assembled from answers are both edits and only one of them is checkable
+    # against a photo. The reconstructed subset is re-stamped over the door's
+    # own origin, so "line 2 qty 16, total 930 inc vat 5%" records each half
+    # honestly (C8; C9 reads the difference from M5 onward).
+    reconstructed = reconstructed_field_keys(edits)
+    if reconstructed:
+        provenance = mark(
+            provenance, reconstructed, origin=Origin.RECONSTRUCTED, actor=actor, at=now
+        )
     lines = [
         {
             "position": line_rows[index]["position"],
@@ -466,9 +626,17 @@ async def _apply_correction(
         invoice_id,
         invoice_no=invoice.invoice_no,
         invoice_date=invoice.invoice_date,
+        currency=invoice.currency,
         subtotal=invoice.subtotal,
         tax=invoice.tax,
         total=invoice.total,
+        # Re-derived by C4 from the corrected arithmetic, exactly as the
+        # pipeline derives them on the way in. They have to travel with the
+        # correction: the confirm path reads `invoices.tax_treatment` to record
+        # price memory net of VAT, so a stale one would store a gross price
+        # under a net baseline - the mixed-basis alert C4 exists to prevent.
+        tax_treatment=validation.document.tax_treatment,
+        vat_rate=validation.document.vat_rate,
         confidence=confidence,
         provenance=provenance,
         lines=lines,
@@ -476,12 +644,28 @@ async def _apply_correction(
         corrected_fields=corrected,
         message_id=message_id,
     )
-    return compose_invoice_reply(invoice, validation, alerts)
+    return compose_invoice_reply(invoice, validation, alerts, tenant_currency=tenant_currency)
+
+
+async def _total_needed(db: Database, invoice_id: str) -> str:
+    """WP-26's answer to an OK on a totals-less invoice: the same question
+    again. The line sum comes from re-running the shipped validator over the
+    stored rows rather than summing them here - C4's rule for when a line sum
+    exists at all (never, if one line total is unreadable) has one
+    implementation, and this is not it."""
+    invoice_row = await db.get_invoice(invoice_id)
+    line_rows = await db.get_invoice_lines(invoice_id)
+    invoice = _to_extracted(invoice_row, line_rows)
+    validation = validate_invoice(invoice)
+    return compose_total_needed_reply(validation.document.line_sum, invoice.currency)
 
 
 def _ack(invoice_row: asyncpg.Record) -> str:
     return compose_confirmation_ack(
-        invoice_row["supplier_name"], invoice_row["currency"], invoice_row["total"]
+        invoice_row["supplier_name"],
+        invoice_row["currency"],
+        invoice_row["total"],
+        tenant_currency=invoice_row["tenant_currency"],
     )
 
 

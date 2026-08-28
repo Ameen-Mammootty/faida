@@ -17,6 +17,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
+from .extraction.currency import currency_differs
 from .extraction.schema import ExtractedInvoice, ExtractedLine
 from .extraction.validate import CheckStatus, FieldStatus, LineCheck, ValidationResult
 
@@ -53,6 +54,12 @@ CLOSING_ALL_GREEN = "Reply OK to confirm."
 CLOSING_WITH_AMBERS = "Reply with fixes (like: line 4 qty 16) or OK to confirm the rest."
 # Cash hold (WP-24, PRD §21): the distinction is captured now; approval UI is M7.
 CASH_HOLD_NOTE = "This one is marked cash, so it needs the owner's approval before it's recorded."
+# WP-26: with no total there is nothing to confirm. A missing line quantity is
+# a small hole; the total is the invoice's headline number, and M5 divides it
+# into plate costs where no photograph can catch a null. So the closing does
+# not offer the "or OK to confirm the rest" that recorded a null total live on
+# 2026-08-25 - it asks for the one number the invoice cannot be filed without.
+CLOSING_TOTAL_NEEDED = "Send me the total and I'll finish this one off."
 
 OVERFLOW_LINE = "...and {count} more to check on the review screen."
 
@@ -64,6 +71,19 @@ QUESTION_MISSING_DATE = (
 )
 QUESTION_MISSING_INVOICE_NO = (
     "I couldn't read the invoice number - what does it say? (reply like: invoice no 4471)"
+)
+
+# WP-28: the invoice is billed in money that is not the tenant's. Stated
+# rather than guessed at, because both readings are possible - a genuine
+# foreign-currency supplier, or a misread currency word - and only the sender
+# knows which. Either way the consequence is named in the same breath: price
+# memory is one bare number per item with no currency beside it, so a foreign
+# invoice stays out of it (plan.md §2 rule 8 - per-row currency waits for a
+# customer who needs multi-currency history).
+QUESTION_CURRENCY_MISMATCH = (
+    "This invoice is in {invoice_currency}, not your usual {tenant_currency} - is that right? "
+    "I'll record it as printed and keep it out of your price history. "
+    "(if it's a misread, reply: currency {tenant_currency})"
 )
 
 _MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
@@ -119,22 +139,91 @@ def summary_line(invoice: ExtractedInvoice) -> str:
 
 
 def compose_invoice_reply(
-    invoice: ExtractedInvoice, validation: ValidationResult, alerts: list[PriceAlert]
+    invoice: ExtractedInvoice,
+    validation: ValidationResult,
+    alerts: list[PriceAlert],
+    *,
+    tenant_currency: str | None = None,
 ) -> str:
     """The extraction reply: summary, price alerts, at most
     MAX_AMBER_QUESTIONS amber-field questions (most material first, overflow
-    deferred to the review screen), then the confirm prompt."""
-    closing = CLOSING_WITH_AMBERS if _has_ambers(invoice, validation) else CLOSING_ALL_GREEN
-    return _compose(invoice, validation, alerts, closing)
+    deferred to the review screen), then the confirm prompt.
+
+    `tenant_currency` is the money this tenant keeps its books in (WP-28); a
+    mismatch adds its own question. None means "don't check" - the manual and
+    test paths that have no tenant in hand."""
+    if invoice.total is None:
+        closing = CLOSING_TOTAL_NEEDED
+    elif _has_ambers(invoice, validation, tenant_currency):
+        closing = CLOSING_WITH_AMBERS
+    else:
+        closing = CLOSING_ALL_GREEN
+    return _compose(invoice, validation, alerts, closing, tenant_currency)
 
 
 def compose_cash_hold_reply(
-    invoice: ExtractedInvoice, validation: ValidationResult, alerts: list[PriceAlert]
+    invoice: ExtractedInvoice,
+    validation: ValidationResult,
+    alerts: list[PriceAlert],
+    *,
+    tenant_currency: str | None = None,
 ) -> str:
     """The extraction reply for a cash invoice held as needs_review (WP-24):
     same body, but the closing notes the owner-approval hold instead of
-    inviting an OK - a cash invoice cannot confirm from chat."""
-    return _compose(invoice, validation, alerts, CASH_HOLD_NOTE)
+    inviting an OK - a cash invoice cannot confirm from chat. The hold outranks
+    WP-26's missing-total closing: this invoice is not confirmable from the
+    phone at all, and the total question is already in the body."""
+    return _compose(invoice, validation, alerts, CASH_HOLD_NOTE, tenant_currency)
+
+
+def compose_missing_total_question(line_sum: Decimal | None, currency: str | None) -> str:
+    """WP-26: the totals block was off the page (live, 2026-08-25).
+
+    Show the one figure we can prove - the line sum, which every line's own
+    arithmetic already checked - and ask the two facts C4 derives from a total
+    and cannot derive without one: whether that figure is the whole invoice,
+    and whether the prices already carry VAT. The answer forms are spelled out
+    because the sender has to reach for one of them; a total assembled from
+    them is stored as `reconstructed` (C8), never as a number read off a page.
+    """
+    if line_sum is None:
+        # Some line total is unreadable too, so there is no sum worth showing:
+        # ask for the printed figure plainly.
+        return "I couldn't read the invoice total - what does it say? (reply like: total 976.50)"
+    return f"I couldn't read the invoice total. {_total_facts(line_sum, currency)}"
+
+
+def compose_total_needed_reply(line_sum: Decimal | None, currency: str | None) -> str:
+    """The answer to a bare "OK" on an invoice with no total (WP-26): never
+    silence, never the generic clarify, and never a confirmation - the same
+    question again, with the reason it is being asked again."""
+    if line_sum is None:
+        return (
+            "I can't record this one without the invoice total - what does it say? "
+            "(reply like: total 976.50)"
+        )
+    return f"I can't record this one without the invoice total.\n{_total_facts(line_sum, currency)}"
+
+
+def compose_vat_rate_reply(total: Decimal) -> str:
+    """ "total 930 inc vat" says VAT is in there without saying how much. The
+    GCC prints five different rates, so the rate is asked for rather than
+    assumed (the same rule as the year in an ambiguous date)."""
+    amount = _money(total)
+    return (
+        f'"inc vat" needs the rate before I can work out the VAT - send it like: '
+        f"total {amount} inc vat 5%."
+    )
+
+
+def _total_facts(line_sum: Decimal, currency: str | None) -> str:
+    amount = _money(line_sum)
+    return (
+        f"The lines come to {currency or DEFAULT_CURRENCY} {amount}. "
+        "Is that the whole invoice, VAT included? "
+        f"(reply like: total {amount} inc vat 5%, or total {amount} no vat, "
+        "or the printed total: total 976.50)"
+    )
 
 
 # --- internals ------------------------------------------------------------
@@ -145,10 +234,11 @@ def _compose(
     validation: ValidationResult,
     alerts: list[PriceAlert],
     closing: str,
+    tenant_currency: str | None = None,
 ) -> str:
     parts = [summary_line(invoice)]
     parts.extend(render_price_alert(alert) for alert in alerts)
-    questions = _amber_questions(invoice, validation)
+    questions = _amber_questions(invoice, validation, tenant_currency)
     parts.extend(questions[:MAX_AMBER_QUESTIONS])
     overflow = len(questions) - MAX_AMBER_QUESTIONS
     if overflow > 0:
@@ -157,13 +247,18 @@ def _compose(
     return "\n".join(parts)
 
 
-def _has_ambers(invoice: ExtractedInvoice, validation: ValidationResult) -> bool:
-    """Anything the reply will ask about - amber checks or a missing required
-    header field (WP-25) - flips the closing to the fixes form."""
-    return bool(_amber_questions(invoice, validation))
+def _has_ambers(
+    invoice: ExtractedInvoice, validation: ValidationResult, tenant_currency: str | None = None
+) -> bool:
+    """Anything the reply will ask about - amber checks, a missing required
+    header field (WP-25), or a foreign currency (WP-28) - flips the closing to
+    the fixes form."""
+    return bool(_amber_questions(invoice, validation, tenant_currency))
 
 
-def _amber_questions(invoice: ExtractedInvoice, validation: ValidationResult) -> list[str]:
+def _amber_questions(
+    invoice: ExtractedInvoice, validation: ValidationResult, tenant_currency: str | None = None
+) -> list[str]:
     """One specific question per amber item, most material first: the
     document totals block before lines; lines by line_total descending, an
     unreadable line_total treated as most material of all."""
@@ -171,6 +266,15 @@ def _amber_questions(invoice: ExtractedInvoice, validation: ValidationResult) ->
     document_question = _document_question(invoice, validation)
     if document_question is not None:
         questions.append(document_question)
+    # WP-28: ranked directly under the totals block and above the required
+    # fields, because it is the one question whose answer decides whether this
+    # invoice's prices are allowed to move the baseline at all.
+    if currency_differs(invoice.currency, tenant_currency):
+        questions.append(
+            QUESTION_CURRENCY_MISMATCH.format(
+                invoice_currency=invoice.currency, tenant_currency=tenant_currency
+            )
+        )
     # WP-25: required-field asks sit above the line questions so they can
     # never overflow to the review screen - one document question plus these
     # two is exactly the cap. A null date or number must always be asked for.
@@ -196,7 +300,10 @@ def _document_question(invoice: ExtractedInvoice, validation: ValidationResult) 
     if doc.status is FieldStatus.GREEN:
         return None
     if invoice.total is None:
-        return "I couldn't read the invoice total - what does it say?"
+        # WP-26: the line sum is the one figure that can be shown here, and
+        # validate.py already computed it under C4's rule (None the moment any
+        # line total is unreadable) - so there is one implementation of it.
+        return compose_missing_total_question(doc.line_sum, invoice.currency)
     if doc.arith is CheckStatus.FAILED and doc.expected is not None and doc.extracted is not None:
         # C4 tries both a VAT-exclusive and a VAT-inclusive reading before
         # reaching here, so neither fits and we must not assert which one the
@@ -275,7 +382,7 @@ def _qty(qty: Decimal) -> str:
 REPLY_CLARIFY = (
     "Sorry, I didn't get that. Reply OK to confirm, or send fixes like: "
     "line 1 qty 16, line 2 price 4.50, line 1 name Basmati Rice, total 745.76, "
-    "date 5/7/26, or invoice no 4471."
+    "date 5/7/26, invoice no 4471, or currency AED."
 )
 
 DISAMBIGUATION_FOOTER = "Reply with the number first, like: 1 OK, or 1 line 2 qty 16."
@@ -301,16 +408,33 @@ class PendingInvoice(BaseModel):
     received_at: datetime.datetime
 
 
+PRICE_MEMORY_WATCHING = "I'll watch these prices for you."
+# WP-28: the promise above would be a lie on a foreign-currency invoice, whose
+# prices never reach the baseline. Saying so is the whole point - a hold the
+# sender is not told about is indistinguishable from a bug.
+PRICE_MEMORY_HELD = (
+    "It's in {invoice_currency}, not {tenant_currency}, so I've kept it out of your price history."
+)
+
+
 def compose_confirmation_ack(
-    supplier_name: str | None, currency: str | None, total: Decimal | None
+    supplier_name: str | None,
+    currency: str | None,
+    total: Decimal | None,
+    *,
+    tenant_currency: str | None = None,
 ) -> str:
     """The receipt moment: what the "OK" bought. Supplier and total when
     readable, with the same fallbacks the summary line uses."""
     supplier = supplier_name or "supplier unknown"
+    if currency_differs(currency, tenant_currency):
+        tail = PRICE_MEMORY_HELD.format(invoice_currency=currency, tenant_currency=tenant_currency)
+    else:
+        tail = PRICE_MEMORY_WATCHING
     if total is None:
-        return f"Confirmed - {supplier} invoice recorded. I'll watch these prices for you."
+        return f"Confirmed - {supplier} invoice recorded. {tail}"
     money = f"{currency or DEFAULT_CURRENCY} {_money(total)}"
-    return f"Confirmed - {supplier}, {money} recorded. I'll watch these prices for you."
+    return f"Confirmed - {supplier}, {money} recorded. {tail}"
 
 
 def compose_disambiguation_reply(pending: list[PendingInvoice]) -> str:

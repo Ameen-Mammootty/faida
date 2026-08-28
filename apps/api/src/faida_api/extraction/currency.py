@@ -95,3 +95,21 @@ def normalize_currency(raw: str | None) -> str | None:
         if token in _ALIASES:
             return _ALIASES[token]
     return raw.strip()
+
+
+def currency_differs(invoice_currency: str | None, tenant_currency: str | None) -> bool:
+    """Is this invoice billed in something other than the tenant's own money?
+
+    The one comparison behind the WP-28 hold: the reply asks about it, price
+    memory refuses it, and the ack says so. `supplier_items.last_price` is a
+    bare number with no currency dimension, so a USD line landing in an AED
+    tenant's baseline is not a small inaccuracy - it is a number that means
+    nothing, and by M5 it is a cost per gram that means nothing.
+
+    Either side unknown is not a mismatch: an unreadable currency is a
+    different problem (the invoice defaults to the tenant's on the way in),
+    and inventing a hold from a null would stop invoices for no reason.
+    """
+    if not invoice_currency or not tenant_currency:
+        return False
+    return invoice_currency.strip().upper() != tenant_currency.strip().upper()

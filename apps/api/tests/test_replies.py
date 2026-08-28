@@ -20,6 +20,7 @@ from faida_api.extraction.validate import (
 from faida_api.replies import (
     CASH_HOLD_NOTE,
     CLOSING_ALL_GREEN,
+    CLOSING_TOTAL_NEEDED,
     CLOSING_WITH_AMBERS,
     DISAMBIGUATION_FOOTER,
     OVERFLOW_LINE,
@@ -40,6 +41,8 @@ from faida_api.replies import (
     compose_disambiguation_reply,
     compose_invoice_reply,
     compose_line_out_of_range,
+    compose_total_needed_reply,
+    compose_vat_rate_reply,
     render_price_alert,
     summary_line,
 )
@@ -211,12 +214,17 @@ def test_default_currency_is_aed_and_invoice_currency_wins():
 
 
 def test_unknown_supplier_and_unreadable_total_fallbacks():
+    # WP-26: with the total off the page, the reply shows the line sum, asks
+    # the two facts C4 cannot derive without a total, and does NOT offer "or
+    # OK to confirm the rest" - the offer that recorded a null total live.
     invoice = _invoice([_line("1", "10.00", "10.00")], supplier=None)
     reply = _reply(invoice)
     assert reply.splitlines() == [
         "Read it: supplier unknown, 1 line, total unreadable, dated 5 Jul 2026.",
-        "I couldn't read the invoice total - what does it say?",
-        CLOSING_WITH_AMBERS,
+        "I couldn't read the invoice total. The lines come to AED 10.00. Is that the whole "
+        "invoice, VAT included? (reply like: total 10.00 inc vat 5%, or total 10.00 no vat, "
+        "or the printed total: total 976.50)",
+        CLOSING_TOTAL_NEEDED,
     ]
 
 
@@ -492,7 +500,7 @@ def test_clarify_exact_and_confirm_flow_messages_have_no_em_dashes():
     assert REPLY_CLARIFY == (
         "Sorry, I didn't get that. Reply OK to confirm, or send fixes like: "
         "line 1 qty 16, line 2 price 4.50, line 1 name Basmati Rice, total 745.76, "
-        "date 5/7/26, or invoice no 4471."
+        "date 5/7/26, invoice no 4471, or currency AED."
     )
     samples = [
         REPLY_CLARIFY,
@@ -511,4 +519,145 @@ def test_clarify_exact_and_confirm_flow_messages_have_no_em_dashes():
         ),
     ]
     for text in samples:
+        assert "—" not in text and "–" not in text
+
+
+# --- WP-26: the totals block is off the page --------------------------------
+
+
+def test_missing_total_question_shows_the_line_sum_and_asks_the_two_facts():
+    # The two facts C4 derives from a total and cannot derive without one:
+    # whether the line sum is the whole invoice, and whether it carries VAT.
+    invoice = _invoice([_line("2", "30.00", "60.00"), _line("4", "10.00", "40.00")])
+    reply = _reply(invoice)
+    assert reply.splitlines() == [
+        "Read it: Gulf Foods Trading, 2 lines, total unreadable, dated 5 Jul 2026.",
+        "I couldn't read the invoice total. The lines come to AED 100.00. Is that the whole "
+        "invoice, VAT included? (reply like: total 100.00 inc vat 5%, or total 100.00 no vat, "
+        "or the printed total: total 976.50)",
+        CLOSING_TOTAL_NEEDED,
+    ]
+
+
+def test_missing_total_with_an_unreadable_line_asks_plainly_with_no_sum():
+    # C4 says there is no line sum the moment one line total is unreadable, so
+    # there is no figure worth showing - and the line question carries the gap.
+    invoice = _invoice([_line("2", "30.00", "60.00"), _line("4", "10.00", None)])
+    questions = _reply(invoice).splitlines()
+    assert questions[1] == (
+        "I couldn't read the invoice total - what does it say? (reply like: total 976.50)"
+    )
+    assert questions[-1] == CLOSING_TOTAL_NEEDED
+
+
+def test_missing_total_closing_never_offers_ok():
+    # The live 2026-08-25 failure in one assertion: the reply that recorded a
+    # null total offered "or OK to confirm the rest".
+    invoice = _invoice([_line("2", "30.00", "60.00")])
+    assert CLOSING_WITH_AMBERS not in _reply(invoice)
+    assert CLOSING_ALL_GREEN not in _reply(invoice)
+
+
+def test_total_needed_reply_restates_the_question_with_its_reason():
+    assert compose_total_needed_reply(Decimal("930"), "AED").splitlines() == [
+        "I can't record this one without the invoice total.",
+        "The lines come to AED 930.00. Is that the whole invoice, VAT included? "
+        "(reply like: total 930.00 inc vat 5%, or total 930.00 no vat, "
+        "or the printed total: total 976.50)",
+    ]
+    assert compose_total_needed_reply(None, "AED") == (
+        "I can't record this one without the invoice total - what does it say? "
+        "(reply like: total 976.50)"
+    )
+
+
+def test_vat_rate_reply_asks_for_the_rate_rather_than_assuming_one():
+    assert compose_vat_rate_reply(Decimal("930")) == (
+        '"inc vat" needs the rate before I can work out the VAT - send it like: '
+        "total 930.00 inc vat 5%."
+    )
+
+
+def test_a_reconstructed_total_reads_like_any_other_total_in_the_summary():
+    # The reply does not label it: the record of how it got there is C8's job
+    # (provenance), and the screen is where it has to look reconstructed.
+    invoice = _invoice([_line("2", "30.00", "60.00")], total="60.00", tax="0")
+    assert summary_line(invoice) == (
+        "Read it: Gulf Foods Trading, 1 line, total AED 60.00, dated 5 Jul 2026."
+    )
+
+
+# --- WP-28: an invoice billed in someone else's money -----------------------
+
+
+def test_currency_mismatch_asks_and_names_the_consequence():
+    invoice = _invoice([_line("2", "30.00", "60.00")], currency="USD", total="60.00", tax="0")
+    reply = compose_invoice_reply(invoice, validate_invoice(invoice), [], tenant_currency="AED")
+    assert reply.splitlines() == [
+        "Read it: Gulf Foods Trading, 1 line, total USD 60.00, dated 5 Jul 2026.",
+        "This invoice is in USD, not your usual AED - is that right? I'll record it as printed "
+        "and keep it out of your price history. (if it's a misread, reply: currency AED)",
+        CLOSING_WITH_AMBERS,
+    ]
+
+
+def test_matching_currency_reply_is_byte_identical_to_not_checking_at_all():
+    # The acceptance test for every invoice that is not foreign: today's reply,
+    # unchanged, byte for byte.
+    invoice = _green_invoice()
+    validation = validate_invoice(invoice)
+    unchecked = compose_invoice_reply(invoice, validation, [])
+    assert compose_invoice_reply(invoice, validation, [], tenant_currency="AED") == unchecked
+    assert unchecked.endswith(CLOSING_ALL_GREEN)
+
+
+def test_currency_question_ranks_under_the_totals_block_and_over_the_required_fields():
+    invoice = _invoice(
+        [_line("2", "30.00", "60.00")],
+        currency="USD",
+        invoice_no=None,
+        invoice_date=None,
+    )
+    questions = compose_invoice_reply(
+        invoice, validate_invoice(invoice), [], tenant_currency="AED"
+    ).splitlines()[1:-1]
+    assert questions[0].startswith("I couldn't read the invoice total.")
+    assert questions[1].startswith("This invoice is in USD")
+    assert questions[2] == QUESTION_MISSING_DATE
+    # Four header questions is one over the cap, and the invoice number is the
+    # one that gives way - the review screen still shows it.
+    assert questions[3] == OVERFLOW_LINE.format(count=1)
+
+
+def test_unknown_tenant_currency_asks_nothing():
+    invoice = _invoice([_line("2", "30.00", "60.00")], currency="USD", total="60.00", tax="0")
+    assert compose_invoice_reply(invoice, validate_invoice(invoice), []) == (
+        "Read it: Gulf Foods Trading, 1 line, total USD 60.00, dated 5 Jul 2026.\n"
+        f"{CLOSING_ALL_GREEN}"
+    )
+
+
+def test_confirmation_ack_says_a_foreign_invoice_stayed_out_of_price_history():
+    assert compose_confirmation_ack(
+        "Levant Specialty Foods FZCO", "USD", Decimal("250.00"), tenant_currency="AED"
+    ) == (
+        "Confirmed - Levant Specialty Foods FZCO, USD 250.00 recorded. It's in USD, not AED, "
+        "so I've kept it out of your price history."
+    )
+    # Same currency: the promise stands, byte for byte.
+    assert compose_confirmation_ack(
+        "Gulf Foods", "AED", Decimal("745.76"), tenant_currency="AED"
+    ) == compose_confirmation_ack("Gulf Foods", "AED", Decimal("745.76"))
+
+
+def test_no_em_or_en_dashes_in_the_wp26_and_wp28_messages():
+    invoice = _invoice([_line("2", "30.00", "60.00")], currency="USD")
+    for text in [
+        CLOSING_TOTAL_NEEDED,
+        compose_invoice_reply(invoice, validate_invoice(invoice), [], tenant_currency="AED"),
+        compose_total_needed_reply(Decimal("930"), "AED"),
+        compose_total_needed_reply(None, None),
+        compose_vat_rate_reply(Decimal("930")),
+        compose_confirmation_ack("Levant", "USD", Decimal("250"), tenant_currency="AED"),
+    ]:
         assert "—" not in text and "–" not in text

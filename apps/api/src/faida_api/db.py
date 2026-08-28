@@ -9,6 +9,7 @@ from typing import Any
 import asyncpg
 
 from .contracts import InvoiceStatus
+from .extraction.currency import currency_differs
 from .matching import clean_name
 
 RETRY_LIMIT = 3
@@ -159,6 +160,12 @@ class Database:
 
     async def default_tenant_id(self) -> str | None:
         return await self.pool.fetchval("select id::text from tenants order by created_at limit 1")
+
+    async def tenant_currency(self, tenant_id: str) -> str | None:
+        """The money this tenant keeps its books in (plan.md §4). WP-28 asks
+        about an invoice billed in anything else and keeps it out of price
+        memory."""
+        return await self.pool.fetchval("select currency from tenants where id = $1", tenant_id)
 
     async def get_branch(self, branch_id: str) -> asyncpg.Record | None:
         return await self.pool.fetchrow(
@@ -465,9 +472,10 @@ class Database:
         async with self.pool.acquire() as conn, conn.transaction():
             invoice = await conn.fetchrow(
                 """
-                select tenant_id, supplier_id, supplier_name, tax_treatment, tax, total,
-                       discount_total
-                from invoices where id = $1
+                select i.tenant_id, i.supplier_id, i.supplier_name, i.tax_treatment, i.tax,
+                       i.total, i.discount_total, i.currency, t.currency as tenant_currency
+                from invoices i join tenants t on t.id = i.tenant_id
+                where i.id = $1
                 """,
                 invoice_id,
             )
@@ -491,6 +499,15 @@ class Database:
                 await conn.execute(
                     "update invoices set supplier_id = $2 where id = $1", invoice_id, supplier_id
                 )
+
+            # WP-28: the baseline never mixes currency bases. supplier_items.
+            # last_price is one bare number with no currency beside it, so a
+            # USD line recorded against an AED tenant is not slightly wrong, it
+            # is meaningless - and by M5 it is a meaningless cost per gram. The
+            # supplier link above is kept (identity, not price), and the ack
+            # says plainly that the prices were held back.
+            if currency_differs(invoice["currency"], invoice["tenant_currency"]):
+                return
 
             # C4 net-canonical price memory: an inclusive invoice's unit prices
             # are gross, so they are converted once here before they reach the
@@ -589,8 +606,10 @@ class Database:
         appear here - chat cannot confirm them (M7 owns approvals)."""
         return await self.pool.fetch(
             """
-            select i.id, i.supplier_name, i.currency, i.total, i.created_at, b.timezone
+            select i.id, i.supplier_name, i.currency, i.total, i.created_at, b.timezone,
+                   t.currency as tenant_currency
             from invoices i
+            join tenants t on t.id = i.tenant_id
             join documents d on d.id = i.document_id
             join wa_messages m on m.message_id = d.wa_message_id and m.direction = 'in'
             left join branches b on b.id = i.branch_id
@@ -610,8 +629,10 @@ class Database:
         and its duplicate-OK re-ack."""
         return await self.pool.fetchrow(
             """
-            select i.id, i.supplier_name, i.currency, i.total, i.confirmed_at
+            select i.id, i.supplier_name, i.currency, i.total, i.confirmed_at,
+                   t.currency as tenant_currency
             from invoices i
+            join tenants t on t.id = i.tenant_id
             join documents d on d.id = i.document_id
             join wa_messages m on m.message_id = d.wa_message_id and m.direction = 'in'
             where m.from_phone = $1
@@ -625,11 +646,14 @@ class Database:
         )
 
     async def get_invoice(self, invoice_id: str) -> asyncpg.Record | None:
-        """One invoice row plus its branch name (C6 detail shows names)."""
+        """One invoice row plus its branch name (C6 detail shows names) and the
+        tenant's own currency (WP-28: the reply, the ack and price memory all
+        have to know whether this invoice is billed in the tenant's money)."""
         return await self.pool.fetchrow(
             """
-            select i.*, b.name as branch_name
+            select i.*, b.name as branch_name, t.currency as tenant_currency
             from invoices i
+            join tenants t on t.id = i.tenant_id
             left join branches b on b.id = i.branch_id
             where i.id = $1
             """,
@@ -665,12 +689,19 @@ class Database:
     async def _confirm(self, invoice_id: str, *, from_status: str, actor: str) -> bool:
         """The one confirm write, shared by both paths: flip the status if it
         is still the expected one, and record who did it in the same
-        transaction. One gate, one trail entry, whichever door it came in."""
+        transaction. One gate, one trail entry, whichever door it came in.
+
+        `total is not null` sits in the where clause as an invariant, not as
+        the user-facing rule (WP-26): both callers check the total first so
+        they can say *why* they are refusing. It is repeated here because a
+        third caller written a year from now would otherwise reopen the hole
+        this closed - an invoice recorded with no headline number, which M5
+        divides into plate costs no photograph can check."""
         async with self.pool.acquire() as conn, conn.transaction():
             row = await conn.fetchrow(
                 """
                 update invoices set status = 'confirmed', confirmed_at = now()
-                where id = $1 and status = $2
+                where id = $1 and status = $2 and total is not null
                 returning tenant_id::text
                 """,
                 invoice_id,
@@ -703,13 +734,23 @@ class Database:
         lines: list[dict],
         actor: str,
         corrected_fields: list[str],
+        currency: str | None,
+        tax_treatment: str | None,
+        vat_rate: Decimal | None,
         message_id: str | None = None,
     ) -> None:
-        """Persist a correction (WP-21/WP-25), one transaction: header fields
-        (invoice number and date included), refreshed confidence and C8
-        provenance on the invoice, and per line the fields the grammar can
-        change plus the re-derived checks. Status is not touched - corrections
-        keep the invoice awaiting_confirm (C1).
+        """Persist a correction (WP-21/WP-25/WP-26/WP-28), one transaction:
+        header fields (invoice number, date and currency included), the C4
+        treatment re-derived from the corrected arithmetic, refreshed
+        confidence and C8 provenance on the invoice, and per line the fields
+        the grammar can change plus the re-derived checks. Status is not
+        touched - corrections keep the invoice awaiting_confirm (C1).
+
+        `tax_treatment`/`vat_rate` travel with every correction because the
+        confirm path reads them to record price memory net of VAT: a total
+        supplied after the fact can turn an unresolvable invoice into an
+        inclusive one, and a stale treatment beside a new total would store a
+        gross price under a net baseline.
 
         `actor` and `corrected_fields` write the audit event in the same
         transaction, so a stored correction and the note of who made it cannot
@@ -719,7 +760,8 @@ class Database:
                 """
                 update invoices
                 set invoice_no = $2, invoice_date = $3, subtotal = $4, tax = $5, total = $6,
-                    confidence = $7, provenance = $8
+                    confidence = $7, provenance = $8,
+                    currency = coalesce($9, currency), tax_treatment = $10, vat_rate = $11
                 where id = $1
                 returning tenant_id::text
                 """,
@@ -731,6 +773,9 @@ class Database:
                 total,
                 confidence,
                 provenance,
+                currency,
+                tax_treatment,
+                vat_rate,
             )
             await conn.executemany(
                 """

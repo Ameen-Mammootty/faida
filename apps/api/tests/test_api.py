@@ -7,6 +7,7 @@ transport layer, exactly like the flow tests, then read and mutated through
 the API the way the review screen will.
 """
 
+import datetime
 import hashlib
 import uuid
 from decimal import Decimal
@@ -18,11 +19,13 @@ from fastapi import FastAPI
 from faida_api.api import UPLOAD_MAX_BYTES
 from faida_api.api import router as api_router
 from faida_api.config import Settings
+from faida_api.confirm import handle_inbound_text
 from faida_api.storage import Storage
 from faida_api.wa import WhatsAppClient
 from faida_api.webhook import router as webhook_router
 
 from .conftest import (
+    DEMO_PHONE,
     DEMO_TENANT_ID,
     FakeExtraction,
     FakeMeta,
@@ -776,3 +779,83 @@ async def test_price_history_is_ascending_with_the_item_header(api, db):
 
     resp = await client.get(f"/api/supplier-items/{uuid.uuid4()}/prices", headers=AUTH)
     assert resp.status_code == 404
+
+
+# --- WP-26 on the review screen (the same door) -----------------------------
+
+
+@requires_db
+async def test_wp26_screen_cannot_confirm_a_null_total_and_the_patch_unblocks_it(api, db):
+    """The founder's rule is about the invoice, not the door: an invoice with
+    no total is not recordable from chat or from the screen. The screen can
+    supply one through the same _apply_correction the chat grammar uses, and
+    then it confirms."""
+    app, client, *_ = api
+    totals_less = good_invoice().model_copy(update={"subtotal": None, "tax": None, "total": None})
+    invoice = await extracted_invoice(api, db, totals_less)
+    assert invoice["total"] is None
+
+    blocked = await client.post(f"/api/invoices/{invoice['id']}/confirm", headers=AUTH)
+    assert blocked.status_code == 409
+    assert blocked.json()["detail"] == "invoice has no total; set the total before confirming"
+    assert await db.pool.fetchval("select count(*) from supplier_item_prices") == 0
+
+    resp = await client.patch(
+        f"/api/invoices/{invoice['id']}/fields",
+        headers=AUTH,
+        json={
+            "corrections": [
+                {"line_index": None, "field": "total", "value": "710.25"},
+                {"line_index": None, "field": "tax", "value": "0"},
+            ]
+        },
+    )
+    assert resp.status_code == 200
+    detail = resp.json()
+    assert detail["total"] == "710.25"
+    assert detail["confidence"]["document"]["status"] == "green"
+    # C8: typed on the screen, so `corrected_screen` - the screen cannot tell
+    # a figure read off the paper from one worked out, and neither claim is
+    # made. Only the chat reconstruction grammar says `reconstructed`.
+    assert detail["provenance"]["total"]["origin"] == "corrected_screen"
+    assert detail["provenance"]["total"]["actor"] == "console"
+
+    resp = await client.post(f"/api/invoices/{invoice['id']}/confirm", headers=AUTH)
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "confirmed"
+    assert await db.pool.fetchval("select count(*) from supplier_item_prices") == 2
+
+
+@requires_db
+async def test_wp26_screen_shows_a_reconstructed_total_as_reconstructed(api, db):
+    # C6's provenance extension exists so the screen can show this; the API
+    # side of it is the assertion here (the web app renders it already).
+    app, client, *_ = api
+    totals_less = good_invoice().model_copy(update={"subtotal": None, "tax": None, "total": None})
+    invoice = await extracted_invoice(api, db, totals_less)
+    await apply_chat_correction(db, "total 710.25 inc vat 5%")
+
+    detail = (await client.get(f"/api/invoices/{invoice['id']}", headers=AUTH)).json()
+    assert detail["total"] == "710.25"
+    assert detail["provenance"]["total"]["origin"] == "reconstructed"
+    assert detail["provenance"]["tax"]["origin"] == "reconstructed"
+    assert detail["provenance"]["lines.0.unit_price"]["origin"] == "extracted"
+
+
+@requires_db
+async def test_wp28_screen_confirm_of_a_foreign_invoice_leaves_price_memory_alone(api, db):
+    app, client, *_ = api
+    usd = good_invoice().model_copy(update={"currency": "USD"})
+    invoice = await extracted_invoice(api, db, usd)
+
+    resp = await client.post(f"/api/invoices/{invoice['id']}/confirm", headers=AUTH)
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "confirmed"
+    assert await db.pool.fetchval("select count(*) from supplier_item_prices") == 0
+    assert await db.pool.fetchval("select count(*) from supplier_items") == 0
+
+
+async def apply_chat_correction(db, text: str) -> str:
+    """One chat correction through its own front door, so a screen test can set
+    up state the chat grammar owns (WP-26's reconstruction)."""
+    return await handle_inbound_text(db, DEMO_PHONE, text, datetime.datetime.now(datetime.UTC))

@@ -20,13 +20,18 @@ from faida_api.confirm import (
     AmbiguousDateEdit,
     Confirm,
     Corrections,
+    CurrencyEdit,
     DateEdit,
     InvoiceNoEdit,
     LineFieldEdit,
     LineNameEdit,
+    MissingVatRateEdit,
+    ReconstructedTotalEdit,
     TotalsEdit,
     apply_edits,
+    edited_field_keys,
     parse_reply,
+    reconstructed_field_keys,
 )
 from faida_api.extraction.schema import ExtractedInvoice, ExtractedLine, LineKind
 from faida_api.replies import (
@@ -35,6 +40,8 @@ from faida_api.replies import (
     REPLY_CLARIFY,
     REPLY_TEXT_ONBOARDING,
     compose_ambiguous_date_reply,
+    compose_total_needed_reply,
+    compose_vat_rate_reply,
 )
 from faida_api.storage import Storage
 from faida_api.wa import WhatsAppClient
@@ -50,7 +57,13 @@ from .conftest import (
     requires_db,
     wa_image_payload,
 )
-from .test_extraction_flow import drain_jobs, good_invoice, invoice_result, outbound_bodies
+from .test_extraction_flow import (
+    drain_jobs,
+    good_invoice,
+    invoice_result,
+    outbound_bodies,
+    seed_supplier_with_items,
+)
 
 # --- parser: confirms -------------------------------------------------------
 
@@ -786,3 +799,331 @@ async def test_correction_keeps_discount_and_charge_lines_in_validation(api, db)
     assert "don't add up" not in reply
     assert "doesn't match" not in reply
     assert reply.endswith("Reply OK to confirm.")
+
+
+# --- parser: WP-26 reconstruction and WP-28 currency ------------------------
+
+
+def test_parse_reconstructed_total_with_a_rate():
+    for text in [
+        "total 930.00 inc vat 5%",
+        "total 930.00 incl vat 5%",
+        "total 930.00 including vat 5",
+        "TOTAL 930.00 With VAT 5 %",
+    ]:
+        assert parse_reply(text) == Corrections(
+            selector=None,
+            edits=[ReconstructedTotalEdit(value=Decimal("930.00"), vat_rate=Decimal("0.05"))],
+        ), text
+
+
+def test_parse_reconstructed_total_without_vat():
+    for text in [
+        "total 930.00 no vat",
+        "total 930.00 without vat",
+        "total 930.00 zero vat",
+        "total 930.00 excluding vat",
+        "total 930.00 inc vat 0%",
+    ]:
+        assert parse_reply(text) == Corrections(
+            selector=None, edits=[ReconstructedTotalEdit(value=Decimal("930.00"), vat_rate=None)]
+        ), text
+
+
+def test_reconstructed_total_carries_the_vat_inside_it():
+    inclusive = ReconstructedTotalEdit(value=Decimal("710.25"), vat_rate=Decimal("0.05"))
+    assert inclusive.tax == Decimal("33.82")  # 710.25 - 710.25/1.05, to the fil
+    assert ReconstructedTotalEdit(value=Decimal("710.25"), vat_rate=None).tax == Decimal("0.00")
+
+
+def test_parse_inc_vat_without_a_rate_asks_rather_than_guessing():
+    assert parse_reply("total 930 inc vat") == Corrections(
+        selector=None, edits=[MissingVatRateEdit(total=Decimal("930"))]
+    )
+
+
+def test_a_printed_total_stays_an_ordinary_totals_edit():
+    # Read off the page: a correction, not a reconstruction (C8 tells them
+    # apart, and only this one is checkable against the photo).
+    assert parse_reply("total 976.50") == Corrections(
+        selector=None, edits=[TotalsEdit(field="total", value=Decimal("976.50"))]
+    )
+
+
+def test_parse_currency_accepts_codes_and_printed_words():
+    for text, expected in [
+        ("currency AED", "AED"),
+        ("currency usd", "USD"),
+        ("currency dirhams", "AED"),
+        ("Currency Dhs.", "AED"),
+    ]:
+        assert parse_reply(text) == Corrections(
+            selector=None, edits=[CurrencyEdit(value=expected)]
+        ), text
+
+
+def test_parse_currency_refuses_anything_that_is_not_a_code():
+    # An invented currency is worse than a clarify.
+    for text in ["currency dollars", "currency 5", "currency united states dollar"]:
+        assert parse_reply(text) is None, text
+
+
+def test_reconstruction_marks_both_total_and_tax_and_only_those():
+    edits = [
+        LineFieldEdit(line_index=0, field="qty", value=Decimal("12")),
+        ReconstructedTotalEdit(value=Decimal("710.25"), vat_rate=Decimal("0.05")),
+    ]
+    assert edited_field_keys(edits) == ["lines.0.qty", "total", "tax"]
+    assert reconstructed_field_keys(edits) == ["total", "tax"]
+    # A total read off the page is nobody's reconstruction.
+    assert reconstructed_field_keys([TotalsEdit(field="total", value=Decimal("976.50"))]) == []
+
+
+def test_apply_reconstructed_total_and_currency():
+    invoice = ExtractedInvoice(
+        supplier_name="Artisan Bakehouse LLC",
+        currency="USD",
+        lines=[
+            ExtractedLine(
+                raw_name="Sourdough Loaf",
+                qty=Decimal("10"),
+                unit_price=Decimal("14.00"),
+                line_total=Decimal("140.00"),
+            )
+        ],
+    )
+    applied = apply_edits(
+        invoice,
+        [
+            ReconstructedTotalEdit(value=Decimal("140.00"), vat_rate=Decimal("0.05")),
+            CurrencyEdit(value="AED"),
+        ],
+    )
+    assert applied.total == Decimal("140.00")
+    assert applied.tax == Decimal("6.67")
+    assert applied.currency == "AED"
+    assert invoice.total is None and invoice.currency == "USD"  # input untouched
+
+
+# --- e2e: WP-26, a totals block that was never in the frame ------------------
+
+
+def totals_less_invoice() -> ExtractedInvoice:
+    """The 2026-08-25 live shape: every line reads green, and the totals block
+    is off the page (Artisan Bakehouse ABL-INV-260709-0517)."""
+    return good_invoice().model_copy(update={"subtotal": None, "tax": None, "total": None})
+
+
+@requires_db
+async def test_wp26_a_totals_less_invoice_is_reconstructed_by_asking(api, db):
+    app, client, *_ = api
+    await post_webhook(client, wa_image_payload())
+    await drain_jobs(db, app, FakeExtraction(result=invoice_result(totals_less_invoice())))
+
+    # The reply shows the line sum and asks the two facts - and does not offer
+    # the "or OK to confirm the rest" that recorded a null total live.
+    reply = (await outbound_bodies(db))[-1]
+    assert reply.splitlines() == [
+        "Read it: Gulf Foods Trading LLC, 2 lines, total unreadable, dated 20 Aug 2026.",
+        "I couldn't read the invoice total. The lines come to AED 710.25. Is that the whole "
+        "invoice, VAT included? (reply like: total 710.25 inc vat 5%, or total 710.25 no vat, "
+        "or the printed total: total 976.50)",
+        "Send me the total and I'll finish this one off.",
+    ]
+
+    # A bare OK does not confirm: the same question again, never silence and
+    # never the generic clarify.
+    await post_webhook(client, wa_text_payload("OK", message_id="wamid.ok1"))
+    await drain_jobs(db, app, None)
+    invoice = await db.pool.fetchrow("select * from invoices")
+    assert invoice["status"] == "awaiting_confirm"
+    assert invoice["total"] is None
+    assert invoice["confirmed_at"] is None
+    assert (await outbound_bodies(db))[-1] == compose_total_needed_reply(Decimal("710.25"), "AED")
+    assert (await db.pool.fetchval("select count(*) from supplier_item_prices")) == 0
+
+    # "inc vat" with no rate asks for the rate rather than picking one.
+    await post_webhook(client, wa_text_payload("total 710.25 inc vat", message_id="wamid.rate"))
+    await drain_jobs(db, app, None)
+    assert (await outbound_bodies(db))[-1] == compose_vat_rate_reply(Decimal("710.25"))
+    assert (await db.pool.fetchval("select total from invoices")) is None
+
+    # The answer lands: the total is stored, the VAT with it, and C4 resolves
+    # the treatment it could not derive without a total.
+    await post_webhook(client, wa_text_payload("total 710.25 inc vat 5%", message_id="wamid.rec"))
+    await drain_jobs(db, app, None)
+    invoice = await db.pool.fetchrow("select * from invoices")
+    assert invoice["total"] == Decimal("710.25")
+    assert invoice["tax"] == Decimal("33.82")
+    assert invoice["tax_treatment"] == "inclusive"
+    assert invoice["vat_rate"] == Decimal("0.0500")
+    assert invoice["confidence"]["document"]["status"] == "green"
+
+    # C8: reconstructed, not extracted - the whole point. Every field the
+    # sender did not touch keeps the origin it had.
+    provenance = invoice["provenance"]
+    assert provenance["total"]["origin"] == "reconstructed"
+    assert provenance["tax"]["origin"] == "reconstructed"
+    assert provenance["total"]["actor"] == f"whatsapp:{DEMO_PHONE}"
+    assert provenance["lines.0.qty"]["origin"] == "extracted"
+    assert provenance["invoice_no"]["origin"] == "extracted"
+
+    # The reply is now the ordinary all-green one, and OK confirms.
+    assert (await outbound_bodies(db))[-1].splitlines() == [
+        "Read it: Gulf Foods Trading LLC, 2 lines, total AED 710.25, dated 20 Aug 2026.",
+        "Reply OK to confirm.",
+    ]
+    await post_webhook(client, wa_text_payload("ok", message_id="wamid.ok2"))
+    await drain_jobs(db, app, None)
+    invoice = await db.pool.fetchrow("select * from invoices")
+    assert invoice["status"] == "confirmed"
+    assert (await outbound_bodies(db))[-1] == (
+        "Confirmed - Gulf Foods Trading LLC, AED 710.25 recorded. I'll watch these prices for you."
+    )
+    # C4 net-canonical: the reconstruction said the prices carry VAT, so price
+    # memory records them ex-VAT - the treatment travelled with the correction.
+    prices = await db.pool.fetch("select price from supplier_item_prices order by price")
+    assert [row["price"] for row in prices] == [Decimal("17.857"), Decimal("51.905")]
+
+
+@requires_db
+async def test_wp26_no_vat_reconstruction_reconciles_and_records_as_printed(api, db):
+    app, client, *_ = api
+    await post_webhook(client, wa_image_payload())
+    await drain_jobs(db, app, FakeExtraction(result=invoice_result(totals_less_invoice())))
+
+    await post_webhook(client, wa_text_payload("total 710.25 no vat", message_id="wamid.rec"))
+    await drain_jobs(db, app, None)
+    invoice = await db.pool.fetchrow("select * from invoices")
+    assert invoice["total"] == Decimal("710.25")
+    assert invoice["tax"] == Decimal("0.00")
+    assert invoice["tax_treatment"] == "exclusive"
+    assert invoice["provenance"]["total"]["origin"] == "reconstructed"
+
+    await post_webhook(client, wa_text_payload("ok", message_id="wamid.ok"))
+    await drain_jobs(db, app, None)
+    prices = await db.pool.fetch("select price from supplier_item_prices order by price")
+    assert [row["price"] for row in prices] == [Decimal("18.750"), Decimal("54.500")]
+
+
+@requires_db
+async def test_wp26_a_total_read_off_the_page_is_a_correction_not_a_reconstruction(api, db):
+    app, client, *_ = api
+    await post_webhook(client, wa_image_payload())
+    await drain_jobs(db, app, FakeExtraction(result=invoice_result(totals_less_invoice())))
+
+    # The sender can read the printed total after all: ordinary chat grammar.
+    await post_webhook(client, wa_text_payload("total 745.76", message_id="wamid.fix"))
+    await drain_jobs(db, app, None)
+    invoice = await db.pool.fetchrow("select * from invoices")
+    assert invoice["total"] == Decimal("745.76")
+    assert invoice["provenance"]["total"]["origin"] == "corrected_chat"
+    # 710.25 + no tax != 745.76, so the totals question comes back rather than
+    # anything being quietly reconciled - the tax is off the page too.
+    assert "The totals don't add up" in (await outbound_bodies(db))[-1]
+
+    await post_webhook(client, wa_text_payload("tax 35.51", message_id="wamid.tax"))
+    await drain_jobs(db, app, None)
+    invoice = await db.pool.fetchrow("select * from invoices")
+    assert invoice["confidence"]["document"]["status"] == "green"
+    assert invoice["provenance"]["tax"]["origin"] == "corrected_chat"
+
+
+# --- e2e: WP-28, an invoice billed in someone else's money ------------------
+
+
+def usd_invoice() -> ExtractedInvoice:
+    """The 2026-08-28 live shape: Levant Specialty Foods FZCO, billed in USD
+    to an AED tenant."""
+    return good_invoice().model_copy(update={"currency": "USD"})
+
+
+@requires_db
+async def test_wp28_a_usd_invoice_is_asked_about_and_kept_out_of_price_memory(api, db):
+    app, client, *_ = api
+    await post_webhook(client, wa_image_payload())
+    await drain_jobs(db, app, FakeExtraction(result=invoice_result(usd_invoice())))
+
+    assert (await outbound_bodies(db))[-1].splitlines() == [
+        "Read it: Gulf Foods Trading LLC, 2 lines, total USD 745.76, dated 20 Aug 2026.",
+        "This invoice is in USD, not your usual AED - is that right? I'll record it as printed "
+        "and keep it out of your price history. (if it's a misread, reply: currency AED)",
+        "Reply with fixes (like: line 4 qty 16) or OK to confirm the rest.",
+    ]
+
+    # Confirming is allowed - the invoice itself is real and stores as printed.
+    await post_webhook(client, wa_text_payload("OK", message_id="wamid.ok1"))
+    await drain_jobs(db, app, None)
+    invoice = await db.pool.fetchrow("select * from invoices")
+    assert invoice["status"] == "confirmed"
+    assert invoice["currency"] == "USD"
+    assert invoice["total"] == Decimal("745.76")
+
+    # But the baseline never mixes currency bases: no items, no observations.
+    assert (await db.pool.fetchval("select count(*) from supplier_items")) == 0
+    assert (await db.pool.fetchval("select count(*) from supplier_item_prices")) == 0
+    # The supplier itself is identity, not price, and is still recorded.
+    assert (await db.pool.fetchval("select name from suppliers")) == "Gulf Foods Trading LLC"
+    # And the ack says so, rather than promising to watch prices it dropped.
+    assert (await outbound_bodies(db))[-1] == (
+        "Confirmed - Gulf Foods Trading LLC, USD 745.76 recorded. It's in USD, not AED, "
+        "so I've kept it out of your price history."
+    )
+
+
+@requires_db
+async def test_wp28_an_aed_invoice_replies_exactly_as_before(api, db):
+    # The regression guard for every ordinary invoice: byte-identical.
+    app, client, *_ = api
+    await post_webhook(client, wa_image_payload())
+    await drain_jobs(db, app, FakeExtraction(result=invoice_result(good_invoice())))
+    assert (await outbound_bodies(db))[-1] == (
+        "Read it: Gulf Foods Trading LLC, 2 lines, total AED 745.76, dated 20 Aug 2026.\n"
+        "Reply OK to confirm."
+    )
+    await post_webhook(client, wa_text_payload("OK", message_id="wamid.ok1"))
+    await drain_jobs(db, app, None)
+    assert (await outbound_bodies(db))[-1] == ACK_GULF
+
+
+@requires_db
+async def test_wp28_a_misread_currency_is_corrected_from_chat_and_prices_flow_again(api, db):
+    app, client, *_ = api
+    await post_webhook(client, wa_image_payload())
+    await drain_jobs(db, app, FakeExtraction(result=invoice_result(usd_invoice())))
+
+    await post_webhook(client, wa_text_payload("currency AED", message_id="wamid.cur"))
+    await drain_jobs(db, app, None)
+    invoice = await db.pool.fetchrow("select * from invoices")
+    assert invoice["currency"] == "AED"
+    assert invoice["provenance"]["currency"]["origin"] == "corrected_chat"
+    reply = (await outbound_bodies(db))[-1]
+    assert "not your usual AED" not in reply
+    assert reply.endswith("Reply OK to confirm.")
+
+    await post_webhook(client, wa_text_payload("OK", message_id="wamid.ok1"))
+    await drain_jobs(db, app, None)
+    assert (await outbound_bodies(db))[-1] == ACK_GULF
+    prices = await db.pool.fetch("select price from supplier_item_prices order by price")
+    assert [row["price"] for row in prices] == [Decimal("18.750"), Decimal("54.500")]
+
+
+@requires_db
+async def test_wp28_a_foreign_invoice_raises_no_price_alerts(api, db):
+    # The demo's money moment must never subtract two different currencies.
+    app, client, *_ = api
+    await seed_supplier_with_items(
+        db, [{"canonical_name": "MILK PWDR 2.5KG NIDO", "last_price": Decimal("40.00")}]
+    )
+    await post_webhook(client, wa_image_payload())
+    await drain_jobs(db, app, FakeExtraction(result=invoice_result(usd_invoice())))
+    reply = (await outbound_bodies(db))[-1]
+    assert "since your last purchase" not in reply
+    assert "not your usual AED" in reply
+
+    # The same invoice in the tenant's own money does alert.
+    await post_webhook(client, wa_image_payload(message_id="wamid.in2"))
+    await drain_jobs(db, app, FakeExtraction(result=invoice_result(good_invoice())))
+    assert (
+        "up AED 14.50 (40.00 to 54.50) since your last purchase." in (await outbound_bodies(db))[-1]
+    )

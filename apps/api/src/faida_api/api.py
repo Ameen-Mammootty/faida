@@ -327,6 +327,14 @@ async def confirm_invoice(invoice_id: uuid.UUID, request: Request) -> dict:
     invoice = await db.get_invoice(str(invoice_id))
     if invoice is None:
         raise HTTPException(status_code=404, detail="invoice not found")
+    if invoice["total"] is None:
+        # WP-26, the same rule the chat "OK" obeys: an invoice with no total is
+        # not recordable from any door. The screen can supply one - PATCH takes
+        # 'total' - so this is a step, not a wall.
+        raise HTTPException(
+            status_code=409,
+            detail="invoice has no total; set the total before confirming",
+        )
 
     if invoice["status"] == InvoiceStatus.AWAITING_CONFIRM:
         confirmed = await db.confirm_invoice(str(invoice_id), actor=CONSOLE_ACTOR)

@@ -31,6 +31,7 @@ from ..replies import (
 from ..storage import Storage
 from ..wa import WhatsAppClient
 from .constants import PRICE_ALERT_MIN_ABS, PRICE_ALERT_MIN_PCT
+from .currency import currency_differs
 from .normalize import normalize_extracted
 from .provider import ExtractionProvider, ProviderUsage
 from .repair import repair_invoice
@@ -207,7 +208,11 @@ async def _persist_extracted(
         # The composer sees exactly what persists, snapped flags included.
         validation = validation.model_copy(update={"lines": line_checks})
 
-    alerts = price_alerts(invoice, snapped_items)
+    # WP-28: the tenant's own currency decides two things at once - whether
+    # the reply asks about this invoice's currency, and whether comparing its
+    # prices to a baseline means anything at all.
+    tenant_currency = await db.tenant_currency(str(doc["tenant_id"]))
+    alerts = price_alerts(invoice, snapped_items, tenant_currency=tenant_currency)
 
     # Derived confidence, never self-reported (plan.md §5 layer 5): the
     # document-level check plus the per-line green/amber statuses.
@@ -259,10 +264,12 @@ async def _persist_extracted(
     # insert takes the post-transition status directly).
     if invoice.payment_kind == "cash":
         status = InvoiceStatus.NEEDS_REVIEW
-        reply = compose_cash_hold_reply(invoice, validation, alerts)
+        reply = compose_cash_hold_reply(
+            invoice, validation, alerts, tenant_currency=tenant_currency
+        )
     else:
         status = InvoiceStatus.AWAITING_CONFIRM
-        reply = compose_invoice_reply(invoice, validation, alerts)
+        reply = compose_invoice_reply(invoice, validation, alerts, tenant_currency=tenant_currency)
 
     started = time.monotonic()
     await db.insert_draft_invoice(
@@ -303,13 +310,26 @@ async def _persist_extracted(
     return reply
 
 
-def price_alerts(invoice: ExtractedInvoice, snapped_items: list[Row | None]) -> list[PriceAlert]:
+def price_alerts(
+    invoice: ExtractedInvoice,
+    snapped_items: list[Row | None],
+    *,
+    tenant_currency: str | None = None,
+) -> list[PriceAlert]:
     """WP-23 (plan.md §6 M2, the demo's money moment): one alert per snapped
     line whose extracted unit_price moved from the item's last_price by both
     >= PRICE_ALERT_MIN_ABS and >= PRICE_ALERT_MIN_PCT of it - either
     direction, falling prices are signal too. Ordered by absolute delta
     descending. The baseline itself moves only on confirm
-    (Database.record_confirmed_prices), never here."""
+    (Database.record_confirmed_prices), never here.
+
+    WP-28: an invoice billed in another currency raises no alerts at all.
+    The baseline is a bare number in the tenant's money, so "USD 75 against a
+    baseline of AED 50" is not a price rise, it is two different questions
+    subtracted from each other - and this is the one message the demo asks to
+    be trusted on."""
+    if currency_differs(invoice.currency, tenant_currency):
+        return []
     alerts: list[PriceAlert] = []
     for line, item in zip(invoice.lines, snapped_items, strict=True):
         if item is None or line.unit_price is None or item["last_price"] is None:
