@@ -26,9 +26,15 @@ async def lifespan(app: FastAPI):
     await app.state.db.connect()
     app.state.wa = WhatsAppClient(settings)
     app.state.storage = Storage(settings)
-    # None without a key: extract jobs then fail into plan.md §5 layer 6 while
-    # ingest and (from M3) upload + manual entry keep working.
-    app.state.provider = build_provider(settings.anthropic_api_key)
+    # None without the selected provider's key: extract jobs then fail into
+    # plan.md §5 layer 6 while ingest and (from M3) upload + manual entry keep
+    # working. Gemini 3 Flash by default; EXTRACTION_PROVIDER=anthropic swaps
+    # back (2026-08-29 Decision Log).
+    app.state.provider = build_provider(
+        settings.extraction_provider,
+        anthropic_api_key=settings.anthropic_api_key,
+        gemini_api_key=settings.gemini_api_key,
+    )
 
     stop = asyncio.Event()
     worker_task: asyncio.Task | None = None

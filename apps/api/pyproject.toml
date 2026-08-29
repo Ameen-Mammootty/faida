@@ -4,6 +4,9 @@ version = "0.1.0"
 description = "Faida backend: WhatsApp webhook, extraction pipeline, API"
 requires-python = ">=3.11"
 dependencies = [
+    # google-genai serves the shipped default (Gemini 3 Flash); anthropic
+    # stays for the configured fallback (2026-08-29 Decision Log).
+    "google-genai>=1.0",
     "anthropic>=1.0",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",

@@ -43,18 +43,34 @@ from .validate import validate_invoice
 logger = logging.getLogger(__name__)
 
 
-def build_provider(anthropic_api_key: str) -> ExtractionProvider | None:
-    """Provider wiring for main.py: the Anthropic implementation when a key is
-    configured (passed explicitly, no env magic), else None - extract jobs then
-    raise and land in the failure path. The SDK import stays inside this
-    package (C3)."""
-    if not anthropic_api_key:
-        return None
-    import anthropic
+def build_provider(
+    provider: str, *, anthropic_api_key: str = "", gemini_api_key: str = ""
+) -> ExtractionProvider | None:
+    """Provider wiring for main.py (provider decision 2026-08-29, Decision
+    Log): "gemini" is Gemini 3 Flash, the shipped default; "anthropic" is
+    Claude Opus 5, the configured fallback - EXTRACTION_PROVIDER swaps back
+    without a deploy. Keys are passed explicitly, no env magic; the selected
+    provider without its key yields None - extract jobs then raise and land in
+    the failure path. An unknown name raises at boot, loudly, because a typo
+    that silently disabled extraction would look identical to a missing key.
+    SDK imports stay inside this package (C3)."""
+    if provider == "gemini":
+        if not gemini_api_key:
+            return None
+        from google import genai
 
-    from .anthropic_provider import AnthropicExtractionProvider
+        from .gemini_provider import GeminiExtractionProvider
 
-    return AnthropicExtractionProvider(anthropic.AsyncAnthropic(api_key=anthropic_api_key))
+        return GeminiExtractionProvider(genai.Client(api_key=gemini_api_key))
+    if provider == "anthropic":
+        if not anthropic_api_key:
+            return None
+        import anthropic
+
+        from .anthropic_provider import AnthropicExtractionProvider
+
+        return AnthropicExtractionProvider(anthropic.AsyncAnthropic(api_key=anthropic_api_key))
+    raise ValueError(f"unknown extraction provider {provider!r} (gemini or anthropic)")
 
 
 async def extract_document(
@@ -90,7 +106,9 @@ async def extract_document(
     stage_ms: dict[str, int] = {}
     try:
         if provider is None:
-            raise RuntimeError("no extraction provider configured (anthropic_api_key is empty)")
+            raise RuntimeError(
+                "no extraction provider configured (the selected provider's key is empty)"
+            )
         if not doc["storage_path"]:
             raise RuntimeError(f"document {document_id} has no stored original")
         image = await storage.get(doc["storage_path"])

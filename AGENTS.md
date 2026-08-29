@@ -79,7 +79,7 @@ Tenancy: every tenant-owned row carries `tenant_id` from day one.
 Branch is resolved from the sender phone (`branches.wa_phone_e164`), never from document text.
 RLS enforcement is deferred to M7; the demo runs single-tenant seeded.
 
-Extraction (M1+): Claude Opus 5 (`claude-opus-5`) via the Anthropic SDK with structured outputs, behind one thin provider interface so the provider swaps in one place.
+Extraction (M1+): Gemini 3 Flash (`gemini-3-flash-preview`) via the google-genai SDK with structured JSON output - the shipped default since 2026-08-29 (measured bake-off, Decision Log) - behind one thin provider interface so the provider swaps in one place; Claude Opus 5 stays wired as the fallback (`EXTRACTION_PROVIDER=anthropic`, no deploy needed).
 Accuracy is a pipeline property, not a prompt property: deterministic arithmetic reconciliation, one scoped repair pass, supplier-memory snapping, and derived (never self-reported) confidence.
 The full six-layer design is `plan.md` §5.
 Once the eval harness exists, every pipeline change runs the eval before merge.

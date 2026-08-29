@@ -20,10 +20,19 @@ from faida_api.extraction.schema import (
 )
 from faida_api.extraction.validate import CheckStatus, validate_invoice
 
-# Claude API list prices in USD per million tokens. Only models we actually
+# Provider list prices in USD per million tokens. Only models we actually
 # run belong here: an unknown model id yields a null cost, never a guess.
+# Gemini rates are the standard tier for prompts <= 200k tokens (an invoice
+# photo is ~2-4k tokens, the higher tier is unreachable here); Google bills
+# thinking tokens at the output rate, and the gemini provider counts them in
+# output_tokens to match. Verified 2026-08-29 against ai.google.dev pricing
+# (3.1) and the launch pricing trackers (3-pro-preview, same rate).
 MODEL_PRICING_USD_PER_MTOK: dict[str, tuple[Decimal, Decimal]] = {
     "claude-opus-5": (Decimal("5.00"), Decimal("25.00")),
+    "gemini-3.1-pro-preview": (Decimal("2.00"), Decimal("12.00")),
+    "gemini-3-pro-preview": (Decimal("2.00"), Decimal("12.00")),
+    # Flat across context lengths; text/image input (audio costs more, unused here).
+    "gemini-3-flash-preview": (Decimal("0.50"), Decimal("3.00")),
 }
 
 FUZZY_THRESHOLD = 0.9

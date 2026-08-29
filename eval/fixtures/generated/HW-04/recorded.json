@@ -1,7 +1,7 @@
 {
   "classification": "invoice",
   "invoice": {
-    "supplier_name": "Dairy House Foodstuff LLC / بيت الألبان للمواد الغذائية ذ.م.م",
+    "supplier_name": "Dairy House Foodstuff LLC",
     "invoice_no": "2260",
     "invoice_date": null,
     "invoice_date_text": "2026-07-04",
@@ -69,7 +69,7 @@
     "total": "944.00",
     "discount_total": null,
     "rounding_amount": null,
-    "tax_treatment": null,
+    "tax_treatment": "inclusive",
     "vat_rate": null
   }
 }

@@ -1,8 +1,10 @@
 """Live provider runs for the eval harness (WP-16, plan.md §5).
 
-`python -m eval.run --live` scores real `claude-opus-5` calls instead of the
+`python -m eval.run --live` scores real provider calls instead of the
 recorded fixtures, which is what the accuracy loop needs: recorded responses
 can only prove the scorer still works, never that a prompt change helped.
+The default is the shipped provider (Gemini 3 Flash since 2026-08-29);
+`--provider anthropic` runs the Opus 5 fallback for comparison.
 
 The one rule this module exists to keep: a live case runs the layers the
 product runs, in the product's order, through the product's modules -
@@ -13,6 +15,7 @@ of that here would score a program we do not ship, which is the trap
 """
 
 import asyncio
+import os
 from pathlib import Path
 
 from faida_api.extraction.normalize import normalize_extracted
@@ -35,18 +38,57 @@ DEFAULT_CONCURRENCY = 3
 
 
 class LiveProviderUnavailable(RuntimeError):
-    """No API key, so there is nothing to run. Raised before any case starts
-    rather than failing every case identically."""
+    """No API key (or, for gemini, no SDK), so there is nothing to run.
+    Raised before any case starts rather than failing every case
+    identically."""
 
 
-def build_live_provider(api_key: str | None) -> ExtractionProvider:
-    provider = build_provider(api_key or "")
-    if provider is None:
-        raise LiveProviderUnavailable(
-            "ANTHROPIC_API_KEY is not set; --live needs a real key (F5). "
-            "Run without --live to score recorded responses."
+# The shipped provider first (gemini = Gemini 3 Flash, the 2026-08-29
+# Decision Log call); anthropic is the configured fallback. --record is
+# reserved for the shipped one: the recorded fixtures are its CI baseline.
+SHIPPED_PROVIDER = "gemini"
+LIVE_PROVIDERS = ("gemini", "anthropic")
+KEY_ENV = {"anthropic": "ANTHROPIC_API_KEY", "gemini": "GEMINI_API_KEY"}
+
+
+def live_model_id(provider_name: str) -> str:
+    """The model id a live run would use, for the banner and the results
+    payload. One place reads GEMINI_MODEL_ID so the builder and the report
+    can never disagree about which model ran."""
+    if provider_name == "gemini":
+        from faida_api.extraction.gemini_provider import MODEL_ID as gemini_model_id
+
+        return os.environ.get("GEMINI_MODEL_ID") or gemini_model_id
+    from faida_api.extraction.anthropic_provider import MODEL_ID as anthropic_model_id
+
+    return anthropic_model_id
+
+
+def build_live_provider(
+    api_key: str | None, provider_name: str = "anthropic"
+) -> ExtractionProvider:
+    if provider_name == "anthropic":
+        provider = build_provider("anthropic", anthropic_api_key=api_key or "")
+        if provider is None:
+            raise LiveProviderUnavailable(
+                "ANTHROPIC_API_KEY is not set; --live needs a real key (F5). "
+                "Run without --live to score recorded responses."
+            )
+        return provider
+    if provider_name == "gemini":
+        if not api_key:
+            raise LiveProviderUnavailable(
+                "GEMINI_API_KEY is not set; --live --provider gemini needs one."
+            )
+        from faida_api.extraction.gemini_provider import GeminiExtractionProvider
+        from google import genai
+
+        # Built directly rather than through pipeline.build_provider so the
+        # GEMINI_MODEL_ID override (bake-off comparisons) can reach it.
+        return GeminiExtractionProvider(
+            genai.Client(api_key=api_key), model_id=live_model_id(provider_name)
         )
-    return provider
+    raise LiveProviderUnavailable(f"unknown provider {provider_name!r} (see LIVE_PROVIDERS)")
 
 
 def combine_usage(extract: ProviderUsage, repair: ProviderUsage | None) -> ProviderUsage:

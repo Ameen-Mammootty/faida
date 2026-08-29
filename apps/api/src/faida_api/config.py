@@ -22,9 +22,15 @@ class Settings(BaseSettings):
     supabase_service_key: str = ""
     storage_bucket: str = "documents"
 
-    # Extraction (plan.md §5 layer 1). Empty key = no provider: extract jobs
-    # fail into the §5 layer 6 path; upload + manual entry keep working (M3).
+    # Extraction (plan.md §5 layer 1; provider decision 2026-08-29, Decision
+    # Log). "gemini" (Gemini 3 Flash) is the shipped default; "anthropic"
+    # (Claude Opus 5) stays wired as the fallback, so the swap back is one env
+    # var, no deploy. An empty key for the selected provider = no provider:
+    # extract jobs fail into the §5 layer 6 path; upload + manual entry keep
+    # working (M3).
+    extraction_provider: str = "gemini"
     anthropic_api_key: str = ""
+    gemini_api_key: str = ""
 
     # C6 web API (M3). One shared-secret bearer token for the review screen;
     # empty refuses every /api request (fail closed, like the webhook secret).
