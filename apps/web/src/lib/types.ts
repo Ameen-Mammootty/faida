@@ -213,6 +213,7 @@ export type CorrectionField =
   | "unit_price"
   | "line_total"
   | "name"
+  | "pack_size"
   | "subtotal"
   | "tax"
   | "total";
@@ -222,7 +223,12 @@ export type CorrectionField =
  * grammar's field set (api.py Correction). line_index (0-based) targets a
  * line field; null targets the totals block (subtotal/tax/total). Values are
  * strings: unsigned decimals for numbers ("16", "4.50" - no sign, no
- * exponent), free text for "name". A field can never be cleared to null.
+ * exponent), free text for "name" and "pack_size". Only "pack_size" can be
+ * cleared, and only by value: a blank or placeholder value ("", "-", "n/a";
+ * lib/placeholders.ts mirrors the vocabulary) stores null, because "the pack
+ * we hold is wrong and I do not know the right one" is a real answer to the
+ * one line field no arithmetic can cross-check. Every other field can never
+ * be cleared.
  */
 export interface Correction {
   line_index: number | null;

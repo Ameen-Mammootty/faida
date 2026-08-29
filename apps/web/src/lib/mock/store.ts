@@ -21,6 +21,7 @@ import {
 } from "./fixtures";
 import { checkDocument, checkLine, deriveConfidence } from "./validate";
 import { ApiError } from "../errors";
+import { blankToNone } from "../placeholders";
 import type {
   Correction,
   DocumentSource,
@@ -239,6 +240,7 @@ type Edit =
       value: string;
     }
   | { kind: "line_name"; line_index: number; name: string }
+  | { kind: "line_pack_size"; line_index: number; pack_size: string | null }
   | { kind: "totals"; field: "subtotal" | "tax" | "total"; value: string };
 
 /** api.py _to_edit, message for message. */
@@ -266,12 +268,26 @@ function toEdit(correction: Correction): Edit {
     if (!name) throw new ApiError(422, "a line name cannot be empty");
     return { kind: "line_name", line_index: lineIndex, name };
   }
+  if (field === "pack_size") {
+    // Blank clears it, through the same placeholder vocabulary the extraction
+    // seam uses: "that pack is not right, and I do not know the real one" is a
+    // real answer, and the only honest one when a derived pack is wrong.
+    return { kind: "line_pack_size", line_index: lineIndex, pack_size: blankToNone(value) };
+  }
   return {
     kind: "line_field",
     line_index: lineIndex,
     field: field as "qty" | "unit_price" | "line_total",
     value: numericValue(correction),
   };
+}
+
+/** The C8 field path an edit stamps, matching faida_api/provenance.py keys. */
+function editKey(edit: Edit): string {
+  if (edit.kind === "totals") return edit.field;
+  if (edit.kind === "line_name") return lineKey(edit.line_index, "raw_name");
+  if (edit.kind === "line_pack_size") return lineKey(edit.line_index, "pack_size");
+  return lineKey(edit.line_index, edit.field);
 }
 
 function numericValue(correction: Correction): string {
@@ -319,17 +335,15 @@ export async function mockPatchInvoiceFields(
       next[edit.field] = edit.value;
     } else if (edit.kind === "line_name") {
       next.lines[edit.line_index].raw_name = edit.name;
+    } else if (edit.kind === "line_pack_size") {
+      next.lines[edit.line_index].pack_size = edit.pack_size;
     } else {
       next.lines[edit.line_index][edit.field] = edit.value;
     }
   }
   const at = new Date().toISOString();
   for (const edit of edits) {
-    const key =
-      edit.kind === "totals"
-        ? edit.field
-        : lineKey(edit.line_index, edit.kind === "line_name" ? "raw_name" : edit.field);
-    next.provenance[key] = { origin: "corrected_screen", actor: "console", at };
+    next.provenance[editKey(edit)] = { origin: "corrected_screen", actor: "console", at };
   }
   const revalidated = revalidate(next);
   invoices.set(id, revalidated);

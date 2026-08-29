@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ApiError } from "@/lib/errors";
 import { describeFields, groupedMoney, money, quantity } from "@/lib/format";
+import { blankToNone } from "@/lib/placeholders";
 import type { Correction, InvoiceLine } from "@/lib/types";
 import FieldBadge from "./FieldBadge";
 
@@ -16,6 +17,7 @@ interface Draft {
   qty: string;
   unit_price: string;
   line_total: string;
+  pack_size: string;
 }
 
 const NUMBER_RE = /^\d+(\.\d+)?$/;
@@ -112,8 +114,10 @@ function CostCell({ line }: { line: InvoiceLine }) {
 /**
  * Map the edit form onto C6 corrections: one {line_index, field, value} per
  * changed field. A field left as it was sends nothing; a still-unread field
- * left empty stays unread; a read value cannot be cleared (the API has no
- * "unset" - only unsigned decimal values).
+ * left empty stays unread; a read number cannot be cleared (the API has no
+ * "unset" for numbers - only unsigned decimal values). Pack size is the one
+ * exception: free text, and blanking it is a real answer - "the pack we hold
+ * is wrong and I do not know the right one" - which the API stores as null.
  */
 function buildCorrections(line: InvoiceLine, draft: Draft): Correction[] | { error: string } {
   const corrections: Correction[] = [];
@@ -130,12 +134,23 @@ function buildCorrections(line: InvoiceLine, draft: Draft): Correction[] | { err
     }
     corrections.push({ line_index: line.position, field, value });
   }
+  // Compare packs through the server's own blank vocabulary, so retyping the
+  // stored value, or clearing an already empty field, sends nothing and
+  // stamps no false corrected_screen provenance.
+  if (blankToNone(draft.pack_size) !== line.pack_size) {
+    corrections.push({ line_index: line.position, field: "pack_size", value: draft.pack_size });
+  }
   return corrections;
 }
 
 export default function LinesTable({ lines, editable, onSaveLine }: Props) {
   const [editing, setEditing] = useState<number | null>(null);
-  const [draft, setDraft] = useState<Draft>({ qty: "", unit_price: "", line_total: "" });
+  const [draft, setDraft] = useState<Draft>({
+    qty: "",
+    unit_price: "",
+    line_total: "",
+    pack_size: "",
+  });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -145,6 +160,7 @@ export default function LinesTable({ lines, editable, onSaveLine }: Props) {
       qty: line.qty ?? "",
       unit_price: line.unit_price ?? "",
       line_total: line.line_total ?? "",
+      pack_size: line.pack_size ?? "",
     });
     setError(null);
   }
@@ -285,6 +301,12 @@ function LineRows({
         <td className="py-2.5 pr-3 text-stone tabular-nums">{n}</td>
         <td className="py-2.5 pr-3">
           {line.raw_name}
+          {/* The pack is the number a cost divides by, and nothing arithmetic
+              cross-checks it - so it has to be on screen to be checkable
+              against the photo at all. */}
+          {line.pack_size ? (
+            <span className="ml-1.5 text-xs text-stone">{line.pack_size}</span>
+          ) : null}
           {line.unit ? <span className="ml-1.5 text-xs text-stone">per {line.unit}</span> : null}
         </td>
         <td className="py-2.5 pr-3 text-right tabular-nums">
@@ -304,20 +326,30 @@ function LineRows({
         <td className="py-2.5 text-right">
           <span className="inline-flex items-center gap-2">
             <FieldBadge status={line.checks.status} />
-            {amber && editable && !isEditing ? (
+            {/* The door opens on every line, not only amber ones. A wrong
+                pack size never turns a line amber - no arithmetic checks it,
+                C4 anchors on the line sum - so the misread that matters most
+                sits on a green row, and a door that only opened on amber
+                could never reach it. Amber keeps the louder "Fix"; a green
+                row offers a quiet "Edit". */}
+            {editable && !isEditing ? (
               <button
                 type="button"
                 onClick={onStartEdit}
-                aria-label={`Fix line ${n}`}
-                className="rounded-sm border border-palm/30 px-2 py-0.5 text-xs font-medium text-palm hover:border-palm hover:bg-mist"
+                aria-label={`${amber ? "Fix" : "Edit"} line ${n}`}
+                className={
+                  amber
+                    ? "rounded-sm border border-palm/30 px-2 py-0.5 text-xs font-medium text-palm hover:border-palm hover:bg-mist"
+                    : "rounded-sm border border-ink/10 px-2 py-0.5 text-xs font-medium text-stone hover:border-ink/30 hover:text-ink"
+                }
               >
-                Fix
+                {amber ? "Fix" : "Edit"}
               </button>
             ) : null}
           </span>
         </td>
       </tr>
-      {amber || note ? (
+      {amber || note || isEditing ? (
         <tr
           className={`border-b ${
             amber ? "border-caution/15 bg-gold-soft/50" : "border-ink/5"
@@ -375,6 +407,18 @@ function LineRows({
                     className="w-28 rounded-sm border border-ink/20 bg-paper px-2 py-1.5 text-sm tabular-nums"
                   />
                 </label>
+                <label className="flex flex-col gap-1 text-xs font-medium text-ink">
+                  Pack size
+                  <input
+                    type="text"
+                    value={draft.pack_size}
+                    onChange={(event) =>
+                      onDraftChange({ ...draft, pack_size: event.target.value })
+                    }
+                    placeholder="e.g. 5kg"
+                    className="w-28 rounded-sm border border-ink/20 bg-paper px-2 py-1.5 text-sm"
+                  />
+                </label>
                 <div className="flex items-center gap-2">
                   <button
                     type="submit"
@@ -393,6 +437,10 @@ function LineRows({
                   </button>
                 </div>
                 {error ? <p className="w-full text-xs font-medium text-plum">{error}</p> : null}
+                <p className="w-full text-xs text-stone">
+                  Pack size is what the paper prints, like 5kg or 6 x 400ml. If the photo
+                  doesn&apos;t show one, leave it blank - that clears a wrong reading.
+                </p>
               </form>
             ) : null}
           </td>
