@@ -26,6 +26,7 @@ from eval.live import (
     DEFAULT_CONCURRENCY,
     KEY_ENV,
     LIVE_PROVIDERS,
+    SHIPPED_PROVIDER,
     LiveProviderUnavailable,
     build_live_provider,
     live_model_id,
@@ -290,20 +291,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--provider",
         choices=LIVE_PROVIDERS,
-        default="anthropic",
-        help="live provider to call (default anthropic, the shipped one; "
-        "gemini is the bake-off lane and reads GEMINI_API_KEY)",
+        default=SHIPPED_PROVIDER,
+        help=f"live provider to call (default {SHIPPED_PROVIDER}, the shipped one; "
+        "anthropic is the Opus 5 fallback and reads ANTHROPIC_API_KEY)",
     )
     args = parser.parse_args(argv)
     if args.smoke and args.live:
         parser.error("--smoke replays recordings by design (§5 CI policy: no key, no spend)")
     if args.record and not args.live:
         parser.error("--record rewrites recordings from live responses; it needs --live")
-    if args.record and args.provider != "anthropic":
+    if args.record and args.provider != SHIPPED_PROVIDER:
         # The recorded fixtures are the CI baseline for the SHIPPED provider;
         # overwriting them with another model's answers would silently move
         # what the smoke gate certifies.
-        parser.error("--record is reserved for the shipped provider (anthropic)")
+        parser.error(f"--record is reserved for the shipped provider ({SHIPPED_PROVIDER})")
 
     corpus = (
         args.corpus if args.corpus is not None else (FIXTURES_DIR if args.smoke else CORPUS_DIR)

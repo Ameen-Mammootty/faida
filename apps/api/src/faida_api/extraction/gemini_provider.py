@@ -1,10 +1,9 @@
-"""Gemini implementation of the C3 provider seam - EXPERIMENT LANE ONLY.
-
-Built for the Gemini 3 Pro bake-off against the Opus 5 baseline (plan.md
-Progress Log 2026-08-29). The production default stays Anthropic:
-`pipeline.build_provider` never constructs this class, only
-`eval.live.build_live_provider --provider gemini` does, and `google-genai` is
-an optional extra (`pip install -e '.[gemini]'`), never a hard dependency.
+"""Gemini implementation of the C3 provider seam - the shipped default since
+2026-08-29 (Decision Log): Gemini 3 Flash won the measured bake-off on the
+generated corpus (accuracy at or above the Opus baseline, ~10x cheaper,
+fastest, every case inside the reply target). Born as the bake-off lane
+earlier the same day; the Anthropic provider stays wired as the fallback
+(EXTRACTION_PROVIDER=anthropic).
 
 The prompt text is shared verbatim with the Anthropic provider (same
 PROMPT_VERSION recorded), so eval runs are comparable model-to-model. Two
@@ -32,11 +31,11 @@ from .prompts import EXTRACT_PROMPT, PROMPT_VERSION, SYSTEM_PROMPT, build_repair
 from .provider import ProviderUsage
 from .schema import ExtractedLine, ExtractionResult, RepairResult, RepairTarget
 
-# The Gemini 3 Pro line as served on 2026-08-29 (the original gemini-3-pro-preview
-# has left Google's pricing page). Confirm against `client.models.list()` with the
-# live key before a bake-off run; eval/live.py takes GEMINI_MODEL_ID to override
-# without an edit here.
-MODEL_ID = "gemini-3.1-pro-preview"
+# The shipped extraction model (2026-08-29 Decision Log): Gemini 3 Flash, the
+# bake-off winner. gemini-3.1-pro-preview remains priced in eval/score.py for
+# comparison runs; eval/live.py takes GEMINI_MODEL_ID to override without an
+# edit here.
+MODEL_ID = "gemini-3-flash-preview"
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -64,9 +63,9 @@ class _RepairOutput(BaseModel):
 
 
 class GeminiExtractionProvider:
-    """ExtractionProvider on Gemini 3 Pro with structured JSON output
-    (response_schema); dynamic thinking left at the model default, the same
-    posture as the Anthropic provider's adaptive thinking.
+    """ExtractionProvider on Gemini 3 Flash with structured JSON output;
+    dynamic thinking left at the model default, the same posture as the
+    Anthropic provider's adaptive thinking.
 
     max_output_tokens stays unset: Gemini counts thinking tokens inside that
     budget, so a cap sized for the JSON alone can truncate a long invoice

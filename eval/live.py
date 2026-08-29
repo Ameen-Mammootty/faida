@@ -1,8 +1,10 @@
 """Live provider runs for the eval harness (WP-16, plan.md §5).
 
-`python -m eval.run --live` scores real `claude-opus-5` calls instead of the
+`python -m eval.run --live` scores real provider calls instead of the
 recorded fixtures, which is what the accuracy loop needs: recorded responses
 can only prove the scorer still works, never that a prompt change helped.
+The default is the shipped provider (Gemini 3 Flash since 2026-08-29);
+`--provider anthropic` runs the Opus 5 fallback for comparison.
 
 The one rule this module exists to keep: a live case runs the layers the
 product runs, in the product's order, through the product's modules -
@@ -41,9 +43,11 @@ class LiveProviderUnavailable(RuntimeError):
     identically."""
 
 
-# The shipped provider first; gemini is the bake-off lane (2026-08-29) and
-# exists here only - pipeline.build_provider never constructs it.
-LIVE_PROVIDERS = ("anthropic", "gemini")
+# The shipped provider first (gemini = Gemini 3 Flash, the 2026-08-29
+# Decision Log call); anthropic is the configured fallback. --record is
+# reserved for the shipped one: the recorded fixtures are its CI baseline.
+SHIPPED_PROVIDER = "gemini"
+LIVE_PROVIDERS = ("gemini", "anthropic")
 KEY_ENV = {"anthropic": "ANTHROPIC_API_KEY", "gemini": "GEMINI_API_KEY"}
 
 
@@ -64,7 +68,7 @@ def build_live_provider(
     api_key: str | None, provider_name: str = "anthropic"
 ) -> ExtractionProvider:
     if provider_name == "anthropic":
-        provider = build_provider(api_key or "")
+        provider = build_provider("anthropic", anthropic_api_key=api_key or "")
         if provider is None:
             raise LiveProviderUnavailable(
                 "ANTHROPIC_API_KEY is not set; --live needs a real key (F5). "
@@ -76,14 +80,11 @@ def build_live_provider(
             raise LiveProviderUnavailable(
                 "GEMINI_API_KEY is not set; --live --provider gemini needs one."
             )
-        try:
-            from faida_api.extraction.gemini_provider import GeminiExtractionProvider
-            from google import genai
-        except ImportError as exc:
-            raise LiveProviderUnavailable(
-                "google-genai is not installed; it is an optional extra - "
-                "pip install -e 'apps/api[gemini]'."
-            ) from exc
+        from faida_api.extraction.gemini_provider import GeminiExtractionProvider
+        from google import genai
+
+        # Built directly rather than through pipeline.build_provider so the
+        # GEMINI_MODEL_ID override (bake-off comparisons) can reach it.
         return GeminiExtractionProvider(
             genai.Client(api_key=api_key), model_id=live_model_id(provider_name)
         )

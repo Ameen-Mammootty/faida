@@ -1,28 +1,24 @@
-"""The Gemini provider maps SDK responses to the pinned C3 models (bake-off
-lane, 2026-08-29).
+"""The Gemini provider (the shipped default since 2026-08-29) maps SDK
+responses to the pinned C3 models.
 
 The SDK client is faked at the aio.models.generate_content seam - no network,
-no API key. The fake validates canned JSON through the response_schema the
-provider passes, mirroring what the real SDK's constrained decoding returns
-as text. google-genai is an optional extra, so the whole module skips when it
-is not installed (CI installs [dev] alone; the bake-off venv adds [gemini])."""
+no API key. The fake validates canned JSON through the schema the provider
+passes, mirroring what the real SDK's constrained decoding returns as
+text."""
 
 from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
+from google.genai import types
 
-pytest.importorskip("google.genai", reason="gemini extra not installed (pip install -e .[gemini])")
-
-from google.genai import types  # noqa: E402
-
-from faida_api.extraction.gemini_provider import (  # noqa: E402
+from faida_api.extraction.gemini_provider import (
     MODEL_ID,
     GeminiExtractionProvider,
 )
-from faida_api.extraction.prompts import PROMPT_VERSION, SYSTEM_PROMPT  # noqa: E402
-from faida_api.extraction.provider import ExtractionProvider, ProviderUsage  # noqa: E402
-from faida_api.extraction.schema import (  # noqa: E402
+from faida_api.extraction.prompts import PROMPT_VERSION, SYSTEM_PROMPT
+from faida_api.extraction.provider import ExtractionProvider, ProviderUsage
+from faida_api.extraction.schema import (
     Classification,
     ExtractionResult,
     RepairResult,
