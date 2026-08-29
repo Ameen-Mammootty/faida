@@ -1,6 +1,6 @@
 # Proposed cases - prompts only, not yet in the corpus
 
-Four prompts in the house format of `eval/fixtures/generated/`.
+Five prompts in the house format of `eval/fixtures/generated/`.
 `AMD-01` was promoted into the corpus on 2026-08-28 for WP-27 (its prompt reworked into the
 machine-readable table shape `eval/printed.py` parses); it awaits an image like the other
 dry-run cases.
@@ -17,7 +17,7 @@ Every arithmetic figure in these prompts was checked before writing.
 The buyer is Cedar & Spice Hospitality LLC throughout, matching the existing set, and most of
 the suppliers already appear in it.
 
-## The four, and the hazard each one adds
+## The five, and the hazard each one adds
 
 | Case | Document | Hazards not covered by the existing 15 |
 |---|---|---|
@@ -25,6 +25,7 @@ the suppliers already appear in it.
 | `KSA-01` | Saudi ZATCA tax invoice, 6 lines, SAR, Arabic-dominant | `non_aed_currency`, `vat_rate_15`, `arabic_dominant_headings`, `zatca_qr_block` |
 | `STMT-01` | Monthly statement of account, 7 ledger rows, Dairy House | `not_a_purchase_invoice`, `looks_like_invoice`, `opening_balance`, `double_count_risk` |
 | `OCC-01` | Phone photo, thumb covering the totals block, 6 lines | `occluded_totals`, `must_ask_not_guess`, `hand_holding_page` |
+| `CUT-01` | Export invoice in USD, photographed with the foot of the page outside the frame, 5 lines | `off_frame_totals`, `must_reconstruct_not_compute`, `non_aed_currency`, `zero_rated_export` |
 
 ### Why each is worth generating
 
@@ -51,6 +52,23 @@ number.
 `EDGE-03` covers a delivery note and `NEG-01` covers a non-document; neither covers a real
 financial document that must not be recorded as a purchase.
 The prompt deliberately omits the "this is not a tax invoice" line that some suppliers print.
+
+**`CUT-01`** is the live 2026-08-25 failure, as a fixture: an invoice whose totals block was
+never in the picture at all.
+It is the one case in this folder where the missing total cannot be recovered by looking harder
+at the image, which is what separates it from `OCC-01` - a thumb can be lifted, a frame cannot be
+widened after the shutter.
+The right outcome is the WP-26 conversation: `total` null, the reply showing the line sum
+(710.50) and asking whether that is the whole invoice and whether the prices carry VAT, a bare
+`OK` refused, and the answer stored with C8 origin `reconstructed`.
+It carries a second hazard deliberately, because the two arrived together in real life: the
+document is billed in **USD** against an AED tenant, so it also exercises the WP-28 hold - the
+currency question in the same reply, the invoice confirming normally, and price memory left
+completely alone.
+The arithmetic is built so the reconstruction is checkable: zero-rated, delivery included, so the
+true total is exactly the line sum and `total 710.50 no vat` is the correct answer.
+Read it against `OCC-01`, where the line sum is 930.00 and the true total is 976.50 - the pair is
+the whole argument for asking instead of computing, in two images.
 
 **`OCC-01`** is the "thumb over the total" case, and it is the one prompt here that suspends the
 folder's standing `degrade the paper, not the data` rule, on purpose and for exactly one region.

@@ -1,0 +1,56 @@
+Produce one photorealistic image of a single real-world paper document. The image contains nothing but that document and the surface it rests on. Do not add captions, arrows, labels, borders, mock-up frames, logos of real companies, or any text of your own invention.
+
+PHYSICAL ARTEFACT
+A phone photograph of a printed A4 commercial invoice lying flat on a stainless steel prep counter under warm indoor light, shot hand-held from slightly above and a little to the left, with the mild perspective and soft shadow of a quick snap taken in a busy kitchen. The paper itself is clean, flat and freshly printed: no crease, no stain, no glare across the type.
+
+FRAMING. THIS IS THE POINT OF THE DOCUMENT.
+The photographer has stood too close and the sheet is longer than the picture. The frame ends in the blank band immediately below the last item row and the horizontal rule that closes the item table, and the rest of the sheet continues past the bottom edge of the photograph.
+
+Everything printed below that band is therefore outside the image: the subtotal, the total, any freight or handling line, the amount in words, the bank details, the signature block and the page footer. Not one character of any of it appears in the picture, not partially, not blurred at the edge, not as the top sliver of a printed box.
+
+The top edge, the left edge and the right edge of the sheet are all inside the frame, so the header block and every one of the five item rows are complete and sharp. Only the foot of the page is missing.
+
+LANGUAGE
+All text is in English with western digits.
+
+EXACT CONTENT. Reproduce every character and every digit exactly as written below. Do not round, recalculate, reorder, translate, abbreviate, expand, add or omit anything. The arithmetic below is already correct.
+
+-- Header --
+SUPPLIER NAME (top of the document): Anatolia Provisions FZE
+SUPPLIER ADDRESS: Warehouse 27, South Zone, Jebel Ali Free Zone, Dubai, UAE
+SUPPLIER PHONE: +971 4 555 6621
+DOCUMENT TITLE: COMMERCIAL INVOICE
+Invoice number: APF-EXP-260709-0142
+Date: 09/07/2026
+Bill to: Cedar & Spice Hospitality LLC
+Deliver to: Downtown Branch, Unit 12, Creekside Avenue, Downtown, Dubai, UAE
+Currency: USD
+Payment terms: 30 days
+Incoterms: DDP Dubai, delivery included, no separate freight charge
+VAT: Zero-rated export supply (0%)
+Small grey line printed directly under the header block, inside the frame: SYNTHETIC TEST DOCUMENT - CEDAR & SPICE QA - NOT A COMMERCIAL RECORD
+
+-- Line items, all 5 of them, in this exact order --
+COLUMNS, left to right: # | Item code | Description | Qty | Unit | Unit price USD | Amount USD
+
+1 | APF-PIS-1KG | Pistachio Kernels Raw 1 kg vacuum bag | 12 | bag | 18.50 | 222.00
+2 | APF-OLV-5L | Extra Virgin Olive Oil 5 L tin | 6 | tin | 34.75 | 208.50
+3 | APF-SAF-10G | Saffron Threads Super Negin 10 g jar | 4 | jar | 26.00 | 104.00
+4 | APF-ALP-500 | Aleppo Pepper Flakes 500 g pouch | 10 | pouch | 7.40 | 74.00
+5 | APF-POM-1L | Pomegranate Molasses 1 L bottle | 24 | bottle | 4.25 | 102.00
+
+-- What is on the sheet but not in the photograph --
+Printed below the frame line, and therefore invisible in this image:
+
+    TOTAL (USD)   710.50
+
+There is no VAT line and no freight line on this document: the supply is zero-rated and delivery is included in the unit prices, so the total is the sum of the five amounts and nothing else. This figure exists on the paper. It must not appear anywhere in the image.
+
+RULES
+- All 5 item rows must appear on the document, in the order given, none merged, none dropped, none repeated. The item table must be complete: the frame cuts the page below the table, never through it.
+- Every character in the header and in all 5 item rows must be readable at full resolution. Prefer a slightly tighter row height over shrinking the digits.
+- Do not print a total, a subtotal, a balance, a tax line or any other summed money figure anywhere in the image, including inside the item table and including any summary box in the header. The largest money figure visible in the picture is a line amount.
+- The word USD appears in the header and in both money column headings, so the currency of this document is never in doubt to a reader of the photograph.
+- Do not add sample, specimen, draft, void or watermark text, and do not add any row, column, tax line or charge that is not listed above.
+- The date is printed as 09/07/2026 and appears once. No month name, no second date anywhere on the page.
+- The framing is the only defect. Apart from the missing foot of the page, no crease, glare, shadow or blur may make any character harder to read. Cut the page, not the data.
