@@ -130,6 +130,25 @@ On stage, switch to the backup demo phone first and debug later.
 Signed image URLs expire; refresh the page and the screen re-fetches a fresh signed URL.
 If it still fails, show the fields and the sparkline, which carry the story without the photo.
 
+## E0. The 5x-run log (completed 2026-08-29)
+
+Every paper through the full loop five times, verified run-by-run against the live
+database; the meme once (plus an accidental video, which proved the unsupported-media
+reply too). Zero pipeline flakes; the only incident was a drained Anthropic credit
+balance mid-session, now a section A precondition.
+
+| Paper | Runs | Forward-to-reply (s) | Replies | Repair rounds |
+|---|---|---|---|---|
+| DEMO-1 (alert pair) | 5/5 | 14.3, 17.2, 14.3, 14.9, 15.4 | byte-identical, both alerts exact | 0 |
+| DEMO-2 (single alert) | 5/5 | 15.0, 15.5, 17.1, 13.6, 14.0 | byte-identical, flour silent | 0 |
+| DEMO-3 (quiet path) | 5/5 | 15.3, 13.3, 15.2, 16.3, 14.9 | byte-identical, no alerts | 0 |
+| Meme (image) | 1/1 | 11.2 to the decline | word-perfect | - |
+
+Every run under the ~20 s target; range 13.3-17.2 s. A duplicate "OK" during one run
+re-acked without double-recording (the WP-21 guard, live). One run was forwarded out of
+order (DEMO-3 before DEMO-1) and counted for the paper actually sent - the database, not
+the gallery order, is the referee.
+
 ## E. The rehearsal log
 
 Plan.md §6 M4 requires the full script rehearsed twice on the demo phones with zero intervention.

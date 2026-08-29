@@ -338,15 +338,18 @@ plan (§7).
       on the web side. Verified against live data: browser QA of list + detail with the photo
       rendering, token auth 401/200, CORS preflight exact-origin, waitlist browser-to-database.
       Demo script steps 11-12 now have a real screen to open
-- [ ] Curate the 3 demo invoices; run each through the full loop 5× — flakiness is a bug.
-      **Papers done 2026-08-29:** prompts + generated images in `Docs/demo-invoices/`,
-      each pre-verified through the live upload door - every field exact, all green, no
-      repair, 4.7-5.2 s model time, day-first dates read correctly - then cleaned from the
-      live project. The 5× phone runs remain
+- [x] Curate the 3 demo invoices; run each through the full loop 5× — flakiness is a bug.
+      **Done 2026-08-29:** papers in `Docs/demo-invoices/` (pre-verified via the upload
+      door), then **15/15 phone runs clean** - 13.3-17.2 s forward-to-reply, every reply
+      byte-identical per paper, zero repair rounds, all checks green. Evidence in
+      `Docs/DEMO_RUNBOOK.md` §E0. The one incident was a drained Anthropic credit balance
+      (ops, now a runbook precondition), not a pipeline flake
 - [x] Latency pass: forward → reply under ~20s (stream nothing; the reply is one message) -
       **18.7 s measured on a real forward at prompt v3, 2026-08-28**, no repair round, model time
       6.9-11 s across the corpus; the 5x curated runs below re-verify it per paper
-- [ ] Failure demo path: forward a meme, get the polite decline (shows discipline, sells trust)
+- [x] Failure demo path: forward a meme, get the polite decline (shows discipline, sells
+      trust) - **proven live 2026-08-29**, word-perfect in 11.2 s; a video meme also drew the
+      unsupported-media reply, a path never before exercised on a phone
 - [ ] Full rehearsal of the loop portion of the script, twice, on the demo phones
 - [x] Duplicate invoice hold: the same paper sent twice is held with a reply naming the first one,
       `DUP-01` (WP-44; shipped 2026-08-28 - same supplier + normalized number + total holds as
