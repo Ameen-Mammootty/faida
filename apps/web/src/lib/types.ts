@@ -109,6 +109,57 @@ export interface InvoiceSummary {
   document_id: string;
 }
 
+/**
+ * M5 WP-53: what one gram of a line cost.
+ *
+ * The quality vocabulary is PRD 24's, one word short: there is no `verified`.
+ * C4's arithmetic proves qty x unit_price = line_total, so two other numbers
+ * on the page corroborate the unit price - but pack size appears in no
+ * identity at all. A supplier prints 25kg, the model reads 2.5kg, every check
+ * still passes, and the cost is ten times too high. A green badge on that is
+ * the failure this whole layer is built to avoid, so the screen must never
+ * render one.
+ */
+export type CostQuality = "reliable_with_limitations" | "estimated";
+
+/** Where the amount the price was divided by was read. */
+export type CostPackSource = "pack_size" | "raw_name" | "unit" | "override";
+
+/** Why a line has no cost. Each is a different sentence and a different fix. */
+export type CostBlocker =
+  | "foreign_currency"
+  | "missing_unit_price"
+  | "missing_quantity"
+  | "zero_pack"
+  | "bare_container"
+  | "unparseable_pack";
+
+/**
+ * Either a cost or the reason there is none - `blocked` says which. The whole
+ * field is null when the question has not been asked: costs are frozen at
+ * confirm, and a delivery charge never gets one.
+ */
+export interface LineCost {
+  /** AED per gram / millilitre / piece, eight decimals. Money string. */
+  per_base_unit: string | null;
+  base_unit: BaseUnit | null;
+  /** The same cost per kilo / per litre / each, two decimals. Money string. */
+  per_display_unit: string | null;
+  display_unit: string | null;
+  quality: CostQuality | null;
+  /** C8 field paths a person asserted that this cost leans on (C9). */
+  asserted: string[];
+  /** The pack size divided by, exactly as the invoice printed it. */
+  pack: string | null;
+  pack_source: CostPackSource | null;
+  blocked: CostBlocker | null;
+  /** Plain English for `blocked`, straight from the API. */
+  reason: string | null;
+}
+
+/** Stock, or a charge (delivery, cool-box hire) that never becomes an item. */
+export type LineKind = "stock_item" | "charge";
+
 /** One line of the detail payload. No id on the wire - position is the key. */
 export interface InvoiceLine {
   position: number;
@@ -119,7 +170,9 @@ export interface InvoiceLine {
   pack_size: string | null;
   unit_price: string | null;
   line_total: string | null;
+  line_kind: LineKind;
   checks: LineCheck;
+  cost: LineCost | null;
 }
 
 /** The document block inside the detail payload. */

@@ -242,6 +242,13 @@ _PACK_RE = re.compile(
 )
 
 
+# A unit word with no number required beside it. Same dictionary, same
+# longest-first ordering, same trailing boundary - only the magnitude is
+# optional. `named_unit` is the only caller; see its docstring for why the
+# leading boundary is deliberately absent ("400ml" has a digit in front).
+_UNIT_WORD_RE = re.compile(rf"({_unit_pattern()})(?![\w])", re.IGNORECASE)
+
+
 def _quantity(text: str) -> Decimal | None:
     """A printed magnitude, or None when it is not one we can divide by. Zero
     and below are refused here rather than downstream: a pack of nothing is not
@@ -347,6 +354,28 @@ def first_printed(text: str | None) -> str | None:
         if _pack_from(text, match) is not None:
             return match.group(0).strip()
     return None
+
+
+def named_unit(text: str | None) -> str | None:
+    """The first unit a short cell names, whatever number stands beside it:
+    "0 KG" -> "kg", "1 ctn" -> "ctn", "CTN" -> "ctn", "4000" -> None.
+
+    `parse` refuses all three of those - a pack of nothing is not a pack, and
+    what is inside a carton is a human's sentence rather than a guess - and
+    refuses them identically. This is how a caller tells one refusal from the
+    other, so a screen can say "nothing says how much is in the box" instead
+    of "we could not read that" (M5 WP-55). It answers nothing about quantity
+    and must never be divided by.
+
+    **Short cells only:** a pack column, a unit column. Over a whole product
+    name it would find units inside words - "MILK" ends in the K a thermal
+    receipt truncates kilograms to - which is exactly why `parse` insists on a
+    number and this does not.
+    """
+    if not text:
+        return None
+    match = _UNIT_WORD_RE.search(text)
+    return None if match is None else canonical_unit(match.group(1))
 
 
 # The base unit each measurable dimension reduces to. Containers are absent on

@@ -6,7 +6,7 @@ import { confirmInvoice, getInvoice, patchInvoiceFields } from "@/lib/api";
 import { ApiError } from "@/lib/errors";
 import { formatDate, PAYMENT_LABEL } from "@/lib/format";
 import type { Correction, DocumentSource, InvoiceDetail } from "@/lib/types";
-import { AlertIcon, CheckIcon } from "./icons";
+import { AlertIcon } from "./icons";
 import FieldBadge from "./FieldBadge";
 import InvoicePhoto from "./InvoicePhoto";
 import LinesTable from "./LinesTable";
@@ -171,15 +171,13 @@ export default function InvoiceReview({ id }: { id: string }) {
         </div>
         <div className="flex flex-col items-end gap-2">
           <StatusChip status={invoice.status} />
+          {/* The chip above already says "Confirmed"; a disabled button saying
+              it again was two labels for one fact. The date is the thing a
+              reader actually wants next. */}
           {confirmed ? (
-            <button
-              type="button"
-              disabled
-              className="inline-flex items-center gap-2 rounded-sm bg-mist px-4 py-2 text-sm font-medium text-verified"
-            >
-              <CheckIcon />
-              Confirmed
-            </button>
+            invoice.confirmed_at ? (
+              <p className="text-xs text-stone">on {formatDate(invoice.confirmed_at)}</p>
+            ) : null
           ) : cashHold ? (
             <button
               type="button"

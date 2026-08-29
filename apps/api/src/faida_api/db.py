@@ -10,9 +10,11 @@ from typing import Any
 
 import asyncpg
 
+from . import costing
 from .contracts import InvoiceStatus
 from .extraction.currency import currency_differs
 from .matching import clean_name
+from .provenance import asserted_fields
 
 RETRY_LIMIT = 3
 RETRY_BACKOFF_SECONDS = 30
@@ -67,6 +69,31 @@ def _to_net_price(unit_price: Decimal | None, factor: Decimal | None) -> Decimal
     if unit_price is None or factor is None:
         return unit_price
     return (unit_price * factor).quantize(PRICE_QUANTUM)
+
+
+async def _write_line_cost(conn: asyncpg.Connection, line_id: str, cost: costing.LineCost) -> None:
+    """Freeze one line's cost per base unit and how it was made (WP-53).
+
+    **Only ever writes a number, never a null over one.** WP-55 lets a person
+    supply the amount a container never printed, which costs a line this pass
+    could not; a later re-run of the confirm write - the retried WhatsApp ack
+    takes that path - would recompute "no pack, no cost" and wipe it. So the
+    absence of a cost is not a value this function writes. Rerunning it with
+    the same invoice is otherwise a no-op: the inputs are the same and so is
+    the arithmetic."""
+    if cost.cost is None:
+        return
+    await conn.execute(
+        """
+        update invoice_lines
+        set cost_per_base_unit = $2, cost_base_unit = $3, cost_basis = $4
+        where id = $1
+        """,
+        line_id,
+        cost.cost,
+        cost.base_unit,
+        cost.basis(),
+    )
 
 
 async def _insert_audit_event(
@@ -739,6 +766,12 @@ class Database:
         this invoice's observation is new AND the price actually changed -
         re-running for the same invoice is a no-op.
 
+        **It also freezes each line's cost per base unit** (WP-53), here rather
+        than in a step of its own, because the two ex-VAT and post-discount
+        factors are the same ones - C4 has one implementation, and a cost that
+        disagreed with the price it came from would be a bug nothing on any
+        screen could see.
+
         **`conn` is how this stays atomic with the status flip** (WP-50). The
         confirm paths pass their own connection so both halves commit together;
         called without one it opens its own transaction, which is the retried
@@ -747,7 +780,8 @@ class Database:
             invoice = await conn.fetchrow(
                 """
                 select i.tenant_id, i.supplier_id, i.supplier_name, i.tax_treatment, i.tax,
-                       i.total, i.discount_total, i.currency, t.currency as tenant_currency
+                       i.total, i.discount_total, i.currency, i.provenance,
+                       t.currency as tenant_currency
                 from invoices i join tenants t on t.id = i.tenant_id
                 where i.id = $1
                 """,
@@ -804,15 +838,42 @@ class Database:
 
             lines = await conn.fetch(
                 """
-                select id, raw_name, supplier_item_id, qty, unit, pack_size, unit_price
+                select id, position, raw_name, supplier_item_id, qty, unit, pack_size, unit_price
                 from invoice_lines
                 where invoice_id = $1 and line_kind = 'stock_item' order by position
                 """,
                 invoice_id,
             )
+            # `position` is fetched rather than counted. This query drops the
+            # charge lines, so the loop counter is not where the line sits on
+            # the invoice - and provenance is keyed by that position, so an
+            # invoice whose first line is a delivery charge would hand every
+            # stock line the line above's history and the wrong C9 label.
+            #
+            # C9: a cost is never greener than its worst input, and the pro
+            # rata discount makes every stock line an input to every other one,
+            # so one corrected line_total taints its neighbours' costs too.
+            asserted = asserted_fields(invoice["provenance"] or {})
+            stock_positions = [line["position"] for line in lines]
             for line in lines:
                 if line["qty"] is None or line["unit_price"] is None:
                     continue
+                await _write_line_cost(
+                    conn,
+                    line["id"],
+                    costing.cost_line(
+                        position=line["position"],
+                        qty=line["qty"],
+                        unit_price=line["unit_price"],
+                        pack_size=line["pack_size"],
+                        raw_name=line["raw_name"],
+                        unit=line["unit"],
+                        net_factor=net_factor,
+                        discount_factor=discount_factor,
+                        asserted=asserted,
+                        stock_positions=stock_positions,
+                    ),
+                )
                 item_id = line["supplier_item_id"]
                 if item_id is None:
                     canonical_name = clean_name(line["raw_name"])

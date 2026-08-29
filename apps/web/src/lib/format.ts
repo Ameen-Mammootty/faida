@@ -25,10 +25,73 @@ export function money(value: string): string {
   return trimmed + "0".repeat(2 - decimals);
 }
 
+/**
+ * money(), with thousands separators: "52250.00" renders "52,250.00". String
+ * operations only, like everything else here. Costs per kilo reach five
+ * figures for real ingredients - a gram of saffron is not a rounding error -
+ * and an ungrouped run of digits is the kind of number a reader mis-reads by a
+ * factor of ten without noticing.
+ */
+export function groupedMoney(value: string): string {
+  const padded = money(value);
+  const dot = padded.indexOf(".");
+  const whole = padded.slice(0, dot);
+  const sign = whole.startsWith("-") ? "-" : "";
+  const digits = sign ? whole.slice(1) : whole;
+  return sign + digits.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + padded.slice(dot);
+}
+
 /** Quantities are not money: "12.000" is "12", "2.500" is "2.5", "12" stays "12". */
 export function quantity(value: string): string {
   if (!value.includes(".")) return value;
   return value.replace(/0+$/, "").replace(/\.$/, "");
+}
+
+/** Plain English for the header fields C8 keys provenance by. */
+const FIELD_WORDS: Record<string, string> = {
+  supplier_name: "the supplier name",
+  invoice_no: "the invoice number",
+  invoice_date: "the invoice date",
+  currency: "the currency",
+  payment_kind: "the payment terms",
+  subtotal: "the subtotal",
+  tax: "the VAT",
+  total: "the invoice total",
+  discount_total: "the discount",
+  rounding_amount: "the rounding",
+  qty: "quantity",
+  unit: "unit",
+  unit_price: "price",
+  line_total: "total",
+  pack_size: "pack size",
+  raw_name: "name",
+};
+
+/**
+ * A C8 field path as something a person reads: "total" becomes "the invoice
+ * total", "lines.2.unit_price" becomes "line 3's price".
+ *
+ * These strings exist because C9 has to *name* what dragged a derived number
+ * down. "This cost is estimated" with nothing after it is the kind of warning
+ * people learn to scroll past; "it leans on the invoice total, which someone
+ * supplied" is a thing to go and check. Line numbers are 1-based here and
+ * 0-based on the wire, exactly as they are everywhere else on this screen.
+ */
+export function describeField(path: string): string {
+  const parts = path.split(".");
+  if (parts.length === 3 && parts[0] === "lines") {
+    const field = FIELD_WORDS[parts[2]] ?? parts[2];
+    return `line ${Number(parts[1]) + 1}'s ${field}`;
+  }
+  return FIELD_WORDS[path] ?? path;
+}
+
+/** "the invoice total", "the invoice total and line 3's price", "..., and 2 more". */
+export function describeFields(paths: string[]): string {
+  const named = paths.slice(0, 2).map(describeField);
+  const rest = paths.length - named.length;
+  const listed = named.length === 2 ? `${named[0]} and ${named[1]}` : named[0];
+  return rest > 0 ? `${listed}, and ${rest} more` : listed;
 }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];

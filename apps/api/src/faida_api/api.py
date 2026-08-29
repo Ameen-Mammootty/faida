@@ -51,6 +51,7 @@ import asyncpg
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 
+from . import costing
 from .confirm import (
     Edit,
     LineFieldEdit,
@@ -62,6 +63,7 @@ from .confirm import (
 from .contracts import InvoiceStatus, JobKind
 from .db import Database
 from .extraction import units
+from .extraction.currency import currency_differs
 from .extraction.normalize import normalize_extracted
 from .extraction.schema import ExtractedInvoice, ExtractedLine
 from .extraction.validate import validate_invoice
@@ -160,6 +162,63 @@ def _maybe_str(value) -> str | None:
     return None if value is None else str(value)
 
 
+def _line_cost(line: asyncpg.Record, *, costed: bool, foreign_currency: bool) -> dict | None:
+    """What one gram of this line cost, or the reason there is no such number
+    (M5 WP-53).
+
+    Null means the question has not been asked yet: costs are frozen at
+    confirm, so an invoice still waiting has none, and a charge line - cool-box
+    hire, delivery - never gets one because it is not a thing you cook with.
+
+    Both other answers are a payload, because "no cost" with no reason beside
+    it is the dead end this product keeps promising not to be. The cost travels
+    with its C9 quality and the pack it was divided by, which is the input
+    nothing anywhere cross-checks.
+    """
+    if line["line_kind"] != "stock_item":
+        return None
+    cost = line["cost_per_base_unit"]
+    if cost is not None:
+        basis = line["cost_basis"] or {}
+        per_display, display_unit = costing.per_display_unit(cost, line["cost_base_unit"])
+        return {
+            "per_base_unit": _dec(cost),
+            "base_unit": line["cost_base_unit"],
+            "per_display_unit": _dec(per_display),
+            "display_unit": display_unit,
+            "quality": basis.get("quality"),
+            "asserted": basis.get("asserted", []),
+            "pack": basis.get("pack"),
+            "pack_source": basis.get("pack_source"),
+            "blocked": None,
+            "reason": None,
+        }
+    if not costed:
+        return None
+    blocked = costing.blocked_reason_for(
+        qty=line["qty"],
+        unit_price=line["unit_price"],
+        pack_size=line["pack_size"],
+        raw_name=line["raw_name"],
+        unit=line["unit"],
+        foreign_currency=foreign_currency,
+    )
+    if blocked is None:
+        return None
+    return {
+        "per_base_unit": None,
+        "base_unit": None,
+        "per_display_unit": None,
+        "display_unit": None,
+        "quality": None,
+        "asserted": [],
+        "pack": None,
+        "pack_source": None,
+        "blocked": blocked.value,
+        "reason": costing.BLOCKED_REASONS[blocked],
+    }
+
+
 async def _invoice_detail(request: Request, invoice_id: str) -> dict:
     """The C6 detail payload: header fields, per-line fields, checks,
     confidence, the document, and a short-lived signed image URL (null when
@@ -179,6 +238,12 @@ async def _invoice_detail(request: Request, invoice_id: str) -> dict:
             # A broken sign call must not sink the whole detail: the screen
             # still shows every field, just without the photo.
             logger.exception("signing image URL failed for document %s", invoice["document_id"])
+
+    # Costs are frozen at confirm (WP-53), so before that a line is not
+    # uncosted, it is simply not costed yet - a different sentence, and the
+    # only one that is true.
+    costed = invoice["status"] == InvoiceStatus.CONFIRMED
+    foreign_currency = currency_differs(invoice["currency"], invoice["tenant_currency"])
 
     return {
         **_invoice_summary(invoice),
@@ -200,7 +265,9 @@ async def _invoice_detail(request: Request, invoice_id: str) -> dict:
                 "pack_size": line["pack_size"],
                 "unit_price": _dec(line["unit_price"]),
                 "line_total": _dec(line["line_total"]),
+                "line_kind": line["line_kind"],
                 "checks": line["checks"],
+                "cost": _line_cost(line, costed=costed, foreign_currency=foreign_currency),
             }
             for line in lines
         ],

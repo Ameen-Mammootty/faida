@@ -23,9 +23,13 @@
  */
 
 import type {
+  BaseUnit,
+  CostBlocker,
   DocumentClassification,
   DocumentSource,
   InvoiceStatus,
+  LineCost,
+  LineKind,
   PaymentKind,
   PriceHistory,
 } from "../types";
@@ -39,6 +43,67 @@ export interface FixtureLine {
   line_total: string | null;
   supplier_item_id: string | null;
   snapped: boolean | null;
+  /** Omitted means stock. Charges (delivery, cool-box hire) never cost. */
+  line_kind?: LineKind;
+  /**
+   * What the server would freeze onto this line at confirm (M5 WP-53), which
+   * is the only moment a cost exists. Written out rather than computed,
+   * deliberately: the arithmetic is `unit_price / pack size` with C4's two
+   * factors, and reimplementing that in TypeScript would put a second money
+   * implementation in the demo mock - the thing plan.md section 2 rule 3
+   * exists to refuse. This keeps the *shape* honest so the screen is never
+   * built against a payload the API does not send.
+   */
+  cost?: LineCost;
+}
+
+/** Plain English for a blocker, mirroring faida_api/costing.BLOCKED_REASONS. */
+const BLOCKED_REASONS: Record<CostBlocker, string> = {
+  foreign_currency: "This invoice is billed in another currency, so its prices are held back.",
+  missing_unit_price: "The invoice does not show a price for this line.",
+  missing_quantity:
+    "The invoice does not show how many were bought, so nothing checks the price.",
+  zero_pack: "The pack size names a unit but no amount to divide by.",
+  bare_container: "Nothing on the invoice says how much one of these holds.",
+  unparseable_pack: "Nothing on this line reads as a pack size.",
+};
+
+/** A cost the invoice's own numbers support. Never `verified`: nothing
+ * anywhere cross-checks a pack size. */
+function costs(
+  perBaseUnit: string,
+  baseUnit: BaseUnit,
+  perDisplayUnit: string,
+  displayUnit: string,
+  pack: string,
+): LineCost {
+  return {
+    per_base_unit: perBaseUnit,
+    base_unit: baseUnit,
+    per_display_unit: perDisplayUnit,
+    display_unit: displayUnit,
+    quality: "reliable_with_limitations",
+    asserted: [],
+    pack,
+    pack_source: "pack_size",
+    blocked: null,
+    reason: null,
+  };
+}
+
+function cannotCost(blocked: CostBlocker): LineCost {
+  return {
+    per_base_unit: null,
+    base_unit: null,
+    per_display_unit: null,
+    display_unit: null,
+    quality: null,
+    asserted: [],
+    pack: null,
+    pack_source: null,
+    blocked,
+    reason: BLOCKED_REASONS[blocked],
+  };
 }
 
 export interface Fixture {
@@ -164,6 +229,7 @@ export const FIXTURES: Fixture[] = [
         line_total: "327.00",
         supplier_item_id: "si-2001",
         snapped: true,
+        cost: costs("0.02422222", "g", "24.22", "kg", "2.25kg"),
       },
       {
         raw_name: "Karak Tea Dust 5kg",
@@ -174,6 +240,7 @@ export const FIXTURES: Fixture[] = [
         line_total: "98.00",
         supplier_item_id: "si-2002",
         snapped: true,
+        cost: costs("0.00980000", "g", "9.80", "kg", "5kg"),
       },
       {
         raw_name: "Sugar 50kg",
@@ -184,6 +251,7 @@ export const FIXTURES: Fixture[] = [
         line_total: "118.75",
         supplier_item_id: "si-2003",
         snapped: true,
+        cost: costs("0.00237500", "g", "2.38", "kg", "50kg"),
       },
       {
         raw_name: "Cardamom Powder 500g",
@@ -194,6 +262,7 @@ export const FIXTURES: Fixture[] = [
         line_total: "72.00",
         supplier_item_id: "si-2004",
         snapped: true,
+        cost: costs("0.04800000", "g", "48.00", "kg", "500g"),
       },
       {
         raw_name: "Paper Cups 8oz x1000",
@@ -204,6 +273,7 @@ export const FIXTURES: Fixture[] = [
         line_total: "67.00",
         supplier_item_id: "si-2005",
         snapped: true,
+        cost: costs("0.03350000", "pc", "0.03", "each", "1000pc"),
       },
     ],
   },
@@ -235,6 +305,7 @@ export const FIXTURES: Fixture[] = [
         line_total: "76.00",
         supplier_item_id: "si-2101",
         snapped: true,
+        cost: costs("0.00152000", "g", "1.52", "kg", "25kg"),
       },
       {
         raw_name: "Evaporated Milk 410ml",
@@ -245,6 +316,7 @@ export const FIXTURES: Fixture[] = [
         line_total: "58.00",
         supplier_item_id: "si-2102",
         snapped: true,
+        cost: costs("0.01097561", "ml", "10.98", "litre", "410ml"),
       },
       {
         raw_name: "Sugar 10kg",
@@ -255,6 +327,8 @@ export const FIXTURES: Fixture[] = [
         line_total: "84.00",
         supplier_item_id: "si-2103",
         snapped: true,
+        // No quantity read, so nothing corroborates the unit price (WP-53).
+        cost: cannotCost("missing_quantity"),
       },
       {
         raw_name: "Saffron Threads 1g",
@@ -265,6 +339,7 @@ export const FIXTURES: Fixture[] = [
         line_total: "52.25",
         supplier_item_id: null,
         snapped: false,
+        cost: costs("52.25000000", "g", "52250.00", "kg", "1g"),
       },
     ],
   },
@@ -296,6 +371,7 @@ export const FIXTURES: Fixture[] = [
         line_total: "50.00",
         supplier_item_id: null,
         snapped: null,
+        cost: costs("0.00250000", "g", "2.50", "kg", "5kg"),
       },
       {
         raw_name: "Onions Bag 10kg",
@@ -306,6 +382,7 @@ export const FIXTURES: Fixture[] = [
         line_total: "36.00",
         supplier_item_id: null,
         snapped: null,
+        cost: costs("0.00180000", "g", "1.80", "kg", "10kg"),
       },
       {
         raw_name: "Coriander Bunches",
@@ -316,6 +393,8 @@ export const FIXTURES: Fixture[] = [
         line_total: "15.00",
         supplier_item_id: null,
         snapped: null,
+        // A bunch is a container: nothing says how much coriander is in one.
+        cost: cannotCost("bare_container"),
       },
     ],
   },

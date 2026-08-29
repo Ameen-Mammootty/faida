@@ -8,7 +8,7 @@
 - **Product:** Faida — profit visibility for GCC cafeterias and multi-branch karak/paratha chains, fed through WhatsApp.
 - **Reference:** `Docs/PRD.md` (v2). This plan sequences the build; the PRD owns product intent. Where they conflict on *scope timing*, this plan wins.
 - **Start date:** 2026-08-22
-- **Current milestone:** **M0 proven on real hardware 2026-08-23 (F1-F4 done)** - the live chain carried through M1 extraction and M2 confirm on the first real invoice. The live project's schema is at migration 0011 (applied 2026-08-28), so the C8 code on master is safe to deploy. **The demo bar was raised 2026-08-28 (founder call): the demo is the complete end-to-end MVP chain - exact invoice data → supplier items mapped to raw materials → raw materials as recipe ingredients → menu costed, closing on a menu-wise margin per item - so the demo gate moved from M4 to the end of M6; M4 is now the loop gate.** Founder-gated: a permanent access token (the 24 h token expired 2026-08-23 19:00; replacement in progress), corpus photos (F6) for the accuracy loop (WP-15/16), loop rehearsals (M4 gate), one real menu with recipes and selling prices (F7, for M6's costing and the demo). The review screen is live at `https://faida-web-nine.vercel.app` (deployed 2026-08-24). **M5 (raw materials) is decomposed as of 2026-08-29** into WP-50 to WP-54 (§7.3), and **every M5 prerequisite is closed**: **WP-19** (a short read that silently drops lines) shipped 2026-08-28 with the guard live on both providers, alongside WP-26 (a totals block off-frame confirmed away with a null total) and WP-28 (a USD invoice walking into an AED baseline). Known gaps before the demo: the amber question still dead-ends on a plain-English answer (dates and invoice numbers now have their own grammar and a year question, closed 2026-08-28 with WP-25/WP-27 - free-text answers to *other* questions still clarify). Forward-to-reply measured **19.9 s and 23.0 s** on 2026-08-25 against the ~20 s target, with no repair round on either - the 28.4 s figure is retired. WP-16 rounds 1-2 ran 2026-08-24/25 (`eval --live`): every §5 accuracy target is met *on the ten generated invoices* (phase 1, not pilot accuracy), the rebuilt ground truth signed off by the founder on 2026-08-25 with zero corrections (F8), and five proposed/corpus images still ungenerated (CUT-01 generated 2026-08-29; AMD-01 joined the corpus 2026-08-28). **The post-demo track was resequenced 2026-08-28** (§8, Decision Log): raw materials → menu costing → auth → sales, because costing a plate needs no sales data and the raw-material layer the MVP depends on was in no milestone at all. Nothing in M0-M4 moved
+- **Current milestone:** **M0 proven on real hardware 2026-08-23 (F1-F4 done)** - the live chain carried through M1 extraction and M2 confirm on the first real invoice. The live project's schema is at migration 0011 (applied 2026-08-28), so the C8 code on master is safe to deploy. **The demo bar was raised 2026-08-28 (founder call): the demo is the complete end-to-end MVP chain - exact invoice data → supplier items mapped to raw materials → raw materials as recipe ingredients → menu costed, closing on a menu-wise margin per item - so the demo gate moved from M4 to the end of M6; M4 is now the loop gate.** Founder-gated: a permanent access token (the 24 h token expired 2026-08-23 19:00; replacement in progress), corpus photos (F6) for the accuracy loop (WP-15/16), loop rehearsals (M4 gate), one real menu with recipes and selling prices (F7, for M6's costing and the demo). The review screen is live at `https://faida-web-nine.vercel.app` (deployed 2026-08-24). **M5 (raw materials) is decomposed as of 2026-08-29** into WP-50 to WP-55 (§7.3), and **every M5 prerequisite is closed**: **WP-19** (a short read that silently drops lines) shipped 2026-08-28 with the guard live on both providers, alongside WP-26 (a totals block off-frame confirmed away with a null total) and WP-28 (a USD invoice walking into an AED baseline). Known gaps before the demo: the amber question still dead-ends on a plain-English answer (dates and invoice numbers now have their own grammar and a year question, closed 2026-08-28 with WP-25/WP-27 - free-text answers to *other* questions still clarify). Forward-to-reply measured **19.9 s and 23.0 s** on 2026-08-25 against the ~20 s target, with no repair round on either - the 28.4 s figure is retired. WP-16 rounds 1-2 ran 2026-08-24/25 (`eval --live`): every §5 accuracy target is met *on the ten generated invoices* (phase 1, not pilot accuracy), the rebuilt ground truth signed off by the founder on 2026-08-25 with zero corrections (F8), and five proposed/corpus images still ungenerated (CUT-01 generated 2026-08-29; AMD-01 joined the corpus 2026-08-28). **The post-demo track was resequenced 2026-08-28** (§8, Decision Log): raw materials → menu costing → auth → sales, because costing a plate needs no sales data and the raw-material layer the MVP depends on was in no milestone at all. Nothing in M0-M4 moved
 
 ---
 
@@ -739,11 +739,14 @@ them, not a rewrite of them.
       can only propose against materials that already exist; a fresh tenant has none). Live at
       `/materials`; proposals are **pack-blind** where snapping is pack-sensitive, so a 2.5 kg sack
       and a 500 g pouch from two suppliers propose as one material
-- [ ] **Cost per base unit, derived and traceable:** `unit_price ÷ parsed pack size` → AED per
-      gram / millilitre / piece, ex-VAT per C4's net-canonical rule, recorded per confirmed
-      invoice line so every cost drills back to a photo. `pack_size` reads 99% *on generated
-      invoices* (phase 1), which is what makes this arithmetic rather than guesswork.
-      `numeric(18,8)`, `ROUND_HALF_UP`, displayed per kilo
+- [x] **Cost per base unit, derived and traceable** (WP-53, done 2026-08-29, migration 0013):
+      `unit_price ÷ parsed pack size` → AED per gram / millilitre / piece, ex-VAT per C4's
+      net-canonical rule, recorded per confirmed invoice line so every cost drills back to a
+      photo. `pack_size` reads 99% *on generated invoices* (phase 1), which is what makes this
+      arithmetic rather than guesswork. `numeric(18,8)`, `ROUND_HALF_UP`, displayed per kilo.
+      The two C4 factors are reused rather than recomputed, and the rounding happens once at the
+      division: quantizing to fils first would put flour at 0.002 instead of 0.00174, which a
+      test now pins against the real column
 - [ ] Container conversions, consultant-entered and versioned ("1 carton = 10 kg chicken"):
       `units.py` deliberately refuses to guess what is inside a carton, so a human says once.
       `audit_events` is the version history; an override costs the lines that have no cost yet and
@@ -752,12 +755,15 @@ them, not a rewrite of them.
       blocks that material's cost and says which invoice line it came from — **and so does every
       other reason a line cannot be costed** (missing unit price or quantity, a bare container, a
       zero pack, the foreign-currency hold), each with its own reason
-- [ ] **C9 applied to the first derived number:** a cost per base unit inherits the quality of the
-      invoice line under it, so one built on a reconstructed total or a corrected quantity reads
-      *estimated* and names the line that made it so — `provenance.asserted_fields()` is the read.
-      **No cost reads *verified***: the arithmetic corroborates the unit price but **pack size sits
-      in no identity at all**, so a 25kg read as 2.5kg passes every check we have. Costs read
-      *estimated* or *reliable with limitations* (PRD §24's vocabulary), never green
+- [x] **C9 applied to the first derived number** (WP-53, done 2026-08-29): a cost per base unit
+      inherits the quality of the invoice line under it, so one built on a reconstructed total or a
+      corrected quantity reads *estimated* and names the line that made it so —
+      `provenance.asserted_fields()` is the read. **No cost reads *verified***: the arithmetic
+      corroborates the unit price but **pack size sits in no identity at all**, so a 25kg read as
+      2.5kg passes every check we have. Costs read *estimated* or *reliable with limitations*
+      (PRD §24's vocabulary), never green. The input set is computed from the arithmetic rather
+      than listed, so an exclusive invoice's cost is untouched by a reconstructed total while a
+      discounted invoice's costs all taint each other
 - [ ] **One material, one price per kilo — derived, not stored.** The newest costed line among the
       packs mapped right now, by **printed invoice date** (PRD §19's "most recent purchase", so an
       onboarding stack of old invoices cannot overwrite this month's cost), confirm time only as a
@@ -977,7 +983,14 @@ pilot volume. Meta utility template cost applies only from M10 (verify live UAE 
   Two guards proven rather than assumed. The **cross-tenant refusal** was tested by driving the raw `update supplier_items set ingredient_id` against another tenant's material and watching Postgres raise `supplier_items_ingredient_fk` - the composite key does the work, not a code path that might be forgotten. And the **dimension refusal** was exercised on the real screen: mapping a millilitre carton onto a gram material answers "'Evaporated Milk 48x400ml' is measured by volume, but Milk Powder is measured by weight" - plain English, after a first pass leaked `ml` and `g` into the message and the screenshot caught it.
   Seen working, not just built: the screen was driven end to end in a browser. Naming the first material removes it from the queue, and **the second supplier's 500 g pouch is then proposed as the same material** - the milestone's whole point, on screen.
   **423 API tests green** (was 411; 12 new), ruff clean, web typecheck + eslint + production build clean with the new `/materials` route.
-  Next: WP-53 (cost per base unit and its C9 quality), then WP-54 → WP-55.
+  **WP-53 shipped**: every confirmed invoice line now carries what one gram of it cost, frozen inside the same transaction that confirms the invoice, and the review screen shows it beside the photo. Migration 0013 adds `cost_per_base_unit numeric(18,8)`, `cost_base_unit` and a `cost_basis` jsonb; `costing.py` is the pure module that does the dividing and the labelling.
+  **The precision is the whole point of the column, and it was verified by breaking it.** Flour at AED 43.50 per 25 kg is 0.00174 AED a gram. Changing 0013 to `numeric(12,3)` - the precision every price column uses, because fils is what a price is quoted in - makes the test fail with `0.002`: a 15% error, on a number no photograph shows, that nothing downstream could ever notice. The rounding therefore happens **once, at the division**, on the raw unit price rather than on price memory's already-rounded fils figure.
+  **The position trap the plan warned about was real, and its test has teeth.** The stock-line query drops charge lines, so the loop counter is not where a line sits on the invoice, and C8 provenance is keyed by that position. Substituting `enumerate` for the fetched `position` makes an invoice whose first line is a delivery charge read every stock line's quality off the row above it - proven by reverting the fix and watching the avocado line come back `estimated` because the *delivery charge* had been corrected. Exactly backwards, on the one number nobody can check against a photo.
+  **No cost reads verified, and a test pins the absence of the word** rather than trusting future readers to remember why. Costs read *reliable with limitations*, or *estimated* when a person supplied an input - and the input set is derived from the arithmetic, not listed: an exclusive invoice's cost never touches `total`, so a reconstructed total there changes nothing, while a discounted invoice allocates pro rata over the stock-line sum and one corrected `line_total` taints every other line's cost.
+  A line that cannot be costed says which of six things went wrong, in a sentence a consultant can act on, rather than going quiet - the derived half of WP-55, shipped early because "no cost" with no reason beside it is the dead end this product keeps promising not to be.
+  Seen on the screen, and two things fixed there that no test would have caught: the quality caption repeated identically on all five rows (now only the exception is labelled, with the standing limitation stated once under the table), and a confirmed invoice showed the word "Confirmed" twice in a stack - the status chip and a disabled button - now the chip plus the date it was confirmed.
+  **452 API tests green** (was 423; 29 new), eval scorer 65 green, `eval.run --smoke` OK, ruff clean on both trees, web typecheck + eslint + production build clean.
+  Next: WP-54 (one material, one price per kilo) → WP-55.
 
 - 2026-08-29 - **All four lanes are one master again: WP-26/28 (landed earlier), the M4 loop-gate lane, WP-29 bilingual matching, and the Gemini 3 Flash swap - merged, tested together, deployed in one push.**
   Integration order was WP-29 then the provider swap, and the combined suite is green: 393 API tests, 65 eval tests, smoke, ruff on both trees.

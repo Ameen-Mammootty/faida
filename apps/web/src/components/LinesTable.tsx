@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { ApiError } from "@/lib/errors";
-import { money, quantity } from "@/lib/format";
+import { describeFields, groupedMoney, money, quantity } from "@/lib/format";
 import type { Correction, InvoiceLine } from "@/lib/types";
 import FieldBadge from "./FieldBadge";
 
@@ -45,6 +45,68 @@ function amberReason(line: InvoiceLine): string {
 
 function NotRead() {
   return <span className="text-xs font-medium text-caution">Not read</span>;
+}
+
+/**
+ * What a cost's quality means, in the reader's language (M5 WP-53).
+ *
+ * There is no green here and there never will be. The arithmetic checks each
+ * price against the quantity and the line total, so the price is corroborated
+ * - but nothing anywhere cross-checks the pack size the price is divided by.
+ * A supplier printing 25kg that was read as 2.5kg passes every check we have,
+ * so the best a cost can honestly claim is that the invoice's own numbers
+ * support it.
+ */
+function costNote(line: InvoiceLine, amber: boolean): string | null {
+  const cost = line.cost;
+  if (!cost) return null;
+  if (cost.blocked) {
+    // A missing quantity or price is already spelled out by the amber line
+    // above ("Couldn't read the quantity on the photo"), and saying it twice
+    // in two colours teaches people that neither sentence is worth reading.
+    // A pack-size problem has no such twin: nothing else on this screen
+    // mentions the pack.
+    const alreadySaid = cost.blocked === "missing_quantity" || cost.blocked === "missing_unit_price";
+    return amber && alreadySaid ? null : cost.reason;
+  }
+  if (cost.pack_source === "override") {
+    return `Estimated: divided by ${cost.pack}, which someone entered for this product. The invoice itself does not say.`;
+  }
+  if (cost.quality === "estimated" && cost.asserted.length > 0) {
+    return `Estimated: this cost leans on ${describeFields(
+      cost.asserted,
+    )}, supplied by a person rather than read off the photo.`;
+  }
+  return null;
+}
+
+/** The Cost cell: the figure and how much to trust it, or why there is none. */
+function CostCell({ line }: { line: InvoiceLine }) {
+  if (line.line_kind === "charge") {
+    return <span className="text-xs text-stone">Not stock</span>;
+  }
+  const cost = line.cost;
+  if (!cost) return null;
+  if (cost.blocked || cost.per_display_unit === null) {
+    return <span className="text-xs font-medium text-plum">No cost</span>;
+  }
+  return (
+    <>
+      <span className="tabular-nums">
+        {groupedMoney(cost.per_display_unit)}
+        <span className="ml-1 text-xs text-stone">
+          {cost.display_unit === "each" ? "each" : `/${cost.display_unit}`}
+        </span>
+      </span>
+      {/* Only the exception is labelled. Every cost here carries the same
+          limitation - nothing cross-checks a pack size - and the note under
+          the table says so once; repeating it on every row would bury the one
+          line that is genuinely weaker than its neighbours. */}
+      {cost.quality === "estimated" ? (
+        <span className="block text-[11px] text-caution">estimated</span>
+      ) : null}
+    </>
+  );
 }
 
 /**
@@ -115,54 +177,75 @@ export default function LinesTable({ lines, editable, onSaveLine }: Props) {
     }
   }
 
+  // The column appears the moment the invoice is confirmed, because that is
+  // the moment the costs exist (WP-53). Before then it would be a column of
+  // blanks promising something.
+  const showCost = lines.some((line) => line.cost !== null);
+
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full border-collapse text-sm">
-        <thead>
-          <tr className="border-b border-ink/10 text-left text-[11px] font-medium tracking-wider text-stone uppercase">
-            <th scope="col" className="py-2 pr-3 font-medium">
-              Line
-            </th>
-            <th scope="col" className="py-2 pr-3 font-medium">
-              Item
-            </th>
-            <th scope="col" className="py-2 pr-3 text-right font-medium">
-              Qty
-            </th>
-            <th scope="col" className="py-2 pr-3 text-right font-medium">
-              Unit price
-            </th>
-            <th scope="col" className="py-2 pr-3 text-right font-medium">
-              Line total
-            </th>
-            <th scope="col" className="py-2 font-medium">
-              <span className="sr-only">Check result</span>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {lines.map((line) => {
-            const amber = line.checks.status === "amber";
-            const isEditing = editing === line.position;
-            return (
-              <LineRows
-                key={line.position}
-                line={line}
-                amber={amber}
-                editable={editable}
-                isEditing={isEditing}
-                draft={draft}
-                saving={saving}
-                error={error}
-                onDraftChange={setDraft}
-                onStartEdit={() => startEdit(line)}
-                onCancel={cancelEdit}
-                onSave={() => save(line)}
-              />
-            );
-          })}
-        </tbody>
-      </table>
+    <div>
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-sm">
+          <thead>
+            <tr className="border-b border-ink/10 text-left text-[11px] font-medium tracking-wider text-stone uppercase">
+              <th scope="col" className="py-2 pr-3 font-medium">
+                Line
+              </th>
+              <th scope="col" className="py-2 pr-3 font-medium">
+                Item
+              </th>
+              <th scope="col" className="py-2 pr-3 text-right font-medium">
+                Qty
+              </th>
+              <th scope="col" className="py-2 pr-3 text-right font-medium">
+                Unit price
+              </th>
+              <th scope="col" className="py-2 pr-3 text-right font-medium">
+                Line total
+              </th>
+              {showCost ? (
+                <th scope="col" className="py-2 pr-3 text-right font-medium">
+                  What it costs
+                </th>
+              ) : null}
+              <th scope="col" className="py-2 font-medium">
+                <span className="sr-only">Check result</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {lines.map((line) => {
+              const amber = line.checks.status === "amber";
+              const isEditing = editing === line.position;
+              return (
+                <LineRows
+                  key={line.position}
+                  line={line}
+                  amber={amber}
+                  editable={editable}
+                  isEditing={isEditing}
+                  showCost={showCost}
+                  draft={draft}
+                  saving={saving}
+                  error={error}
+                  onDraftChange={setDraft}
+                  onStartEdit={() => startEdit(line)}
+                  onCancel={cancelEdit}
+                  onSave={() => save(line)}
+                />
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {showCost ? (
+        <p className="mt-3 max-w-2xl text-xs text-stone">
+          Costs are worked out ex-VAT and after any discount, from the price and the pack size on
+          this invoice. No purchase cost is ever marked verified: the arithmetic checks each price
+          against the quantity and the line total, but nothing on an invoice cross-checks the pack
+          size a cost is divided by.
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -172,6 +255,7 @@ function LineRows({
   amber,
   editable,
   isEditing,
+  showCost,
   draft,
   saving,
   error,
@@ -184,6 +268,7 @@ function LineRows({
   amber: boolean;
   editable: boolean;
   isEditing: boolean;
+  showCost: boolean;
   draft: Draft;
   saving: boolean;
   error: string | null;
@@ -193,6 +278,7 @@ function LineRows({
   onSave: () => void;
 }) {
   const n = line.position + 1;
+  const note = costNote(line, amber);
   return (
     <>
       <tr className={`border-b text-ink ${amber ? "border-caution/15 bg-gold-soft/50" : "border-ink/5"}`}>
@@ -210,6 +296,11 @@ function LineRows({
         <td className="py-2.5 pr-3 text-right font-medium tabular-nums">
           {line.line_total === null ? <NotRead /> : money(line.line_total)}
         </td>
+        {showCost ? (
+          <td className="py-2.5 pr-3 text-right">
+            <CostCell line={line} />
+          </td>
+        ) : null}
         <td className="py-2.5 text-right">
           <span className="inline-flex items-center gap-2">
             <FieldBadge status={line.checks.status} />
@@ -226,11 +317,21 @@ function LineRows({
           </span>
         </td>
       </tr>
-      {amber ? (
-        <tr className="border-b border-caution/15 bg-gold-soft/50">
+      {amber || note ? (
+        <tr
+          className={`border-b ${
+            amber ? "border-caution/15 bg-gold-soft/50" : "border-ink/5"
+          }`}
+        >
           <td />
-          <td colSpan={5} className="pb-2.5 pr-3">
-            <p className="text-xs text-caution">{amberReason(line)}</p>
+          <td colSpan={showCost ? 6 : 5} className="pb-2.5 pr-3">
+            {amber ? <p className="text-xs text-caution">{amberReason(line)}</p> : null}
+            {/* Why this line has no cost, or what its cost leans on. A cost
+                nobody can question is the failure this layer exists to
+                avoid, so the sentence sits under the number itself. */}
+            {note ? (
+              <p className={`text-xs ${amber ? "mt-1 text-caution" : "text-stone"}`}>{note}</p>
+            ) : null}
             {isEditing ? (
               <form
                 className="mt-2 flex flex-wrap items-end gap-3"

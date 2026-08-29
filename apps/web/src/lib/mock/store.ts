@@ -32,6 +32,7 @@ import type {
   InvoiceLine,
   InvoiceStatus,
   InvoiceSummary,
+  LineCost,
   ManualInvoiceInput,
   PriceHistory,
   Provenance,
@@ -98,7 +99,12 @@ function buildDetail(fixture: Fixture): InvoiceDetail {
     pack_size: line.pack_size,
     unit_price: line.unit_price,
     line_total: line.line_total,
+    line_kind: line.line_kind ?? "stock_item",
     checks: lineChecks[index],
+    // A cost exists only from the moment the invoice is confirmed (WP-53):
+    // before that the question has not been asked, which is a different thing
+    // from asking it and getting nothing.
+    cost: fixture.status === "confirmed" ? (line.cost ?? null) : null,
   }));
   return {
     id: fixture.id,
@@ -138,6 +144,13 @@ const invoices = new Map<string, InvoiceDetail>(
 
 const priceHistories = new Map<string, PriceHistory>(
   Object.entries(PRICE_HISTORIES).map(([id, history]) => [id, structuredClone(history)]),
+);
+
+/** What confirming freezes onto each line (WP-53), by invoice and position.
+ * Kept beside the fixtures rather than recomputed, for the reason FixtureLine
+ * gives: no second implementation of the money in the demo mock. */
+const frozenCosts = new Map<string, (LineCost | null)[]>(
+  FIXTURES.map((fixture) => [fixture.id, fixture.lines.map((line) => line.cost ?? null)]),
 );
 
 let uploadCounter = 0;
@@ -348,10 +361,17 @@ export async function mockConfirmInvoice(id: string): Promise<InvoiceDetail> {
   if (!EDITABLE_STATUSES.has(current.status)) {
     throw new ApiError(409, `invoice is ${current.status}; cannot confirm`);
   }
+  const costs = frozenCosts.get(id);
   const confirmed: InvoiceDetail = {
     ...clone(current),
     status: "confirmed",
     confirmed_at: nowIso(),
+    // The same transaction that flips the status freezes the costs (WP-50 +
+    // WP-53); on this screen the two arrive together or not at all.
+    lines: clone(current).lines.map((line, index) => ({
+      ...line,
+      cost: costs?.[index] ?? null,
+    })),
   };
   if (confirmed.document) confirmed.document.status = "confirmed";
   invoices.set(id, confirmed);
