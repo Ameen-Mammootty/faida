@@ -28,13 +28,25 @@ Run through this list the day before, and again 30 minutes before going on.
 
       Anything other than `0` is a clock running against the demo. The dashboard's Step 1 button issues 24-hour tokens that expire on a fixed boundary, so a token generated in the afternoon can die the same evening.
 - [ ] The demo phone(s) are registered as recipients on the Meta test number and have confirmed the code.
-- [ ] `ANTHROPIC_API_KEY` is set on Railway (with it missing, every invoice gets the failure reply).
-- [ ] **The Anthropic account has credit**, checked at console.anthropic.com Plans & Billing, with enough headroom for the whole session (~AED cents per invoice, but a demo day is many rehearsals). Found the hard way in rehearsal 2026-08-29: a drained balance presents as the failure reply after ~70 s - three retries of a 400 - while every other dashboard looks healthy. There is no low-balance warning anywhere in our system.
+- [ ] `GEMINI_API_KEY` is set on Railway (the shipped model is Gemini 3 Flash since
+      2026-08-29; with the key missing, every invoice gets the failure reply). If falling back
+      to Opus (`EXTRACTION_PROVIDER=anthropic`), `ANTHROPIC_API_KEY` must be set instead.
+- [ ] **The provider account has credit/billing enabled**, checked at the provider's console
+      (Google AI billing for Flash; console.anthropic.com Plans & Billing when on the Opus
+      fallback), with headroom for the whole session. Found the hard way in rehearsal
+      2026-08-29: a drained balance presents as the failure reply after ~70 s - three retries
+      of a 400 - while every other dashboard looks healthy. There is no low-balance warning
+      anywhere in our system.
 - [ ] The demo seed is applied: `psql "$DATABASE_URL" -f supabase/demo_seed.sql` (see section C).
 - [ ] The founder phone is mapped to the demo chain: the commented UPDATE at the bottom of `supabase/demo_seed.sql` has been run once, so the sender resolves to Al Qusais Branch of Karak Al Khaleej Cafeterias.
 - [ ] The review screen loads real data with its API token configured, and the invoice list for the demo chain is empty (no rehearsal leftovers).
 - [ ] The 3 curated invoice photos and 1 meme image are saved on the demo phone, in order, first in the gallery.
-- [ ] **The extraction grammar is warm.** The first request after a schema or model change pays a one-time server-side compilation measured in minutes (155 s observed 2026-08-28), and the cache is not permanent. Within the hour before going on, run `apps/api/.venv/bin/python -m eval.schema_probe` from the repo root (needs `ANTHROPIC_API_KEY`), or forward one throwaway invoice and delete it. Never let the on-stage forward be the first request.
+- [ ] **One warm-up forward before going on.** On the Opus fallback this is load-bearing: the
+      first request after a schema change pays a server-side grammar compilation measured in
+      minutes (155 s observed 2026-08-28) - run `apps/api/.venv/bin/python -m eval.schema_probe`
+      (needs `ANTHROPIC_API_KEY`). Gemini's raw-JSON-schema path has shown no such compile
+      penalty, but the principle stands on any engine: never let the on-stage forward be the
+      day's first request - forward one throwaway invoice, verify the reply, delete it.
 - [ ] Phone details: full battery, full signal or stage wifi, notifications from every other app silenced.
 
 Staged catalog quick reference (from `supabase/demo_seed.sql`):
@@ -62,7 +74,9 @@ The script from plan.md §6 M4, verbatim: forward invoice, reply appears with pr
 2. Say: "This is a supplier invoice from this morning's delivery. Watch what the salesman does with it."
 3. Forward curated invoice 1.
 4. Within a couple of seconds the ack arrives: `Got it - invoice received and saved. I'll reply with the details here soon.`
-5. Now extraction runs, which takes 15-20 seconds (18.7 s measured on a real forward 2026-08-28); do not stand in silence.
+5. Now extraction runs, which takes roughly 10-15 seconds on Gemini 3 Flash (9.5 s average
+   model time on the corpus; the Opus-era measurement was 13.3-17.2 s end to end); do not
+   stand in silence.
 6. While waiting, say: "It is reading the photo now: every line item, every price, and checking that the math on the page actually adds up. No typing, no app, and it compares every price against what this cafeteria paid last week."
 7. The parsed reply arrives, exactly (the date is whatever invoice 1 prints, read out in words):
    ```
@@ -130,7 +144,12 @@ On stage, switch to the backup demo phone first and debug later.
 Signed image URLs expire; refresh the page and the screen re-fetches a fresh signed URL.
 If it still fails, show the fields and the sparkline, which carry the story without the photo.
 
-## E0. The 5x-run log (completed 2026-08-29)
+## E0. The 5x-run log (completed 2026-08-29 - on Opus; re-run owed on Flash)
+
+> **Engine swap 2026-08-29:** Gemini 3 Flash became the shipped extraction model after this
+> table was earned on Opus 5. The table stands as evidence of the loop's mechanics, but the
+> loop gate closes on the shipped engine: the 5x runs, the meme, and both rehearsals re-run
+> on Flash before the gate is called passed. Expect faster replies, not slower.
 
 Every paper through the full loop five times, verified run-by-run against the live
 database; the meme once (plus an accidental video, which proved the unsupported-media

@@ -344,13 +344,15 @@ plan (§7).
       door), then **15/15 phone runs clean** - 13.3-17.2 s forward-to-reply, every reply
       byte-identical per paper, zero repair rounds, all checks green. Evidence in
       `Docs/DEMO_RUNBOOK.md` §E0. The one incident was a drained Anthropic credit balance
-      (ops, now a runbook precondition), not a pipeline flake
+      (ops, now a runbook precondition), not a pipeline flake. **Re-run owed on Flash** after
+      the 2026-08-29 engine swap - the gate closes on the shipped engine
 - [x] Latency pass: forward → reply under ~20s (stream nothing; the reply is one message) -
       **18.7 s measured on a real forward at prompt v3, 2026-08-28**, no repair round, model time
       6.9-11 s across the corpus; the 5x curated runs below re-verify it per paper
 - [x] Failure demo path: forward a meme, get the polite decline (shows discipline, sells
       trust) - **proven live 2026-08-29**, word-perfect in 11.2 s; a video meme also drew the
-      unsupported-media reply, a path never before exercised on a phone
+      unsupported-media reply, a path never before exercised on a phone. Re-run owed on Flash
+      with the rehearsals
 - [ ] Full rehearsal of the loop portion of the script, twice, on the demo phones
 - [x] Duplicate invoice hold: the same paper sent twice is held with a reply naming the first one,
       `DUP-01` (WP-44; shipped 2026-08-28 - same supplier + normalized number + total holds as
@@ -847,6 +849,14 @@ pilot volume. Meta utility template cost applies only from M10 (verify live UAE 
 ## 13. Progress Log
 
 *(newest first — one line per session: date, what shipped, what's next)*
+
+- 2026-08-29 - **All four lanes are one master again: WP-26/28 (landed earlier), the M4 loop-gate lane, WP-29 bilingual matching, and the Gemini 3 Flash swap - merged, tested together, deployed in one push.**
+  Integration order was WP-29 then the provider swap, and the combined suite is green: 393 API tests, 65 eval tests, smoke, ruff on both trees.
+  Two real cross-lane finds during integration, both fixed where they met: WP-28's own test caught the duplicate hold treating USD 745.76 and AED 745.76 as the same total (totals now compare only within one currency, the number alone still notes), and rehearsal 1 caught the review screen leaking numeric(12,3) storage precision ("54.500", qty "12.000") - trimmed at the one formatting seam, no value ever changed.
+  WP-29 lands at the right moment: Flash's only sub-100 field is the bilingual-letterhead join, and the script-aware matcher makes exactly that harmless to the catalog and the alerts.
+  The runbook is updated for the Flash era: provider-key and billing preconditions, the warm-up note (grammar compilation is an Opus-fallback concern; the never-cold-open principle stays), reply narration at 10-15 s, and §E0 marked as Opus-era evidence.
+  **Owed before the loop gate is called passed: the 5x runs, the meme, and both rehearsals re-run on Flash** - the engine that will actually demo.
+  Next: post-deploy upload-door proof that Flash serves live, then the founder's Flash runs, then the M4 retro decomposes M5/M6.
 
 - 2026-08-29 - **Gemini 3 Flash is now the shipped extraction model, on the founder's call after the bake-off below; Opus 5 is one env var away.**
   `EXTRACTION_PROVIDER` selects the provider (default `gemini`), `build_provider` constructs either from explicit keys, and an unknown name fails at boot rather than silently disabling extraction.
