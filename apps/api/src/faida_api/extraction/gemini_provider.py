@@ -111,6 +111,11 @@ class GeminiExtractionProvider:
                 response_mime_type="application/json",
                 # Raw JSON Schema, not response_schema: see the module docstring.
                 response_json_schema=output_format.model_json_schema(),
+                # We send no tools, so there is nothing to auto-call; disabling
+                # AFC routes past the SDK's tool-loop machinery and silences its
+                # "direct use of AFC ... not recommended" log warning on every
+                # call (google-genai _extra_utils.should_disable_afc gate).
+                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
             ),
         )
         latency_ms = int((time.monotonic() - started) * 1000)
