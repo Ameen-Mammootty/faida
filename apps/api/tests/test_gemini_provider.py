@@ -76,17 +76,22 @@ class FakeAioModels:
     async def generate_content(self, **kwargs):
         self.calls.append(kwargs)
         candidates = (
-            [SimpleNamespace(finish_reason=self._finish_reason)]
+            [types.Candidate(finish_reason=self._finish_reason)]
             if self._finish_reason is not None
             else []
         )
+        # The envelope is a namespace (the real response derives .text from
+        # nested parts), but usage and candidates are the SDK's own types: the
+        # first live run failed on a usage field name the fake had invented
+        # (response_token_count for candidates_token_count), which is exactly
+        # the drift a fake at a real seam must not allow.
         return SimpleNamespace(
             candidates=candidates,
             text=self._output_json,
             model_version=MODEL_ID,
-            usage_metadata=SimpleNamespace(
+            usage_metadata=types.GenerateContentResponseUsageMetadata(
                 prompt_token_count=2411,
-                response_token_count=387,
+                candidates_token_count=387,
                 thoughts_token_count=121,
             ),
         )

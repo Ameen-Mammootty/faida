@@ -136,7 +136,7 @@ class GeminiExtractionProvider:
         input_tokens = output_tokens = 0
         if meta is not None:
             input_tokens = meta.prompt_token_count or 0
-            output_tokens = (meta.response_token_count or 0) + (meta.thoughts_token_count or 0)
+            output_tokens = (meta.candidates_token_count or 0) + (meta.thoughts_token_count or 0)
         usage = ProviderUsage(
             model_id=response.model_version or self._model_id,
             prompt_version=PROMPT_VERSION,
