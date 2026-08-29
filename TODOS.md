@@ -62,32 +62,72 @@ of recording it is so a future slow-confirm investigation starts here instead of
 **Priority:** P4
 **Depends on:** None. Should be measured before it is fixed.
 
-### TH-01's subtotal comes off the wrong labelled cell about one run in ten
+### The eval marks TH-01's subtotal wrong when the model reads the other legitimate row
 
-**What:** On TH-01 the model sometimes returns `subtotal` as `673.00` (the "Net of VAT" line)
-instead of `706.65` (the "Subtotal (VAT inclusive)" line). Observed once in ten live Gemini 3
-Flash runs on 2026-08-29 (run 3 of the second set of five).
+**Corrected 2026-08-29.** An earlier version of this entry called this a silent wrong number that
+poisons price memory, and recommended a stricter C4 cross-check. **That was wrong on both counts,
+disproven by the trace below.** It is an eval-strictness artifact with no product consequence.
 
-**Why:** This is the failure the Decision Log already named as "the finding that matters" when it
-appeared on Gemini 3.1 Pro, and it is now confirmed on the shipped Flash model too, just rarer.
-It is a **silent wrong number**: `subtotal` is the one header money field C4's identities do not
-cross-check - they anchor on the line sum - so the invoice still reconciles 10/10 and the value
-stores green. plan.md §5's gate says a wrong value must be amber, never green.
+**What:** On TH-01 the model sometimes returns `subtotal` as `673.00` (the printed "Net of VAT"
+row) instead of `706.65` (the printed "Subtotal (VAT inclusive)" row). Observed once in ten live
+Gemini 3 Flash runs on 2026-08-29. Ground truth records 706.65, so the eval scores it wrong and
+`header subtotal` reads 90% on that run.
 
-**Context:** The page genuinely prints both numbers, clearly labelled, so this is a wrong-cell
-read rather than an invention, and no amount of prompt wording reliably fixes a cell-selection
-slip (§5: accuracy is a pipeline property, not a prompt property).
-The candidate fix is a deterministic cross-check rather than a prompt: when `subtotal`, `tax` and
-`total` are all present, `subtotal + tax == total` for an exclusive invoice and
-`subtotal == total` for an inclusive one, so a subtotal that satisfies neither is amber.
-That is a C4 validator change and needs care - it must not fail correct invoices with discounts
-or rounding lines, which is exactly what the existing identities already handle.
-Not fixed here because it is a validator change in front of the M4 loop gate, and it is unrelated
-to the pack_size work this branch carries.
+**Why it does not matter to the product.** Traced through the shipped validator and the shipped
+net-price maths, both readings side by side:
 
-**Effort:** M
-**Priority:** P2
-**Depends on:** None, but it belongs with whoever owns `extraction/validate.py` and the M4 gate.
+```
+CORRECT (truth)  subtotal=706.65        RUN 3 (misread)  subtotal=673.00
+   tax_treatment  = inclusive              tax_treatment  = inclusive
+   arith          = passed                 arith          = passed
+   subtotal_check = passed                 subtotal_check = passed
+   doc status     = green                  doc status     = green
+   net factor     = 0.95238095...          net factor     = 0.95238095...
+   line 1 net unit price stored            line 1 net unit price stored
+                  = 32.000                                = 32.000
+```
+
+Nothing downstream reads the subtotal. `validate.py:174` derives the tax treatment anchored on the
+line sum, "never on the printed subtotal", and `db.py:533` builds the net-price factor from
+`tax_treatment, tax, total` alone. The price baseline `confirm` writes is byte-identical either
+way, so this cannot poison price history.
+
+**And it is not silent.** `_check_subtotal` does cross-check the subtotal and does feed the
+document status. It passes 673.00 deliberately, not accidentally:
+
+```
+subtotal                                       subtotal_check   doc status
+706.65  the printed 'Subtotal (VAT inclusive)'        passed        green
+673.00  the printed 'Net of VAT'                      passed        green
+670.00  a genuinely wrong number                      failed        amber
+707.00  wrong by 0.35                                 failed        amber
+500.00  a badly wrong number                          failed        amber
+```
+
+A VAT-inclusive invoice may legitimately print its subtotal as either the gross (equal to the
+total) or the net (total - tax), and 673.00 is exactly 706.65 - 33.65. The function's own
+docstring says why it accepts both: *"Accepting a legitimate printing matters as much as catching
+a wrong one: manufacturing an amber on a correct document spends the sender's attention and
+teaches them the ambers are noise."* A genuinely wrong subtotal goes amber, so the §5 gate holds.
+
+**What is actually left, and it is small.** Two options, neither urgent:
+
+1. Teach the eval the same tolerance the validator already has, so `header subtotal` stops
+   flickering to 90% for a reading the product treats as correct. This matches the WP-16
+   principle that there is one implementation of C4 and the eval scores against it. The argument
+   against: an answer key exists to be exact, and loosening it to accept two values sets a
+   precedent worth thinking about before applying it more widely.
+2. Display fidelity: the review screen would show 673.00 beside a paper whose "Subtotal" row reads
+   706.65. Nothing is wrong, but a cafeteria owner comparing screen to paper sees a number that
+   is not on the line it is labelled with. Cosmetic, and only if someone complains.
+
+**Do not** build the stricter validator cross-check the earlier version of this entry proposed.
+It already exists in more permissive form, on purpose, and tightening it would manufacture ambers
+on correct invoices.
+
+**Effort:** S
+**Priority:** P4
+**Depends on:** None. Option 1 belongs with whoever owns `eval/score.py`.
 
 ### Regenerating ground truth would rewrite 14 signed files for serialization reasons alone
 
@@ -110,3 +150,49 @@ is reviewable as exactly that. Do not bundle it with a content change.
 **Effort:** S
 **Priority:** P3
 **Depends on:** Founder availability for the F8 re-sign.
+
+## Plan corrections (for the loop-gate lane, which owns plan.md)
+
+### The 2026-08-29 bake-off entry records a false alarm about TH-01's subtotal
+
+**What:** Both the Decision Log row and the Progress Log entry dated 2026-08-29 describe Gemini
+3.1 Pro's TH-01 subtotal read as a silent wrong number that would store green. The trace above
+disproves it: the value is a legitimate alternative printing, `_check_subtotal` passes it by
+design, a genuinely wrong subtotal goes amber, and nothing downstream reads the field.
+
+**Why it matters enough to correct:** it was written up as "the subtotal miss is the finding that
+matters" and weighed in the Pro-versus-Flash comparison that preceded a model swap. A false alarm
+carrying weight in a shipped-model decision is worth un-recording, and CLAUDE.md is explicit that
+when plan.md and the code disagree, the code is right and the plan has the bug.
+
+**The sentence to replace** is `plan.md:894`, in the Progress Log entry beginning
+"The Gemini bake-off ran":
+
+> The subtotal miss is the finding that matters: TH-01 prints both "Subtotal (VAT inclusive):
+> 706.65" and "Net of VAT: 673.00", and Gemini filled `subtotal` from the net line - a printed
+> value from the wrong labeled cell, not an invention - and `subtotal` is the one header money
+> field the C4 identities do not cross-check (they anchor on the line sum), so in production this
+> would have stored green: a silent wrong number, the exact thing the §5 gate says must never
+> happen.
+
+**Suggested replacement:**
+
+> The subtotal miss turned out to be a false alarm, traced 2026-08-29 in the eval-phase2 lane:
+> TH-01 prints both "Subtotal (VAT inclusive): 706.65" and "Net of VAT: 673.00", and Gemini filled
+> `subtotal` from the net line. Both are legitimate printings of an inclusive invoice's subtotal,
+> and `validate._check_subtotal` accepts either on purpose - a genuinely wrong subtotal (670.00,
+> 707.00, 500.00 all tested) still goes amber, so the §5 gate holds. Nothing downstream reads the
+> field either: the tax treatment is derived from the line sum, never the printed subtotal, and the
+> net-price factor is built from `tax_treatment, tax, total`, so the price baseline stored on
+> confirm is identical under both readings. The eval scores it wrong only because ground truth
+> records one of the two legitimate rows. **The real finding from that bake-off was the pack sizes,
+> not the subtotal.**
+
+One knock-on edit in the same pass: the Decision Log row (`plan.md:807`) for the Flash swap says Flash "got right
+both cells that tripped Gemini 3.1 Pro (the TH-01 subtotal and the pack sizes embedded in item
+names)" - only the pack half was ever a real defect, and Flash was later measured missing the same
+subtotal row once in ten runs, so that clause overstates the gap between the two models.
+
+**Effort:** S
+**Priority:** P2 (it is a correctness claim in the sequencing document, not code)
+**Depends on:** Nothing. Belongs in the same commit as the loop-gate lane's next plan.md update.
