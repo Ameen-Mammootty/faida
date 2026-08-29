@@ -7,11 +7,16 @@ Progress Log 2026-08-29). The production default stays Anthropic:
 an optional extra (`pip install -e '.[gemini]'`), never a hard dependency.
 
 The prompt text is shared verbatim with the Anthropic provider (same
-PROMPT_VERSION recorded), so eval runs are comparable model-to-model. The one
-schema difference: Gemini's response-schema flavor expresses the pinned
-ExtractionResult directly (Money fields cross as strings, C4), but not
-RepairResult's int-keyed dict - so repair uses the same list-shaped wire
-models as `anthropic_provider._RepairOutput` and re-keys the patch.
+PROMPT_VERSION recorded), so eval runs are comparable model-to-model. Two
+schema notes. The structured output goes through `response_json_schema` (raw
+JSON Schema), NOT `response_schema`: the live API's proto flavor for the
+latter rejects the `additionalProperties: false` that C3's `extra="forbid"`
+emits ("Unknown name additional_properties", measured 2026-08-29 against
+gemini-3.1-pro-preview), while the raw-JSON-Schema path carries the pinned
+schema as pydantic writes it - Money fields cross as strings (C4). And
+RepairResult's int-keyed dict cannot cross either flavor, so repair uses the
+same list-shaped wire models as `anthropic_provider._RepairOutput` and
+re-keys the patch.
 """
 
 import time
@@ -105,7 +110,8 @@ class GeminiExtractionProvider:
             config=types.GenerateContentConfig(
                 system_instruction=SYSTEM_PROMPT,
                 response_mime_type="application/json",
-                response_schema=output_format,
+                # Raw JSON Schema, not response_schema: see the module docstring.
+                response_json_schema=output_format.model_json_schema(),
             ),
         )
         latency_ms = int((time.monotonic() - started) * 1000)

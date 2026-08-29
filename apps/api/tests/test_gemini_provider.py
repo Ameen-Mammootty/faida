@@ -132,7 +132,10 @@ async def test_extract_maps_response_to_result_and_usage():
     config = call["config"]
     assert config.system_instruction == SYSTEM_PROMPT
     assert config.response_mime_type == "application/json"
-    assert config.response_schema is ExtractionResult
+    # Raw JSON Schema on the wire; the proto response_schema flavor rejects
+    # C3's additionalProperties (see the provider docstring) and stays unset.
+    assert config.response_json_schema == ExtractionResult.model_json_schema()
+    assert config.response_schema is None
     media = call["contents"][0]
     assert media.inline_data.mime_type == "image/jpeg"
     assert media.inline_data.data == image
