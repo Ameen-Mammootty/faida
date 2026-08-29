@@ -19,6 +19,12 @@ The chat grammar, in full (all keywords case-insensitive):
     line <N> price <number>            0-based internally); "unit price" and
     line <N> total <number>            "line total" are accepted spellings
     line <N> name <text>               of price and total
+    line <N> pack size <text>          the pack on line N ("5kg", "12 pcs");
+                                       "pack" and "size" also accepted. A dash
+                                       or "none" clears it - the one line field
+                                       no arithmetic can check, and sometimes
+                                       derived from the item name, so a person
+                                       must always be able to correct it
     total <number>                     correct the totals block
     tax <number>
     subtotal <number>
@@ -66,6 +72,7 @@ from pydantic import BaseModel, ConfigDict
 from .db import Database
 from .extraction.currency import normalize_currency
 from .extraction.dates import parse_printed_date
+from .extraction.normalize import blank_to_none
 from .extraction.pipeline import price_alerts
 from .extraction.schema import ExtractedInvoice, ExtractedLine
 from .extraction.validate import validate_invoice
@@ -116,6 +123,25 @@ class LineNameEdit(BaseModel):
 
     line_index: int
     name: str
+
+
+class LinePackSizeEdit(BaseModel):
+    """ "line 2 pack size 5kg" - set or clear the pack on one line.
+
+    The pack size is the number M5 divides a unit price by to reach a cost per
+    gram, and it is the one line field no arithmetic can check: C4's identities
+    anchor on the line sum, so a wrong pack sits green forever. It is also
+    sometimes *derived* rather than read, when the page prints no pack column
+    and the pack lives in the item name (`units.pack_size_for`). A value that
+    nothing can verify and nobody can edit is a silent wrong number waiting to
+    happen, so this is the door: `pack_size` None clears it, which is how a
+    person says "that pack is not right, and I do not know the real one".
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    line_index: int
+    pack_size: str | None
 
 
 class TotalsEdit(BaseModel):
@@ -204,6 +230,7 @@ class MissingVatRateEdit(BaseModel):
 Edit = (
     LineFieldEdit
     | LineNameEdit
+    | LinePackSizeEdit
     | TotalsEdit
     | ReconstructedTotalEdit
     | CurrencyEdit
@@ -238,7 +265,8 @@ _OK_RE = re.compile(r"[\W_]*(?:ok|okay)[\W_]*", re.IGNORECASE)
 _SELECTOR_RE = re.compile(r"(\d+)[\s.,:;-]+(\S.*)", re.DOTALL)
 _SEGMENT_SPLIT_RE = re.compile(r"[\n,;]+")
 _LINE_EDIT_RE = re.compile(
-    r"line\s+(\d+)\s+(qty|unit[\s_]?price|price|line[\s_]?total|total|name)\s+(.+)",
+    r"line\s+(\d+)\s+"
+    r"(qty|unit[\s_]?price|price|line[\s_]?total|total|name|pack[\s_]?size|pack|size)\s+(.+)",
     re.IGNORECASE,
 )
 _TOTALS_EDIT_RE = re.compile(r"(subtotal|total|tax)\s+(.+)", re.IGNORECASE)
@@ -260,6 +288,10 @@ _INVOICE_NO_EDIT_RE = re.compile(
 )
 # Unsigned decimals only: no sign, no NaN, no exponent - anything else clarifies.
 _NUMBER_RE = re.compile(r"\d+(?:\.\d+)?")
+
+# The chat spellings that mean the pack-size cell. Normalized the same way as
+# the numeric field names ("pack_size" and "pack size" both arrive as "pack size").
+_PACK_FIELDS = frozenset({"pack size", "pack", "size"})
 
 _LINE_FIELD_MAP: dict[str, Literal["qty", "unit_price", "line_total"]] = {
     "qty": "qty",
@@ -316,6 +348,10 @@ def _parse_edit(segment: str) -> Edit | None:
         value = line_edit.group(3).strip()
         if field == "name":
             return LineNameEdit(line_index=n - 1, name=value) if value else None
+        if field in _PACK_FIELDS:
+            # A person clearing a pack ("line 2 pack -") is saying the pack we
+            # hold is wrong, which is a real answer and not an empty one.
+            return LinePackSizeEdit(line_index=n - 1, pack_size=blank_to_none(value))
         number = _parse_number(value)
         if number is None:
             return None
@@ -404,6 +440,8 @@ def edited_field_keys(edits: list[Edit]) -> list[str]:
             raise ValueError("an unanswerable edit is asked about, never applied")
         elif isinstance(edit, LineNameEdit):
             new_keys = [line_key(edit.line_index, "raw_name")]
+        elif isinstance(edit, LinePackSizeEdit):
+            new_keys = [line_key(edit.line_index, "pack_size")]
         else:
             new_keys = [line_key(edit.line_index, edit.field)]
         keys.extend(key for key in new_keys if key not in keys)
@@ -446,6 +484,10 @@ def apply_edits(invoice: ExtractedInvoice, edits: list[Edit]) -> ExtractedInvoic
         elif isinstance(edit, LineNameEdit):
             lines[edit.line_index] = lines[edit.line_index].model_copy(
                 update={"raw_name": edit.name}
+            )
+        elif isinstance(edit, LinePackSizeEdit):
+            lines[edit.line_index] = lines[edit.line_index].model_copy(
+                update={"pack_size": edit.pack_size}
             )
         else:
             lines[edit.line_index] = lines[edit.line_index].model_copy(
@@ -566,7 +608,10 @@ async def _apply_correction(
     line_rows = await db.get_invoice_lines(invoice_id)
     line_count = len(line_rows)
     for edit in edits:
-        if isinstance(edit, LineFieldEdit | LineNameEdit) and edit.line_index >= line_count:
+        if (
+            isinstance(edit, LineFieldEdit | LineNameEdit | LinePackSizeEdit)
+            and edit.line_index >= line_count
+        ):
             return compose_line_out_of_range(edit.line_index + 1, line_count)
 
     invoice = apply_edits(_to_extracted(invoice_row, line_rows), edits)
@@ -614,6 +659,8 @@ async def _apply_correction(
             "raw_name": line.raw_name,
             "supplier_item_id": str(item["id"]) if item is not None else None,
             "qty": line.qty,
+            "unit": line.unit,
+            "pack_size": line.pack_size,
             "unit_price": line.unit_price,
             "line_total": line.line_total,
             "checks": check.model_dump(mode="json"),

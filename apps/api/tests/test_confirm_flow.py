@@ -25,6 +25,7 @@ from faida_api.confirm import (
     InvoiceNoEdit,
     LineFieldEdit,
     LineNameEdit,
+    LinePackSizeEdit,
     MissingVatRateEdit,
     ReconstructedTotalEdit,
     TotalsEdit,
@@ -121,6 +122,27 @@ def test_parse_line_name_keeps_the_text_verbatim():
     assert parse_reply("line 2 name Karak Tea Dust") == Corrections(
         selector=None, edits=[LineNameEdit(line_index=1, name="Karak Tea Dust")]
     )
+
+
+def test_parse_line_pack_size_accepts_every_spelling():
+    expected = Corrections(selector=None, edits=[LinePackSizeEdit(line_index=1, pack_size="5kg")])
+    for text in [
+        "line 2 pack size 5kg",
+        "line 2 pack_size 5kg",
+        "line 2 pack 5kg",
+        "line 2 size 5kg",
+    ]:
+        assert parse_reply(text) == expected, text
+
+
+def test_a_person_can_clear_a_pack_size_they_cannot_vouch_for():
+    # The pack is the denominator M5 divides a price by and no arithmetic can
+    # check it, so "that is wrong and I do not know the right one" has to be
+    # sayable. It clears rather than storing a dash.
+    for text in ["line 2 pack size -", "line 2 pack none", "line 2 pack size n/a"]:
+        assert parse_reply(text) == Corrections(
+            selector=None, edits=[LinePackSizeEdit(line_index=1, pack_size=None)]
+        ), text
 
 
 def test_parse_totals_block_edits():
@@ -1127,3 +1149,26 @@ async def test_wp28_a_foreign_invoice_raises_no_price_alerts(api, db):
     assert (
         "up AED 14.50 (40.00 to 54.50) since your last purchase." in (await outbound_bodies(db))[-1]
     )
+
+
+def test_a_pack_size_correction_applies_and_can_clear():
+    # The seam derives a pack from the item name when the page prints no pack
+    # column. If that derivation is wrong, this is the only way to fix it -
+    # no arithmetic will ever catch it (C4 anchors on the line sum).
+    invoice = ExtractedInvoice(
+        lines=[ExtractedLine(raw_name="RICE BASM 5KG", pack_size="5KG")],
+        total=Decimal("67.20"),
+    )
+    corrected = apply_edits(invoice, [LinePackSizeEdit(line_index=0, pack_size="10kg")])
+    assert corrected.lines[0].pack_size == "10kg"
+    cleared = apply_edits(invoice, [LinePackSizeEdit(line_index=0, pack_size=None)])
+    assert cleared.lines[0].pack_size is None
+    # The input is never mutated.
+    assert invoice.lines[0].pack_size == "5KG"
+
+
+def test_a_pack_size_correction_is_attributed_to_the_line_it_changed():
+    # C8: the correction names the field it moved, so provenance re-stamps
+    # pack_size alone rather than the whole line.
+    keys = edited_field_keys([LinePackSizeEdit(line_index=2, pack_size="2kg")])
+    assert keys == ["lines.2.pack_size"]

@@ -55,13 +55,14 @@ from .confirm import (
     Edit,
     LineFieldEdit,
     LineNameEdit,
+    LinePackSizeEdit,
     TotalsEdit,
     _apply_correction,
     _parse_number,
 )
 from .contracts import InvoiceStatus, JobKind
 from .db import Database
-from .extraction.normalize import normalize_extracted
+from .extraction.normalize import blank_to_none, normalize_extracted
 from .extraction.schema import ExtractedInvoice, ExtractedLine
 from .extraction.validate import validate_invoice
 from .matching import Row, match_supplier, snap_item
@@ -73,7 +74,7 @@ logger = logging.getLogger(__name__)
 ALLOWED_UPLOAD_MIMES = {"image/jpeg", "image/png", "application/pdf"}
 UPLOAD_MAX_BYTES = 10 * 1024 * 1024
 
-_LINE_FIELDS = {"qty", "unit_price", "line_total", "name"}
+_LINE_FIELDS = {"qty", "unit_price", "line_total", "name", "pack_size"}
 _HEADER_FIELDS = {"subtotal", "tax", "total"}
 
 # The invoice states the review screen may edit or confirm: awaiting_confirm
@@ -117,7 +118,9 @@ class Correction(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     line_index: int | None = None
-    field: Literal["qty", "unit_price", "line_total", "name", "subtotal", "tax", "total"]
+    field: Literal[
+        "qty", "unit_price", "line_total", "name", "pack_size", "subtotal", "tax", "total"
+    ]
     value: str
 
 
@@ -261,7 +264,10 @@ async def patch_invoice_fields(
     edits = [_to_edit(correction) for correction in body.corrections]
     line_count = len(await db.get_invoice_lines(str(invoice_id)))
     for edit in edits:
-        if isinstance(edit, LineFieldEdit | LineNameEdit) and edit.line_index >= line_count:
+        if (
+            isinstance(edit, LineFieldEdit | LineNameEdit | LinePackSizeEdit)
+            and edit.line_index >= line_count
+        ):
             raise HTTPException(
                 status_code=422,
                 detail=f"line_index {edit.line_index} out of range: "
@@ -301,6 +307,13 @@ def _to_edit(correction: Correction) -> Edit:
         if not name:
             raise HTTPException(status_code=422, detail="a line name cannot be empty")
         return LineNameEdit(line_index=correction.line_index, name=name)
+    if correction.field == "pack_size":
+        # Blank clears it: "the pack we hold is wrong and I do not know the
+        # right one" is a real answer, and the only honest one when a derived
+        # pack is wrong. Same placeholder vocabulary the seam uses.
+        return LinePackSizeEdit(
+            line_index=correction.line_index, pack_size=blank_to_none(correction.value)
+        )
     return LineFieldEdit(
         line_index=correction.line_index, field=correction.field, value=_number(correction)
     )
@@ -534,7 +547,12 @@ async def create_manual_invoice(body: ManualInvoice, request: Request) -> dict:
         payment_kind=invoice.payment_kind,
         status=status,
         confidence=confidence,
-        # C8: no model ran, so every value here is one a person typed.
+        # C8: no model ran, so every value here was typed by a person - or
+        # derived from what they typed by the same seam a photo goes through
+        # (currency word to ISO code, printed terms to cash-or-credit, a pack
+        # size read out of the item name). MANUAL is the honest origin for the
+        # set: a person supplied the page these came from, and none of it was
+        # read off a photo.
         provenance=initial(
             invoice,
             origin=Origin.MANUAL,
