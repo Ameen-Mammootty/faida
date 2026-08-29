@@ -1,0 +1,37 @@
+Produce one photorealistic image of a single real-world paper document. The image contains nothing but that document and the surface it rests on. Do not add captions, arrows, labels, borders, mock-up frames, logos of real companies, or any text of your own invention.
+
+PHYSICAL ARTEFACT
+A supplier invoice printed on slightly off-white A5 paper from a small trading company's inkjet printer, ink very slightly light but every digit fully legible, photographed from directly above on a steel counter under indoor light, flat, all four corners in frame. Backup demo paper: modest realism, zero readability hazards.
+
+LANGUAGE
+All text is in English with western digits.
+
+EXACT CONTENT. Reproduce every character and every digit exactly as written below. Do not round, recalculate, reorder, translate, abbreviate, expand, add or omit anything. The arithmetic below is already correct.
+
+-- Header --
+SUPPLIER NAME (top): Al Madina Trading Co.
+SUPPLIER ADDRESS (small): Shop 4, Naif Road, Deira, Dubai, UAE
+SUPPLIER TRN: 100000000000202
+DOCUMENT TITLE: TAX INVOICE
+Invoice No.: AMT-26-1187
+Date: 22/08/2026
+Customer: Karak Al Khaleej Cafeterias - Al Qusais Branch
+Payment terms: Net 14 days
+
+-- Line items, both of them, in this exact order --
+COLUMNS, left to right: # | Description | Qty | Unit | Unit price AED | Amount AED
+
+1 | Evaporated Milk 400ml | 2 | carton | 96.00 | 192.00
+2 | Chakki Atta Flour 25kg | 3 | sack | 43.50 | 130.50
+
+-- Totals block, lower right --
+Subtotal: AED 322.50
+VAT 5%: AED 16.13
+TOTAL: AED 338.63
+
+RULES
+- Both item rows must appear on the document, in the order given, none merged, none dropped, none repeated.
+- Every figure must be readable at full resolution.
+- Keep the whole document inside the frame, including all four corners.
+- Do not add sample, specimen, draft, void or watermark text, and do not add any row, column, charge or second date that is not listed above.
+- The date reads exactly 22/08/2026 - no month name, no other date format anywhere on the page.
