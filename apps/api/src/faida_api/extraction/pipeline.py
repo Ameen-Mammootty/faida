@@ -353,7 +353,11 @@ def find_duplicate(
     (held); the number alone, or the invoice date + total, is merely
     *similar* (noted). All comparisons need both sides present - an absent
     number never equals another absent number (normalize_invoice_no), and a
-    null total matches nothing.
+    null total matches nothing. Totals compare only within one currency:
+    USD 745.76 and AED 745.76 are the same digits, not the same money
+    (found at integration by WP-28's own test), so a cross-currency pair
+    can reach *similar* through its number but never a hold through its
+    total.
 
     Same supplier means matched ids when both rows have one, else equal
     normalized names - a supplier the catalog does not know yet can still
@@ -365,7 +369,11 @@ def find_duplicate(
         if not _same_supplier(row, supplier_id, invoice.supplier_name):
             continue
         number_match = number is not None and normalize_invoice_no(row["invoice_no"]) == number
-        total_match = invoice.total is not None and row["total"] == invoice.total
+        total_match = (
+            invoice.total is not None
+            and row["total"] == invoice.total
+            and _same_money(invoice.currency, row["currency"])
+        )
         date_match = (
             invoice.invoice_date is not None and row["invoice_date"] == invoice.invoice_date
         )
@@ -374,6 +382,15 @@ def find_duplicate(
         elif number_match or (date_match and total_match):
             similar = similar or row
     return duplicate, similar
+
+
+def _same_money(invoice_currency: str | None, row_currency: str | None) -> bool:
+    """Two totals are comparable only in one currency. A side with no
+    currency at all stays comparable - an unreadable currency must not
+    disable the hold outright."""
+    if invoice_currency is None or row_currency is None:
+        return True
+    return invoice_currency == row_currency
 
 
 def _same_supplier(row: Row, supplier_id: str | None, supplier_name: str | None) -> bool:
