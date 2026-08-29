@@ -45,7 +45,8 @@
         "correct": 0,
         "total": 0
       }
-    }
+    },
+    "model_pack_size": null
   },
   "reconciliation": {
     "applicable": false,

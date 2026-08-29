@@ -45,6 +45,10 @@
         "correct": 1,
         "total": 2
       }
+    },
+    "model_pack_size": {
+      "correct": 2,
+      "total": 2
     }
   },
   "reconciliation": {

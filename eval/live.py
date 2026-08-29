@@ -150,7 +150,9 @@ async def run_case_live(
     repaired = extracted.model_copy(update={"invoice": outcome.invoice})
     usage = combine_usage(extract_usage, outcome.usage)
 
-    case = score_case(repaired, truth, usage, reconciled_before_repair=before)
+    case = score_case(
+        repaired, truth, usage, reconciled_before_repair=before, as_returned=extracted
+    )
     return case, repaired, extracted, extract_usage
 
 

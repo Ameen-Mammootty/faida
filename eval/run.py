@@ -87,10 +87,11 @@ async def run_case(case_dir: Path) -> tuple[dict, ExtractionResult]:
     provider: ExtractionProvider = RecordedProvider(case_dir)
     image, mime = _load_image(case_dir)
     result, usage = await provider.extract(image, mime)
+    as_returned = result
     if result.invoice is not None:
         result = result.model_copy(update={"invoice": normalize_extracted(result.invoice)})
     truth = ExtractionResult.model_validate_json((case_dir / "truth.json").read_text())
-    return score_case(result, truth, usage), result
+    return score_case(result, truth, usage, as_returned=as_returned), result
 
 
 async def run_corpus(
@@ -152,6 +153,18 @@ def print_table(agg: dict) -> None:
                 f"line {field}",
                 _pct(tally["accuracy"]),
                 f"{tally['correct']}/{tally['total']}",
+            )
+        )
+    # pack_size before the derivation seam recovered any from item names. The
+    # row above is what the database stores; this row is what the model read,
+    # and it is the one to quote when asking how a model handles packs.
+    model_pack = lines.get("model_pack_size")
+    if model_pack and model_pack["total"]:
+        rows.append(
+            (
+                "  of which model-read",
+                _pct(model_pack["accuracy"]),
+                f"{model_pack['correct']}/{model_pack['total']}",
             )
         )
     rec = agg["reconciliation"]
