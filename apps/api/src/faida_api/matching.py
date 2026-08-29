@@ -25,6 +25,12 @@ The veto compares harmonized pack sizes from `extraction.units`, so "2kg" and
 "2000g" are one pack and one catalog item. Splitting them would split the
 price history too, and a supplier who only changed their printing would fire
 the price alert.
+
+Bilingual names (WP-29): GCC suppliers print bilingual letterheads, and the
+model copies both scripts joined on some runs and one script on others. Scoring
+is script-aware (see _similarity) so a joined "English / عربى" name still
+matches a single-script catalog entry on the half they share - one read variant
+no longer splits a supplier or an item into two.
 """
 
 import re
@@ -48,6 +54,22 @@ _DOT_RE = re.compile(r"(?<!\d)\.|\.(?!\d)")
 # \w keeps Arabic script - invoices are mixed Arabic/English (plan.md §3).
 _PUNCT_RE = re.compile(r"[^\w\s.]|_")
 
+# Arabic script blocks (main, Supplement, Extended-A, Presentation Forms A/B),
+# as inclusive (low, high) code-point pairs. A GCC letterhead prints the trade
+# name in both scripts and the model copies whichever half it reads; _similarity
+# compares each script to its own so the matching half is never diluted by the
+# other language.
+_ARABIC_RANGES = (
+    (0x0600, 0x06FF),
+    (0x0750, 0x077F),
+    (0x08A0, 0x08FF),
+    (0xFB50, 0xFDFF),
+    (0xFE70, 0xFEFF),
+)
+_ARABIC = "".join(f"{chr(lo)}-{chr(hi)}" for lo, hi in _ARABIC_RANGES)
+_ARABIC_CHAR_RE = re.compile(f"[{_ARABIC}]")
+_NON_ARABIC_RE = re.compile(f"[^{_ARABIC}\\s]")
+
 
 def normalize(name: str) -> str:
     """Casefold, collapse whitespace, strip punctuation - keeping digits and
@@ -64,12 +86,22 @@ def clean_name(name: str) -> str:
     return " ".join(name.split()).strip(" .,;:-_")
 
 
-def _similarity(a: str, b: str) -> float:
-    """Fuzzy score over normalized names: the better of the whole-string ratio
-    and the token-sorted ratio, so word order alone never sinks a match."""
-    na, nb = normalize(a), normalize(b)
-    if not na or not nb:
-        return 0.0
+def _latin_view(text: str) -> str:
+    """The normalized name with Arabic runs dropped - Latin letters, digits and
+    units kept. Empty when the name is written entirely in Arabic."""
+    return " ".join(_ARABIC_CHAR_RE.sub(" ", text).split())
+
+
+def _arabic_view(text: str) -> str:
+    """The normalized name with everything but Arabic runs dropped. Empty when
+    the name carries no Arabic."""
+    return " ".join(_NON_ARABIC_RE.sub(" ", text).split())
+
+
+def _ratio(na: str, nb: str) -> float:
+    """difflib score over two already-normalized strings: the better of the
+    whole-string ratio and the token-sorted ratio, so word order never sinks a
+    match."""
     if na == nb:
         return 1.0
     whole = SequenceMatcher(None, na, nb).ratio()
@@ -77,6 +109,30 @@ def _similarity(a: str, b: str) -> float:
         None, " ".join(sorted(na.split())), " ".join(sorted(nb.split()))
     ).ratio()
     return max(whole, token_sorted)
+
+
+def _similarity(a: str, b: str) -> float:
+    """Fuzzy score over normalized names, script-aware.
+
+    The whole-string ratio is the floor. On top of it, when one name is written
+    in a single script and the other joins both (the GCC bilingual letterhead,
+    "Dairy House Foodstuff LLC / بيت الألبان..."), the shared script is compared
+    to itself so the matching half is not diluted by the other language. The
+    boost is gated on one side being single-script (view == whole name): when
+    *both* names carry both scripts the whole-string compare is already
+    apples-to-apples, and an unguarded per-script split would let two different
+    suppliers match on their shared Arabic legal boilerplate ("... للمواد
+    الغذائية ذ.م.م") alone.
+    """
+    na, nb = normalize(a), normalize(b)
+    if not na or not nb:
+        return 0.0
+    score = _ratio(na, nb)
+    for view in (_latin_view, _arabic_view):
+        va, vb = view(na), view(nb)
+        if va and vb and (va == na or vb == nb):
+            score = max(score, _ratio(va, vb))
+    return score
 
 
 def _pack_tokens(text: str) -> set[tuple[str, str, Decimal]]:

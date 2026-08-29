@@ -75,6 +75,30 @@ def test_match_supplier_arabic_alias():
     assert match_supplier(suppliers, "مؤسسة الخليج للمواد الغذائية")["id"] == 1
 
 
+def test_match_supplier_bilingual_letterhead_matches_single_script_name():
+    # GCC letterheads carry both scripts, and the model returns them joined on
+    # some runs (HW-04, live 2026-08-28). The joined form scored 0.595 against
+    # the stored English name before WP-29 - a miss that spawned a duplicate
+    # supplier on confirm. Script-aware scoring matches on the shared half: 1.00.
+    suppliers = [_supplier("Dairy House Foodstuff LLC", id=1), _supplier("Al Ain Poultry", id=2)]
+    joined = "Dairy House Foodstuff LLC / بيت الألبان للمواد الغذائية ذ.م.م"
+    assert match_supplier(suppliers, joined)["id"] == 1
+    # And when the supplier is stored with its Arabic name as an alias, an
+    # Arabic-only reading finds it too - 0.90 against the alias.
+    arabic = [_supplier("Dairy House Foodstuff LLC", ["بيت الألبان للمواد الغذائية"], id=1)]
+    assert match_supplier(arabic, "بيت الألبان للمواد الغذائية ذ.م.م")["id"] == 1
+
+
+def test_match_supplier_bilingual_does_not_cross_match_on_arabic_boilerplate():
+    # Two different suppliers whose Arabic halves share the legal boilerplate
+    # "شركة ... للمواد الغذائية ذ.م.م" and differ only in the trade name. The
+    # whole-string compare keeps them apart (0.76), and the per-script boost is
+    # gated off because both names carry both scripts - so the shared Arabic
+    # tail cannot pull a false match over the 0.85 bar.
+    suppliers = [_supplier("Alpha Foods LLC شركة ألفا للمواد الغذائية ذ.م.م", id=1)]
+    assert match_supplier(suppliers, "Beta Trading LLC شركة بيتا للمواد الغذائية ذ.م.م") is None
+
+
 def test_match_supplier_rejects_different_companies():
     assert match_supplier(SUPPLIERS, "Emirates Poultry Farm") is None
     # Al Ain Dairy vs Al Ain Poultry scores 0.69: shared prefix is not a match.
@@ -111,6 +135,25 @@ def test_snap_item_messy_abbreviated_names():
     assert snap_item(CATALOG, "KARAK TEA DUST 400G")["id"] == 2
     # Spaced pack and a ltr/l spelling variant both canonicalize.
     assert snap_item(CATALOG, "SUNFLOWER OIL 1.5 LTR")["id"] == 3
+
+
+def test_snap_item_bilingual_and_arabic_variants_snap_to_one_row():
+    # The same halloumi prints joined on AR-01 ("Halloumi Cheese جبنة حلوم") and
+    # Arabic-only on HW-04 ("جبنة حلوم"). Whichever the catalog learned first,
+    # the other reading must snap to it or the catalog splits and the price
+    # alert goes silent. The Arabic-only and English-only reads each score 1.00
+    # against the joined catalog name on their shared script.
+    joined_catalog = [_item("Halloumi Cheese جبنة حلوم", id=1)]
+    assert snap_item(joined_catalog, "جبنة حلوم")["id"] == 1
+    assert snap_item(joined_catalog, "Halloumi Cheese")["id"] == 1
+    # And a joined reading snaps to an English-only catalog row.
+    assert snap_item([_item("Whipping Cream", id=2)], "Whipping Cream كريمة خفق")["id"] == 2
+
+
+def test_snap_item_different_arabic_items_do_not_snap():
+    # Feta and halloumi share only "جبنة" (cheese): 0.56, below the 0.80 snap
+    # bar, so the per-script boost never merges two different items.
+    assert snap_item([_item("Halloumi Cheese جبنة حلوم", id=1)], "جبنة فيتا") is None
 
 
 def test_snap_item_never_snaps_across_pack_sizes():
