@@ -713,11 +713,13 @@ them, not a rewrite of them.
       all ask, so all three got the same answer at once. Second effect, deliberate and pinned by a
       test: a carton line no longer snaps onto a single-tin catalog row, where it used to compare
       AED 90 against AED 2.10
-- [ ] **Confirming and recording prices become one transaction** (WP-50, added 2026-08-29 from the
-      eng review's outside voice). They are two today, and the gap is unrecoverable: if price
-      recording throws, the invoice is confirmed with nothing recorded and the screen's confirm
-      returns 409 for ever. M5 puts its cost write inside that step, so the boundary is M5's
-      business. A merge, not a heal path (§2 rule 5)
+- [x] **Confirming and recording prices are one transaction** (WP-50, done 2026-08-29, found by the
+      eng review's outside voice). They were two, and the gap was unrecoverable: if price recording
+      threw, the invoice read confirmed with nothing recorded and the screen's confirm answered 409
+      for ever. Merged rather than healed (§2 rule 5): `_confirm` now carries the status flip, the
+      audit row and the price baseline on one connection, and `record_confirmed_prices` takes an
+      optional `conn` so it can either join a caller's transaction or open its own. The test has
+      teeth - reverting the one line makes it fail with `'confirmed' == 'awaiting_confirm'`
 - [ ] `ingredients` (tenant, name, base unit): the culinary concept, kept separate from the
       purchasable pack, exactly as PRD §17–18 specifies. `category` dropped until something reads it
 - [ ] `supplier_items.ingredient_id`: many packs from many suppliers → one raw material. The
@@ -963,7 +965,9 @@ pilot volume. Meta utility template cost applies only from M10 (verify live UAE 
   **WP-51 shipped**: `units.parse("48x400ml")` reads 19,200 ml instead of 400 ml, so the carton staged in `demo_seed.sql` at AED 90.00 can no longer cost out 48x too high. Multiplier forms (`48x400ml`, `24 x 1L`, `12*500g`, `6×2kg`) reduce to the whole pack; a nested chain (`2x3x4kg`) is refused entirely rather than half-read, because "3x4kg" reads 12 kg where the page says 24 and both halves are wrong numbers; a zero quantity is no longer a pack, which matters because the first thing M5 does with a pack size is divide by it inside a transaction that runs after the invoice has already flipped to confirmed.
   Fixed in `extraction/units.py` alone - the one dictionary the catalog, the eval scorer and costing all ask - so all three got the same answer at once, which is the whole reason that module was lifted out of `matching.py` in the first place. The second effect is deliberate and now pinned by a test: a carton line no longer snaps onto a single-tin catalog row, where it used to compare AED 90 against AED 2.10 and fire a nonsense price alert.
   **410 tests green** (was 393; 17 new), eval scorer 65 green, `eval.run --smoke` OK, ruff clean on both trees. No existing test or fixture changed behaviour, so neither predicted regression was real on today's corpus.
-  Next: WP-50 (confirm and price-recording become one transaction), then WP-52 → WP-53 → WP-54 → WP-55.
+  **WP-50 shipped**: confirming an invoice and recording its prices are now one transaction. They were two, and the gap between them was not recoverable - a throw in the second left the invoice reading confirmed with no prices, and the review screen's confirm then answered 409 "invoice is confirmed" for ever, with no way back. `_confirm` now carries the status flip, the audit row and the price baseline on one connection; `record_confirmed_prices` gained an optional `conn` so it either joins a caller's transaction or opens its own, which keeps the retried-ack path and every existing test working unchanged.
+  The acceptance test was checked for teeth rather than assumed: reverting the single line that passes the connection makes it fail with `assert 'confirmed' == 'awaiting_confirm'`, which is the bug stated exactly. **411 tests green**, ruff clean.
+  Next: WP-52 (materials, mapping, the reverse gear and the Raw Materials screen), then WP-53 → WP-54 → WP-55.
 
 - 2026-08-29 - **All four lanes are one master again: WP-26/28 (landed earlier), the M4 loop-gate lane, WP-29 bilingual matching, and the Gemini 3 Flash swap - merged, tested together, deployed in one push.**
   Integration order was WP-29 then the provider swap, and the combined suite is green: 393 API tests, 65 eval tests, smoke, ruff on both trees.

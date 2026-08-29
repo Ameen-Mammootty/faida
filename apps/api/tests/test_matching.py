@@ -1,9 +1,12 @@
 """Supplier memory (plan.md §5 layer 4, WP-22): unit tests for normalization,
 supplier matching, and item snapping over messy corpus-style names, plus
 real-Postgres tests for the on-confirm price machinery
-(Database.record_confirmed_prices - the WP-21 confirm flow calls it)."""
+(Database.record_confirmed_prices, which since WP-50 commits inside the same
+transaction as the confirm that triggers it)."""
 
 from decimal import Decimal
+
+import pytest
 
 from faida_api.matching import (
     clean_name,
@@ -256,6 +259,7 @@ async def _seed_invoice(
     tax: Decimal | None = None,
     total: Decimal | None = None,
     discount_total: Decimal | None = None,
+    status: str = "confirmed",
 ) -> str:
     document_id = await db.pool.fetchval(
         "insert into documents (tenant_id, source, status) values ($1, 'manual', 'extracted') "
@@ -266,7 +270,7 @@ async def _seed_invoice(
         """
         insert into invoices (tenant_id, document_id, supplier_id, supplier_name, status,
                               tax_treatment, tax, total, discount_total)
-        values ($1, $2, $3, $4, 'confirmed', $5, $6, $7, $8)
+        values ($1, $2, $3, $4, $9, $5, $6, $7, $8)
         returning id::text
         """,
         DEMO_TENANT_ID,
@@ -277,6 +281,7 @@ async def _seed_invoice(
         tax,
         total,
         discount_total,
+        status,
     )
     for position, line in enumerate(lines):
         await db.pool.execute(
@@ -308,6 +313,75 @@ async def _item_row(db, item_id: str):
 async def _history(db) -> list:
     return await db.pool.fetch(
         "select supplier_item_id, price, invoice_id from supplier_item_prices order by id"
+    )
+
+
+@requires_db
+async def test_a_failed_price_write_rolls_the_confirmation_back(db, monkeypatch):
+    """WP-50: the confirm and the price baseline are one transaction.
+
+    They used to be two, so anything throwing between them left an invoice
+    reading confirmed with no prices and (from M5) no cost - and the review
+    screen's confirm then answered 409 "invoice is confirmed" for ever, with
+    no way back. The failure that matters is not the throw; it is that the
+    throw was unrecoverable.
+    """
+    supplier_id = await _seed_supplier(db, "Gulf Foods Trading L.L.C.")
+    invoice_id = await _seed_invoice(
+        db,
+        supplier_id=supplier_id,
+        status="awaiting_confirm",
+        total=Decimal("101.00"),
+        lines=[
+            {
+                "raw_name": "Milk Powder 2.5kg",
+                "qty": Decimal("2"),
+                "unit_price": Decimal("50.50"),
+                "line_total": Decimal("101.00"),
+            }
+        ],
+    )
+    original = db.record_confirmed_prices
+
+    async def explode(*args, **kwargs):
+        raise RuntimeError("price write failed")
+
+    monkeypatch.setattr(db, "record_confirmed_prices", explode)
+    with pytest.raises(RuntimeError):
+        await db.confirm_invoice(invoice_id, actor="whatsapp:+971500000000")
+
+    # Nothing happened: not the status, not the timestamp, not the trail entry,
+    # not the catalog. The invoice is exactly where the sender left it.
+    row = await db.pool.fetchrow(
+        "select status, confirmed_at from invoices where id = $1", invoice_id
+    )
+    assert row["status"] == "awaiting_confirm"
+    assert row["confirmed_at"] is None
+    assert (
+        await db.pool.fetchval(
+            "select count(*) from audit_events where subject_id = $1", invoice_id
+        )
+        == 0
+    )
+    assert (
+        await db.pool.fetchval(
+            "select count(*) from supplier_items where supplier_id = $1", supplier_id
+        )
+        == 0
+    )
+
+    # And the retry succeeds, which is what "recoverable" means here.
+    monkeypatch.setattr(db, "record_confirmed_prices", original)
+    assert await db.confirm_invoice(invoice_id, actor="whatsapp:+971500000000") is True
+    assert (
+        await db.pool.fetchval("select status from invoices where id = $1", invoice_id)
+        == "confirmed"
+    )
+    assert (
+        await db.pool.fetchval(
+            "select count(*) from supplier_items where supplier_id = $1", supplier_id
+        )
+        == 1
     )
 
 

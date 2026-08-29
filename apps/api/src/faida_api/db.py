@@ -3,6 +3,8 @@ the application holds the logic (plan §2 rule 3)."""
 
 import datetime
 import json
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from decimal import Decimal
 from typing import Any
 
@@ -113,6 +115,20 @@ class Database:
             return True
         except Exception:
             return False
+
+    @asynccontextmanager
+    async def _txn(self, conn: asyncpg.Connection | None) -> AsyncIterator[asyncpg.Connection]:
+        """Join the caller's transaction, or open one of our own (WP-50).
+
+        A write that must commit *with* something else takes the caller's
+        connection; the same write called on its own gets a fresh one. Without
+        this the two halves of a confirm were separate transactions, and the
+        gap between them was not recoverable - see `_confirm`."""
+        if conn is not None:
+            yield conn
+        else:
+            async with self.pool.acquire() as owned, owned.transaction():
+                yield owned
 
     # -- WhatsApp messages ---------------------------------------------------
 
@@ -474,10 +490,12 @@ class Database:
             supplier_id,
         )
 
-    async def record_confirmed_prices(self, invoice_id: str) -> None:
-        """On confirm (called by the WP-21 flow), one transaction: the catalog
-        self-builds and the price baseline moves - never before confirm, so an
-        unconfirmed invoice can't pollute it (plan.md §5 layer 4, §6 M2).
+    async def record_confirmed_prices(
+        self, invoice_id: str, *, conn: asyncpg.Connection | None = None
+    ) -> None:
+        """The catalog self-builds and the price baseline moves - never before
+        confirm, so an unconfirmed invoice can't pollute it (plan.md §5 layer
+        4, §6 M2).
 
         For each line with qty and unit_price: create the supplier item when
         the line didn't snap (canonical_name = cleaned raw_name; the supplier
@@ -485,8 +503,13 @@ class Database:
         has none), append the price observation (idempotent per invoice via
         the 0003 partial unique index), and shift prev/last price only when
         this invoice's observation is new AND the price actually changed -
-        re-running for the same invoice is a no-op."""
-        async with self.pool.acquire() as conn, conn.transaction():
+        re-running for the same invoice is a no-op.
+
+        **`conn` is how this stays atomic with the status flip** (WP-50). The
+        confirm paths pass their own connection so both halves commit together;
+        called without one it opens its own transaction, which is the retried
+        WhatsApp ack and any row confirmed before that merge existed."""
+        async with self._txn(conn) as conn:
             invoice = await conn.fetchrow(
                 """
                 select i.tenant_id, i.supplier_id, i.supplier_name, i.tax_treatment, i.tax,
@@ -705,15 +728,24 @@ class Database:
 
     async def _confirm(self, invoice_id: str, *, from_status: str, actor: str) -> bool:
         """The one confirm write, shared by both paths: flip the status if it
-        is still the expected one, and record who did it in the same
-        transaction. One gate, one trail entry, whichever door it came in.
+        is still the expected one, record who did it, and move the catalog and
+        price baseline - **all in one transaction** (WP-50). One gate, one
+        trail entry, one set of prices, whichever door it came in.
 
         `total is not null` sits in the where clause as an invariant, not as
         the user-facing rule (WP-26): both callers check the total first so
         they can say *why* they are refusing. It is repeated here because a
         third caller written a year from now would otherwise reopen the hole
         this closed - an invoice recorded with no headline number, which M5
-        divides into plate costs no photograph can check."""
+        divides into plate costs no photograph can check.
+
+        The price write joined this transaction for the same reason. It used to
+        run in a second one, so anything that threw between them left an
+        invoice reading confirmed with no prices and (from M5) no cost - and
+        the review screen's confirm then answered 409 "invoice is confirmed"
+        for ever, with no way back. A partial confirm is now unreachable rather
+        than merely unlikely: if the prices fail, the status flip rolls back
+        with them, the sender is told, and a retry genuinely retries."""
         async with self.pool.acquire() as conn, conn.transaction():
             row = await conn.fetchrow(
                 """
@@ -735,6 +767,7 @@ class Database:
                 subject_id=invoice_id,
                 detail={"from_status": from_status},
             )
+            await self.record_confirmed_prices(invoice_id, conn=conn)
         return True
 
     async def apply_invoice_correction(

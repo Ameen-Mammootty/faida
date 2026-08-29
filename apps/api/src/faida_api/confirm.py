@@ -487,8 +487,10 @@ async def handle_inbound_text(
         )
         if already is not None:
             # This text already confirmed on a previous attempt (the job
-            # retried after a failed send): heal the price recording
-            # (idempotent) and re-send the ack - never confirm again.
+            # retried after a failed send): re-send the ack, never confirm
+            # again. The price re-run is idempotent and, since WP-50 made the
+            # confirm atomic, has nothing left to heal on a row confirmed by
+            # this code - it stays for rows confirmed before that merge.
             await db.record_confirmed_prices(str(already["id"]))
             return _ack(already)
 
@@ -531,8 +533,9 @@ async def handle_inbound_text(
             # the invoice's headline number, invisible to everything
             # downstream, and by M5 it is a plate cost nobody can check.
             return await _total_needed(db, str(target["id"]))
+        # One call, one transaction: the status flip, the audit row and the
+        # price baseline commit together or not at all (WP-50).
         await db.confirm_invoice(str(target["id"]), actor=chat_actor(from_phone))
-        await db.record_confirmed_prices(str(target["id"]))
         return _ack(target)
     return await _apply_correction(
         db,

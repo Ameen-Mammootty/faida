@@ -348,7 +348,10 @@ async def confirm_invoice(invoice_id: uuid.UUID, request: Request) -> dict:
             status_code=409, detail=f"invoice is {invoice['status']}; cannot confirm"
         )
 
-    await db.record_confirmed_prices(str(invoice_id))
+    # The price baseline moved inside the same transaction as the status flip
+    # (WP-50), so there is nothing to do here but render the result. Two
+    # transactions used to leave a confirmed invoice with no prices and this
+    # endpoint answering 409 for ever.
     return await _invoice_detail(request, str(invoice_id))
 
 
