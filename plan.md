@@ -8,7 +8,7 @@
 - **Product:** Faida — profit visibility for GCC cafeterias and multi-branch karak/paratha chains, fed through WhatsApp.
 - **Reference:** `Docs/PRD.md` (v2). This plan sequences the build; the PRD owns product intent. Where they conflict on *scope timing*, this plan wins.
 - **Start date:** 2026-08-22
-- **Current milestone:** **M0 proven on real hardware 2026-08-23 (F1-F4 done)** - the live chain carried through M1 extraction and M2 confirm on the first real invoice. The live project's schema is at migration 0011 (applied 2026-08-28), so the C8 code on master is safe to deploy. **The demo bar was raised 2026-08-28 (founder call): the demo is the complete end-to-end MVP chain - exact invoice data → supplier items mapped to raw materials → raw materials as recipe ingredients → menu costed, closing on a menu-wise margin per item - so the demo gate moved from M4 to the end of M6; M4 is now the loop gate.** Founder-gated: a permanent access token (the 24 h token expired 2026-08-23 19:00; replacement in progress), corpus photos (F6) for the accuracy loop (WP-15/16), loop rehearsals (M4 gate), one real menu with recipes and selling prices (F7, for M6's costing and the demo). The review screen is live at `https://faida-web-nine.vercel.app` (deployed 2026-08-24). Known gaps before the demo: **WP-19** (a short read that silently drops lines) is the last M5 prerequisite open - WP-26 (a totals block off-frame confirmed away with a null total) and WP-28 (a USD invoice walking into an AED baseline) both closed 2026-08-28; the amber question still dead-ends on a plain-English answer (dates and invoice numbers now have their own grammar and a year question, closed 2026-08-28 with WP-25/WP-27 - free-text answers to *other* questions still clarify). Forward-to-reply measured **19.9 s and 23.0 s** on 2026-08-25 against the ~20 s target, with no repair round on either - the 28.4 s figure is retired. WP-16 rounds 1-2 ran 2026-08-24/25 (`eval --live`): every §5 accuracy target is met *on the ten generated invoices* (phase 1, not pilot accuracy), the rebuilt ground truth signed off by the founder on 2026-08-25 with zero corrections (F8), and five proposed/corpus images still ungenerated (CUT-01 generated 2026-08-29; AMD-01 joined the corpus 2026-08-28). **The post-demo track was resequenced 2026-08-28** (§8, Decision Log): raw materials → menu costing → auth → sales, because costing a plate needs no sales data and the raw-material layer the MVP depends on was in no milestone at all. Nothing in M0-M4 moved
+- **Current milestone:** **M0 proven on real hardware 2026-08-23 (F1-F4 done)** - the live chain carried through M1 extraction and M2 confirm on the first real invoice. The live project's schema is at migration 0011 (applied 2026-08-28), so the C8 code on master is safe to deploy. **The demo bar was raised 2026-08-28 (founder call): the demo is the complete end-to-end MVP chain - exact invoice data → supplier items mapped to raw materials → raw materials as recipe ingredients → menu costed, closing on a menu-wise margin per item - so the demo gate moved from M4 to the end of M6; M4 is now the loop gate.** Founder-gated: a permanent access token (the 24 h token expired 2026-08-23 19:00; replacement in progress), corpus photos (F6) for the accuracy loop (WP-15/16), loop rehearsals (M4 gate), one real menu with recipes and selling prices (F7, for M6's costing and the demo). The review screen is live at `https://faida-web-nine.vercel.app` (deployed 2026-08-24). **M5 (raw materials) is decomposed as of 2026-08-29** into WP-50 to WP-54 (§7.3), and **every M5 prerequisite is closed**: **WP-19** (a short read that silently drops lines) shipped 2026-08-28 with the guard live on both providers, alongside WP-26 (a totals block off-frame confirmed away with a null total) and WP-28 (a USD invoice walking into an AED baseline). Known gaps before the demo: the amber question still dead-ends on a plain-English answer (dates and invoice numbers now have their own grammar and a year question, closed 2026-08-28 with WP-25/WP-27 - free-text answers to *other* questions still clarify). Forward-to-reply measured **19.9 s and 23.0 s** on 2026-08-25 against the ~20 s target, with no repair round on either - the 28.4 s figure is retired. WP-16 rounds 1-2 ran 2026-08-24/25 (`eval --live`): every §5 accuracy target is met *on the ten generated invoices* (phase 1, not pilot accuracy), the rebuilt ground truth signed off by the founder on 2026-08-25 with zero corrections (F8), and five proposed/corpus images still ungenerated (CUT-01 generated 2026-08-29; AMD-01 joined the corpus 2026-08-28). **The post-demo track was resequenced 2026-08-28** (§8, Decision Log): raw materials → menu costing → auth → sales, because costing a plate needs no sales data and the raw-material layer the MVP depends on was in no milestone at all. Nothing in M0-M4 moved
 
 ---
 
@@ -572,6 +572,51 @@ demonstrable, not documentary.
 | 43 | Demo runbook with reset steps between rehearsals; founder rehearses twice (F7) | S |
 | 44 | ~~**Duplicate invoice hold**~~ **done 2026-08-28** (ported 2026-08-24): normalize the invoice number (lowercase, strip non-alphanumerics - `matching.normalize_invoice_no`); same supplier + number + total against an existing invoice holds the new one as needs_review with a reply naming the earlier record; number alone, or date + total, appends a note instead of holding (a second same-day delivery is real). Same-supplier means matched ids when both rows have one, else equal normalized names, so an uncataloged supplier can still send the same paper twice. The hold outranks the cash hold; alerts and questions on a copy are noise. No new tables | S |
 
+**M5 (raw materials)** — decomposed 2026-08-29, the breakdown §7.3 deferred to the M4 retro.
+Revised the same day after `/plan-eng-review` and a Codex outside voice: 13 findings, all resolved by founder call, three of which changed the shape of the milestone rather than its details (see the Decision Log).
+
+Read the whole block as one rule: **M5 is the first milestone whose output no photograph shows.**
+Every earlier number sat beside its image and a human could catch it.
+A cost per gram is two divisions away from the page, and by M6 it is folded four sums deep into a plate margin, so a wrong one is not visible anywhere - which is why every row below either refuses to guess or labels what it assumed.
+
+```
+  invoice line ──┬─ unit_price ──── ex-VAT ── post-discount ──┐
+   (has a photo) │   (arithmetic cross-checks this:            ├─► cost per base unit
+                 │    qty × unit_price = line_total)           │    (stored on the line,
+                 └─ pack size ───────────────────────────────┘     numeric(18,8), frozen)
+                     ▲ NOTHING cross-checks this. It is in no          │
+                     │ arithmetic identity. 25kg read as 2.5kg          │
+                     │ survives every check we have.                    │
+                     └── which is why no cost ever reads "verified"     │
+                                                                        │
+   supplier_items.ingredient_id  ──────────────────────────────────────┤
+    (human-approved, reversible)                                        │
+                                                                        ▼
+                                          material price per kilo = the newest
+                                          costed line among the packs mapped
+                                          RIGHT NOW  (derived, never stored)
+```
+
+| WP | What | Size | Depends | Acceptance |
+|---|---|---|---|---|
+| 50 | **Confirming and recording prices must be one transaction.** Found by the outside voice, verified in the code: `db._confirm` commits (db.py:717), then `record_confirmed_prices` opens a *second* transaction (api.py:351, confirm.py:492/535). If the second throws, the invoice is confirmed with no price memory - and retrying from the review screen falls to api.py:344 and raises **409 "invoice is confirmed; cannot confirm"**, permanently. This predates M5 and M5 makes it far likelier, because M5 puts a pile of new arithmetic inside that second step and the thing then lost is a cost with no photo beside it. The fix is a merge, not a repair path (§2 rule 5): status flip, audit row, catalog write, price move and cost in **one** transaction behind one method both doors call. **Deliberately not built:** a heal/retry endpoint, which is the recovery subsystem §2 rule 5 bans | M | - | a forced failure inside price recording leaves the invoice **awaiting_confirm** with no catalog or price rows, and a retry succeeds; the M2 gate test and every existing `record_confirmed_prices` test pass untouched |
+| 51 | **A multi-pack pack size must not read as one pack, and a pack of nothing is not a pack.** `units.parse("48x400ml")` returns **400 ml** today, silently dropping the 48 - the carton holds 19,200 ml, so any cost built on it is 48x too high, and that exact pack sits in `supabase/demo_seed.sql` at AED 90.00. The multiplier forms GCC food supply prints (`48x400ml`, `24 x 1L`, `12*500g`) are read deterministically in `extraction/units.py` - the one dictionary the catalog and the eval both ask - because `48 x 400 ml` is arithmetic printed on the page, not a guess about what is inside a box. A zero or negative quantity now returns None: `parse("0kg")` currently yields a real pack of base quantity 0, which divides. Anything nested or unrecognized stays **unparseable** rather than becoming a wrong number. **Deliberately not built:** any inference about a container's contents (that is WP-55's human sentence, and `units.py` refuses it by design) | S | - | `48x400ml` → 19,200 ml, `24x1L` → 24,000 ml, `0kg` → None; `2.5kg` and `6 ctn` unchanged; the whole M0-M4 suite and `python -m eval.run --smoke` stay green - `matching.snap_item`'s pack veto reads this same dictionary, so a token change here can split a catalog item in two |
+| 52 | **`ingredients` + the mapping approval, with a reverse gear.** `ingredients` (tenant, name, base unit) as the culinary concept, and `supplier_items.ingredient_id` as the many-packs-to-one-material link (PRD §17-18). `matching.py` **proposes** and never decides. Four actions, each writing **one `audit_events` row inside its own transaction** (C8): approve, reject, **remap** and **unmap**. The last two are not optional polish - a wrong merge is this milestone's stated worst case ("corrupts the cost of every menu item using that material… no photo to check it against"), and an approval gate with no reverse gear leaves a consultant asking an engineer. **Approve creates the material when none exists**, from the pack's cleaned name: the matcher can only propose against materials that exist, and a fresh tenant has none. One Raw Materials screen, two sections - unmapped packs **ranked by money spent**, and mapped materials with their price - cloning the review screen's propose-then-confirm shape. A rejected pair is not re-proposed, derived from `audit_events` with **latest event wins** (so reject-then-approve reads correctly), served by the 0011 subject index. Cross-tenant mapping is refused by **Postgres, not by a code path**: `unique (tenant_id, id)` on ingredients plus a composite FK. An approval whose pack dimension contradicts the material's base unit is refused, never coerced. **Deliberately not built:** auto-merge at any confidence, a WhatsApp mapping grammar, a mapping-state table (it would record approved-ness in two places - the 0010 duplication), and an English/Arabic translation table (WP-29's reasoning holds) | L | 51 | Gulf Foods' and Al Madina's milk powder map to one material; one audit row per approve, reject, remap and unmap, each naming its actor; nothing merges without a keystroke; a wrong merge is undone on the same screen and every price above it corrects itself; a rejected candidate does not reappear, but re-approving it works; a 400 ml pack onto a gram material is refused with a reason; a supplier item cannot be mapped to another tenant's material |
+| 53 | **Cost per base unit - derived, traceable, and honest about what nothing checked.** `unit_price ÷ pack size` → AED per gram / millilitre / piece, **ex-VAT and post-discount by reusing the two factors `record_confirmed_prices` already computes per line** (one implementation, not a second), `Decimal` throughout, written per confirmed invoice line inside WP-50's transaction so every cost drills back to a photo. **Precision is a stated rule, not "full":** `numeric(18,8)`, `ROUND_HALF_UP`, quantized once at the division, displayed per kilo at two decimals - flour at AED 43.50 per 25 kg is 0.00174 AED/g, which `numeric(12,3)` would round to 0.002, a 15% error nobody would notice. Pack resolution order: printed `pack_size`, else a pack printed **inside `raw_name`** (`units.first_printed`, which `snap_item` already trusts - TH-01 prints "RICE BASM 5KG" with no pack column), else the line's `unit` when it is itself a measure, else unparseable → WP-55. The stock-line query must **fetch `position`** and key provenance on it: that loop skips charge lines, so its counter is not the line's position on the invoice and C9 would read the wrong line's history. **No cost ever reads "verified".** The arithmetic proves `qty × unit_price = line_total`, so the unit price is corroborated - but **pack size appears in no identity at all**, so a 25kg read as 2.5kg passes every check we have and would carry a green badge on a ten-times-wrong number. Costs read *estimated* when a person supplied an input, and *reliable with limitations* otherwise, naming the pack size as the unchecked one (PRD §24's own vocabulary). C9's asserted-input set mirrors the real data dependency: this line's `unit_price` and `pack_size`, plus `total`/`tax` on a VAT-inclusive invoice, plus `discount_total` **and every stock line's `line_total`** when the invoice discounts - the discount is allocated pro rata from the stock-line sum, so a corrected line taints its neighbours. **Deliberately not built:** moving-average costing (PRD §19 chose latest price), corroborating pack sizes across invoices (the natural upgrade once price history exists - logged), a costing engine or policy table, and any cost on an unconfirmed invoice | M/L | 50, 51 | a 2.5 kg sack at AED 50.50 reads AED 20.20/kg; VAT-inclusive yields ex-VAT and discounted yields post-discount; flour reads 0.00174, not 0.002; a cost resting on a reconstructed total reads *estimated* and names the line; no cost reads *verified*; an invoice with a delivery charge as line 1 labels its stock lines correctly; a zero pack yields no cost and does not throw; `EDGE-01`'s negative return line costs correctly |
+| 54 | **One material, one price per kilo - derived, never stored.** The material's price is **the newest costed line among the packs mapped to it right now**, ordered by **printed invoice date** with confirm time only as a tie-breaker (PRD §19 - the most recent *purchase*, so a stack of old invoices handed over during onboarding cannot overwrite this month's real cost). Latest, not cheapest and not averaged. **No `ingredient_costs` table:** the fact lives on the invoice lines, and a stored projection would need refreshing on confirm, approve, reject-reversal, remap, unmap and pack-size override - six triggers to get exhaustively right, and the first draft of this plan already missed the main one (supplier items are created *during* confirm with no material attached, so a cost written only at confirm time had nothing to attach to and approval recomputed nothing). Deriving it deletes the category of bug, makes the mapping undo in WP-52 free, and the answer carries the **invoice line id** it came from - a more precise thing for M6 to name than a row in a summary table. The screen shows the price per kilo with its supplier, its purchase date, its quality label and the photo behind it. **Deliberately not built:** per-branch cost (§2 rule 8 - it waits for a chain that shows different branch prices, and deriving makes that a `where` clause rather than a migration), provisional cost before an invoice (PRD §19, post-MVP), any recipe or menu concept (M6) | M | 52, 53 | **the milestone's Done when:** milk powder bought from two suppliers in three pack sizes reads as one material at one price per kilo, and every figure inside that price drills to the invoice photo behind it; confirming a newer invoice from either supplier moves that price; confirming an *older* one does not; unmapping a wrongly-merged pack corrects the price immediately |
+| 55 | **A cost that cannot be computed is an issue on a screen, and a human clears it once.** Any line that cannot be costed appears with **its own reason** - unparseable pack size, a pack printed as a bare container, missing unit price, missing quantity, a zero pack, or the foreign-currency hold - and blocks that material's price rather than guessing (PRD §24). The list is **derived from the data, not a new `issues` table**: PRD §24's first-class-record subsystem is post-MVP and C5's "derived until real usage demands more" is the standing precedent. Clearing it is the same slice, because an issue with no resolution is half a feature: a consultant sets a **pack-size override** on the supplier item ("1 carton = 10 kg chicken"), `audit_events` is its version history, and the rule for old lines is stated rather than implied - **an override costs the lines that have no cost yet and never rewrites a line already costed**, inside the override's own transaction. A cost built on a human's conversion is *estimated* by C9, automatically. **Deliberately not built:** a `container_conversions` table (audit_events already records who said what and when), a severity/impact/status taxonomy, an issue inbox, and yield conversions (10 kg raw → 8.5 kg cooked is a recipe fact, M6) | M | 53, 54 | a carton line with no parseable pack yields no cost, appears with its reason and its invoice line, and blocks its material's price; each other blocker shows its own reason; entering "1 carton = 10 kg" clears it and costs that line but leaves already-costed lines byte-identical; the resulting cost reads *estimated* |
+
+Whole-milestone **out of scope**, restating §2 rule 8 where M5 is most tempted to drift: no recipes or
+menu costing (M6), no inventory ledger or theoretical consumption (deferred beyond MVP), no auth or
+RLS (M7), no sales (M8), no broker or ORM, no business logic in SQL functions, and no new scope
+without a customer quote naming who asked.
+Two things the outside voice raised and we deliberately did not adopt: **per-line VAT rates** (real,
+but inherited from C4's invoice-level model which already governs price memory - a contract change,
+logged in `TODOS.md`, not an M5 decision) and **freezing each line's material mapping** (freezing
+would make WP-52's undo preserve errors instead of correcting them; a remap is a correction, and the
+audit log records every one).
+The Meta production chain in the M5 checklist is founder track (F-track), not agent work.
+
 ### 7.4 Delegation waves
 
 ```
@@ -583,8 +628,27 @@ Wave 4  WP-20 + WP-22, then WP-21 + WP-23 + WP-24     (overlaps WP-16: product c
 Wave 5  WP-30 + WP-31, then WP-32-35                  (web starts against the C6 mock)
 Wave 6  WP-40-43 → M4 loop gate                       | founder: F7 loop rehearsals
 Wave 7  ~~WP-17 VAT treatment~~ done 2026-08-23
-Wave 8  M5 + M6 work packages (decomposed at the M4 retro) → M6 DEMO GATE → demo
+Wave 8  WP-50 ∥ WP-51, then WP-52 → WP-53 → WP-54 → WP-55   → M5 raw materials
+Wave 9  M6 work packages (decomposed at the M5 close)       → M6 DEMO GATE → demo
 ```
+
+| Lane | Work package | Modules touched | Depends on |
+|---|---|---|---|
+| A | WP-50 atomic confirm | `faida_api/db.py`, `api.py`, `confirm.py` | - |
+| A | WP-52 ingredients + mapping + screen | `db.py`, `api.py`, `matching.py`, `supabase/migrations/`, `apps/web/` | 51 |
+| A | WP-53 cost per base unit + C9 | `costing.py` (new), `db.py`, `api.py`, `apps/web/` | 50, 51 |
+| A | WP-54 material price, derived | `db.py`, `api.py`, `apps/web/` | 52, 53 |
+| A | WP-55 blocked costs + override | `db.py`, `api.py`, `apps/web/` | 53, 54 |
+| B | WP-51 pack-size arithmetic | `faida_api/extraction/units.py` | - |
+
+**Launch A (WP-50) and B (WP-51) in parallel worktrees; merge B before WP-53 starts.**
+They are the only pair that can run at once, and only because they share no file: B is the pack
+dictionary, A is the confirm transaction.
+Everything after is serial on purpose, and all of it lands in `db.py`, `api.py` and `apps/web/` -
+lanes that split there would spend more effort merging than they save.
+The order is not preference: WP-53 divides by WP-51's answer inside WP-50's transaction, WP-54 reads
+WP-53's costs through WP-52's mapping, and WP-55 is the escape hatch for the lines WP-53 refuses to
+cost. A wrong number early is inherited by everything above it rather than caught beside a photo.
 
 ### 7.5 Delegation protocol
 
@@ -642,33 +706,67 @@ them, not a rewrite of them.
       the transaction that made it. Done before the mapping screen rather than after it, because
       the first thing this milestone builds is an approval and there was nowhere to record one —
       `audit_events` had been scheduled for M7, two milestones after its first use
-- [ ] `ingredients` (tenant, name, base unit, category): the culinary concept, kept separate from
-      the purchasable pack, exactly as PRD §17–18 already specifies
+- [x] **Pack arithmetic reads what the page says** (WP-51, done 2026-08-29): a multiplier pack
+      ("48x400ml", "24 x 1L", "12*500g", "6×2kg") reduces to the whole carton, a nested chain
+      ("2x3x4kg") is refused entirely rather than half-read, and a zero quantity is no longer a
+      pack. Fixed in `extraction/units.py`, the one dictionary the catalog, the eval and costing
+      all ask, so all three got the same answer at once. Second effect, deliberate and pinned by a
+      test: a carton line no longer snaps onto a single-tin catalog row, where it used to compare
+      AED 90 against AED 2.10
+- [ ] **Confirming and recording prices become one transaction** (WP-50, added 2026-08-29 from the
+      eng review's outside voice). They are two today, and the gap is unrecoverable: if price
+      recording throws, the invoice is confirmed with nothing recorded and the screen's confirm
+      returns 409 for ever. M5 puts its cost write inside that step, so the boundary is M5's
+      business. A merge, not a heal path (§2 rule 5)
+- [ ] `ingredients` (tenant, name, base unit): the culinary concept, kept separate from the
+      purchasable pack, exactly as PRD §17–18 specifies. `category` dropped until something reads it
 - [ ] `supplier_items.ingredient_id`: many packs from many suppliers → one raw material. The
       existing fuzzy matcher **proposes**, a human approves, and the approval is recorded with its
       actor — one `audit_events` row per merge and per rejection (C8, in place). **Never
       auto-merged.** A wrong merge quietly corrupts the cost of every menu item
-      using that material, and unlike a bad extraction there is no photo to check it against
+      using that material, and unlike a bad extraction there is no photo to check it against.
+      Cross-tenant mapping is refused by Postgres (composite FK), not by a code path
+- [ ] **Unmap and remap, the reverse gear.** An approval gate whose worst case has no undo leaves a
+      consultant asking an engineer. Both write their audit row, and because the price is derived,
+      unmapping corrects every figure above it instantly
 - [ ] Mapping screen: unmapped supplier items ranked by money spent, approve or reject one
       keystroke each — the same propose-then-confirm shape as the invoice review screen, so
-      nothing new is invented for it
+      nothing new is invented for it. **Approve creates the material when none exists** (the matcher
+      can only propose against materials that already exist; a fresh tenant has none)
 - [ ] **Cost per base unit, derived and traceable:** `unit_price ÷ parsed pack size` → AED per
       gram / millilitre / piece, ex-VAT per C4's net-canonical rule, recorded per confirmed
       invoice line so every cost drills back to a photo. `pack_size` reads 99% *on generated
-      invoices* (phase 1), which is what makes this arithmetic rather than guesswork
+      invoices* (phase 1), which is what makes this arithmetic rather than guesswork.
+      `numeric(18,8)`, `ROUND_HALF_UP`, displayed per kilo
 - [ ] Container conversions, consultant-entered and versioned ("1 carton = 10 kg chicken"):
-      `units.py` deliberately refuses to guess what is inside a carton, so a human says once
+      `units.py` deliberately refuses to guess what is inside a carton, so a human says once.
+      `audit_events` is the version history; an override costs the lines that have no cost yet and
+      never rewrites one already costed
 - [ ] An unparseable pack size is an **issue on a screen** (PRD §24), never a guessed number: it
-      blocks that material's cost and says which invoice line it came from
+      blocks that material's cost and says which invoice line it came from — **and so does every
+      other reason a line cannot be costed** (missing unit price or quantity, a bare container, a
+      zero pack, the foreign-currency hold), each with its own reason
 - [ ] **C9 applied to the first derived number:** a cost per base unit inherits the quality of the
       invoice line under it, so one built on a reconstructed total or a corrected quantity reads
-      *estimated* and names the line that made it so — `provenance.asserted_fields()` is the read
-- [ ] `ingredient_costs`: latest purchase price per base unit (PRD §19), one per tenant.
-      Per-branch cost waits for a chain that actually shows different branch prices (§2 rule 8)
-- [ ] **Prerequisite, not optional: WP-19 closes first** (WP-26 closed 2026-08-28, and WP-28 with
-      it). A short read that drops a line, a null total confirmed away by a bare OK, or a USD
-      price sitting in an AED baseline all make a material look cheaper than it is - and once it
-      is a cost per gram, nothing downstream can tell
+      *estimated* and names the line that made it so — `provenance.asserted_fields()` is the read.
+      **No cost reads *verified***: the arithmetic corroborates the unit price but **pack size sits
+      in no identity at all**, so a 25kg read as 2.5kg passes every check we have. Costs read
+      *estimated* or *reliable with limitations* (PRD §24's vocabulary), never green
+- [ ] **One material, one price per kilo — derived, not stored.** The newest costed line among the
+      packs mapped right now, by **printed invoice date** (PRD §19's "most recent purchase", so an
+      onboarding stack of old invoices cannot overwrite this month's cost), confirm time only as a
+      tie-breaker. No `ingredient_costs` table: a stored projection needs six refresh triggers and
+      the first draft of this plan already missed the main one. Per-branch cost still waits for a
+      chain that shows different branch prices (§2 rule 8) — and deriving makes that a `where`
+      clause rather than a migration
+- [x] **Prerequisite, not optional: WP-19 closes first** - **all three closed 2026-08-28**
+      (WP-19 shipped in commit 4f3ef2c, WP-26 and WP-28 the same day; box ticked 2026-08-29 after
+      verifying the guard in the code rather than in this file). A short read that drops a line, a
+      null total confirmed away by a bare OK, or a USD price sitting in an AED baseline all make a
+      material look cheaper than it is - and once it is a cost per gram, nothing downstream can
+      tell. The truncation guard is live on **both** providers, which is what actually matters
+      after the 2026-08-29 model swap: Gemini raises on any `finish_reason` but `STOP`, Anthropic
+      on `stop_reason='max_tokens'`, each of them even when the cut-off JSON happens to parse
 - [ ] **Start the Meta production chain now (external, slow):** legal entity docs → Meta Business
       verification → WABA → purchased verified sender → submit daily-brief template in the
       **utility** category. Track status here: `[ ] entity  [ ] verification  [ ] WABA  [ ] sender  [ ] template`
@@ -804,6 +902,10 @@ pilot volume. Meta utility template cost applies only from M10 (verify live UAE 
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-08-29 | **A material's price per kilo is derived from the costed invoice lines of the packs mapped to it, never stored; the planned `ingredient_costs` table is dropped** (M5, WP-54) | Founder call on the eng review's outside voice, which found the shape of the plan broken rather than a detail wrong: supplier items are created *during* confirm with no material attached, and mapping happens on the screen afterwards - so a price written only at confirm time had nothing to attach to, and the approval that finally created the material recomputed nothing. WP-53's own "done when" could not happen. The stored form needs refreshing on six separate events (confirm, approve, reject-reversal, remap, unmap, pack-size override) and the first draft of the plan already missed the main one; a derived answer has no refresh rules to get wrong. It also deletes two further findings for free - a remap no longer needs lineage frozen, and a pack-size override no longer needs a projection rebuilt - and makes the mapping undo below almost free, since unmapping a pack corrects every figure above it with nothing left to rebuild. The answer carries the **invoice line id** it came from, which is a more precise thing for M6 to name as its cost snapshot than a row in a summary table. Cost accepted: it contradicts PRD §29's `inventory_cost_snapshots` wording and M6 reads a query rather than a row; at pilot volume, with the two indexes WP-52 adds, that is cheap. Same reasoning as migration 0010, which deleted a duplicated `confirmed` state "kept in sync only by application code" |
+| 2026-08-29 | **No cost per base unit ever reads "verified"; costs read *estimated* or *reliable with limitations* (PRD §24's vocabulary)** (C9 amended, M5 WP-53) | Founder call, on the sharpest thing the outside voice said. C4's arithmetic proves `qty × unit_price = line_total`, so the unit price is cross-checked by two other numbers on the page - but **`pack_size` appears in no identity at all**. Nothing corroborates it, ever. A supplier prints 25kg, the model reads 2.5kg, every check still passes, and the cost is ten times too high wearing a green badge. `provenance.asserted_fields()` separates model-read from human-asserted, which is not the same question as right from wrong, and C9's wording had quietly conflated them. The fix costs one word and stops the product claiming something no arithmetic can support - the old platform's dominant failure ("a confidently wrong value was never offered for review") reappearing in the layer C9 was pinned to protect. **Considered and deferred:** earning *verified* by corroborating a pack size across two invoices from the same supplier, which is real evidence and sits in data we already keep - but it reads unverified until a second invoice arrives, so it is the upgrade once there is price history to lean on, not the thing to build first |
+| 2026-08-29 | **Confirming an invoice and recording its prices become one transaction** (M5 WP-50) | Found by the outside voice, verified in the code: `db._confirm` commits (db.py:717), then `record_confirmed_prices` opens a second transaction (api.py:351, confirm.py:492/535). A throw in the second leaves the invoice confirmed with no price memory, and a retry from the review screen falls to api.py:344 and raises 409 "invoice is confirmed; cannot confirm" - permanently, with no path back. It predates M5, and M5 makes it materially likelier by putting a pile of new arithmetic inside that second step, where the thing then lost is a cost with no photo beside it. Fixed as a merge rather than a repair endpoint, because a heal path is the recovery subsystem §2 rule 5 bans: status flip, audit row, catalog write, price move and cost commit together behind one method both doors call - the same "one door" shape corrections already use. Accepted cost: it restructures shipped demo-path code during the milestone whose hard constraint is not regressing it, guarded by the ten existing DB tests over that function and the M2 gate test |
+| 2026-08-29 | **"Latest purchase price" means the printed invoice date, with confirm time only as a tie-breaker** (M5 WP-54; reverses the same day's earlier call for confirm time) | The eng review first chose confirm time, for consistency with the shipped `supplier_items.last_price_at = now()` and because sorting by printed date looked like it would freeze the price on stage - the corpus invoices are dated 2026-07-02..08 while `demo_seed.sql` stages baselines at `now() - 7 days`. That reasoning was wrong and the outside voice caught it: **neither seed file inserts a single invoice or invoice line**, the price is fed by confirmed lines, and with none staged the first demo invoice sets the price under either rule. There was no demo consequence to protect. With that gone, PRD §19's plain reading wins: an owner handing over a stack of last month's invoices during onboarding must not have them overwrite this month's real cost, silently, in the layer where nothing downstream can notice. A null invoice date falls back to confirm time |
 | 2026-08-29 | **Gemini 3 Flash (`gemini-3-flash-preview`) becomes the shipped extraction model; Claude Opus 5 stays wired as the fallback behind `EXTRACTION_PROVIDER`** | Founder call, on the same day's measured bake-off (ten generated invoices, prompt v3 shared verbatim, single runs): Flash scored 100% on every field except the known bilingual-letterhead join (supplier_name 80%, the same run-to-run variance shape all three models show), got right both cells that tripped Gemini 3.1 Pro (the TH-01 subtotal and the pack sizes embedded in item names), reconciled 10/10 with zero repair rounds, at ~$0.0065/invoice (a tenth of Opus, a quarter of 3.1 Pro) and 9.5 s average / 13.9 s worst model time - the first configuration in which every corpus case fits the ~20 s forward-to-reply target (Opus's PH-01 alone reads for 22.9 s). The risk accepted, stated plainly: one run of a generated corpus, phase 2's real photos are precisely where a small model would be expected to fall first, and the repair path has never fired on Gemini because nothing failed - so the swap is built to be reversible in one env var with no deploy, the Opus recordings stay in git history, and the bake-off re-runs on the phase-2 corpus before the pilot leans on the numbers. §5 accuracy targets unchanged and still gate; §10 costs move down |
 | 2026-08-29 | **Bilingual invoices are matched by script-aware scoring in `matching.py`, not by constraining extraction to English or rejecting Arabic; the §3 language decision holds** (WP-29) | The 2026-08-28 eval returned HW-04's bilingual letterhead as both scripts joined - legitimate, since a retry read it clean, so it is run variance the pipeline must absorb. The joined "Dairy House Foodstuff LLC / بيت الألبان..." scored 0.595 against the stored English name, under the 0.85 bar: the supplier missed and confirm minted a duplicate supplier row, splitting the catalog and silencing the price alert. Two routes were weighed and declined. Extracting English-only is a prompt instruction set against model variance - exactly what §5's "accuracy is a pipeline property, not a prompt property" forbids - and it would break the founder-signed F8 ground truth, where AR-01's and HW-04's item names are Arabic and joined by design. Rejecting fully-Arabic invoices turns away a real GCC supplier's paper at the trust moment and reverses the §3 decision that invoices stay mixed-language while extraction handles both - a founder-owned call, and one that would not even fix HW-04 (its supplier line is English). The fix instead compares each script to its own and takes the best, so whichever half the model returns carries the match; it is gated on one side being single-script so shared Arabic legal boilerplate ("... للمواد الغذائية ذ.م.م") cannot cross-match two different suppliers (held at 0.76, under the 0.85 bar). Deliberately not built: an English-Arabic translation table (over-engineering; the pure script-flip with no shared characters stays a `name_aliases` job) and an English-preferred display name on the screen (presentation only, deferred until asked). One file, one function, no extraction/schema/ground-truth change |
 | 2026-08-28 | **WP-19 is amended: truncation is detected from the provider's stop reason alone; the self-reported row count is foreclosed** | The original brief asked to also compare the extracted line count with a count the model reports seeing - which is one more C3 field, and the ceiling A/B measured this same day found room for exactly zero more. stop_reason='max_tokens' is the transport's own ground truth for truncation and cannot disagree with itself, the guard raises even when the cut-off JSON happens to parse (the old platform's exact failure), and reconciliation still catches any partial read the transport misses. The budget half is proven by measurement: PH-01's 34 lines spend 2,638 of 16,000 output tokens at v3 with adaptive thinking on |
@@ -849,6 +951,19 @@ pilot volume. Meta utility template cost applies only from M10 (verify live UAE 
 ## 13. Progress Log
 
 *(newest first — one line per session: date, what shipped, what's next)*
+
+- 2026-08-29 - **M5 is decomposed into five work packages (WP-50 to WP-54, §7.3) and awaiting founder approval; no feature code written yet.** Baseline in the `m5-raw-materials` worktree is green on the M0-M4 demo path before anything is touched: 393 API tests, 65 eval scorer tests, `eval.run --smoke` OK, ruff clean on both trees.
+  **One bug found while reading the ground this milestone stands on, before writing a line of it:** `units.parse("48x400ml")` returns **400 ml**, silently dropping the 48. The carton holds 19,200 ml, so a cost per base unit divided by it would be **48x too high** - and "Evaporated Milk 400ml" with pack_size `48x400ml` is staged in `demo_seed.sql` at AED 90.00, so this is on the demo stage, not hypothetical. Harmless until now (the catalog only ever compared pack strings to each other, and the veto unions the name's token with the pack column's, so nothing mis-snapped) and the first thing that divides by it inherits it. It becomes WP-50, the first slice, ahead of any costing.
+  **Two stale boxes corrected against the code, per the "if the plan and the code disagree, the code is right" rule:** WP-19 was recorded as "the last M5 prerequisite open" in the Current-milestone line and left unticked in the M5 checklist, while §7.3, the M1 checklist and the 2026-08-28 log all had it shipped. Verified in the source rather than in this file, and it is live on **both** providers - which is what matters after the model swap: Gemini raises on any `finish_reason` but `STOP`, Anthropic on `stop_reason='max_tokens'`. Every M5 prerequisite is now closed.
+  Two judgement calls inside the breakdown that a reader should be able to disagree with: **C9 is folded into the costing slice rather than trailing it**, because a derived number shipped for even one slice without its quality label is the exact failure C9 was pinned to prevent; and the **blocked-cost list is derived from the data rather than given an `issues` table**, following C5's precedent, with PRD §24's first-class-record subsystem left post-MVP.
+  **Then `/plan-eng-review` ran with a Codex outside voice, and the breakdown came back materially different: 13 findings, all resolved by founder call, three of which changed the milestone's shape rather than its details.** A scope challenge cut four things first (a duplicate module, a duplicate screen, a `container_conversions` table, and an unread column) on the grounds that each restated a fact already stored. Then eight review findings landed - the ordering key, merge atomicity, the units blast radius, the write-once catalog column, C9's true input set, the stock-loop position bug, the zero-pack division, and two missing indexes. Then Codex found the three that mattered most, and the review had missed all three: **the price per kilo could never be produced at all** (supplier items are created during confirm with no material attached, so mapping later recomputed nothing - the milestone's own done-when was unreachable); **confirm and price-recording are two transactions** with an unrecoverable gap that returns 409 for ever from the screen; and **no cost can honestly read "verified"**, because the arithmetic corroborates the unit price while pack size sits in no identity at all, so a 25kg read as 2.5kg wears a green badge on a ten-times-wrong number.
+  **One correction I owe the record:** the review argued for confirm-time ordering partly to protect the demo, and that argument was false - neither seed file inserts any invoice or invoice line, so there was nothing to protect. Codex's phrase, "product behaviour distorted to preserve the demo seed", was fair. Reversed to printed invoice date.
+  Net effect: five work packages became six (WP-50 to WP-55), one planned table was deleted rather than added, unmap and remap joined WP-52 as the reverse gear the approval gate lacked, and the quality vocabulary moved to PRD §24's own words. Also written: `TODOS.md` (two deferred findings with their reasoning) and a test plan artifact for `/qa`.
+  Founder approved the revised six and building began the same day.
+  **WP-51 shipped**: `units.parse("48x400ml")` reads 19,200 ml instead of 400 ml, so the carton staged in `demo_seed.sql` at AED 90.00 can no longer cost out 48x too high. Multiplier forms (`48x400ml`, `24 x 1L`, `12*500g`, `6×2kg`) reduce to the whole pack; a nested chain (`2x3x4kg`) is refused entirely rather than half-read, because "3x4kg" reads 12 kg where the page says 24 and both halves are wrong numbers; a zero quantity is no longer a pack, which matters because the first thing M5 does with a pack size is divide by it inside a transaction that runs after the invoice has already flipped to confirmed.
+  Fixed in `extraction/units.py` alone - the one dictionary the catalog, the eval scorer and costing all ask - so all three got the same answer at once, which is the whole reason that module was lifted out of `matching.py` in the first place. The second effect is deliberate and now pinned by a test: a carton line no longer snaps onto a single-tin catalog row, where it used to compare AED 90 against AED 2.10 and fire a nonsense price alert.
+  **410 tests green** (was 393; 17 new), eval scorer 65 green, `eval.run --smoke` OK, ruff clean on both trees. No existing test or fixture changed behaviour, so neither predicted regression was real on today's corpus.
+  Next: WP-50 (confirm and price-recording become one transaction), then WP-52 → WP-53 → WP-54 → WP-55.
 
 - 2026-08-29 - **All four lanes are one master again: WP-26/28 (landed earlier), the M4 loop-gate lane, WP-29 bilingual matching, and the Gemini 3 Flash swap - merged, tested together, deployed in one push.**
   Integration order was WP-29 then the provider swap, and the combined suite is green: 393 API tests, 65 eval tests, smoke, ruff on both trees.
@@ -1354,3 +1469,39 @@ pilot volume. Meta utility template cost applies only from M10 (verify live UAE 
   Next: founder does README §M0 (Meta app, Supabase project, deploy), then prove M0 on a real
   phone and tick the last boxes.
 - 2026-08-22 — Plan created. Next: M0 — Meta app + webhook service live.
+
+---
+
+## GSTACK REVIEW REPORT
+
+| Review | Trigger | Why | Runs | Status | Findings |
+|--------|---------|-----|------|--------|----------|
+| CEO Review | `/plan-ceo-review` | Scope & strategy | 0 | — | — |
+| Codex Review | `/codex review` | Independent 2nd opinion | 0 | — | — |
+| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 1 | CLEAR (PLAN) | 23 issues, 0 critical gaps |
+| Design Review | `/plan-design-review` | UI/UX gaps | 0 | — | — |
+| DX Review | `/plan-devex-review` | Developer experience gaps | 0 | — | — |
+| Outside Voice | `/plan-eng-review` (codex) | Cross-model plan challenge | 1 | ISSUES_FOUND | 15 findings, all resolved |
+
+Scope: M5 raw materials (WP-50 to WP-55), reviewed 2026-08-29 at commit `c50daf3` against the code it
+builds on. Mode: SCOPE_REDUCED — a Step 0 complexity challenge cut four items (a duplicate module, a
+duplicate screen, a `container_conversions` table, and an unread column) before any review section ran.
+
+**CODEX:** 15 findings from an independent read of the repository. Three changed the shape of the
+milestone rather than its details, and the eng review had missed all three: a stored `ingredient_costs`
+row written at confirm time can never be populated (supplier items are created during confirm with no
+material attached, and mapping happens afterwards), confirm and price-recording are two transactions
+with an unrecoverable gap that 409s for ever from the review screen, and no cost can honestly read
+*verified* because pack size appears in no arithmetic identity. All 15 resolved by founder call.
+
+**CROSS-MODEL:** Five tension points, all put to the founder individually. Codex overturned one eng-review
+decision outright — ordering the price per kilo by confirm time, which the review had defended partly on a
+demo consequence that does not exist, since neither seed file inserts any invoice or invoice line. Reversed
+to printed invoice date. On two others the models agreed on the problem and differed on the cure, and the
+simpler cure won both times: deriving the material price rather than adding refresh triggers to a stored one,
+and unmap/remap rather than a mapping-state table. Half of Codex's finding 10 (audit events as operational
+state) was judged overstated and declined with reasons; its other half (no undo path) was accepted.
+
+**VERDICT:** ENG CLEARED — ready to implement, pending founder go-ahead on the revised six work packages.
+
+NO UNRESOLVED DECISIONS

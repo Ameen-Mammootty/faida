@@ -177,6 +177,22 @@ def test_snap_item_pack_size_column_vetoes_when_name_has_no_pack():
     assert snap_item([_item("Milk Powder", "500g")], "MILK POWDER 500G")["id"] == 0
 
 
+def test_snap_item_a_carton_never_snaps_onto_a_single_tin():
+    """WP-51's second effect, and the reason the pack fix belongs in the shared
+    dictionary rather than fenced off inside costing.
+
+    Before the multiplier was read, "EVAP MILK 48X400ML" and a catalog row for
+    a 400 ml tin both reduced to 400 ml, so they snapped together and the price
+    alert compared a carton at AED 90 against a tin at AED 2.10. Now the carton
+    reads 19,200 ml and the veto holds them apart, which is what the page says.
+    """
+    tin = [_item("Evaporated Milk 400ml", "400ml", id=1)]
+    assert snap_item(tin, "EVAP MILK 48X400ML") is None
+    # And a carton still snaps to the carton, however either side printed it.
+    carton = [_item("Evaporated Milk 48x400ml", "48x400ml", id=2)]
+    assert snap_item(carton, "EVAPORATED MILK 19200ML")["id"] == 2
+
+
 def test_snap_item_gram_kilogram_equivalence_is_not_a_veto():
     # 500g and 0.5kg are the same pack, spelled differently.
     assert snap_item([_item("Milk Powder 0.5kg", "0.5kg")], "MILK POWDER 500G")["id"] == 0

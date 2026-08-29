@@ -22,6 +22,18 @@ Containers are deliberately their own dimension. A carton is not twelve of
 anything until someone says what is in it, so "6 ctn" and "6 pc" must never
 compare equal - guessing there would silently merge two real catalog items.
 
+**Multiplier packs** (WP-51). GCC food supply prints cartons as "48x400ml":
+forty-eight 400 ml tins, not a 400 ml tin. Reading only the tail is not a small
+error - it is the whole carton divided by one of its parts, so a cost per base
+unit built on it is 48x too high, and nothing downstream of M5 can see that.
+The multiplier is arithmetic printed on the page, so it is read; what is inside
+an unlabelled carton is not, so it is refused (that is the human's sentence to
+say, M5 WP-55). A *nested* chain like "2x3x4kg" is refused outright rather than
+read as one of its halves - the halves are both wrong numbers.
+
+A quantity of zero is not a pack. `parse("0kg")` used to return a real pack
+whose base quantity was 0, which divides.
+
 This lived privately inside matching.py until WP-16, where the eval needed the
 same answers and there was no way to ask for them without a second copy.
 """
@@ -216,16 +228,43 @@ def _unit_pattern() -> str:
     return "|".join(re.escape(w) for w in words)
 
 
-# A number glued or spaced to a unit: "2.5kg", "50 KG", "30PCS", "2 كجم".
+# The symbols a supplier uses between a count and the pack it repeats:
+# "48x400ml", "24 X 1L", "12*500g", "6×2kg". IGNORECASE covers the capital X.
+_MULTIPLIER_CHARS = "xX*×"
+
+# A number glued or spaced to a unit: "2.5kg", "50 KG", "30PCS", "2 كجم",
+# optionally preceded by a multiplier: "48x400ml".
 # Commas inside numbers are stripped before matching (see _quantity).
-_PACK_RE = re.compile(rf"(\d+(?:[.,]\d+)?)\s*({_unit_pattern()})(?![\w])", re.IGNORECASE)
+_PACK_RE = re.compile(
+    rf"(?:(\d+(?:[.,]\d+)?)\s*[{_MULTIPLIER_CHARS}]\s*)?"
+    rf"(\d+(?:[.,]\d+)?)\s*({_unit_pattern()})(?![\w])",
+    re.IGNORECASE,
+)
 
 
 def _quantity(text: str) -> Decimal | None:
+    """A printed magnitude, or None when it is not one we can divide by. Zero
+    and below are refused here rather than downstream: a pack of nothing is not
+    a pack, and the first thing M5 does with a pack size is divide by it."""
     try:
-        return Decimal(text.replace(",", "."))
+        value = Decimal(text.replace(",", "."))
     except InvalidOperation:
         return None
+    return value if value > 0 else None
+
+
+def _is_nested(text: str, start: int) -> bool:
+    """Is the pack we matched the tail of a longer multiplier chain?
+
+    "2x3x4kg" matches as "3x4kg" from index 2, which would read 12 kg where the
+    page says 24. Both halves are wrong numbers, so a chain is refused entirely
+    rather than half-read - the same rule that keeps a carton's contents a
+    human's sentence rather than a guess.
+    """
+    index = start - 1
+    while index >= 0 and text[index].isspace():
+        index -= 1
+    return index >= 0 and text[index] in _MULTIPLIER_CHARS
 
 
 @dataclass(frozen=True)
@@ -252,20 +291,35 @@ class PackSize:
         return f"{quantity:f} {self.unit.canonical}"
 
 
-def parse(text: str | None) -> PackSize | None:
-    """One pack size from a printed cell: "2 kg", "2.5K", "12 pcs". None when
-    the cell names no unit we know - an unknown pack size stays unknown rather
-    than becoming a wrong one."""
-    if not text:
+def _pack_from(text: str, match: re.Match[str]) -> PackSize | None:
+    """One regex hit turned into a pack, or None when it is not one we claim to
+    understand: a nested multiplier chain, a zero quantity, or a unit word that
+    is not in the dictionary."""
+    if _is_nested(text, match.start()):
         return None
-    match = _PACK_RE.search(text)
-    if match is None:
-        return None
-    quantity = _quantity(match.group(1))
-    canonical = canonical_unit(match.group(2))
+    quantity = _quantity(match.group(2))
+    canonical = canonical_unit(match.group(3))
     if quantity is None or canonical is None:
         return None
+    if match.group(1) is not None:
+        multiplier = _quantity(match.group(1))
+        if multiplier is None:
+            return None
+        quantity *= multiplier
     return PackSize(quantity, UNITS[canonical])
+
+
+def parse(text: str | None) -> PackSize | None:
+    """One pack size from a printed cell: "2 kg", "2.5K", "12 pcs",
+    "48x400ml". None when the cell names no unit we know - an unknown pack size
+    stays unknown rather than becoming a wrong one."""
+    if not text:
+        return None
+    for match in _PACK_RE.finditer(text):
+        pack = _pack_from(text, match)
+        if pack is not None:
+            return pack
+    return None
 
 
 def find_all(text: str | None) -> set[PackSize]:
@@ -274,24 +328,25 @@ def find_all(text: str | None) -> set[PackSize]:
     if not text:
         return set()
     found: set[PackSize] = set()
-    for raw_quantity, raw_unit in _PACK_RE.findall(text):
-        quantity = _quantity(raw_quantity)
-        canonical = canonical_unit(raw_unit)
-        if quantity is not None and canonical is not None:
-            found.add(PackSize(quantity, UNITS[canonical]))
+    for match in _PACK_RE.finditer(text):
+        pack = _pack_from(text, match)
+        if pack is not None:
+            found.add(pack)
     return found
 
 
 def first_printed(text: str | None) -> str | None:
     """The first pack size in a string, exactly as it was printed there:
-    "RICE BASM 5KG" -> "5KG". A till receipt has no pack-size column and puts
-    the pack in the item name instead, and the catalog already reads it there
-    (matching.snap_item scans canonical_name), so it is a pack size wherever
-    it is printed."""
+    "RICE BASM 5KG" -> "5KG", "EVAP MILK 48x400ML" -> "48x400ML". A till
+    receipt has no pack-size column and puts the pack in the item name instead,
+    and the catalog already reads it there (matching.snap_item scans
+    canonical_name), so it is a pack size wherever it is printed."""
     if not text:
         return None
-    match = _PACK_RE.search(text)
-    return None if match is None else match.group(0).strip()
+    for match in _PACK_RE.finditer(text):
+        if _pack_from(text, match) is not None:
+            return match.group(0).strip()
+    return None
 
 
 def same_pack_size(left: str | None, right: str | None) -> bool:
