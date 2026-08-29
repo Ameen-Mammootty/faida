@@ -1365,7 +1365,7 @@ class Database:
                 """
                 update invoice_lines
                 set raw_name = $3, supplier_item_id = $4, qty = $5, unit_price = $6,
-                    line_total = $7, checks = $8
+                    line_total = $7, checks = $8, unit = $9, pack_size = $10
                 where invoice_id = $1 and position = $2
                 """,
                 [
@@ -1378,6 +1378,8 @@ class Database:
                         line["unit_price"],
                         line["line_total"],
                         line["checks"],
+                        line["unit"],
+                        line["pack_size"],
                     )
                     for line in lines
                 ],

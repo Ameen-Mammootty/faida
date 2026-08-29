@@ -66,19 +66,85 @@ def build_repair_targets(
     return targets
 
 
-def apply_repair(invoice: ExtractedInvoice, patch: RepairResult) -> ExtractedInvoice:
-    """Pure merge: a patched line index replaces that line wholesale, indices
-    out of range are ignored, totals apply only when non-None in the patch,
-    and everything untargeted is untouched. The input is never mutated."""
-    lines = [patch.lines.get(i, line) for i, line in enumerate(invoice.lines)]
-    return invoice.model_copy(
-        update={
-            "lines": lines,
-            "subtotal": patch.subtotal if patch.subtotal is not None else invoice.subtotal,
-            "tax": patch.tax if patch.tax is not None else invoice.tax,
-            "total": patch.total if patch.total is not None else invoice.total,
+def _same_row(patched_name: str | None, original_name: str | None) -> bool:
+    """Does the patch's raw_name confirm it re-read the row we asked about?
+
+    The repair prompt asks for "raw_name exactly as printed (to confirm the
+    row)" precisely so a patch keyed to the wrong index cannot silently rewrite
+    another line's money. The check is deliberately not equality: the first
+    pass sometimes folds a handwritten margin note into the name (EDGE-01,
+    "Avocado Credit: one box returned, soft fruit") and a cleaner second read
+    is a better answer, not a wrong row. So either name may extend the other,
+    and only a genuine disagreement rejects the patch.
+    """
+    left = " ".join((patched_name or "").split()).casefold()
+    right = " ".join((original_name or "").split()).casefold()
+    if not left or not right:
+        return False
+    return left.startswith(right) or right.startswith(left)
+
+
+def apply_repair(
+    invoice: ExtractedInvoice, patch: RepairResult, targets: list[RepairTarget]
+) -> ExtractedInvoice:
+    """Pure merge of a *partial* patch. The input is never mutated.
+
+    A repair patch is not a replacement line, and treating it as one was a
+    silent data-loss bug: `build_repair_prompt` tells the model to return
+    "null for every other field", so a patched line arrives carrying nulls for
+    `unit` and `pack_size` by instruction. Swapping the line wholesale wrote
+    those nulls over values the first pass had read correctly, and `pack_size`
+    is the denominator M5 divides a price by. It never bit only because Gemini
+    3 Flash reconciles the whole corpus with zero repair rounds, so this path
+    has never run in anger.
+
+    Four rules, all of them refusals:
+
+    - **Only targeted fields move.** Everything else on the line is kept,
+      which is what `RepairResult` has always claimed ("repair never touches
+      fields that passed").
+    - **A null on a targeted field keeps the old value.** The prompt says a
+      cell the model still cannot read stays null; that is "I could not read
+      it", not "it is empty". The old value stays, still fails its check, and
+      goes amber for the question flow (§5 layer 5).
+    - **Unrequested indices are dropped**, along with indices out of range: a
+      patch for a line nobody asked about is not evidence about that line.
+    - **The row must confirm itself** via raw_name, so a mis-keyed patch
+      cannot rewrite a different line's money.
+    """
+    line_fields: dict[int, set[str]] = {}
+    totals_fields: set[str] = set()
+    for target in targets:
+        if target.line_index is None:
+            totals_fields.update(target.fields)
+        else:
+            line_fields.setdefault(target.line_index, set()).update(target.fields)
+
+    lines = list(invoice.lines)
+    for index, patched in patch.lines.items():
+        if index not in line_fields or not 0 <= index < len(lines):
+            continue
+        original = lines[index]
+        if not _same_row(patched.raw_name, original.raw_name):
+            continue
+        moved = {
+            field: getattr(patched, field)
+            for field in line_fields[index]
+            if getattr(patched, field, None) is not None
         }
-    )
+        if moved:
+            lines[index] = original.model_copy(update=moved)
+
+    header = {
+        field: value
+        for field, value in (
+            ("subtotal", patch.subtotal),
+            ("tax", patch.tax),
+            ("total", patch.total),
+        )
+        if field in totals_fields and value is not None
+    }
+    return invoice.model_copy(update={"lines": lines, **header})
 
 
 async def repair_invoice(
@@ -99,7 +165,7 @@ async def repair_invoice(
     # then fields still failing simply stay failed/amber for layer 5.
     for _ in range(MAX_REPAIR_ROUNDS):
         patch, usage = await provider.repair(image, mime, targets)
-        invoice = apply_repair(invoice, patch)
+        invoice = apply_repair(invoice, patch, targets)
         validation = validate_invoice(invoice)
         targets = build_repair_targets(invoice, validation)
         if not targets:

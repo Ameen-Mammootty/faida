@@ -119,10 +119,18 @@ def test_no_failed_checks_yields_no_targets():
     assert build_repair_targets(smudged, validate_invoice(smudged)) == []
 
 
+def _line_target(index: int, fields=("qty", "unit_price", "line_total")) -> RepairTarget:
+    return RepairTarget(line_index=index, fields=list(fields), reason="arithmetic failed")
+
+
+def _totals_target(fields=("subtotal", "tax", "total")) -> RepairTarget:
+    return RepairTarget(line_index=None, fields=list(fields), reason="totals failed")
+
+
 # --- apply_repair ---
 
 
-def test_apply_repair_replaces_only_targeted_lines():
+def test_apply_repair_moves_only_targeted_cells_on_targeted_lines():
     invoice = _invoice(
         [_line("2", "5.00", "10.00", name="keep"), _line("12", "4.50", "58.00", name="fix")],
         subtotal="64.00",
@@ -131,7 +139,7 @@ def test_apply_repair_replaces_only_targeted_lines():
     )
     fixed = _line("12", "4.50", "54.00", name="fix")
     patch = RepairResult(lines={1: fixed, 5: _line("9", "9.00", "81.00")}, total="67.20")
-    result = apply_repair(invoice, patch)
+    result = apply_repair(invoice, patch, [_line_target(1), _totals_target()])
 
     assert len(result.lines) == 2  # out-of-range index 5 ignored
     assert result.lines[0] == invoice.lines[0]
@@ -146,7 +154,9 @@ def test_apply_repair_does_not_mutate_the_input():
     invoice = _invoice([_line("12", "4.50", "58.00")], total="58.00")
     snapshot = invoice.model_copy(deep=True)
     result = apply_repair(
-        invoice, RepairResult(lines={0: _line("12", "4.50", "54.00")}, total="54.00")
+        invoice,
+        RepairResult(lines={0: _line("12", "4.50", "54.00")}, total="54.00"),
+        [_line_target(0), _totals_target()],
     )
     assert result is not invoice
     assert invoice == snapshot
@@ -162,7 +172,7 @@ def test_apply_repair_untouched_fields_survive():
         tax=Decimal("0.50"),
         total=Decimal("10.50"),
     )
-    result = apply_repair(invoice, RepairResult())
+    result = apply_repair(invoice, RepairResult(), [])
     assert result == invoice
 
 
@@ -219,3 +229,108 @@ async def test_repair_invoice_passes_the_built_targets_to_the_provider():
     (targets,) = fake.repair_calls
     assert [t.line_index for t in targets] == [0]
     assert "58.00" in targets[0].reason
+
+
+# --- a patch is partial, and the refusals that makes necessary ---------------
+#
+# build_repair_prompt tells the model to return "null for every other field",
+# so a patched line arrives carrying nulls for unit and pack_size by
+# instruction. Merging it wholesale wrote those nulls over correctly-read
+# values, and pack_size is the denominator M5 divides a unit price by. The
+# path has never run in anger because Gemini 3 Flash reconciles the corpus
+# with zero repair rounds, which is exactly why it needs pinning.
+
+
+def test_a_repaired_line_keeps_the_unit_and_pack_size_it_already_had():
+    original = ExtractedLine(
+        raw_name="MILK PWDR 2.5KG NIDO",
+        qty=Decimal("12"),
+        unit="sack",
+        pack_size="2.5kg",
+        unit_price=Decimal("54.50"),
+        line_total=Decimal("658.00"),  # wrong: 12 x 54.50 = 654.00
+    )
+    # What the prompt actually asks for: the row confirmed by name, fresh
+    # readings for the targeted cells, null for everything else.
+    patched = ExtractedLine(
+        raw_name="MILK PWDR 2.5KG NIDO",
+        qty=Decimal("12"),
+        unit=None,
+        pack_size=None,
+        unit_price=Decimal("54.50"),
+        line_total=Decimal("654.00"),
+    )
+    result = apply_repair(
+        _invoice([original], total="654.00"),
+        RepairResult(lines={0: patched}),
+        [_line_target(0)],
+    )
+    line = result.lines[0]
+    assert line.line_total == Decimal("654.00")  # the targeted cell moved
+    assert (line.unit, line.pack_size) == ("sack", "2.5kg")  # and nothing else went missing
+
+
+def test_a_null_on_a_targeted_cell_keeps_the_old_value():
+    # "A cell you still cannot read stays null; never guess" means the model
+    # could not read it, not that the cell is empty. The old value stays, still
+    # fails its check, and goes amber for the question flow.
+    original = _line("12", "4.50", "58.00", name="fix")
+    patched = ExtractedLine(raw_name="fix", qty=None, unit_price=None, line_total=Decimal("54.00"))
+    result = apply_repair(
+        _invoice([original], total="58.00"), RepairResult(lines={0: patched}), [_line_target(0)]
+    )
+    assert result.lines[0].qty == Decimal("12")
+    assert result.lines[0].unit_price == Decimal("4.50")
+    assert result.lines[0].line_total == Decimal("54.00")
+
+
+def test_a_patch_for_a_line_nobody_asked_about_is_dropped():
+    # Only line 1 failed. A patch that also rewrites line 0 is not evidence
+    # about line 0, whatever it claims.
+    invoice = _invoice(
+        [_line("2", "5.00", "10.00", name="keep"), _line("12", "4.50", "58.00", name="fix")],
+        total="68.00",
+    )
+    patch = RepairResult(
+        lines={
+            0: _line("99", "99.00", "9801.00", name="keep"),
+            1: _line("12", "4.50", "54.00", name="fix"),
+        }
+    )
+    result = apply_repair(invoice, patch, [_line_target(1)])
+    assert result.lines[0] == invoice.lines[0]
+    assert result.lines[1].line_total == Decimal("54.00")
+
+
+def test_a_patch_whose_row_does_not_match_is_rejected():
+    # raw_name is asked for "to confirm the row". A patch keyed to the wrong
+    # index must never silently rewrite another line's money.
+    invoice = _invoice([_line("12", "4.50", "58.00", name="Basmati Rice 5kg")], total="58.00")
+    patch = RepairResult(lines={0: _line("3", "1.00", "3.00", name="Sunflower Oil 5L")})
+    assert apply_repair(invoice, patch, [_line_target(0)]) == invoice
+
+
+def test_a_cleaner_second_read_of_the_same_row_is_still_the_same_row():
+    # EDGE-01: the first pass folded a handwritten margin note into the name.
+    # A cleaner re-read is a better answer, not a different line.
+    invoice = _invoice(
+        [_line("5", "92.00", "465.00", name="Avocado Credit: one box returned, soft fruit")],
+        total="465.00",
+    )
+    patch = RepairResult(lines={0: _line("5", "92.00", "460.00", name="Avocado")})
+    result = apply_repair(invoice, patch, [_line_target(0)])
+    assert result.lines[0].line_total == Decimal("460.00")
+
+
+def test_totals_move_only_when_the_totals_block_was_targeted():
+    invoice = _invoice([_line("2", "5.00", "10.00")], subtotal="10.00", tax="0.50", total="10.50")
+    patch = RepairResult(subtotal="99.00", tax="9.00", total="108.00")
+    # Only a line failed, so an unrequested totals rewrite is dropped.
+    untargeted = apply_repair(invoice, patch, [_line_target(0)])
+    assert (untargeted.subtotal, untargeted.tax, untargeted.total) == (
+        Decimal("10.00"),
+        Decimal("0.50"),
+        Decimal("10.50"),
+    )
+    targeted = apply_repair(invoice, patch, [_totals_target()])
+    assert targeted.total == Decimal("108.00")

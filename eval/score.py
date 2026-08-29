@@ -209,6 +209,7 @@ def score_case(
     truth: ExtractionResult,
     usage: ProviderUsage | None = None,
     reconciled_before_repair: bool | None = None,
+    as_returned: ExtractionResult | None = None,
 ) -> dict:
     """Score one (extracted, truth) pair into a JSON-serializable dict.
 
@@ -221,6 +222,16 @@ def score_case(
     `extracted` is the post-repair invoice; `reconciled_before_repair` carries
     the pre-repair verdict so the aggregate can report repair lift (§5 layer
     3). Recorded runs replay the extract call alone and pass None.
+
+    `as_returned` is the raw provider answer *before* the derivation seam ran,
+    and it exists so the pack_size score keeps measuring the model. Since
+    2026-08-29 the seam recovers a pack from the item name when the page prints
+    no pack column (`units.pack_size_for`), which is deterministic and correct -
+    and would pin `pack_size` at 100% whether the model read anything or not.
+    That would quietly switch off the measurement that found the problem: five
+    live runs scoring 100/90/100/90/90 is what proved the read was a coin flip.
+    So the score is reported twice, and `model pack_size` is the one to quote
+    when asking whether a *model* reads packs off real paper.
     """
     case: dict = {
         "classification": {
@@ -263,6 +274,22 @@ def score_case(
             fields[field]["total"] += 1
             if _match_line_field(field, getattr(extracted_line, field), getattr(truth_line, field)):
                 fields[field]["correct"] += 1
+    # The same alignment, scored against the answer before the seam touched
+    # it. normalize_extracted preserves line order and count, so index i is the
+    # same row in both.
+    model_pack_size = None
+    if as_returned is not None and as_returned.invoice is not None:
+        raw_lines = as_returned.invoice.lines
+        model_pack_size = {"correct": 0, "total": 0}
+        for i, j in pairs:
+            if i >= len(raw_lines):
+                continue
+            model_pack_size["total"] += 1
+            if _match_line_field(
+                "pack_size", raw_lines[i].pack_size, truth_invoice.lines[j].pack_size
+            ):
+                model_pack_size["correct"] += 1
+
     case["lines"] = {
         "truth_count": len(truth_invoice.lines),
         "extracted_count": len(extracted_invoice.lines),
@@ -270,6 +297,7 @@ def score_case(
         "recall": _rate(len(pairs), len(truth_invoice.lines)),
         "precision": _rate(len(pairs), len(extracted_invoice.lines)),
         "fields": fields,
+        "model_pack_size": model_pack_size,
     }
     return case
 
@@ -345,6 +373,7 @@ def aggregate(cases: list[dict]) -> dict:
     header = {field: {"correct": 0, "total": 0} for field in HEADER_FIELDS}
     line_fields = {field: {"correct": 0, "total": 0} for field in LINE_FIELDS}
     matched = truth_count = extracted_count = 0
+    model_pack = {"correct": 0, "total": 0}
     reconciled = applicable = 0
     reconciled_before = before_measured = 0
     usages = [c["usage"] for c in cases if c["usage"] is not None]
@@ -362,6 +391,10 @@ def aggregate(cases: list[dict]) -> dict:
             for field, tally in case["lines"]["fields"].items():
                 line_fields[field]["correct"] += tally["correct"]
                 line_fields[field]["total"] += tally["total"]
+            raw_pack = case["lines"].get("model_pack_size")
+            if raw_pack is not None:
+                model_pack["correct"] += raw_pack["correct"]
+                model_pack["total"] += raw_pack["total"]
         if case["reconciliation"]["applicable"]:
             applicable += 1
             reconciled += int(bool(case["reconciliation"]["reconciled"]))
@@ -374,6 +407,7 @@ def aggregate(cases: list[dict]) -> dict:
         tally["accuracy"] = _rate(tally["correct"], tally["total"])
     for tally in line_fields.values():
         tally["accuracy"] = _rate(tally["correct"], tally["total"])
+    model_pack["accuracy"] = _rate(model_pack["correct"], model_pack["total"])
 
     usage_aggregate = None
     if usages:
@@ -402,6 +436,10 @@ def aggregate(cases: list[dict]) -> dict:
             "recall": _rate(matched, truth_count),
             "precision": _rate(matched, extracted_count),
             "fields": line_fields,
+            # pack_size as the model returned it, before the derivation seam
+            # recovered any from item names. Null total on recorded replays
+            # that carry no raw answer.
+            "model_pack_size": model_pack,
         },
         "reconciliation": {
             "reconciled": reconciled,

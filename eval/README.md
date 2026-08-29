@@ -70,6 +70,16 @@ The smoke exits nonzero if any fixture score drifts from its `expected.json`, so
 - Reconciliation rate: fraction of extracted invoices whose arithmetic reconciles under C4, decided by `faida_api.extraction.validate` - the validator the product ships.
   The eval carried its own copy of C4 until WP-16 and it had drifted: knowing only the exclusive identity, it scored VAT-inclusive and discounted invoices as unreconciled off hand-verified ground truth, a ceiling of 11/14 against a gate of 100%.
   There is one implementation of C4 and the eval scores against it.
+- `pack_size` is scored **twice**, and the second number is the one to quote about a model.
+  Since 2026-08-29 the pipeline's derivation seam recovers a pack from the item name when the
+  page prints no pack column (`units.pack_size_for`), so the headline `line pack_size` row
+  measures what the database stores - deterministic, and 100% on this corpus.
+  The `of which model-read` row underneath it scores the raw provider answer *before* the seam
+  ran, which is what answers "does this model read packs off paper".
+  Without the split the derivation would pin the score at 100% whether the model read anything
+  or not, and it would have hidden the finding that produced it: five live Flash runs scoring
+  100/90/100/90/90, all of the variance on TH-01's ten embedded packs.
+  Measured after the change, the same five runs read 100% stored against 89-90% model-read.
 - Line units and pack sizes are compared through the units dictionary (`faida_api.extraction.units`), so a supplier writing "2 kg" where the catalog says "2000 g" is not scored as a miss.
 - Both the live and recorded paths run the pipeline's derivation seam (`normalize_extracted`) before scoring, so a recording cannot score differently depending on how it is read.
 - `01_perfect`'s recording deliberately carries its date as printed text only (`"10/08/2026"`, calendar field null), so the CI smoke fails the moment the day-first date derivation (WP-27) stops running in the scoring path.

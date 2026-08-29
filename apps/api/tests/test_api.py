@@ -859,3 +859,41 @@ async def apply_chat_correction(db, text: str) -> str:
     """One chat correction through its own front door, so a screen test can set
     up state the chat grammar owns (WP-26's reconstruction)."""
     return await handle_inbound_text(db, DEMO_PHONE, text, datetime.datetime.now(datetime.UTC))
+
+
+@requires_db
+async def test_a_wrong_pack_size_can_be_corrected_and_cleared_from_the_screen(api, db):
+    """The pack size is the one line field no arithmetic can check - C4's
+    identities anchor on the line sum - and since 2026-08-29 it is sometimes
+    derived from the item name rather than read off the page. A value nothing
+    can verify and nobody can edit is a silent wrong number waiting to happen,
+    so the screen must be able to both fix it and clear it.
+    """
+    app, client, *_ = api
+    invoice = await extracted_invoice(api, db)
+    url = f"/api/invoices/{invoice['id']}/fields"
+
+    resp = await client.patch(
+        url,
+        headers=AUTH,
+        json={"corrections": [{"line_index": 0, "field": "pack_size", "value": "5 kg"}]},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["lines"][0]["pack_size"] == "5 kg"
+
+    # "That pack is wrong and I do not know the right one" is a real answer.
+    resp = await client.patch(
+        url,
+        headers=AUTH,
+        json={"corrections": [{"line_index": 0, "field": "pack_size", "value": "-"}]},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["lines"][0]["pack_size"] is None
+
+    row = await db.pool.fetchrow(
+        "select * from invoice_lines where invoice_id = $1 and position = 0", invoice["id"]
+    )
+    assert row["pack_size"] is None
+    # C8: the human's correction is recorded against the field it moved.
+    stored = await db.get_invoice(str(invoice["id"]))
+    assert stored["provenance"]["lines.0.pack_size"]["origin"] == "corrected_screen"

@@ -286,3 +286,47 @@ def test_repair_lift_reported_only_when_a_before_verdict_exists():
         "reconciliation_rate_before_repair": 0.5,
         "reconciliation_rate_after_repair": 1.0,
     }
+
+
+# --- the model's own pack reading, kept visible under the derivation --------
+
+
+def test_pack_size_is_scored_twice_so_the_derivation_cannot_hide_the_model():
+    # A till receipt: no pack column, every pack inside the item name. The
+    # seam recovers all three deterministically, so the stored pack_size is
+    # perfect - but the model returned none of them, and that is the number
+    # that says whether a model reads packs off paper.
+    truth = invoice_result(
+        [
+            line("RICE BASM 5KG", qty="2", unit_price="33.60", line_total="67.20", pack_size="5KG"),
+            line("SODA 1L", qty="24", unit_price="4.20", line_total="100.80", pack_size="1L"),
+        ]
+    )
+    as_returned = invoice_result(
+        [
+            line("RICE BASM 5KG", qty="2", unit_price="33.60", line_total="67.20"),
+            line("SODA 1L", qty="24", unit_price="4.20", line_total="100.80"),
+        ]
+    )
+    # What the seam produced, and what the database would store.
+    stored = truth
+    case = score_case(stored, truth, as_returned=as_returned)
+    assert case["lines"]["fields"]["pack_size"] == {"correct": 2, "total": 2}
+    assert case["lines"]["model_pack_size"] == {"correct": 0, "total": 2}
+
+
+def test_the_model_pack_score_is_absent_when_no_raw_answer_was_given():
+    truth = invoice_result([line("Cucumber 5kg", qty="2", unit_price="12.00", line_total="24.00")])
+    assert score_case(truth, truth)["lines"]["model_pack_size"] is None
+
+
+def test_aggregate_folds_the_model_pack_score_across_cases():
+    truth = invoice_result(
+        [line("RICE BASM 5KG", qty="2", unit_price="33.60", line_total="67.20", pack_size="5KG")]
+    )
+    read = score_case(truth, truth, as_returned=truth)
+    missed = score_case(truth, truth, as_returned=invoice_result([line("RICE BASM 5KG", qty="2")]))
+    agg = aggregate([read, missed])
+    assert agg["lines"]["model_pack_size"]["correct"] == 1
+    assert agg["lines"]["model_pack_size"]["total"] == 2
+    assert agg["lines"]["fields"]["pack_size"]["accuracy"] == 1.0
