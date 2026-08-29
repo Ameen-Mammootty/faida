@@ -836,7 +836,15 @@ pilot volume. Meta utility template cost applies only from M10 (verify live UAE 
   That is the finding that matters - a vision model asked to read a page with no total is perfectly capable of adding the lines up and reporting the answer as though it had read it, and this one did not.
   The reply then carried both new questions in one message, a bare `OK` was refused, `total 710.50 no vat` resolved the invoice green against the paper's real total, and the ack said the prices were kept out of price history.
   `pack_size` came back null on all five lines, which is right rather than a miss: this invoice has no pack-size column and the pack is inside the description, exactly the `HW-02` ruling the founder signed off on 2026-08-25.
-  Still owed, and it needs a phone rather than a keyboard: **one real forward**, which is the only thing that exercises Meta, Railway and the deployed build together.
+  **Then proven on the phone the same night, which is what actually settles it.**
+  The founder forwarded CUT-01 from the demo handset at 02:39:01: ack at +6 s, full reading at **+19 s**, inside the ~20 s target, no repair round, 8.5 s of model time at prompt v3.
+  WhatsApp compressed the 2 MB PNG to a JPEG on the way and every figure still read correctly, which is the closest thing yet to what a salesman's forward actually looks like.
+  Every reply came back **byte-identical to the local rehearsal**, including the ack, and the stored invoice carries `total` and `tax` as C8 `reconstructed` by `whatsapp:971509772702` with every other field `extracted` by `model:claude-opus-5` - the first reconstructed values in production.
+  The confirm then proved the half that caused the original incident: the invoice went `confirmed`, a supplier row was created for identity, and **price memory did not move at all** - zero catalog items, zero price observations, zero lines linked - with the ack saying so in the sender's own chat.
+  `audit_events` holds the pair: `invoice.corrected` naming fields `total` and `tax` with the inbound message id, then `invoice.confirmed`.
+  The one step not exercised on hardware is the bare `OK` refusal, because the founder answered the question directly rather than testing the refusal first; it stands on the e2e tests and the local rehearsal.
+  All CUT-01 rows were then wiped from live on the founder's instruction - invoice, lines, audit events, supplier, document, extraction run, four jobs, seven messages and the stored photo - leaving zero null-total invoices and a clean referential state.
+  Unrelated and worth knowing: `demo_seed.sql` (WP-40) was run against live at 02:43:25 with its documented manual phone step, so the demo handset now resolves to the **Karak Al Khaleej Cafeterias** chain with its staged three weeks of price history, and the older `Demo Cafeteria Group` rows are no longer reachable from that phone.
   CUT-01 is not in the corpus yet - promoting it needs ground truth and an F8 verdict, which is a founder call, not mine.
 - 2026-08-29 - **CUT-01 now has its generated invoice photograph.**
   The image preserves the complete header and all five USD line items while the paper continues beyond the bottom of the frame before any totals content appears.
