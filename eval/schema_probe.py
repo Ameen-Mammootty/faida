@@ -59,6 +59,15 @@ def main() -> int:
         )
     except anthropic.BadRequestError as exc:
         message = exc.body.get("error", {}).get("message", str(exc))
+        # Not every 400 is the grammar ceiling: a drained credit balance
+        # arrives as a BadRequestError too (found in rehearsal 2026-08-29),
+        # and telling someone to slim the schema over a billing problem
+        # would send them at entirely the wrong fix.
+        if "credit balance" in message.casefold() or "billing" in message.casefold():
+            print(f"FAIL: billing, not the schema - {message}")
+            print("Top up at console.anthropic.com Plans & Billing, on the org that")
+            print("owns this API key, then re-run.")
+            return 1
         print(f"FAIL: the wire schema no longer compiles - {message}")
         print("Every extraction would 400. Slim the schema before merging (see the")
         print("2026-08-25 and 2026-08-28 Decision Log entries for what worked).")
