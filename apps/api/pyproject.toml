@@ -21,6 +21,11 @@ dev = [
     "pytest-asyncio>=0.24",
     "ruff>=0.6",
 ]
+# Experiment lane only (gemini bake-off): never a hard dependency, so
+# production images do not grow for an experiment.
+gemini = [
+    "google-genai>=1.0",
+]
 
 [build-system]
 requires = ["hatchling"]

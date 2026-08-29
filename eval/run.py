@@ -17,7 +17,6 @@ import os
 import sys
 from pathlib import Path
 
-from faida_api.extraction.anthropic_provider import MODEL_ID
 from faida_api.extraction.normalize import normalize_extracted
 from faida_api.extraction.prompts import PROMPT_VERSION
 from faida_api.extraction.provider import ExtractionProvider
@@ -25,8 +24,11 @@ from faida_api.extraction.schema import ExtractionResult
 
 from eval.live import (
     DEFAULT_CONCURRENCY,
+    KEY_ENV,
+    LIVE_PROVIDERS,
     LiveProviderUnavailable,
     build_live_provider,
+    live_model_id,
     run_corpus_live,
 )
 from eval.recorded import RecordedProvider
@@ -285,11 +287,23 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="with --live, refresh each case's recorded.json/usage.json (§5 CI policy)",
     )
+    parser.add_argument(
+        "--provider",
+        choices=LIVE_PROVIDERS,
+        default="anthropic",
+        help="live provider to call (default anthropic, the shipped one; "
+        "gemini is the bake-off lane and reads GEMINI_API_KEY)",
+    )
     args = parser.parse_args(argv)
     if args.smoke and args.live:
         parser.error("--smoke replays recordings by design (§5 CI policy: no key, no spend)")
     if args.record and not args.live:
         parser.error("--record rewrites recordings from live responses; it needs --live")
+    if args.record and args.provider != "anthropic":
+        # The recorded fixtures are the CI baseline for the SHIPPED provider;
+        # overwriting them with another model's answers would silently move
+        # what the smoke gate certifies.
+        parser.error("--record is reserved for the shipped provider (anthropic)")
 
     corpus = (
         args.corpus if args.corpus is not None else (FIXTURES_DIR if args.smoke else CORPUS_DIR)
@@ -315,7 +329,7 @@ def main(argv: list[str] | None = None) -> int:
     errors: dict[str, str] = {}
     if args.live:
         try:
-            provider = build_live_provider(os.environ.get("ANTHROPIC_API_KEY"))
+            provider = build_live_provider(os.environ.get(KEY_ENV[args.provider]), args.provider)
         except LiveProviderUnavailable as exc:
             print(str(exc), file=sys.stderr)
             return 1
@@ -331,7 +345,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"no case under {corpus} carries an image to send", file=sys.stderr)
             return 1
         print(
-            f"live: {len(live_cases)} cases against {MODEL_ID} prompt {PROMPT_VERSION}, "
+            f"live: {len(live_cases)} cases against {live_model_id(args.provider)} "
+            f"prompt {PROMPT_VERSION}, "
             f"{args.concurrency} at a time - this spends money and takes minutes\n"
         )
         scores, results, live_errors = asyncio.run(
@@ -372,7 +387,10 @@ def main(argv: list[str] | None = None) -> int:
         "errors": errors,
     }
     if args.live:
-        payload["run"]["model_id"] = MODEL_ID
+        # run.provider above stays the live/recorded marker; this names which
+        # live implementation answered (the bake-off comparison key).
+        payload["run"]["live_provider"] = args.provider
+        payload["run"]["model_id"] = live_model_id(args.provider)
         payload["run"]["prompt_version"] = PROMPT_VERSION
     path = write_results(payload)
     print(f"\nwrote {path}")
