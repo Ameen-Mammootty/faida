@@ -29,6 +29,7 @@ Run through this list the day before, and again 30 minutes before going on.
       Anything other than `0` is a clock running against the demo. The dashboard's Step 1 button issues 24-hour tokens that expire on a fixed boundary, so a token generated in the afternoon can die the same evening.
 - [ ] The demo phone(s) are registered as recipients on the Meta test number and have confirmed the code.
 - [ ] `ANTHROPIC_API_KEY` is set on Railway (with it missing, every invoice gets the failure reply).
+- [ ] **The Anthropic account has credit**, checked at console.anthropic.com Plans & Billing, with enough headroom for the whole session (~AED cents per invoice, but a demo day is many rehearsals). Found the hard way in rehearsal 2026-08-29: a drained balance presents as the failure reply after ~70 s - three retries of a 400 - while every other dashboard looks healthy. There is no low-balance warning anywhere in our system.
 - [ ] The demo seed is applied: `psql "$DATABASE_URL" -f supabase/demo_seed.sql` (see section C).
 - [ ] The founder phone is mapped to the demo chain: the commented UPDATE at the bottom of `supabase/demo_seed.sql` has been run once, so the sender resolves to Al Qusais Branch of Karak Al Khaleej Cafeterias.
 - [ ] The review screen loads real data with its API token configured, and the invoice list for the demo chain is empty (no rehearsal leftovers).
