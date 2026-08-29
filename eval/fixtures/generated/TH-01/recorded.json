@@ -14,7 +14,7 @@
         "line_kind": "stock_item",
         "qty": "2",
         "unit": null,
-        "pack_size": "5KG",
+        "pack_size": null,
         "unit_price": "33.60",
         "line_total": "67.20"
       },
@@ -23,7 +23,7 @@
         "line_kind": "stock_item",
         "qty": "2",
         "unit": null,
-        "pack_size": "5L",
+        "pack_size": null,
         "unit_price": "47.25",
         "line_total": "94.50"
       },
@@ -32,7 +32,7 @@
         "line_kind": "stock_item",
         "qty": "6",
         "unit": null,
-        "pack_size": "2.5K",
+        "pack_size": null,
         "unit_price": "18.90",
         "line_total": "113.40"
       },
@@ -41,7 +41,7 @@
         "line_kind": "stock_item",
         "qty": "8",
         "unit": null,
-        "pack_size": "2.5K",
+        "pack_size": null,
         "unit_price": "21.00",
         "line_total": "168.00"
       },
@@ -50,7 +50,7 @@
         "line_kind": "stock_item",
         "qty": "1",
         "unit": null,
-        "pack_size": "5KG",
+        "pack_size": null,
         "unit_price": "7.35",
         "line_total": "7.35"
       },
@@ -59,7 +59,7 @@
         "line_kind": "stock_item",
         "qty": "2",
         "unit": null,
-        "pack_size": "5KG",
+        "pack_size": null,
         "unit_price": "12.60",
         "line_total": "25.20"
       },
@@ -68,7 +68,7 @@
         "line_kind": "stock_item",
         "qty": "24",
         "unit": null,
-        "pack_size": "1L",
+        "pack_size": null,
         "unit_price": "4.20",
         "line_total": "100.80"
       },
@@ -77,7 +77,7 @@
         "line_kind": "stock_item",
         "qty": "2",
         "unit": null,
-        "pack_size": "2KG",
+        "pack_size": null,
         "unit_price": "14.70",
         "line_total": "29.40"
       },
@@ -86,7 +86,7 @@
         "line_kind": "stock_item",
         "qty": "1",
         "unit": null,
-        "pack_size": "3KG",
+        "pack_size": null,
         "unit_price": "37.80",
         "line_total": "37.80"
       },
@@ -95,7 +95,7 @@
         "line_kind": "stock_item",
         "qty": "3",
         "unit": null,
-        "pack_size": "2KG",
+        "pack_size": null,
         "unit_price": "21.00",
         "line_total": "63.00"
       }

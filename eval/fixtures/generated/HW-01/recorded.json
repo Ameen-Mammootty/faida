@@ -87,7 +87,7 @@
     "total": "332.00",
     "discount_total": null,
     "rounding_amount": null,
-    "tax_treatment": null,
+    "tax_treatment": "inclusive",
     "vat_rate": null
   }
 }

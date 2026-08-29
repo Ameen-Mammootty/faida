@@ -50,7 +50,7 @@
         "line_kind": "stock_item",
         "qty": "6",
         "unit": "tray",
-        "pack_size": "30",
+        "pack_size": null,
         "unit_price": "28.00",
         "line_total": "168.00"
       }

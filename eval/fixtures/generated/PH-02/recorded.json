@@ -7,7 +7,7 @@
     "invoice_date_text": "2026-07-03",
     "currency": "AED",
     "payment_kind": "credit",
-    "payment_terms_text": "Payment terms: 14 days",
+    "payment_terms_text": "14 days",
     "lines": [
       {
         "raw_name": "Brioche Burger Bun",

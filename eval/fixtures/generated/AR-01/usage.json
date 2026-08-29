@@ -1,7 +1,7 @@
 {
-  "model_id": "claude-opus-5",
+  "model_id": "gemini-3-flash-preview",
   "prompt_version": "v3",
-  "input_tokens": 7809,
-  "output_tokens": 816,
-  "latency_ms": 155576
+  "input_tokens": 1602,
+  "output_tokens": 752,
+  "latency_ms": 4954
 }
