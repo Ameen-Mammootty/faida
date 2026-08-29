@@ -720,21 +720,25 @@ them, not a rewrite of them.
       audit row and the price baseline on one connection, and `record_confirmed_prices` takes an
       optional `conn` so it can either join a caller's transaction or open its own. The test has
       teeth - reverting the one line makes it fail with `'confirmed' == 'awaiting_confirm'`
-- [ ] `ingredients` (tenant, name, base unit): the culinary concept, kept separate from the
-      purchasable pack, exactly as PRD §17–18 specifies. `category` dropped until something reads it
-- [ ] `supplier_items.ingredient_id`: many packs from many suppliers → one raw material. The
+- [x] `ingredients` (tenant, name, base unit): the culinary concept, kept separate from the
+      purchasable pack, exactly as PRD §17–18 specifies (WP-52, done 2026-08-29, migration 0012).
+      `category` dropped until something reads it
+- [x] `supplier_items.ingredient_id`: many packs from many suppliers → one raw material. The
       existing fuzzy matcher **proposes**, a human approves, and the approval is recorded with its
       actor — one `audit_events` row per merge and per rejection (C8, in place). **Never
       auto-merged.** A wrong merge quietly corrupts the cost of every menu item
       using that material, and unlike a bad extraction there is no photo to check it against.
-      Cross-tenant mapping is refused by Postgres (composite FK), not by a code path
-- [ ] **Unmap and remap, the reverse gear.** An approval gate whose worst case has no undo leaves a
+      Cross-tenant mapping is refused by Postgres (composite FK), not by a code path — proven by
+      driving the raw `update` and watching it raise
+- [x] **Unmap and remap, the reverse gear.** An approval gate whose worst case has no undo leaves a
       consultant asking an engineer. Both write their audit row, and because the price is derived,
       unmapping corrects every figure above it instantly
-- [ ] Mapping screen: unmapped supplier items ranked by money spent, approve or reject one
+- [x] Mapping screen: unmapped supplier items ranked by money spent, approve or reject one
       keystroke each — the same propose-then-confirm shape as the invoice review screen, so
       nothing new is invented for it. **Approve creates the material when none exists** (the matcher
-      can only propose against materials that already exist; a fresh tenant has none)
+      can only propose against materials that already exist; a fresh tenant has none). Live at
+      `/materials`; proposals are **pack-blind** where snapping is pack-sensitive, so a 2.5 kg sack
+      and a 500 g pouch from two suppliers propose as one material
 - [ ] **Cost per base unit, derived and traceable:** `unit_price ÷ parsed pack size` → AED per
       gram / millilitre / piece, ex-VAT per C4's net-canonical rule, recorded per confirmed
       invoice line so every cost drills back to a photo. `pack_size` reads 99% *on generated
@@ -967,7 +971,13 @@ pilot volume. Meta utility template cost applies only from M10 (verify live UAE 
   **410 tests green** (was 393; 17 new), eval scorer 65 green, `eval.run --smoke` OK, ruff clean on both trees. No existing test or fixture changed behaviour, so neither predicted regression was real on today's corpus.
   **WP-50 shipped**: confirming an invoice and recording its prices are now one transaction. They were two, and the gap between them was not recoverable - a throw in the second left the invoice reading confirmed with no prices, and the review screen's confirm then answered 409 "invoice is confirmed" for ever, with no way back. `_confirm` now carries the status flip, the audit row and the price baseline on one connection; `record_confirmed_prices` gained an optional `conn` so it either joins a caller's transaction or opens its own, which keeps the retried-ack path and every existing test working unchanged.
   The acceptance test was checked for teeth rather than assumed: reverting the single line that passes the connection makes it fail with `assert 'confirmed' == 'awaiting_confirm'`, which is the bug stated exactly. **411 tests green**, ruff clean.
-  Next: WP-52 (materials, mapping, the reverse gear and the Raw Materials screen), then WP-53 → WP-54 → WP-55.
+  **WP-52 shipped**: `ingredients`, `supplier_items.ingredient_id`, the four decisions a person can make (approve, reject, remap, unmap) each writing one audit row inside its own transaction, and the `/materials` screen that consumes them. Migration 0012.
+  The matching insight worth recording, because it is the one place M5 must *differ* from what shipped in M2: **proposals are pack-blind where snapping is pack-sensitive.** `snap_item` vetoes across pack sizes, because a 2.5 kg sack and a 500 g pouch are two catalog rows with two price histories; they are one *material*, so pack sizes are stripped from both names before scoring and there is no veto (`units.strip_packs`, new).
+  The threshold was measured, not picked: 0.70. Real matches clear it ("MILK PWDR 2.5KG NIDO" 0.72, "EVAP MILK 48x400ML" vs "Evaporated Milk" 0.75), and it does not go lower because **"Chickpeas 1kg" scores 0.696 against "Chicken Breast" - the same as the genuine "Cardamom Powder 500g" vs "Cardamom"**. No threshold keeps one and drops the other, so the tie breaks toward silence: two confusable foods offered as one material is the merge a tired consultant approves and nobody catches.
+  Two guards proven rather than assumed. The **cross-tenant refusal** was tested by driving the raw `update supplier_items set ingredient_id` against another tenant's material and watching Postgres raise `supplier_items_ingredient_fk` - the composite key does the work, not a code path that might be forgotten. And the **dimension refusal** was exercised on the real screen: mapping a millilitre carton onto a gram material answers "'Evaporated Milk 48x400ml' is measured by volume, but Milk Powder is measured by weight" - plain English, after a first pass leaked `ml` and `g` into the message and the screenshot caught it.
+  Seen working, not just built: the screen was driven end to end in a browser. Naming the first material removes it from the queue, and **the second supplier's 500 g pouch is then proposed as the same material** - the milestone's whole point, on screen.
+  **423 API tests green** (was 411; 12 new), ruff clean, web typecheck + eslint + production build clean with the new `/materials` route.
+  Next: WP-53 (cost per base unit and its C9 quality), then WP-54 → WP-55.
 
 - 2026-08-29 - **All four lanes are one master again: WP-26/28 (landed earlier), the M4 loop-gate lane, WP-29 bilingual matching, and the Gemini 3 Flash swap - merged, tested together, deployed in one push.**
   Integration order was WP-29 then the provider swap, and the combined suite is green: 393 API tests, 65 eval tests, smoke, ruff on both trees.

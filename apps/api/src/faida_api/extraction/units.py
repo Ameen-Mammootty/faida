@@ -349,6 +349,50 @@ def first_printed(text: str | None) -> str | None:
     return None
 
 
+# The base unit each measurable dimension reduces to. Containers are absent on
+# purpose: a carton has no base unit until a human says what is in it (WP-55).
+BASE_UNITS: dict[Dimension, str] = {
+    Dimension.MASS: "g",
+    Dimension.VOLUME: "ml",
+    Dimension.COUNT: "pc",
+}
+
+
+def base_unit_of(text: str | None) -> str | None:
+    """Which base unit a printed pack reduces to - "2.5kg" -> "g", "750ml" ->
+    "ml", "12 pcs" -> "pc". None when the cell names no measurable pack, which
+    includes every bare container: "6 ctn" has no dimension until someone says
+    what is inside it.
+
+    M5 asks this before approving a merge. A material has one base unit, so a
+    millilitre pack mapped onto a gram material is a wrong merge - and a wrong
+    merge corrupts the cost of every menu item above it with no photo to check
+    it against."""
+    pack = parse(text)
+    return None if pack is None else BASE_UNITS.get(pack.unit.dimension)
+
+
+def strip_packs(text: str | None) -> str:
+    """The string with its pack sizes taken out: "MILK PWDR 2.5KG NIDO" ->
+    "MILK PWDR NIDO".
+
+    Pack sizes discriminate *packs*, which is why `snap_item` vetoes across
+    them. They get in the way when the question is which *material* a pack is,
+    because a 2.5 kg sack and a 500 g pouch of milk powder are one shelf. This
+    is what `matching.propose_ingredients` scores on."""
+    if not text:
+        return ""
+    kept: list[str] = []
+    last = 0
+    for match in _PACK_RE.finditer(text):
+        if _pack_from(text, match) is None:
+            continue
+        kept.append(text[last : match.start()])
+        last = match.end()
+    kept.append(text[last:])
+    return " ".join("".join(kept).split())
+
+
 def same_pack_size(left: str | None, right: str | None) -> bool:
     """Do two printed pack sizes describe the same pack? Unparseable on either
     side falls back to a normalized string comparison, so an unknown unit is

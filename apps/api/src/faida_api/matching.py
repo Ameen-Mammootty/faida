@@ -46,6 +46,23 @@ Row = Mapping[str, Any]
 
 SUPPLIER_MATCH_THRESHOLD = 0.85
 SNAP_THRESHOLD = 0.80
+# INGREDIENT_PROPOSAL_THRESHOLD 0.70, measured with pack sizes stripped from
+# both sides (see propose_ingredients). Real matches clear it - "Milk Powder
+# 2.5kg" 1.00, "MILK PWDR 2.5KG NIDO" 0.72, "EVAP MILK 48x400ML" vs
+# "Evaporated Milk" 0.75, "Chakki Atta Flour 25kg" vs "Atta Flour" 0.74 -
+# while the near misses stay out: "Chicken Breast 10kg" vs "Basmati Rice"
+# 0.615, "Cardamom Powder 500g" vs "Milk Powder" 0.615.
+#
+# It does not go lower, and the reason is one pair: "Chickpeas 1kg" vs
+# "Chicken Breast" scores 0.696, the same as the genuine "Cardamom Powder
+# 500g" vs "Cardamom". There is no threshold that keeps that cardamom match
+# and drops the chickpeas one, so the tie is broken toward silence. Two
+# confusable foods offered as the same material is precisely the merge a tired
+# consultant approves and nobody catches afterwards - it corrupts the cost of
+# every dish using either, with no photo to check against. A material we fail
+# to propose costs someone typing a name.
+INGREDIENT_PROPOSAL_THRESHOLD = 0.70
+MAX_INGREDIENT_PROPOSALS = 3
 
 # A dot survives only between digits ("2.5kg"); every other one becomes a
 # space ("L.L.C." -> "l l c").
@@ -152,6 +169,45 @@ def _pack_tokens(text: str) -> set[tuple[str, str, Decimal]]:
     other. The dictionary lives in extraction.units - one implementation, so
     the eval and the catalog agree on what a pack is."""
     return {pack.key for pack in units.find_all(normalize(text))}
+
+
+def propose_ingredients(
+    ingredients: Sequence[Row],
+    canonical_name: str,
+    *,
+    rejected_ids: Sequence[str] = (),
+) -> list[Row]:
+    """The raw materials this pack might be, best first. Proposes; never
+    decides (plan.md §8 M5 - never auto-merged).
+
+    **Pack-blind on purpose**, and this is the one place it must differ from
+    `snap_item`. Snapping asks "is this the same pack?", where a 2.5 kg sack
+    and a 500 g pouch are two catalog rows with two price histories. Mapping
+    asks "is this the same material?", where they are one shelf. So the pack
+    sizes come out of both names before scoring, and there is no veto.
+
+    The bar sits just below SNAP_THRESHOLD rather than far below it. A
+    proposal is read by a person before it does anything, which argues for
+    offering more - but the measured scores say otherwise for the pairs that
+    matter, and the constant above carries that evidence.
+
+    `rejected_ids` are materials this pack was already said not to be. They are
+    dropped rather than ranked last: re-offering a rejected answer is how an
+    approval queue teaches people to stop reading it.
+    """
+    stripped = units.strip_packs(normalize(canonical_name))
+    if not stripped:
+        return []
+    rejected = {str(item) for item in rejected_ids}
+    scored: list[tuple[float, Row]] = []
+    for ingredient in ingredients:
+        if str(ingredient["id"]) in rejected:
+            continue
+        score = _similarity(stripped, units.strip_packs(normalize(ingredient["name"])))
+        if score >= INGREDIENT_PROPOSAL_THRESHOLD:
+            scored.append((score, ingredient))
+    scored.sort(key=lambda pair: pair[0], reverse=True)
+    return [ingredient for _, ingredient in scored[:MAX_INGREDIENT_PROPOSALS]]
 
 
 def match_supplier(suppliers: Sequence[Row], extracted_name: str | None) -> Row | None:

@@ -61,10 +61,11 @@ from .confirm import (
 )
 from .contracts import InvoiceStatus, JobKind
 from .db import Database
+from .extraction import units
 from .extraction.normalize import normalize_extracted
 from .extraction.schema import ExtractedInvoice, ExtractedLine
 from .extraction.validate import validate_invoice
-from .matching import Row, match_supplier, snap_item
+from .matching import Row, match_supplier, propose_ingredients, snap_item
 from .provenance import Origin, initial
 from .replies import DEFAULT_CURRENCY
 
@@ -634,3 +635,240 @@ async def supplier_item_prices(item_id: uuid.UUID, request: Request) -> dict:
             for row in rows
         ],
     }
+
+
+# --- raw materials (M5 WP-52) ------------------------------------------------
+#
+# One shelf per ingredient. The catalog fills itself from invoices but is
+# scoped to a supplier, so the same material bought from two suppliers is two
+# rows. These endpoints are how a human joins them - and the joining is never
+# automatic: the matcher proposes, a person approves, and every approve,
+# reject, remap and unmap lands one audit_events row inside its own
+# transaction (C8). A wrong merge corrupts the cost of every menu item using
+# that material, and unlike a bad extraction there is no photo to check it
+# against, so the actor is the only record of who to ask.
+
+
+class IngredientMapping(BaseModel):
+    """Approve a merge. `ingredient_id` points at an existing material;
+    `name` creates one, because the matcher can only propose materials that
+    already exist and a fresh tenant has none. `base_unit` is inferred from
+    the pack when it can be, and required when it cannot."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    ingredient_id: uuid.UUID | None = None
+    name: str | None = None
+    base_unit: Literal["g", "ml", "pc"] | None = None
+
+
+class IngredientRejection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ingredient_id: uuid.UUID
+
+
+def _pack_summary(row: asyncpg.Record) -> dict:
+    return {
+        "id": row["id"],
+        "canonical_name": row["canonical_name"],
+        "unit": row["unit"],
+        "pack_size": row["pack_size"],
+        "supplier_name": row["supplier_name"],
+        "last_price": _dec(row["last_price"]),
+        "last_price_at": _iso(row["last_price_at"]),
+    }
+
+
+async def _tenant(db: Database) -> str:
+    tenant_id = await db.default_tenant_id()
+    if tenant_id is None:
+        raise HTTPException(status_code=409, detail="no tenant configured")
+    return tenant_id
+
+
+#: Plain English for a base unit. These strings reach the screen inside refusal
+#: messages, and the no-jargon display rule (plan.md §3) applies there too - a
+#: consultant reading "measured in ml" has to translate; "by volume" they do not.
+MEASURE_WORDS = {"g": "by weight", "ml": "by volume", "pc": "by the piece"}
+
+
+def _item_base_unit(item: asyncpg.Record) -> str | None:
+    """Which base unit this pack reduces to, read from the pack column and
+    then from the name (a till receipt prints the pack inside the name and has
+    no pack column at all). None when it names no measurable pack - a bare
+    carton has no dimension until a human says what is in it (WP-55)."""
+    return units.base_unit_of(item["pack_size"]) or units.base_unit_of(item["canonical_name"])
+
+
+@router.get("/ingredients")
+async def list_ingredients(request: Request) -> dict:
+    """Every raw material, with the supplier packs mapped onto it."""
+    db: Database = request.app.state.db
+    tenant_id = await _tenant(db)
+    rows = await db.list_ingredients(tenant_id)
+    packs: dict[str, list[dict]] = {}
+    for pack in await db.list_mapped_packs(tenant_id):
+        packs.setdefault(pack["ingredient_id"], []).append(_pack_summary(pack))
+    return {
+        "ingredients": [
+            {
+                "id": row["id"],
+                "name": row["name"],
+                "base_unit": row["base_unit"],
+                "pack_count": row["pack_count"],
+                "packs": packs.get(row["id"], []),
+            }
+            for row in rows
+        ]
+    }
+
+
+@router.get("/supplier-items/unmapped")
+async def list_unmapped_supplier_items(request: Request) -> dict:
+    """The consultant's queue: packs with no material yet, **most money
+    first**, each carrying what the matcher proposes for it.
+
+    Ranked by spend because that is the order in which a wrong cost hurts.
+    Proposals are ranked suggestions and nothing more - approving is a
+    keystroke a person makes, never a threshold the code crosses."""
+    db: Database = request.app.state.db
+    tenant_id = await _tenant(db)
+    items = await db.list_unmapped_supplier_items(tenant_id)
+    ingredients = await db.list_ingredients(tenant_id)
+    rejected = await db.rejected_ingredients_by_item(tenant_id)
+    return {
+        "items": [
+            {
+                "id": item["id"],
+                "canonical_name": item["canonical_name"],
+                "unit": item["unit"],
+                "pack_size": item["pack_size"],
+                "supplier_id": item["supplier_id"],
+                "supplier_name": item["supplier_name"],
+                "spend": _dec(item["spend"]),
+                "line_count": item["line_count"],
+                "base_unit": _item_base_unit(item),
+                "proposals": [
+                    {"id": row["id"], "name": row["name"], "base_unit": row["base_unit"]}
+                    for row in propose_ingredients(
+                        ingredients,
+                        item["canonical_name"],
+                        rejected_ids=rejected.get(item["id"], set()),
+                    )
+                ],
+            }
+            for item in items
+        ]
+    }
+
+
+@router.post("/supplier-items/{item_id}/ingredient")
+async def map_supplier_item(item_id: uuid.UUID, body: IngredientMapping, request: Request) -> dict:
+    """Approve the merge (or remap a pack already mapped elsewhere)."""
+    db: Database = request.app.state.db
+    item = await db.get_supplier_item_for_mapping(str(item_id))
+    if item is None:
+        raise HTTPException(status_code=404, detail="supplier item not found")
+
+    pack_base_unit = _item_base_unit(item)
+    if body.ingredient_id is not None:
+        if body.name is not None or body.base_unit is not None:
+            raise HTTPException(status_code=422, detail="give an ingredient_id or a name, not both")
+        ingredient = await db.get_ingredient(str(body.ingredient_id))
+        if ingredient is None:
+            raise HTTPException(status_code=404, detail="ingredient not found")
+        # Tenancy is enforced by the composite foreign key too (0012); this is
+        # the answer with a reason in it, rather than an integrity error.
+        if ingredient["tenant_id"] != item["tenant_id"]:
+            raise HTTPException(status_code=404, detail="ingredient not found")
+        base_unit = ingredient["base_unit"]
+        material_name = ingredient["name"]
+    else:
+        name = _clean(body.name)
+        if not name:
+            raise HTTPException(status_code=422, detail="give an ingredient_id or a name")
+        material_name = name
+        # Inferred from the pack when the pack says so, which is the ordinary
+        # case; asked for when it does not, rather than picked for the user.
+        base_unit = body.base_unit or pack_base_unit
+        if base_unit is None:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"'{item['canonical_name']}' does not say how much is in it, so say whether "
+                    f"{name} is measured by weight, by volume or by the piece"
+                ),
+            )
+
+    # The one refusal that protects every cost above this merge: a material has
+    # one dimension, and a millilitre pack on a gram material is wrong in a way
+    # no later arithmetic can notice. Only refused when the pack positively
+    # disagrees - a bare carton says nothing, and WP-55 blocks its cost anyway.
+    if pack_base_unit is not None and pack_base_unit != base_unit:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"'{item['canonical_name']}' is measured {MEASURE_WORDS[pack_base_unit]}, "
+                f"but {material_name} is measured {MEASURE_WORDS[base_unit]}"
+            ),
+        )
+
+    ingredient = await db.map_supplier_item(
+        str(item_id),
+        tenant_id=item["tenant_id"],
+        ingredient_id=None if body.ingredient_id is None else str(body.ingredient_id),
+        name=None if body.ingredient_id is not None else _clean(body.name),
+        base_unit=base_unit,
+        actor=CONSOLE_ACTOR,
+        previous_ingredient_id=item["ingredient_id"],
+    )
+    return {
+        "supplier_item_id": str(item_id),
+        "ingredient": {
+            "id": ingredient["id"],
+            "name": ingredient["name"],
+            "base_unit": ingredient["base_unit"],
+        },
+    }
+
+
+@router.delete("/supplier-items/{item_id}/ingredient")
+async def unmap_supplier_item(item_id: uuid.UUID, request: Request) -> dict:
+    """The reverse gear (WP-52). A wrong merge is this milestone's worst case,
+    and an approval gate with no undo leaves a consultant asking an engineer."""
+    db: Database = request.app.state.db
+    item = await db.get_supplier_item_for_mapping(str(item_id))
+    if item is None:
+        raise HTTPException(status_code=404, detail="supplier item not found")
+    if item["ingredient_id"] is None:
+        raise HTTPException(status_code=409, detail="supplier item is not mapped")
+    await db.unmap_supplier_item(
+        str(item_id),
+        tenant_id=item["tenant_id"],
+        actor=CONSOLE_ACTOR,
+        ingredient_id=item["ingredient_id"],
+    )
+    return {"supplier_item_id": str(item_id), "ingredient": None}
+
+
+@router.post("/supplier-items/{item_id}/ingredient/reject")
+async def reject_ingredient(
+    item_id: uuid.UUID, body: IngredientRejection, request: Request
+) -> dict:
+    """Not that material. Nothing else changes: the rejection is the record,
+    and the queue stops offering an answer a person already refused."""
+    db: Database = request.app.state.db
+    item = await db.get_supplier_item_for_mapping(str(item_id))
+    if item is None:
+        raise HTTPException(status_code=404, detail="supplier item not found")
+    ingredient = await db.get_ingredient(str(body.ingredient_id))
+    if ingredient is None or ingredient["tenant_id"] != item["tenant_id"]:
+        raise HTTPException(status_code=404, detail="ingredient not found")
+    await db.reject_ingredient_for_item(
+        str(item_id),
+        tenant_id=item["tenant_id"],
+        ingredient_id=str(body.ingredient_id),
+        actor=CONSOLE_ACTOR,
+    )
+    return {"supplier_item_id": str(item_id), "rejected_ingredient_id": str(body.ingredient_id)}

@@ -24,6 +24,13 @@
 
 import { ApiError } from "./errors";
 import {
+  mockListIngredients,
+  mockListUnmappedSupplierItems,
+  mockMapSupplierItem,
+  mockRejectIngredient,
+  mockUnmapSupplierItem,
+} from "./mock/materials";
+import {
   mockConfirmInvoice,
   mockCreateManualInvoice,
   mockGetInvoice,
@@ -34,11 +41,16 @@ import {
 } from "./mock/store";
 import type {
   Correction,
+  Ingredient,
+  IngredientMappingInput,
   InvoiceDetail,
   InvoiceFilters,
   InvoiceSummary,
   ManualInvoiceInput,
+  MappingResult,
   PriceHistory,
+  RejectionResult,
+  UnmappedSupplierItem,
   UploadResult,
 } from "./types";
 
@@ -142,4 +154,62 @@ export async function createManualInvoice(body: ManualInvoiceInput): Promise<Inv
 export async function getSupplierItemPrices(supplierItemId: string): Promise<PriceHistory> {
   if (MOCK) return mockGetSupplierItemPrices(supplierItemId);
   return request<PriceHistory>(`/api/supplier-items/${encodeURIComponent(supplierItemId)}/prices`);
+}
+
+/**
+ * M5 WP-52: raw materials.
+ *
+ *   GET    /api/ingredients                              materials + their packs
+ *   GET    /api/supplier-items/unmapped                  the queue, most money first
+ *   POST   /api/supplier-items/{id}/ingredient           approve a merge, or remap
+ *   DELETE /api/supplier-items/{id}/ingredient           undo one
+ *   POST   /api/supplier-items/{id}/ingredient/reject    not that material
+ *
+ * The matcher proposes; these are the four things a person can decide. Every
+ * one of them writes an audit row naming who did it, because a wrong merge
+ * corrupts the cost of every menu item using that material and there is no
+ * photo to check it against.
+ */
+
+export async function listIngredients(): Promise<Ingredient[]> {
+  if (MOCK) return mockListIngredients();
+  const body = await request<{ ingredients: Ingredient[] }>("/api/ingredients");
+  return body.ingredients;
+}
+
+export async function listUnmappedSupplierItems(): Promise<UnmappedSupplierItem[]> {
+  if (MOCK) return mockListUnmappedSupplierItems();
+  const body = await request<{ items: UnmappedSupplierItem[] }>("/api/supplier-items/unmapped");
+  return body.items;
+}
+
+/** Approve the merge, or remap a pack that is already mapped elsewhere. */
+export async function mapSupplierItem(
+  itemId: string,
+  body: IngredientMappingInput,
+): Promise<MappingResult> {
+  if (MOCK) return mockMapSupplierItem(itemId, body);
+  return request<MappingResult>(
+    `/api/supplier-items/${encodeURIComponent(itemId)}/ingredient`,
+    jsonInit("POST", body),
+  );
+}
+
+/** The reverse gear: an approval gate with no undo is not one. */
+export async function unmapSupplierItem(itemId: string): Promise<MappingResult> {
+  if (MOCK) return mockUnmapSupplierItem(itemId);
+  return request<MappingResult>(`/api/supplier-items/${encodeURIComponent(itemId)}/ingredient`, {
+    method: "DELETE",
+  });
+}
+
+export async function rejectIngredient(
+  itemId: string,
+  ingredientId: string,
+): Promise<RejectionResult> {
+  if (MOCK) return mockRejectIngredient(itemId, ingredientId);
+  return request<RejectionResult>(
+    `/api/supplier-items/${encodeURIComponent(itemId)}/ingredient/reject`,
+    jsonInit("POST", { ingredient_id: ingredientId }),
+  );
 }

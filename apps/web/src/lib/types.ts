@@ -242,3 +242,91 @@ export interface PriceHistory {
 export interface UploadResult {
   document_id: string;
 }
+
+/**
+ * M5 WP-52: raw materials.
+ *
+ * The catalog fills itself from invoices but is scoped to a supplier, so the
+ * same material bought from two suppliers is two `supplier_items` rows with
+ * two price histories. An *ingredient* is the culinary concept (milk powder);
+ * a *supplier item* is the purchasable pack (Gulf Foods' 2.5 kg sack). One
+ * material, many packs (PRD 17-18).
+ *
+ * The matcher proposes and never decides: a person approves each merge, one
+ * keystroke at a time. A wrong merge corrupts the cost of every menu item
+ * using that material and there is no photo to check it against, which is why
+ * the screen also has to be able to undo one.
+ */
+
+/** The dimension a material is measured in: grams, millilitres or pieces. */
+export type BaseUnit = "g" | "ml" | "pc";
+
+/** A purchasable pack that has been mapped onto a material. */
+export interface MappedPack {
+  id: string;
+  canonical_name: string;
+  unit: string | null;
+  pack_size: string | null;
+  supplier_name: string;
+  /** Ex-VAT unit price, C4 net-canonical. Money string. */
+  last_price: string | null;
+  last_price_at: string | null;
+}
+
+export interface Ingredient {
+  id: string;
+  name: string;
+  base_unit: BaseUnit;
+  pack_count: number;
+  packs: MappedPack[];
+}
+
+/** A material the matcher suggests for a pack. Ranked, never applied. */
+export interface IngredientProposal {
+  id: string;
+  name: string;
+  base_unit: BaseUnit;
+}
+
+/** One row of the mapping queue: a pack with no material yet. */
+export interface UnmappedSupplierItem {
+  id: string;
+  canonical_name: string;
+  unit: string | null;
+  pack_size: string | null;
+  supplier_id: string;
+  supplier_name: string;
+  /** Money spent on this pack across confirmed invoices only. Money string. */
+  spend: string;
+  line_count: number;
+  /** What the pack measures in, when it can be read. Null for a bare carton. */
+  base_unit: BaseUnit | null;
+  proposals: IngredientProposal[];
+}
+
+/**
+ * POST body for approving a merge: an existing material's id, or a name to
+ * create one under. `base_unit` is inferred from the pack when it can be, and
+ * required when it cannot ("1 ctn" says nothing about what is inside it).
+ */
+export interface IngredientMappingInput {
+  ingredient_id?: string;
+  name?: string;
+  base_unit?: BaseUnit;
+}
+
+export interface MappingResult {
+  supplier_item_id: string;
+  ingredient: IngredientProposal | null;
+}
+
+/**
+ * A rejection changes no mapping - it records that a person said this pack is
+ * not that material, which is what stops the queue offering it again. Its own
+ * shape rather than a MappingResult, because answering "ingredient: null"
+ * would read as "this pack is now unmapped", which is a different event.
+ */
+export interface RejectionResult {
+  supplier_item_id: string;
+  rejected_ingredient_id: string;
+}

@@ -490,6 +490,240 @@ class Database:
             supplier_id,
         )
 
+    # -- Raw materials (M5 WP-52) --------------------------------------------
+
+    async def list_ingredients(self, tenant_id: str) -> list[asyncpg.Record]:
+        """Every raw material this tenant cooks with, and how many purchasable
+        packs have been mapped onto each."""
+        return await self.pool.fetch(
+            """
+            select i.id::text as id, i.name, i.base_unit, i.created_at,
+                   count(s.id) as pack_count
+            from ingredients i
+            left join supplier_items s on s.ingredient_id = i.id
+            where i.tenant_id = $1
+            group by i.id
+            order by i.name
+            """,
+            tenant_id,
+        )
+
+    async def list_mapped_packs(self, tenant_id: str) -> list[asyncpg.Record]:
+        """Every pack that has a material, with who sells it.
+
+        One query for the whole tenant rather than one per material: the
+        materials screen renders them all together, and asking per material
+        would be a query per row of the page."""
+        return await self.pool.fetch(
+            """
+            select s.id::text as id, s.ingredient_id::text as ingredient_id,
+                   s.canonical_name, s.unit, s.pack_size,
+                   s.last_price, s.last_price_at, sup.name as supplier_name
+            from supplier_items s
+            join suppliers sup on sup.id = s.supplier_id
+            where s.tenant_id = $1 and s.ingredient_id is not null
+            order by sup.name, s.canonical_name
+            """,
+            tenant_id,
+        )
+
+    async def list_unmapped_supplier_items(self, tenant_id: str) -> list[asyncpg.Record]:
+        """Packs with no material yet, **most money first**.
+
+        Ranked by what was actually spent on them, over *confirmed* invoices
+        only - an unconfirmed invoice must not move the consultant's queue any
+        more than it moves price memory (plan.md §5 layer 4). Charge lines
+        never reach the catalog at all (WP-18), so delivery fees cannot appear
+        here either.
+
+        The filter on the aggregate, rather than a plain join condition,
+        matters: a left join whose ON clause rejects the invoice still leaves
+        the line row in place, so its total would have been counted anyway."""
+        return await self.pool.fetch(
+            """
+            select s.id::text as id, s.canonical_name, s.unit, s.pack_size,
+                   s.supplier_id::text as supplier_id, sup.name as supplier_name,
+                   coalesce(sum(l.line_total) filter (where inv.id is not null), 0) as spend,
+                   count(l.id) filter (where inv.id is not null) as line_count
+            from supplier_items s
+            join suppliers sup on sup.id = s.supplier_id
+            left join invoice_lines l on l.supplier_item_id = s.id
+            left join invoices inv on inv.id = l.invoice_id and inv.status = 'confirmed'
+            where s.tenant_id = $1 and s.ingredient_id is null
+            group by s.id, sup.name
+            order by spend desc, s.canonical_name
+            """,
+            tenant_id,
+        )
+
+    async def get_supplier_item_for_mapping(self, supplier_item_id: str) -> asyncpg.Record | None:
+        """The pack plus the material it currently points at, if any."""
+        return await self.pool.fetchrow(
+            """
+            select s.id::text as id, s.tenant_id::text as tenant_id, s.canonical_name,
+                   s.unit, s.pack_size, s.ingredient_id::text as ingredient_id,
+                   i.name as ingredient_name, i.base_unit as ingredient_base_unit
+            from supplier_items s
+            left join ingredients i on i.id = s.ingredient_id
+            where s.id = $1
+            """,
+            supplier_item_id,
+        )
+
+    async def get_ingredient(self, ingredient_id: str) -> asyncpg.Record | None:
+        return await self.pool.fetchrow(
+            """
+            select id::text as id, tenant_id::text as tenant_id, name, base_unit, created_at
+            from ingredients where id = $1
+            """,
+            ingredient_id,
+        )
+
+    async def rejected_ingredient_ids(self, supplier_item_id: str) -> set[str]:
+        """Materials a person already said this pack is **not**.
+
+        Derived from the audit trail rather than kept in a second table: a
+        rejection is a human decision, and that is exactly what `audit_events`
+        records (C8). A parallel table would hold the same fact twice, which is
+        the drift migration 0010 was written to delete.
+
+        Latest event per pair wins, so rejecting a material and later approving
+        it reads correctly, and so does approving and later unmapping. Served
+        by the 0011 subject index."""
+        return (await self.rejected_ingredients_by_item(None, item_id=supplier_item_id)).get(
+            supplier_item_id, set()
+        )
+
+    async def rejected_ingredients_by_item(
+        self, tenant_id: str | None, *, item_id: str | None = None
+    ) -> dict[str, set[str]]:
+        """The same read for a whole tenant at once, keyed by pack.
+
+        The queue asks this for every row it renders, so it is one query rather
+        than one per pack. `distinct on` keeps only the newest event per
+        (pack, material) pair, which is what makes reject-then-approve and
+        approve-then-unmap read correctly."""
+        rows = await self.pool.fetch(
+            """
+            select distinct on (subject_id, detail->>'ingredient_id')
+                   subject_id::text as supplier_item_id,
+                   detail->>'ingredient_id' as ingredient_id, action
+            from audit_events
+            where subject_type = 'supplier_item'
+              and ($1::uuid is null or tenant_id = $1)
+              and ($2::uuid is null or subject_id = $2)
+              and action in ('supplier_item.mapped', 'supplier_item.mapping_rejected')
+              and detail->>'ingredient_id' is not null
+            order by subject_id, detail->>'ingredient_id', created_at desc, id desc
+            """,
+            tenant_id,
+            item_id,
+        )
+        rejected: dict[str, set[str]] = {}
+        for row in rows:
+            if row["action"] == "supplier_item.mapping_rejected":
+                rejected.setdefault(row["supplier_item_id"], set()).add(row["ingredient_id"])
+        return rejected
+
+    async def map_supplier_item(
+        self,
+        supplier_item_id: str,
+        *,
+        tenant_id: str,
+        ingredient_id: str | None = None,
+        name: str | None = None,
+        base_unit: str | None = None,
+        actor: str,
+        previous_ingredient_id: str | None = None,
+    ) -> asyncpg.Record:
+        """Approve a merge: point this pack at a material, creating the
+        material when the approval names a new one rather than an existing id.
+
+        The creation, the link and the audit row are **one transaction**
+        (C8). A merge with nobody's name on it is the state migration 0011
+        exists to make unreachable - and unlike a bad extraction there is no
+        photo to check a merge against, so the actor is the only record of who
+        to ask.
+
+        Creating from a name is not a convenience: the matcher can only
+        propose materials that already exist, so on a fresh tenant every queue
+        would be unapprovable without it."""
+        async with self.pool.acquire() as conn, conn.transaction():
+            if ingredient_id is None:
+                ingredient_id = await conn.fetchval(
+                    """
+                    insert into ingredients (tenant_id, name, base_unit)
+                    values ($1, $2, $3)
+                    on conflict (tenant_id, name) do update set name = excluded.name
+                    returning id::text
+                    """,
+                    tenant_id,
+                    name,
+                    base_unit,
+                )
+            await conn.execute(
+                "update supplier_items set ingredient_id = $2 where id = $1",
+                supplier_item_id,
+                ingredient_id,
+            )
+            ingredient = await conn.fetchrow(
+                "select id::text as id, name, base_unit from ingredients where id = $1",
+                ingredient_id,
+            )
+            await _insert_audit_event(
+                conn,
+                tenant_id=tenant_id,
+                actor=actor,
+                action="supplier_item.mapped",
+                subject_type="supplier_item",
+                subject_id=supplier_item_id,
+                detail={
+                    "ingredient_id": ingredient_id,
+                    "ingredient_name": ingredient["name"],
+                    "previous_ingredient_id": previous_ingredient_id,
+                },
+            )
+        return ingredient
+
+    async def unmap_supplier_item(
+        self, supplier_item_id: str, *, tenant_id: str, actor: str, ingredient_id: str
+    ) -> None:
+        """The reverse gear. An approval gate whose worst case has no undo
+        leaves a consultant asking an engineer, and a wrong merge is this
+        milestone's stated worst case. Because the material's price is derived
+        from whichever packs are mapped right now, unmapping corrects every
+        figure above it immediately - there is no stored total to rebuild."""
+        async with self.pool.acquire() as conn, conn.transaction():
+            await conn.execute(
+                "update supplier_items set ingredient_id = null where id = $1", supplier_item_id
+            )
+            await _insert_audit_event(
+                conn,
+                tenant_id=tenant_id,
+                actor=actor,
+                action="supplier_item.unmapped",
+                subject_type="supplier_item",
+                subject_id=supplier_item_id,
+                detail={"previous_ingredient_id": ingredient_id},
+            )
+
+    async def reject_ingredient_for_item(
+        self, supplier_item_id: str, *, tenant_id: str, ingredient_id: str, actor: str
+    ) -> None:
+        """A person saying this pack is not that material. Nothing else
+        changes: the rejection *is* the record, and `rejected_ingredient_ids`
+        reads it back so the queue stops offering an answer already refused."""
+        async with self.pool.acquire() as conn, conn.transaction():
+            await _insert_audit_event(
+                conn,
+                tenant_id=tenant_id,
+                actor=actor,
+                action="supplier_item.mapping_rejected",
+                subject_type="supplier_item",
+                subject_id=supplier_item_id,
+                detail={"ingredient_id": ingredient_id},
+            )
+
     async def record_confirmed_prices(
         self, invoice_id: str, *, conn: asyncpg.Connection | None = None
     ) -> None:
