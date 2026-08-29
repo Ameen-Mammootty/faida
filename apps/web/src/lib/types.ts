@@ -314,6 +314,42 @@ export interface UploadResult {
 /** The dimension a material is measured in: grams, millilitres or pieces. */
 export type BaseUnit = "g" | "ml" | "pc";
 
+/**
+ * M5 WP-54: one material, one price per kilo - **derived, never stored**.
+ *
+ * The newest costed line among the packs mapped to this material right now,
+ * ranked by printed invoice date with confirm time only as a tie-breaker
+ * (PRD 19's "most recent purchase"). Latest, not cheapest and not averaged.
+ *
+ * There is no `ingredient_costs` table and there is not going to be one: a
+ * stored copy would need refreshing on confirm, approve, reject, remap, unmap
+ * and pack-size override. Because it is derived, unmapping a wrong merge
+ * corrects every figure above it with nothing to rebuild - and the answer
+ * carries the invoice line it came from, which is what puts the photo one
+ * click away.
+ */
+export interface MaterialPrice {
+  per_base_unit: string | null;
+  base_unit: BaseUnit | null;
+  /** Per kilo / per litre / each, two decimals. Money string. */
+  per_display_unit: string | null;
+  display_unit: string | null;
+  quality: CostQuality | null;
+  asserted: string[];
+  pack: string | null;
+  pack_source: CostPackSource | null;
+  supplier_name: string;
+  supplier_item_id: string;
+  product_name: string;
+  invoice_id: string;
+  invoice_line_id: string;
+  /** The date this was ranked by: the printed one, or the confirm date. */
+  purchased_on: string | null;
+  /** The date the invoice actually printed, null when it printed none - so
+   * "bought on" and "recorded on" are never confused for each other. */
+  invoice_date: string | null;
+}
+
 /** A purchasable pack that has been mapped onto a material. */
 export interface MappedPack {
   id: string;
@@ -324,6 +360,9 @@ export interface MappedPack {
   /** Ex-VAT unit price, C4 net-canonical. Money string. */
   last_price: string | null;
   last_price_at: string | null;
+  /** This pack's own newest cost per kilo - what makes two suppliers'
+   * different pack sizes comparable at all. Null until one is confirmed. */
+  cost: MaterialPrice | null;
 }
 
 export interface Ingredient {
@@ -331,6 +370,8 @@ export interface Ingredient {
   name: string;
   base_unit: BaseUnit;
   pack_count: number;
+  /** The one price per kilo, or null until something has been confirmed. */
+  price: MaterialPrice | null;
   packs: MappedPack[];
 }
 

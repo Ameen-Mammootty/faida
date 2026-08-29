@@ -554,6 +554,67 @@ class Database:
             tenant_id,
         )
 
+    async def list_mapped_pack_costs(self, tenant_id: str) -> list[asyncpg.Record]:
+        """The newest costed invoice line behind every mapped pack, grouped by
+        material with **that material's current price first** (M5 WP-54).
+
+        This is the whole of "one material, one price per kilo". There is no
+        `ingredient_costs` table and there is not going to be one: the fact
+        already lives on the invoice lines, and a stored copy would need
+        refreshing on confirm, approve, reject-reversal, remap, unmap and
+        pack-size override - six rules to get exhaustively right, where the
+        first draft of the plan already missed the main one. Deriving it
+        deletes the whole category of bug, and makes unmapping a wrong merge
+        correct every figure above it with nothing left to rebuild.
+
+        **Ordered by the printed invoice date, with confirm time only as a
+        tie-breaker** (PRD §19's "most recent purchase"). An owner handing over
+        a stack of last month's invoices during onboarding must not overwrite
+        this month's real cost - silently, in the layer where nothing
+        downstream can notice. An invoice that printed no date falls back to
+        when it was confirmed, read in UTC so the answer does not depend on the
+        server's clock settings.
+
+        Latest, not cheapest and not averaged. The rows come back one per pack
+        (its own newest costed line, which is what makes the packs comparable
+        on screen), ordered so the **first row of each material is that
+        material's price**.
+
+        `cost_base_unit = ing.base_unit` is belt and braces: the approval gate
+        already refuses a millilitre pack onto a gram material, and a price
+        assembled across dimensions would be a number with no meaning at all.
+        """
+        return await self.pool.fetch(
+            """
+            with newest_per_pack as (
+                select distinct on (s.id)
+                       s.id::text as supplier_item_id,
+                       s.ingredient_id::text as ingredient_id,
+                       s.canonical_name, s.pack_size as catalog_pack_size,
+                       sup.name as supplier_name,
+                       l.id::text as invoice_line_id, l.raw_name, l.pack_size,
+                       l.cost_per_base_unit, l.cost_base_unit, l.cost_basis,
+                       inv.id::text as invoice_id, inv.invoice_date, inv.confirmed_at,
+                       coalesce(inv.invoice_date,
+                                (inv.confirmed_at at time zone 'UTC')::date) as purchased_on
+                from supplier_items s
+                join ingredients ing on ing.id = s.ingredient_id
+                join suppliers sup on sup.id = s.supplier_id
+                join invoice_lines l on l.supplier_item_id = s.id
+                join invoices inv on inv.id = l.invoice_id
+                where s.tenant_id = $1
+                  and s.ingredient_id is not null
+                  and inv.status = 'confirmed'
+                  and l.cost_per_base_unit is not null
+                  and l.cost_base_unit = ing.base_unit
+                order by s.id, purchased_on desc, inv.confirmed_at desc, l.id desc
+            )
+            select * from newest_per_pack
+            order by ingredient_id, purchased_on desc, confirmed_at desc, invoice_line_id desc
+            """,
+            tenant_id,
+        )
+
     async def list_unmapped_supplier_items(self, tenant_id: str) -> list[asyncpg.Record]:
         """Packs with no material yet, **most money first**.
 

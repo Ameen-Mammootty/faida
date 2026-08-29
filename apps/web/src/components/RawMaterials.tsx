@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import {
   listIngredients,
@@ -8,11 +9,12 @@ import {
   rejectIngredient,
   unmapSupplierItem,
 } from "@/lib/api";
-import { formatDate, money } from "@/lib/format";
+import { describeFields, formatDate, groupedMoney } from "@/lib/format";
 import type {
   BaseUnit,
   Ingredient,
   IngredientMappingInput,
+  MaterialPrice,
   UnmappedSupplierItem,
 } from "@/lib/types";
 
@@ -38,6 +40,48 @@ const BASE_UNIT_LABEL: Record<BaseUnit, string> = {
 };
 
 const BASE_UNIT_PER: Record<BaseUnit, string> = { g: "per kg", ml: "per litre", pc: "each" };
+
+/** "AED 23.50 per kg", "AED 4.69 per litre", "AED 0.35 each". */
+function pricePerUnit(price: MaterialPrice): string {
+  const figure = `AED ${groupedMoney(price.per_display_unit ?? "0")}`;
+  return price.display_unit === "each" ? `${figure} each` : `${figure} per ${price.display_unit}`;
+}
+
+/**
+ * Where a material's price came from, in one sentence (M5 WP-54).
+ *
+ * The price is the newest purchase among the packs mapped to this material,
+ * not an average and not the cheapest, so the sentence has to name the
+ * purchase - otherwise a consultant looking at three suppliers cannot tell
+ * which one moved it. "Bought on" and "recorded on" are kept apart: an invoice
+ * that printed no date falls back to when it was confirmed, and that is a
+ * weaker claim about when the money was actually spent.
+ */
+function priceSource(price: MaterialPrice): string {
+  const when = price.invoice_date
+    ? `bought ${formatDate(price.invoice_date)}`
+    : price.purchased_on
+      ? `recorded ${formatDate(price.purchased_on)}`
+      : "date not read";
+  return `${price.supplier_name} · ${when}`;
+}
+
+/**
+ * What the price does not know, in the reader's language.
+ *
+ * Never "verified", and a reader is told why once per material rather than
+ * being left to assume: the arithmetic corroborates the price on the invoice,
+ * but nothing anywhere cross-checks the pack size it was divided by.
+ */
+function priceQuality(price: MaterialPrice): string {
+  if (price.pack_source === "override") {
+    return `Estimated: divided by ${price.pack}, which someone entered for this product.`;
+  }
+  if (price.quality === "estimated" && price.asserted.length > 0) {
+    return `Estimated: leans on ${describeFields(price.asserted)}, supplied by a person.`;
+  }
+  return `From ${price.pack} on the invoice, which nothing cross-checks.`;
+}
 
 /**
  * A headline figure, rounded to whole dirhams (plan.md section 3: rounded
@@ -384,66 +428,111 @@ export default function RawMaterials() {
           <ul className="space-y-2">
             {materials.map((material) => (
               <li key={material.id} className="rounded-md border border-ink/10 bg-paper p-4">
-                <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <p className="font-medium text-ink">{material.name}</p>
-                  <p className="text-sm text-stone">
-                    {BASE_UNIT_LABEL[material.base_unit]} · priced{" "}
-                    {BASE_UNIT_PER[material.base_unit]} · {material.pack_count}{" "}
-                    {material.pack_count === 1 ? "product" : "products"}
-                  </p>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-medium text-ink">{material.name}</p>
+                    {/* "priced per kg" only until there is a price: once the
+                        figure above says "per kg", saying it again is noise. */}
+                    <p className="mt-0.5 text-sm text-stone">
+                      {BASE_UNIT_LABEL[material.base_unit]}
+                      {material.price ? "" : ` · priced ${BASE_UNIT_PER[material.base_unit]}`} ·{" "}
+                      {material.pack_count}{" "}
+                      {material.pack_count === 1 ? "product" : "products"}
+                    </p>
+                  </div>
+                  {/* The one number this milestone exists to produce. It is
+                      derived on every read from whichever packs are mapped
+                      right now, so unmapping a wrong merge corrects it here
+                      with nothing to rebuild. */}
+                  {material.price ? (
+                    <div className="text-right">
+                      <p className="font-display text-lg font-semibold text-ink">
+                        {pricePerUnit(material.price)}
+                      </p>
+                      <p className="text-xs text-stone">{priceSource(material.price)}</p>
+                      <p className="text-xs text-stone">{priceQuality(material.price)}</p>
+                      <Link
+                        href={`/invoices/${material.price.invoice_id}`}
+                        className="text-xs font-medium text-palm underline-offset-2 hover:underline"
+                      >
+                        See the invoice
+                      </Link>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-stone">No confirmed purchase yet</p>
+                  )}
                 </div>
                 <ul className="mt-3 divide-y divide-ink/5 border-t border-ink/5">
-                  {material.packs.map((pack) => (
-                    <li
-                      key={pack.id}
-                      className="flex flex-wrap items-center justify-between gap-3 py-2"
-                    >
-                      <div className="min-w-0">
-                        <p className="text-sm text-ink">{pack.canonical_name}</p>
-                        <p className="text-xs text-stone">
-                          {pack.supplier_name}
-                          {pack.pack_size ? ` · ${pack.pack_size}` : ""}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <div className="text-right">
-                          {pack.last_price ? (
-                            <>
-                              <p className="text-sm text-ink">AED {money(pack.last_price)}</p>
-                              <p className="text-xs text-stone">
-                                last paid
-                                {pack.last_price_at ? ` ${formatDate(pack.last_price_at)}` : ""}
-                              </p>
-                            </>
-                          ) : (
-                            <p className="text-xs text-stone">no confirmed price yet</p>
-                          )}
+                  {material.packs.map((pack) => {
+                    const setsThePrice =
+                      material.price?.supplier_item_id === pack.id;
+                    return (
+                      <li
+                        key={pack.id}
+                        className="flex flex-wrap items-center justify-between gap-3 py-2"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-sm text-ink">{pack.canonical_name}</p>
+                          <p className="text-xs text-stone">
+                            {pack.supplier_name}
+                            {pack.pack_size ? ` · ${pack.pack_size}` : ""}
+                          </p>
                         </div>
-                        <button
-                          type="button"
-                          disabled={busyId === pack.id}
-                          onClick={() =>
-                            void decide(
-                              pack.id,
-                              () => unmapSupplierItem(pack.id),
-                              `${pack.canonical_name} is back in the queue.`,
-                            )
-                          }
-                          className="rounded-sm border border-ink/20 px-2.5 py-1 text-xs font-medium text-stone hover:border-clay hover:text-ink disabled:opacity-50"
-                        >
-                          Unmap
-                        </button>
-                      </div>
-                    </li>
-                  ))}
+                        <div className="flex items-center gap-3">
+                          {/* Each pack's own cost per kilo, which is the
+                              comparison the merge above exists to make: the
+                              same material from two suppliers, side by side in
+                              one unit. */}
+                          <div className="text-right">
+                            {pack.cost ? (
+                              <>
+                                <p className="text-sm text-ink tabular-nums">
+                                  {pricePerUnit(pack.cost)}
+                                </p>
+                                <p className="text-xs text-stone">
+                                  {setsThePrice ? "sets the price now · " : ""}
+                                  {pack.cost.invoice_date
+                                    ? formatDate(pack.cost.invoice_date)
+                                    : pack.cost.purchased_on
+                                      ? formatDate(pack.cost.purchased_on)
+                                      : ""}
+                                </p>
+                              </>
+                            ) : (
+                              <p className="text-xs text-stone">No cost yet</p>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            disabled={busyId === pack.id}
+                            onClick={() =>
+                              void decide(
+                                pack.id,
+                                () => unmapSupplierItem(pack.id),
+                                `${pack.canonical_name} is back in the queue.`,
+                              )
+                            }
+                            className="rounded-sm border border-ink/20 px-2.5 py-1 text-xs font-medium text-stone hover:border-clay hover:text-ink disabled:opacity-50"
+                          >
+                            Unmap
+                          </button>
+                        </div>
+                      </li>
+                    );
+                  })}
                 </ul>
               </li>
             ))}
           </ul>
         )}
-        <p className="text-xs text-stone">
-          What each material costs per kilo is worked out from these invoices next.
-        </p>
+        {materials.length > 0 ? (
+          <p className="max-w-2xl text-xs text-stone">
+            A material costs what you last paid for it, ex-VAT and after any discount, taken from
+            the most recent invoice among the products above - not an average, and not the cheapest
+            one. No purchase cost is ever marked verified: nothing on an invoice cross-checks the
+            pack size a cost is divided by.
+          </p>
+        ) : null}
       </section>
     </div>
   );

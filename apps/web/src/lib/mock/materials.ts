@@ -15,14 +15,40 @@
 import { ApiError } from "../errors";
 import type {
   BaseUnit,
+  CostQuality,
   Ingredient,
   IngredientMappingInput,
   IngredientProposal,
   MappedPack,
   MappingResult,
+  MaterialPrice,
   RejectionResult,
   UnmappedSupplierItem,
 } from "../types";
+
+/**
+ * What one of these packs last cost per kilo (M5 WP-53/54). Written out rather
+ * than computed, for the reason FixtureLine gives: the arithmetic is C4's, and
+ * a second implementation of it in the demo mock is what plan.md section 2
+ * rule 3 exists to refuse.
+ *
+ * The *selection* is mirrored, because that is what the screen exercises and
+ * it is a sort rather than money: the material's price is the newest of these
+ * among the packs mapped to it right now. `invoice_id` points at the fixture
+ * invoice from the same supplier, so the drill-through to the photo works
+ * offline.
+ */
+interface PackCost {
+  per_base_unit: string;
+  base_unit: BaseUnit;
+  per_display_unit: string;
+  display_unit: string;
+  pack: string;
+  /** YYYY-MM-DD, the printed invoice date this was ranked by. */
+  purchased_on: string;
+  invoice_id: string;
+  invoice_line_id: string;
+}
 
 interface MockPack {
   id: string;
@@ -35,6 +61,8 @@ interface MockPack {
   spend: string;
   line_count: number;
   ingredient_id: string | null;
+  /** Null when nothing on the invoice says how much is in one (WP-55). */
+  cost: PackCost | null;
 }
 
 interface MockIngredient {
@@ -45,71 +73,124 @@ interface MockIngredient {
 
 const DAY = 86_400_000;
 const daysAgo = (days: number) => new Date(Date.now() - days * DAY).toISOString();
+const dateDaysAgo = (days: number) => daysAgo(days).slice(0, 10);
+
+/** No cost is ever verified: nothing anywhere cross-checks a pack size (C9). */
+const RELIABLE: CostQuality = "reliable_with_limitations";
 
 /** Two suppliers selling the same three materials in different packs, which is
- * the situation M5 exists to resolve. */
+ * the situation M5 exists to resolve. The supplier names are the fixture
+ * invoices' own, so a price that says where it came from clicks through to a
+ * photo from that same supplier. */
+const GULF = "Al Madina Foodstuff Trading LLC";
+const SEEB = "Al Seeb Trading Co LLC";
+
 const PACKS: MockPack[] = [
   {
     id: "sitem-1",
     canonical_name: "Milk Powder 2.5kg",
     unit: "sack",
     pack_size: "2.5kg",
-    supplier_name: "Gulf Foods Trading L.L.C.",
+    supplier_name: GULF,
     last_price: "50.500",
     last_price_at: daysAgo(7),
     spend: "5050.00",
     line_count: 12,
     ingredient_id: null,
+    cost: {
+      per_base_unit: "0.02020000",
+      base_unit: "g",
+      per_display_unit: "20.20",
+      display_unit: "kg",
+      pack: "2.5kg",
+      purchased_on: dateDaysAgo(7),
+      invoice_id: "inv-1001",
+      invoice_line_id: "line-1001-1",
+    },
   },
   {
     id: "sitem-2",
     canonical_name: "MILK PWDR 500G NIDO",
     unit: "pouch",
     pack_size: "500g",
-    supplier_name: "Al Madina Trading Co.",
+    supplier_name: SEEB,
     last_price: "11.750",
     last_price_at: daysAgo(4),
     spend: "1410.00",
     line_count: 8,
     ingredient_id: null,
+    cost: {
+      per_base_unit: "0.02350000",
+      base_unit: "g",
+      per_display_unit: "23.50",
+      display_unit: "kg",
+      pack: "500g",
+      purchased_on: dateDaysAgo(4),
+      invoice_id: "inv-1002",
+      invoice_line_id: "line-1002-1",
+    },
   },
   {
     id: "sitem-3",
     canonical_name: "Evaporated Milk 48x400ml",
     unit: "carton",
     pack_size: "48x400ml",
-    supplier_name: "Al Madina Trading Co.",
+    supplier_name: SEEB,
     last_price: "90.000",
     last_price_at: daysAgo(7),
     spend: "2700.00",
     line_count: 6,
     ingredient_id: null,
+    // WP-51's arithmetic with something dividing by it: the carton holds
+    // 19,200 ml, and reading only the tail would price this 48 times too high.
+    cost: {
+      per_base_unit: "0.00468750",
+      base_unit: "ml",
+      per_display_unit: "4.69",
+      display_unit: "litre",
+      pack: "48x400ml",
+      purchased_on: dateDaysAgo(7),
+      invoice_id: "inv-1002",
+      invoice_line_id: "line-1002-2",
+    },
   },
   {
     id: "sitem-4",
     canonical_name: "Karak Tea Dust",
     unit: "bag",
     pack_size: "400g",
-    supplier_name: "Gulf Foods Trading L.L.C.",
+    supplier_name: GULF,
     last_price: "22.000",
     last_price_at: daysAgo(7),
     spend: "880.00",
     line_count: 9,
     ingredient_id: null,
+    cost: {
+      per_base_unit: "0.05500000",
+      base_unit: "g",
+      per_display_unit: "55.00",
+      display_unit: "kg",
+      pack: "400g",
+      purchased_on: dateDaysAgo(7),
+      invoice_id: "inv-1001",
+      invoice_line_id: "line-1001-2",
+    },
   },
   {
     // A bare container: units.py refuses to guess what is inside it, so
-    // approving this one has to ask what it measures.
+    // approving this one has to ask what it measures - and it has no cost at
+    // all until a person says how much a carton holds (WP-55).
     id: "sitem-5",
     canonical_name: "Chicken Carton",
     unit: "ctn",
     pack_size: "1 ctn",
-    supplier_name: "Gulf Foods Trading L.L.C.",
+    supplier_name: GULF,
     last_price: "148.000",
     last_price_at: daysAgo(3),
     spend: "740.00",
     line_count: 5,
     ingredient_id: null,
+    cost: null,
   },
 ];
 
@@ -187,6 +268,21 @@ function baseUnitOf(pack: MockPack): BaseUnit | null {
 
 // -- the endpoints ----------------------------------------------------------
 
+/** One pack's cost, in the shape the API serves a material's price. */
+function toPrice(pack: MockPack): MaterialPrice | null {
+  if (!pack.cost) return null;
+  return {
+    ...pack.cost,
+    quality: RELIABLE,
+    asserted: [],
+    pack_source: "pack_size",
+    supplier_name: pack.supplier_name,
+    supplier_item_id: pack.id,
+    product_name: pack.canonical_name,
+    invoice_date: pack.cost.purchased_on,
+  };
+}
+
 function toMappedPack(pack: MockPack): MappedPack {
   return {
     id: pack.id,
@@ -196,13 +292,25 @@ function toMappedPack(pack: MockPack): MappedPack {
     supplier_name: pack.supplier_name,
     last_price: pack.last_price,
     last_price_at: pack.last_price_at,
+    cost: toPrice(pack),
   };
 }
 
 export async function mockListIngredients(): Promise<Ingredient[]> {
   return INGREDIENTS.map((ingredient) => {
-    const packs = PACKS.filter((pack) => pack.ingredient_id === ingredient.id).map(toMappedPack);
-    return { ...ingredient, pack_count: packs.length, packs };
+    const mapped = PACKS.filter((pack) => pack.ingredient_id === ingredient.id);
+    // WP-54: the newest costed pack among the ones mapped right now. Latest,
+    // not cheapest and not averaged - and derived on every read, which is why
+    // unmapping one corrects the figure with nothing to rebuild.
+    const newest = mapped
+      .filter((pack) => pack.cost !== null)
+      .sort((a, b) => (a.cost!.purchased_on < b.cost!.purchased_on ? 1 : -1))[0];
+    return {
+      ...ingredient,
+      pack_count: mapped.length,
+      price: newest ? toPrice(newest) : null,
+      packs: mapped.map(toMappedPack),
+    };
   }).sort((a, b) => a.name.localeCompare(b.name));
 }
 

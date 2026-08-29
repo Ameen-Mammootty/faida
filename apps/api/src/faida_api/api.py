@@ -162,6 +162,29 @@ def _maybe_str(value) -> str | None:
     return None if value is None else str(value)
 
 
+def _cost_figure(row: asyncpg.Record) -> dict:
+    """One frozen cost, serialized: the figure per base unit, the same figure
+    in the unit a person buys in, and the C8 record of how it was made.
+
+    Shared by an invoice line and by a material's price (WP-53, WP-54), because
+    a material's price *is* one of those lines - the newest among the packs
+    mapped to it - and serializing it twice is how the two would drift.
+    """
+    cost = row["cost_per_base_unit"]
+    basis = row["cost_basis"] or {}
+    per_display, display_unit = costing.per_display_unit(cost, row["cost_base_unit"])
+    return {
+        "per_base_unit": _dec(cost),
+        "base_unit": row["cost_base_unit"],
+        "per_display_unit": _dec(per_display),
+        "display_unit": display_unit,
+        "quality": basis.get("quality"),
+        "asserted": basis.get("asserted", []),
+        "pack": basis.get("pack"),
+        "pack_source": basis.get("pack_source"),
+    }
+
+
 def _line_cost(line: asyncpg.Record, *, costed: bool, foreign_currency: bool) -> dict | None:
     """What one gram of this line cost, or the reason there is no such number
     (M5 WP-53).
@@ -177,22 +200,8 @@ def _line_cost(line: asyncpg.Record, *, costed: bool, foreign_currency: bool) ->
     """
     if line["line_kind"] != "stock_item":
         return None
-    cost = line["cost_per_base_unit"]
-    if cost is not None:
-        basis = line["cost_basis"] or {}
-        per_display, display_unit = costing.per_display_unit(cost, line["cost_base_unit"])
-        return {
-            "per_base_unit": _dec(cost),
-            "base_unit": line["cost_base_unit"],
-            "per_display_unit": _dec(per_display),
-            "display_unit": display_unit,
-            "quality": basis.get("quality"),
-            "asserted": basis.get("asserted", []),
-            "pack": basis.get("pack"),
-            "pack_source": basis.get("pack_source"),
-            "blocked": None,
-            "reason": None,
-        }
+    if line["cost_per_base_unit"] is not None:
+        return {**_cost_figure(line), "blocked": None, "reason": None}
     if not costed:
         return None
     blocked = costing.blocked_reason_for(
@@ -735,7 +744,7 @@ class IngredientRejection(BaseModel):
     ingredient_id: uuid.UUID
 
 
-def _pack_summary(row: asyncpg.Record) -> dict:
+def _pack_summary(row: asyncpg.Record, cost: asyncpg.Record | None = None) -> dict:
     return {
         "id": row["id"],
         "canonical_name": row["canonical_name"],
@@ -744,6 +753,34 @@ def _pack_summary(row: asyncpg.Record) -> dict:
         "supplier_name": row["supplier_name"],
         "last_price": _dec(row["last_price"]),
         "last_price_at": _iso(row["last_price_at"]),
+        # What this particular pack most recently worked out at per kilo, which
+        # is what makes two suppliers' packs comparable at all - the reason the
+        # merge above it is worth making (WP-54).
+        "cost": None if cost is None else _material_price(cost),
+    }
+
+
+def _material_price(row: asyncpg.Record) -> dict:
+    """A material's price per kilo, and the purchase it came from (WP-54).
+
+    Not a stored number: it is the newest costed line among the packs mapped to
+    this material **right now**, so unmapping a wrong merge corrects it with
+    nothing to rebuild. It carries the invoice line it came from rather than a
+    summary-table row, which is a more precise thing for M6 to name as a
+    plate's cost snapshot - and it is what lets the screen put the photo one
+    click away from the figure.
+    """
+    return {
+        **_cost_figure(row),
+        "supplier_name": row["supplier_name"],
+        "supplier_item_id": row["supplier_item_id"],
+        "product_name": row["canonical_name"],
+        "invoice_id": row["invoice_id"],
+        "invoice_line_id": row["invoice_line_id"],
+        # The date we ranked by, and separately whether the invoice printed one:
+        # "bought on 6 July" and "recorded on 29 August" are different claims.
+        "purchased_on": _iso(row["purchased_on"]),
+        "invoice_date": _iso(row["invoice_date"]),
     }
 
 
@@ -770,13 +807,30 @@ def _item_base_unit(item: asyncpg.Record) -> str | None:
 
 @router.get("/ingredients")
 async def list_ingredients(request: Request) -> dict:
-    """Every raw material, with the supplier packs mapped onto it."""
+    """Every raw material, its one price per kilo, and the packs behind it.
+
+    The price is **derived on every read** (WP-54) - the newest costed line
+    among the packs mapped to this material right now, by printed invoice date.
+    Nothing here is stored, which is why unmapping a wrong merge corrects the
+    figure immediately and why there is no refresh anywhere to forget.
+    """
     db: Database = request.app.state.db
     tenant_id = await _tenant(db)
     rows = await db.list_ingredients(tenant_id)
+
+    # One query for the whole page. The rows arrive grouped by material with
+    # that material's current price first, so the winner is `[0]` rather than a
+    # second pass sorting in Python.
+    costs: dict[str, list[asyncpg.Record]] = {}
+    for cost in await db.list_mapped_pack_costs(tenant_id):
+        costs.setdefault(cost["ingredient_id"], []).append(cost)
+    by_pack = {cost["supplier_item_id"]: cost for rows_ in costs.values() for cost in rows_}
+
     packs: dict[str, list[dict]] = {}
     for pack in await db.list_mapped_packs(tenant_id):
-        packs.setdefault(pack["ingredient_id"], []).append(_pack_summary(pack))
+        packs.setdefault(pack["ingredient_id"], []).append(
+            _pack_summary(pack, by_pack.get(pack["id"]))
+        )
     return {
         "ingredients": [
             {
@@ -784,6 +838,7 @@ async def list_ingredients(request: Request) -> dict:
                 "name": row["name"],
                 "base_unit": row["base_unit"],
                 "pack_count": row["pack_count"],
+                "price": _material_price(costs[row["id"]][0]) if costs.get(row["id"]) else None,
                 "packs": packs.get(row["id"], []),
             }
             for row in rows

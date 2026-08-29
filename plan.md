@@ -764,13 +764,16 @@ them, not a rewrite of them.
       (PRD §24's vocabulary), never green. The input set is computed from the arithmetic rather
       than listed, so an exclusive invoice's cost is untouched by a reconstructed total while a
       discounted invoice's costs all taint each other
-- [ ] **One material, one price per kilo — derived, not stored.** The newest costed line among the
-      packs mapped right now, by **printed invoice date** (PRD §19's "most recent purchase", so an
-      onboarding stack of old invoices cannot overwrite this month's cost), confirm time only as a
-      tie-breaker. No `ingredient_costs` table: a stored projection needs six refresh triggers and
-      the first draft of this plan already missed the main one. Per-branch cost still waits for a
-      chain that shows different branch prices (§2 rule 8) — and deriving makes that a `where`
-      clause rather than a migration
+- [x] **One material, one price per kilo — derived, not stored** (WP-54, done 2026-08-29, no
+      migration and none needed). The newest costed line among the packs mapped right now, by
+      **printed invoice date** (PRD §19's "most recent purchase", so an onboarding stack of old
+      invoices cannot overwrite this month's cost), confirm time only as a tie-breaker, an undated
+      invoice falling back to its confirm date read in UTC. No `ingredient_costs` table: a stored
+      projection needs six refresh triggers and the first draft of this plan already missed the
+      main one. Per-branch cost still waits for a chain that shows different branch prices (§2
+      rule 8) — and deriving makes that a `where` clause rather than a migration. One query
+      (`db.list_mapped_pack_costs`) returns each pack's own newest cost with the material's winner
+      first, so the screen shows the comparison the merge exists to make
 - [x] **Prerequisite, not optional: WP-19 closes first** - **all three closed 2026-08-28**
       (WP-19 shipped in commit 4f3ef2c, WP-26 and WP-28 the same day; box ticked 2026-08-29 after
       verifying the guard in the code rather than in this file). A short read that drops a line, a
@@ -990,7 +993,12 @@ pilot volume. Meta utility template cost applies only from M10 (verify live UAE 
   A line that cannot be costed says which of six things went wrong, in a sentence a consultant can act on, rather than going quiet - the derived half of WP-55, shipped early because "no cost" with no reason beside it is the dead end this product keeps promising not to be.
   Seen on the screen, and two things fixed there that no test would have caught: the quality caption repeated identically on all five rows (now only the exception is labelled, with the standing limitation stated once under the table), and a confirmed invoice showed the word "Confirmed" twice in a stack - the status chip and a disabled button - now the chip plus the date it was confirmed.
   **452 API tests green** (was 423; 29 new), eval scorer 65 green, `eval.run --smoke` OK, ruff clean on both trees, web typecheck + eslint + production build clean.
-  Next: WP-54 (one material, one price per kilo) → WP-55.
+  **WP-54 shipped, and with it the milestone's done-when: milk powder bought from two suppliers in three pack sizes now reads as one material at one price per kilo, on screen, with the invoice photo one click from the figure.** No migration, because there is nothing new to store: the price is the newest costed line among the packs mapped right now, derived on every read (`db.list_mapped_pack_costs`, `/api/ingredients`).
+  **The ordering rule is the one that matters, and its test has teeth.** Ranking by confirm time instead of printed invoice date makes the suite fail with a June price - AED 17.60 a kilo - standing as today's cost, which is exactly the onboarding case the Decision Log reversal was about: someone hands over a pile of paper and it goes through in whatever order it comes out of the envelope. An invoice with no printed date falls back to its confirm date, and the payload keeps the two apart, because "bought on" and "recorded on" are different claims.
+  **Unmapping a wrong merge corrects the price with nothing to rebuild**, which is the whole return on not having an `ingredient_costs` table: mapping saffron onto milk powder takes the price to AED 52,250 a kilo, and one unmap puts it back to 20.20 with no refresh anywhere to have remembered.
+  One query returns each pack's *own* newest cost as well as the material's, so the screen shows the comparison the merge exists to make: the same material at 20.20 and 23.50 a kilo from two suppliers, with the newer one marked as the one setting the price. That is the number M6 will multiply by a recipe quantity.
+  **459 API tests green** (was 452; 7 new), eval 65 + smoke OK, ruff clean, web typecheck + eslint + build clean.
+  Next: WP-55 (blocked costs and the consultant's override).
 
 - 2026-08-29 - **All four lanes are one master again: WP-26/28 (landed earlier), the M4 loop-gate lane, WP-29 bilingual matching, and the Gemini 3 Flash swap - merged, tested together, deployed in one push.**
   Integration order was WP-29 then the provider swap, and the combined suite is green: 393 API tests, 65 eval tests, smoke, ruff on both trees.
