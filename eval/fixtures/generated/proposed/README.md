@@ -1,10 +1,11 @@
-# Proposed cases - prompts only, not yet in the corpus
+# Proposed cases - not yet in the corpus
 
 Five prompts in the house format of `eval/fixtures/generated/`.
+`CUT-01.png` was generated on 2026-08-29; the other four cases still have prompts only.
 `AMD-01` was promoted into the corpus on 2026-08-28 for WP-27 (its prompt reworked into the
 machine-readable table shape `eval/printed.py` parses); it awaits an image like the other
 dry-run cases.
-They are deliberately **not** listed in `../manifest.json` and have no `expected.json`, so
+These proposed cases are deliberately **not** listed in `../manifest.json` and have no `expected.json`, so
 `eval.convert_generated` and the CI smoke set are unaffected until someone generates the images
 and writes ground truth.
 
