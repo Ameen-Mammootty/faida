@@ -31,6 +31,8 @@ MODEL_PRICING_USD_PER_MTOK: dict[str, tuple[Decimal, Decimal]] = {
     "claude-opus-5": (Decimal("5.00"), Decimal("25.00")),
     "gemini-3.1-pro-preview": (Decimal("2.00"), Decimal("12.00")),
     "gemini-3-pro-preview": (Decimal("2.00"), Decimal("12.00")),
+    # Flat across context lengths; text/image input (audio costs more, unused here).
+    "gemini-3-flash-preview": (Decimal("0.50"), Decimal("3.00")),
 }
 
 FUZZY_THRESHOLD = 0.9
