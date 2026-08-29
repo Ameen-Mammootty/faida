@@ -8,6 +8,8 @@ import base64
 from decimal import Decimal
 from types import SimpleNamespace
 
+import pytest
+
 from faida_api.extraction.anthropic_provider import MODEL_ID, AnthropicExtractionProvider
 from faida_api.extraction.prompts import PROMPT_VERSION
 from faida_api.extraction.provider import ExtractionProvider, ProviderUsage
@@ -53,8 +55,9 @@ REPAIR_JSON = """\
 
 
 class FakeMessages:
-    def __init__(self, output_json: str):
+    def __init__(self, output_json: str, stop_reason: str = "end_turn"):
         self._output_json = output_json
+        self._stop_reason = stop_reason
         self.calls: list[dict] = []
 
     async def parse(self, **kwargs):
@@ -63,18 +66,20 @@ class FakeMessages:
         return SimpleNamespace(
             parsed_output=parsed,
             model=MODEL_ID,
-            stop_reason="end_turn",
+            stop_reason=self._stop_reason,
             usage=SimpleNamespace(input_tokens=2411, output_tokens=387),
         )
 
 
 class FakeClient:
-    def __init__(self, output_json: str):
-        self.messages = FakeMessages(output_json)
+    def __init__(self, output_json: str, stop_reason: str = "end_turn"):
+        self.messages = FakeMessages(output_json, stop_reason)
 
 
-def make_provider(output_json: str) -> tuple[ExtractionProvider, FakeMessages]:
-    client = FakeClient(output_json)
+def make_provider(
+    output_json: str, stop_reason: str = "end_turn"
+) -> tuple[ExtractionProvider, FakeMessages]:
+    client = FakeClient(output_json, stop_reason)
     return AnthropicExtractionProvider(client=client), client.messages
 
 
@@ -161,3 +166,24 @@ async def test_repair_targets_only_the_named_cells_and_parses_the_patch():
     # The document-level target names the totals block, not a line.
     assert "subtotal 710.25 + tax 35.51 != extracted 745.00" in prompt
     assert "Totals block" in prompt
+
+
+# --- WP-19: a truncated read is a failure, never a shorter answer -----------
+
+
+async def test_truncated_output_raises_even_when_the_json_parses():
+    # The old platform's dominant real failure: a perfect header with 2 of 34
+    # lines, persisted because the cut-off output still parsed and the header
+    # still reconciled. stop_reason is the ground truth for truncation, so it
+    # fails the call regardless of how plausible the partial answer looks.
+    provider, _ = make_provider(INVOICE_JSON, stop_reason="max_tokens")
+    with pytest.raises(ValueError, match="truncated at the 16000-token ceiling"):
+        await provider.extract(b"\xff\xd8fake-jpeg", "image/jpeg")
+
+
+async def test_truncated_repair_raises_too():
+    provider, _ = make_provider(REPAIR_JSON, stop_reason="max_tokens")
+    with pytest.raises(ValueError, match="truncated"):
+        await provider.repair(
+            b"img", "image/jpeg", [RepairTarget(line_index=3, fields=["qty"], reason="check")]
+        )

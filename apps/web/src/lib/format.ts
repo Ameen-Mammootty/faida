@@ -6,18 +6,29 @@
 
 import type { InvoiceStatus, PaymentKind } from "./types";
 
-/** "682.75" stays "682.75"; "54.5" renders "54.50"; "12" renders "12.00". */
+/**
+ * "682.75" stays "682.75"; "54.5" renders "54.50"; "12" renders "12.00";
+ * "54.500" renders "54.50" - the database stores three decimals and that
+ * padding is storage precision, not information (found in rehearsal
+ * 2026-08-29: the screen read "54.500" beside a paper printing "54.50").
+ * A real third decimal ("52.905", a net-canonical price) is kept: only
+ * trailing zeros beyond two decimals are trimmed, so no value ever changes.
+ */
 export function money(value: string): string {
   const dot = value.indexOf(".");
   if (dot === -1) return `${value}.00`;
-  const decimals = value.length - dot - 1;
-  if (decimals >= 2) return value;
-  return value + "0".repeat(2 - decimals);
+  let end = value.length;
+  while (end - dot - 1 > 2 && value[end - 1] === "0") end -= 1;
+  const trimmed = value.slice(0, end);
+  const decimals = end - dot - 1;
+  if (decimals >= 2) return trimmed;
+  return trimmed + "0".repeat(2 - decimals);
 }
 
-/** Quantities are not money: render exactly as extracted. */
+/** Quantities are not money: "12.000" is "12", "2.500" is "2.5", "12" stays "12". */
 export function quantity(value: string): string {
-  return value;
+  if (!value.includes(".")) return value;
+  return value.replace(/0+$/, "").replace(/\.$/, "");
 }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];

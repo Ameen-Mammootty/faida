@@ -17,7 +17,7 @@ import asyncpg
 
 from ..contracts import DocumentStatus, InvoiceStatus
 from ..db import RETRY_LIMIT, Database
-from ..matching import Row, match_supplier, snap_item
+from ..matching import Row, match_supplier, normalize, normalize_invoice_no, snap_item
 from ..provenance import Origin, changed_fields, initial, mark
 from ..replies import (
     DEFAULT_CURRENCY,
@@ -26,7 +26,9 @@ from ..replies import (
     REPLY_Z_REPORT,
     PriceAlert,
     compose_cash_hold_reply,
+    compose_duplicate_hold_reply,
     compose_invoice_reply,
+    render_duplicate_note,
 )
 from ..storage import Storage
 from ..wa import WhatsAppClient
@@ -104,7 +106,9 @@ async def extract_document(
     stage_ms: dict[str, int] = {}
     try:
         if provider is None:
-            raise RuntimeError("no extraction provider configured (anthropic_api_key is empty)")
+            raise RuntimeError(
+                "no extraction provider configured (the selected provider's key is empty)"
+            )
         if not doc["storage_path"]:
             raise RuntimeError(f"document {document_id} has no stored original")
         image = await storage.get(doc["storage_path"])
@@ -274,18 +278,48 @@ async def _persist_extracted(
         )
     ]
 
+    # WP-44: the same paper sent twice is held, never double-counted. Checked
+    # against every earlier header for the tenant; a failed check never blocks
+    # extraction (same posture as supplier matching above).
+    duplicate = similar = None
+    try:
+        headers = await db.list_invoice_headers_for_tenant(str(doc["tenant_id"]))
+        duplicate, similar = find_duplicate(
+            headers, str(supplier["id"]) if supplier is not None else None, invoice
+        )
+    except Exception:
+        logger.exception("duplicate check failed for document %s; persisting unheld", doc["id"])
+
     # WP-24 (PRD §21): a cash invoice is held for the owner's approval and
     # cannot confirm from chat; everything else goes straight to awaiting the
     # "OK" the reply asks for (C1 permits draft -> awaiting_confirm, and the
-    # insert takes the post-transition status directly).
-    if invoice.payment_kind == "cash":
+    # insert takes the post-transition status directly). A duplicate hold
+    # (WP-44) outranks both: alerts and questions on a copy are noise.
+    if duplicate is not None:
         status = InvoiceStatus.NEEDS_REVIEW
-        reply = compose_cash_hold_reply(
-            invoice, validation, alerts, tenant_currency=tenant_currency
+        reply = compose_duplicate_hold_reply(
+            duplicate["supplier_name"],
+            duplicate["invoice_no"],
+            duplicate["currency"],
+            duplicate["total"],
+            duplicate["created_at"].date(),
         )
     else:
-        status = InvoiceStatus.AWAITING_CONFIRM
-        reply = compose_invoice_reply(invoice, validation, alerts, tenant_currency=tenant_currency)
+        if invoice.payment_kind == "cash":
+            status = InvoiceStatus.NEEDS_REVIEW
+            reply = compose_cash_hold_reply(
+                invoice, validation, alerts, tenant_currency=tenant_currency
+            )
+        else:
+            status = InvoiceStatus.AWAITING_CONFIRM
+            reply = compose_invoice_reply(
+                invoice, validation, alerts, tenant_currency=tenant_currency
+            )
+        if similar is not None:
+            note = render_duplicate_note(
+                similar["supplier_name"], similar["invoice_no"], similar["created_at"].date()
+            )
+            reply = f"{reply}\n{note}"
 
     started = time.monotonic()
     await db.insert_draft_invoice(
@@ -324,6 +358,65 @@ async def _persist_extracted(
     stage_ms["persist"] = int((time.monotonic() - started) * 1000)
     logger.info("latency stage=persist document=%s elapsed_ms=%d", doc["id"], stage_ms["persist"])
     return reply
+
+
+def find_duplicate(
+    existing: list[Row], supplier_id: str | None, invoice: ExtractedInvoice
+) -> tuple[Row | None, Row | None]:
+    """WP-44: is this paper already recorded? Pure, so the rule is testable
+    without a database.
+
+    Returns (duplicate, similar), each the newest matching header or None.
+    Within the same supplier: number + total both matching is a *duplicate*
+    (held); the number alone, or the invoice date + total, is merely
+    *similar* (noted). All comparisons need both sides present - an absent
+    number never equals another absent number (normalize_invoice_no), and a
+    null total matches nothing. Totals compare only within one currency:
+    USD 745.76 and AED 745.76 are the same digits, not the same money
+    (found at integration by WP-28's own test), so a cross-currency pair
+    can reach *similar* through its number but never a hold through its
+    total.
+
+    Same supplier means matched ids when both rows have one, else equal
+    normalized names - a supplier the catalog does not know yet can still
+    send the same paper twice."""
+    number = normalize_invoice_no(invoice.invoice_no)
+    duplicate: Row | None = None
+    similar: Row | None = None
+    for row in existing:  # newest first, per the query - first hit wins
+        if not _same_supplier(row, supplier_id, invoice.supplier_name):
+            continue
+        number_match = number is not None and normalize_invoice_no(row["invoice_no"]) == number
+        total_match = (
+            invoice.total is not None
+            and row["total"] == invoice.total
+            and _same_money(invoice.currency, row["currency"])
+        )
+        date_match = (
+            invoice.invoice_date is not None and row["invoice_date"] == invoice.invoice_date
+        )
+        if number_match and total_match:
+            duplicate = duplicate or row
+        elif number_match or (date_match and total_match):
+            similar = similar or row
+    return duplicate, similar
+
+
+def _same_money(invoice_currency: str | None, row_currency: str | None) -> bool:
+    """Two totals are comparable only in one currency. A side with no
+    currency at all stays comparable - an unreadable currency must not
+    disable the hold outright."""
+    if invoice_currency is None or row_currency is None:
+        return True
+    return invoice_currency == row_currency
+
+
+def _same_supplier(row: Row, supplier_id: str | None, supplier_name: str | None) -> bool:
+    if supplier_id is not None and row["supplier_id"] is not None:
+        return str(row["supplier_id"]) == supplier_id
+    if supplier_name and row["supplier_name"]:
+        return normalize(row["supplier_name"]) == normalize(supplier_name)
+    return False
 
 
 def price_alerts(

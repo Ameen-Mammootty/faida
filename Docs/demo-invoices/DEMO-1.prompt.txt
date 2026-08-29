@@ -1,0 +1,38 @@
+Produce one photorealistic image of a single real-world paper document. The image contains nothing but that document and the surface it rests on. Do not add captions, arrows, labels, borders, mock-up frames, logos of real companies, or any text of your own invention.
+
+PHYSICAL ARTEFACT
+A crisp laser-printed A4 tax invoice on white 80gsm paper, a plain black-and-white supplier template with ruled table lines, photographed from directly above on a light wooden desk in even daylight, perfectly flat, all four corners in frame. This is the on-stage demo paper: pristine and effortlessly legible, no crumpling, no stains, no shadows across the digits.
+
+LANGUAGE
+All text is in English with western digits.
+
+EXACT CONTENT. Reproduce every character and every digit exactly as written below. Do not round, recalculate, reorder, translate, abbreviate, expand, add or omit anything. The arithmetic below is already correct.
+
+-- Header --
+SUPPLIER NAME (bold, top left): Gulf Foods Trading L.L.C.
+SUPPLIER ADDRESS (small, under the name): Warehouse 9, Al Quoz Industrial 2, Dubai, UAE
+SUPPLIER TRN: 100000000000201
+DOCUMENT TITLE (centered): TAX INVOICE
+Invoice No.: GFT-2026-0834
+Date: 20/08/2026
+Customer: Karak Al Khaleej Cafeterias - Al Qusais Branch
+Payment terms: 30 days
+
+-- Line items, both of them, in this exact order --
+COLUMNS, left to right: # | Description | Qty | Unit | Unit price AED | Amount AED
+
+1 | Milk Powder 2.5kg NIDO | 12 | sack | 54.50 | 654.00
+2 | Karak Tea Dust | 3 | bag | 18.75 | 56.25
+
+-- Totals block, lower right --
+Subtotal: AED 710.25
+VAT 5%: AED 35.51
+TOTAL: AED 745.76
+
+RULES
+- Both item rows must appear on the document, in the order given, none merged, none dropped, none repeated.
+- Every figure must be readable at full resolution.
+- Keep the whole document inside the frame, including all four corners.
+- Do not add sample, specimen, draft, void or watermark text, and do not add any row, column, charge or second date that is not listed above.
+- The date reads exactly 20/08/2026 - no month name, no other date format anywhere on the page.
+- Nothing on the page may be blurred, cropped, or shadowed: this paper's job is a flawless read.

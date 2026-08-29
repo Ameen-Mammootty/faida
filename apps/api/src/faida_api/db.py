@@ -419,6 +419,23 @@ class Database:
             status,
         )
 
+    async def list_invoice_headers_for_tenant(self, tenant_id: str) -> list[asyncpg.Record]:
+        """Every invoice header for one tenant, newest first - WP-44's
+        duplicate check compares the incoming paper against these in Python,
+        so the normalization rule (matching.normalize_invoice_no) lives once,
+        never re-implemented in SQL. Fine at demo volume; revisit with an
+        index and a WHERE clause when a tenant has thousands (§2 rule 8)."""
+        return await self.pool.fetch(
+            """
+            select id, supplier_id, supplier_name, invoice_no, invoice_date, currency,
+                   total, status, created_at
+            from invoices
+            where tenant_id = $1
+            order by created_at desc, id desc
+            """,
+            tenant_id,
+        )
+
     async def get_supplier_item(self, item_id: str) -> asyncpg.Record | None:
         return await self.pool.fetchrow(
             """

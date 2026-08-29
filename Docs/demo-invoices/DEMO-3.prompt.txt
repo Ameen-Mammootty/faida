@@ -1,0 +1,37 @@
+Produce one photorealistic image of a single real-world paper document. The image contains nothing but that document and the surface it rests on. Do not add captions, arrows, labels, borders, mock-up frames, logos of real companies, or any text of your own invention.
+
+PHYSICAL ARTEFACT
+A crisp laser-printed A4 tax invoice on white paper, the same plain black-and-white template family as a typical Dubai foodstuff trader, photographed from directly above on a light wooden desk in even daylight, flat, all four corners in frame. Rehearsal paper: pristine and effortlessly legible.
+
+LANGUAGE
+All text is in English with western digits.
+
+EXACT CONTENT. Reproduce every character and every digit exactly as written below. Do not round, recalculate, reorder, translate, abbreviate, expand, add or omit anything. The arithmetic below is already correct.
+
+-- Header --
+SUPPLIER NAME (bold, top left): Gulf Foods Trading L.L.C.
+SUPPLIER ADDRESS (small, under the name): Warehouse 9, Al Quoz Industrial 2, Dubai, UAE
+SUPPLIER TRN: 100000000000201
+DOCUMENT TITLE (centered): TAX INVOICE
+Invoice No.: GFT-2026-0871
+Date: 24/08/2026
+Customer: Karak Al Khaleej Cafeterias - Al Qusais Branch
+Payment terms: 30 days
+
+-- Line items, both of them, in this exact order --
+COLUMNS, left to right: # | Description | Qty | Unit | Unit price AED | Amount AED
+
+1 | Sugar 50kg | 2 | sack | 115.00 | 230.00
+2 | Cardamom Powder 500g | 4 | tin | 24.00 | 96.00
+
+-- Totals block, lower right --
+Subtotal: AED 326.00
+VAT 5%: AED 16.30
+TOTAL: AED 342.30
+
+RULES
+- Both item rows must appear on the document, in the order given, none merged, none dropped, none repeated.
+- Every figure must be readable at full resolution.
+- Keep the whole document inside the frame, including all four corners.
+- Do not add sample, specimen, draft, void or watermark text, and do not add any row, column, charge or second date that is not listed above.
+- The date reads exactly 24/08/2026 - no month name, no other date format anywhere on the page.
