@@ -672,6 +672,13 @@ class Database:
         `cost_base_unit = ing.base_unit` is belt and braces: the approval gate
         already refuses a millilitre pack onto a gram material, and a price
         assembled across dimensions would be a number with no meaning at all.
+
+        A negative-qty line is a return, not a purchase, so it never wins
+        "newest": EDGE-01 prints a costed credit line whose unit price need
+        not match its purchase, and before the qty filter the tie between the
+        two broke on a random uuid (found by the 2026-08-29 M6 eng review's
+        outside voice). Ties inside one invoice break on the printed line
+        position - in both orderings - so the winner is the same on every run.
         """
         return await self.pool.fetch(
             """
@@ -681,7 +688,7 @@ class Database:
                        s.ingredient_id::text as ingredient_id,
                        s.canonical_name, s.pack_size as catalog_pack_size,
                        sup.name as supplier_name,
-                       l.id::text as invoice_line_id, l.raw_name, l.pack_size,
+                       l.id::text as invoice_line_id, l.position, l.raw_name, l.pack_size,
                        l.cost_per_base_unit, l.cost_base_unit, l.cost_basis,
                        inv.id::text as invoice_id, inv.invoice_date, inv.confirmed_at,
                        coalesce(inv.invoice_date,
@@ -696,10 +703,13 @@ class Database:
                   and inv.status = 'confirmed'
                   and l.cost_per_base_unit is not null
                   and l.cost_base_unit = ing.base_unit
-                order by s.id, purchased_on desc, inv.confirmed_at desc, l.id desc
+                  and coalesce(l.qty, 0) >= 0
+                order by s.id, purchased_on desc, inv.confirmed_at desc,
+                         l.position desc, l.id desc
             )
             select * from newest_per_pack
-            order by ingredient_id, purchased_on desc, confirmed_at desc, invoice_line_id desc
+            order by ingredient_id, purchased_on desc, confirmed_at desc,
+                     position desc, invoice_line_id desc
             """,
             tenant_id,
         )

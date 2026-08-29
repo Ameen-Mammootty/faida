@@ -589,6 +589,92 @@ async def test_a_newer_invoice_moves_the_price_and_an_older_one_does_not(api, db
     assert moved["supplier_name"] == "Al Madina Trading Co."
 
 
+async def _confirmed_two_line_invoice(
+    db,
+    item_id: str,
+    *,
+    supplier_id: str,
+    invoice_date: str,
+    lines: list[tuple[Decimal, Decimal]],
+) -> str:
+    """One confirmed invoice with several lines on the same pack: (qty,
+    unit_price) per line, positions in page order, totals consistent."""
+    document_id = await db.pool.fetchval(
+        "insert into documents (tenant_id, source, status) values ($1, 'manual', 'extracted') "
+        "returning id",
+        DEMO_TENANT_ID,
+    )
+    total = sum(qty * price for qty, price in lines)
+    invoice_id = await db.pool.fetchval(
+        """
+        insert into invoices (tenant_id, document_id, supplier_id, status, total, invoice_date)
+        values ($1, $2, $3, 'awaiting_confirm', $4, $5)
+        returning id::text
+        """,
+        DEMO_TENANT_ID,
+        document_id,
+        supplier_id,
+        total,
+        datetime.date.fromisoformat(invoice_date),
+    )
+    for position, (qty, unit_price) in enumerate(lines):
+        await db.pool.execute(
+            """
+            insert into invoice_lines (tenant_id, invoice_id, position, raw_name,
+                                       supplier_item_id, qty, pack_size, unit_price, line_total)
+            values ($1, $2, $3, 'Avocado', $4, $5, '2.5kg', $6, $7)
+            """,
+            DEMO_TENANT_ID,
+            invoice_id,
+            position,
+            item_id,
+            qty,
+            unit_price,
+            qty * unit_price,
+        )
+    assert await db.confirm_invoice(invoice_id, actor="console") is True
+    return invoice_id
+
+
+@requires_db
+async def test_a_credit_line_never_wins_newest_and_ties_break_on_position(api, db):
+    """A return is not a purchase, and a tie is not a coin flip (found by the
+    M6 eng review's outside voice, 2026-08-29, verified against this query).
+
+    EDGE-01's shape: one page prints an avocado purchase and its partial
+    credit, and both lines are costed. The credit's unit price is lower, and
+    before the qty filter the material's price per kilo was whichever line's
+    uuid sorted last - a nondeterministic number on the materials screen."""
+    gulf = await _supplier(db, "Gulf Foods Trading L.L.C.")
+    avocado = await _item(db, gulf, "Avocado 2.5kg", "2.5kg")
+    await _confirmed_two_line_invoice(
+        db,
+        avocado,
+        supplier_id=gulf,
+        invoice_date="2026-07-06",
+        lines=[(Decimal("2"), Decimal("50.50")), (Decimal("-1"), Decimal("40.00"))],
+    )
+    assert (
+        await api.post(
+            f"/api/supplier-items/{avocado}/ingredient", json={"name": "Avocado"}, headers=AUTH
+        )
+    ).status_code == 200
+
+    # 50.50 / 2.5 kg, never the credit's 16.00 - and the same on every run.
+    assert (await _price(api, "Avocado"))["per_display_unit"] == "20.20"
+
+    # A newer page prints the same pack twice at two prices (a bulk row and a
+    # spot row). The winner is the later printed line, by position - not uuid.
+    await _confirmed_two_line_invoice(
+        db,
+        avocado,
+        supplier_id=gulf,
+        invoice_date="2026-07-08",
+        lines=[(Decimal("1"), Decimal("48.00")), (Decimal("1"), Decimal("52.50"))],
+    )
+    assert (await _price(api, "Avocado"))["per_display_unit"] == "21.00"
+
+
 @requires_db
 async def test_the_price_follows_the_printed_date_not_the_order_things_were_confirmed(api, db):
     """The ordering key, pinned. Confirm time is a tie-breaker and nothing
