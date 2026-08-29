@@ -735,3 +735,469 @@ async def test_an_unconfirmed_invoice_never_sets_a_material_price(api, db):
         invoice_id,
     )
     assert (await _price(api)) is None
+
+
+# -- WP-55: the costs that cannot be computed, and the sentence that clears one
+
+
+async def _blocked(api) -> list[dict]:
+    return (await api.get("/api/blocked-costs", headers=AUTH)).json()["blocked"]
+
+
+async def _line_costs(db, item_id: str) -> list:
+    return await db.pool.fetch(
+        """
+        select l.id, l.cost_per_base_unit, l.cost_base_unit, l.cost_basis
+        from invoice_lines l where l.supplier_item_id = $1 order by l.id
+        """,
+        item_id,
+    )
+
+
+@requires_db
+async def test_a_carton_appears_with_its_reason_and_the_invoice_it_came_from(api, db):
+    """A cost that cannot be computed is a line on a screen, never a guessed
+    number. `units.py` refuses to say what is inside a carton, so the product
+    ends up here with the invoice behind it and a sentence a person can act
+    on."""
+    gulf = await _supplier(db, "Gulf Foods Trading L.L.C.")
+    carton = await _item(db, gulf, "Chicken Carton", "1 ctn")
+    invoice_id = await _delivery(
+        db,
+        carton,
+        supplier_id=gulf,
+        pack_size="1 ctn",
+        unit_price=Decimal("148.00"),
+        raw_name="Chicken Carton",
+    )
+
+    rows = await _blocked(api)
+    assert len(rows) == 1
+    assert rows[0]["product_name"] == "Chicken Carton"
+    assert rows[0]["blocked"] == "bare_container"
+    assert rows[0]["reason"] == "Nothing on the invoice says how much one of these holds."
+    assert rows[0]["invoice_id"] == invoice_id
+    assert rows[0]["can_override"] is True
+    assert rows[0]["spend"] == "148.00"
+
+
+@requires_db
+async def test_each_way_a_line_can_refuse_shows_its_own_reason_and_its_own_answer(api, db):
+    """Six blockers, six sentences, and only some of them are a person's to
+    answer. Offering a box to type in beside "the invoice does not show a
+    price" would be a promise this screen cannot keep - no conversion supplies
+    a number the paper never had."""
+    gulf = await _supplier(db, "Gulf Foods Trading L.L.C.")
+    carton = await _item(db, gulf, "Chicken Carton", "1 ctn")
+    zero = await _item(db, gulf, "Tomato Paste", "0kg")
+    nameless = await _item(db, gulf, "Assorted Spices", "assorted")
+    await _delivery(db, carton, supplier_id=gulf, pack_size="1 ctn", unit_price=Decimal("148.00"))
+    await _delivery(db, zero, supplier_id=gulf, pack_size="0kg", unit_price=Decimal("90.00"))
+    await _delivery(
+        db, nameless, supplier_id=gulf, pack_size="assorted", unit_price=Decimal("40.00")
+    )
+
+    # And one with no quantity at all, which the confirm loop never costs.
+    priceless = await _item(db, gulf, "Cardamom Powder", "500g")
+    invoice_id = await _delivery(
+        db,
+        priceless,
+        supplier_id=gulf,
+        pack_size="500g",
+        unit_price=Decimal("24.00"),
+        confirm=False,
+    )
+    await db.pool.execute("update invoice_lines set qty = null where invoice_id = $1", invoice_id)
+    await db.confirm_invoice(invoice_id, actor="console")
+
+    reasons = {
+        row["product_name"]: (row["blocked"], row["can_override"]) for row in await _blocked(api)
+    }
+    assert reasons["Chicken Carton"] == ("bare_container", True)
+    assert reasons["Tomato Paste"] == ("zero_pack", True)
+    assert reasons["Assorted Spices"] == ("unparseable_pack", True)
+    # A number nobody wrote down is not a conversion question.
+    assert reasons["Cardamom Powder"] == ("missing_quantity", False)
+
+
+@requires_db
+async def test_one_answer_clears_every_line_of_that_product(api, db):
+    """A carton bought five times is one question, answered once. Twelve
+    identical rows is how a queue teaches people to stop reading it."""
+    gulf = await _supplier(db, "Gulf Foods Trading L.L.C.")
+    carton = await _item(db, gulf, "Chicken Carton", "1 ctn")
+    for day in ("2026-07-02", "2026-07-06", "2026-07-09"):
+        await _delivery(
+            db,
+            carton,
+            supplier_id=gulf,
+            pack_size="1 ctn",
+            unit_price=Decimal("148.00"),
+            invoice_date=day,
+        )
+
+    rows = await _blocked(api)
+    assert len(rows) == 1
+    assert rows[0]["line_count"] == 3
+    assert rows[0]["spend"] == "444.00"
+
+    answered = await api.post(
+        f"/api/supplier-items/{carton}/pack-size", json={"pack_size": "10 kg"}, headers=AUTH
+    )
+    assert answered.status_code == 200
+    assert answered.json()["lines_costed"] == 3
+    assert await _blocked(api) == []
+
+
+@requires_db
+async def test_an_answer_costs_the_lines_with_no_cost_and_leaves_the_others_byte_identical(api, db):
+    """The rule stated rather than implied. Half of it is that answering the
+    question changes something - without that the conversion does nothing until
+    the next delivery arrives. The other half is that it changes **only** what
+    had no answer: a figure someone has already read must not move under them
+    because a colleague answered a question about a different box."""
+    gulf = await _supplier(db, "Gulf Foods Trading L.L.C.")
+    carton = await _item(db, gulf, "Chicken Carton", "1 ctn")
+    # The same product, once with a pack size printed on the line and once
+    # without. Only the second is anybody's question.
+    await _delivery(
+        db,
+        carton,
+        supplier_id=gulf,
+        pack_size="8kg",
+        unit_price=Decimal("120.00"),
+        invoice_date="2026-07-02",
+    )
+    await _delivery(
+        db,
+        carton,
+        supplier_id=gulf,
+        pack_size="1 ctn",
+        unit_price=Decimal("148.00"),
+        invoice_date="2026-07-06",
+    )
+    before = {
+        row["id"]: (row["cost_per_base_unit"], row["cost_basis"])
+        for row in await _line_costs(db, carton)
+    }
+    already_costed = [line_id for line_id, (cost, _) in before.items() if cost is not None]
+    assert len(already_costed) == 1
+
+    assert (
+        await api.post(
+            f"/api/supplier-items/{carton}/pack-size", json={"pack_size": "10kg"}, headers=AUTH
+        )
+    ).json()["lines_costed"] == 1
+
+    after = {
+        row["id"]: (row["cost_per_base_unit"], row["cost_basis"])
+        for row in await _line_costs(db, carton)
+    }
+    # The line that had a cost is untouched, down to how it says it was made.
+    assert after[already_costed[0]] == before[already_costed[0]]
+    # And the one that had none now costs 148.00 / 10 kg = AED 14.80 a kilo.
+    costed = next(value for line_id, value in after.items() if line_id not in already_costed)
+    assert costed[0] == Decimal("0.01480000")
+    # C9, automatically: a human supplied the pack, so no arithmetic checked it.
+    assert costed[1]["quality"] == "estimated"
+    assert costed[1]["pack_source"] == "override"
+    assert costed[1]["pack"] == "10kg"
+
+
+@requires_db
+async def test_clearing_the_block_gives_the_material_a_price_that_reads_estimated(api, db):
+    """End to end, and the reason the two halves of this work package ship
+    together: an issue with no resolution is half a feature, and a resolution
+    that does not move the number it was blocking is worse than none."""
+    gulf = await _supplier(db, "Gulf Foods Trading L.L.C.")
+    carton = await _item(db, gulf, "Chicken Carton", "1 ctn")
+    await _delivery(db, carton, supplier_id=gulf, pack_size="1 ctn", unit_price=Decimal("148.00"))
+    await api.post(
+        f"/api/supplier-items/{carton}/ingredient",
+        json={"name": "Chicken", "base_unit": "g"},
+        headers=AUTH,
+    )
+    # Mapped, bought, confirmed - and still no price, because nothing said how
+    # much a carton holds.
+    assert (await _price(api, "Chicken")) is None
+
+    await api.post(
+        f"/api/supplier-items/{carton}/pack-size", json={"pack_size": "10 kg"}, headers=AUTH
+    )
+    price = await _price(api, "Chicken")
+    assert price["per_display_unit"] == "14.80"
+    assert price["quality"] == "estimated"
+    assert price["pack_source"] == "override"
+
+
+@requires_db
+async def test_an_answer_that_is_not_an_amount_is_refused(api, db):
+    """`units.py` refuses to guess and so does this: "a big box" is the same
+    non-answer the invoice gave, and storing it would make the next cost a
+    guess wearing a person's name."""
+    gulf = await _supplier(db, "Gulf Foods Trading L.L.C.")
+    carton = await _item(db, gulf, "Chicken Carton", "1 ctn")
+    for answer in ("a big box", "1 carton", "0 kg", ""):
+        refused = await api.post(
+            f"/api/supplier-items/{carton}/pack-size", json={"pack_size": answer}, headers=AUTH
+        )
+        assert refused.status_code == 422, answer
+        assert "10 kg" in refused.json()["detail"]
+    assert (
+        await db.pool.fetchval(
+            "select pack_size_override from supplier_items where id = $1", carton
+        )
+        is None
+    )
+
+
+@requires_db
+async def test_an_answer_that_contradicts_the_material_is_refused(api, db):
+    """The same guard the approval gate has, in the other place a dimension can
+    be wrong. A millilitre conversion feeding a material measured by weight is
+    wrong in a way nothing downstream could ever see."""
+    gulf = await _supplier(db, "Gulf Foods Trading L.L.C.")
+    carton = await _item(db, gulf, "Chicken Carton", "1 ctn")
+    await api.post(
+        f"/api/supplier-items/{carton}/ingredient",
+        json={"name": "Chicken", "base_unit": "g"},
+        headers=AUTH,
+    )
+    refused = await api.post(
+        f"/api/supplier-items/{carton}/pack-size", json={"pack_size": "5 litres"}, headers=AUTH
+    )
+    assert refused.status_code == 422
+    # Plain English on the screen, not unit codes.
+    assert "measured by volume" in refused.json()["detail"]
+    assert "measured by weight" in refused.json()["detail"]
+
+
+@requires_db
+async def test_the_audit_trail_is_the_conversion_s_version_history(api, db):
+    """No `container_conversions` table: audit_events already records who said
+    what and when, inside the transaction that did it (C8). A second home for
+    the same fact is the duplication migration 0010 was written to delete."""
+    gulf = await _supplier(db, "Gulf Foods Trading L.L.C.")
+    carton = await _item(db, gulf, "Chicken Carton", "1 ctn")
+    await api.post(
+        f"/api/supplier-items/{carton}/pack-size", json={"pack_size": "10 kg"}, headers=AUTH
+    )
+    await api.post(
+        f"/api/supplier-items/{carton}/pack-size", json={"pack_size": "12 kg"}, headers=AUTH
+    )
+
+    events = await _audit(db, carton)
+    assert [event["action"] for event in events] == [
+        "supplier_item.pack_size_set",
+        "supplier_item.pack_size_set",
+    ]
+    assert all(event["actor"] == "console" for event in events)
+    assert events[0]["detail"] == {"pack_size": "10 kg", "previous_pack_size": None}
+    assert events[1]["detail"] == {"pack_size": "12 kg", "previous_pack_size": "10 kg"}
+
+
+@requires_db
+async def test_a_corrected_conversion_does_not_rewrite_a_cost_someone_has_already_read(api, db):
+    """The half of the rule that only bites when a person changes their mind.
+
+    Correcting "10 kg" to "12 kg" leaves the line already costed at AED 14.80 a
+    kilo exactly where it was, and the next delivery costs at 12.33. That is
+    the plan's rule as written, and its cost is stated rather than hidden: a
+    conversion entered wrongly is not retro-fixed, so the earlier figure stands
+    with the audit trail showing both answers. The reason it is worth it is the
+    other direction - a figure on a screen that moves under someone because a
+    colleague answered a question about a different box, with nothing anywhere
+    showing that it did."""
+    gulf = await _supplier(db, "Gulf Foods Trading L.L.C.")
+    carton = await _item(db, gulf, "Chicken Carton", "1 ctn")
+    await _delivery(
+        db,
+        carton,
+        supplier_id=gulf,
+        pack_size="1 ctn",
+        unit_price=Decimal("148.00"),
+        invoice_date="2026-07-02",
+    )
+    await api.post(
+        f"/api/supplier-items/{carton}/pack-size", json={"pack_size": "10 kg"}, headers=AUTH
+    )
+    first = await _line_costs(db, carton)
+    assert [row["cost_per_base_unit"] for row in first] == [Decimal("0.01480000")]
+
+    corrected = await api.post(
+        f"/api/supplier-items/{carton}/pack-size", json={"pack_size": "12 kg"}, headers=AUTH
+    )
+    assert corrected.json()["lines_costed"] == 0
+    assert await _line_costs(db, carton) == first
+
+    # The new answer governs everything after it.
+    await _delivery(
+        db,
+        carton,
+        supplier_id=gulf,
+        pack_size="1 ctn",
+        unit_price=Decimal("148.00"),
+        invoice_date="2026-07-20",
+    )
+    costs = sorted(row["cost_per_base_unit"] for row in await _line_costs(db, carton))
+    assert costs == [Decimal("0.01233333"), Decimal("0.01480000")]
+
+
+@requires_db
+async def test_answering_one_question_does_not_move_the_answer_to_another(api, db):
+    """Two unlabelled products on one invoice, answered on different days.
+
+    Answering the second pulls that invoice back into the costing pass, and the
+    first product's line has to come through it untouched - even though its own
+    conversion was corrected in between. This is the case the line-level guard
+    exists for: the invoice-level filter cannot see it, because the invoice
+    genuinely does still have work to do."""
+    gulf = await _supplier(db, "Gulf Foods Trading L.L.C.")
+    chicken = await _item(db, gulf, "Chicken Carton", "1 ctn")
+    lamb = await _item(db, gulf, "Lamb Carton", "1 ctn")
+    document_id = await db.pool.fetchval(
+        "insert into documents (tenant_id, source, status) values ($1, 'manual', 'extracted') "
+        "returning id",
+        DEMO_TENANT_ID,
+    )
+    invoice_id = await db.pool.fetchval(
+        """
+        insert into invoices (tenant_id, document_id, supplier_id, status, total, invoice_date)
+        values ($1, $2, $3, 'awaiting_confirm', 448.00, date '2026-07-06')
+        returning id::text
+        """,
+        DEMO_TENANT_ID,
+        document_id,
+        gulf,
+    )
+    for position, (item_id, name, price) in enumerate(
+        ((chicken, "Chicken Carton", "148.00"), (lamb, "Lamb Carton", "300.00"))
+    ):
+        await db.pool.execute(
+            """
+            insert into invoice_lines (tenant_id, invoice_id, position, raw_name,
+                                       supplier_item_id, qty, pack_size, unit_price, line_total)
+            values ($1, $2, $3, $4, $5, 1, '1 ctn', $6, $6)
+            """,
+            DEMO_TENANT_ID,
+            invoice_id,
+            position,
+            name,
+            item_id,
+            Decimal(price),
+        )
+    await db.confirm_invoice(invoice_id, actor="console")
+
+    await api.post(
+        f"/api/supplier-items/{chicken}/pack-size", json={"pack_size": "10 kg"}, headers=AUTH
+    )
+    chicken_cost = await _line_costs(db, chicken)
+    assert [row["cost_per_base_unit"] for row in chicken_cost] == [Decimal("0.01480000")]
+
+    # The consultant thinks better of it, then answers the other carton. The
+    # second answer must not drag the first line onto the corrected figure.
+    await api.post(
+        f"/api/supplier-items/{chicken}/pack-size", json={"pack_size": "12 kg"}, headers=AUTH
+    )
+    await api.post(
+        f"/api/supplier-items/{lamb}/pack-size", json={"pack_size": "15 kg"}, headers=AUTH
+    )
+
+    assert await _line_costs(db, chicken) == chicken_cost
+    assert [row["cost_per_base_unit"] for row in await _line_costs(db, lamb)] == [
+        Decimal("0.02000000")
+    ]
+
+
+@requires_db
+async def test_a_later_delivery_of_an_answered_product_costs_without_being_asked_again(api, db):
+    """A human says once. The conversion sits on the product, so the invoice
+    that arrives next week costs inside its own confirm transaction with nobody
+    asked anything."""
+    gulf = await _supplier(db, "Gulf Foods Trading L.L.C.")
+    carton = await _item(db, gulf, "Chicken Carton", "1 ctn")
+    await api.post(
+        f"/api/supplier-items/{carton}/pack-size", json={"pack_size": "10 kg"}, headers=AUTH
+    )
+    await _delivery(
+        db,
+        carton,
+        supplier_id=gulf,
+        pack_size="1 ctn",
+        unit_price=Decimal("155.00"),
+        invoice_date="2026-07-20",
+    )
+    assert await _blocked(api) == []
+    costs = await _line_costs(db, carton)
+    assert [row["cost_per_base_unit"] for row in costs] == [Decimal("0.01550000")]
+
+
+@requires_db
+async def test_a_foreign_currency_invoice_says_so_rather_than_going_quiet(api, db):
+    """WP-28's hold, given a sentence. The prices were held back on purpose,
+    and a line that simply had no cost and no reason would look like a bug."""
+    gulf = await _supplier(db, "Gulf Foods Trading L.L.C.")
+    sack = await _item(db, gulf, "Milk Powder 2.5kg", "2.5kg")
+    document_id = await db.pool.fetchval(
+        "insert into documents (tenant_id, source, status) values ($1, 'manual', 'extracted') "
+        "returning id",
+        DEMO_TENANT_ID,
+    )
+    invoice_id = await db.pool.fetchval(
+        """
+        insert into invoices (tenant_id, document_id, supplier_id, status, total, currency)
+        values ($1, $2, $3, 'awaiting_confirm', 50.50, 'USD')
+        returning id::text
+        """,
+        DEMO_TENANT_ID,
+        document_id,
+        gulf,
+    )
+    await db.pool.execute(
+        """
+        insert into invoice_lines (tenant_id, invoice_id, position, raw_name, supplier_item_id,
+                                   qty, pack_size, unit_price, line_total)
+        values ($1, $2, 0, 'Milk Powder', $3, 1, '2.5kg', 50.50, 50.50)
+        """,
+        DEMO_TENANT_ID,
+        invoice_id,
+        sack,
+    )
+    await db.confirm_invoice(invoice_id, actor="console")
+
+    rows = await _blocked(api)
+    assert [row["blocked"] for row in rows] == ["foreign_currency"]
+    assert rows[0]["can_override"] is False
+
+
+@requires_db
+async def test_saying_how_much_is_in_one_also_says_what_it_is_measured_in(api, db):
+    """A bare carton normally has to be told what it measures, because
+    `units.py` refuses to guess. Once a person has said "one holds 10 kg" they
+    have already answered that, and asking again on the very next screen is the
+    product not listening."""
+    gulf = await _supplier(db, "Gulf Foods Trading L.L.C.")
+    carton = await _item(db, gulf, "Chicken Carton", "1 ctn")
+    refused = await api.post(
+        f"/api/supplier-items/{carton}/ingredient", json={"name": "Chicken"}, headers=AUTH
+    )
+    assert refused.status_code == 422
+
+    await api.post(
+        f"/api/supplier-items/{carton}/pack-size", json={"pack_size": "10 kg"}, headers=AUTH
+    )
+    accepted = await api.post(
+        f"/api/supplier-items/{carton}/ingredient", json={"name": "Chicken"}, headers=AUTH
+    )
+    assert accepted.status_code == 200
+    assert accepted.json()["ingredient"]["base_unit"] == "g"
+
+
+@requires_db
+async def test_the_blocked_cost_endpoints_refuse_an_unauthorized_caller(api, db):
+    supplier_id = await _supplier(db, "Gulf Foods Trading L.L.C.")
+    item_id = await _item(db, supplier_id, "Chicken Carton", "1 ctn")
+    assert (await api.get("/api/blocked-costs")).status_code == 401
+    assert (
+        await api.post(f"/api/supplier-items/{item_id}/pack-size", json={"pack_size": "10kg"})
+    ).status_code == 401

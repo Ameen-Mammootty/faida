@@ -3,15 +3,18 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import {
+  listBlockedCosts,
   listIngredients,
   listUnmappedSupplierItems,
   mapSupplierItem,
   rejectIngredient,
+  setPackSizeOverride,
   unmapSupplierItem,
 } from "@/lib/api";
 import { describeFields, formatDate, groupedMoney } from "@/lib/format";
 import type {
   BaseUnit,
+  BlockedCost,
   Ingredient,
   IngredientMappingInput,
   MaterialPrice,
@@ -101,30 +104,37 @@ type Feedback = { kind: "error" | "done"; text: string } | null;
 export default function RawMaterials() {
   const [queue, setQueue] = useState<UnmappedSupplierItem[] | null>(null);
   const [materials, setMaterials] = useState<Ingredient[] | null>(null);
+  const [blocked, setBlocked] = useState<BlockedCost[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<Feedback>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [naming, setNaming] = useState<string | null>(null);
   const [draftName, setDraftName] = useState("");
   const [draftUnit, setDraftUnit] = useState<BaseUnit>("g");
+  const [answering, setAnswering] = useState<string | null>(null);
+  const [draftPack, setDraftPack] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
   const nameInput = useRef<HTMLInputElement>(null);
+  const packInput = useRef<HTMLInputElement>(null);
 
-  // Both lists are fetched together and re-fetched as one, so the queue and
-  // the materials below it can never disagree on screen about where a pack is.
-  // The state lands in an async callback rather than the effect body, which is
-  // the shipped InvoiceList pattern and what React 19 wants.
+  // All three lists are fetched together and re-fetched as one, so the queue,
+  // the blocked costs and the materials below them can never disagree on
+  // screen about where a pack is or what it costs. The state lands in an async
+  // callback rather than the effect body, which is the shipped InvoiceList
+  // pattern and what React 19 wants.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const [items, ingredients] = await Promise.all([
+        const [items, ingredients, blockedCosts] = await Promise.all([
           listUnmappedSupplierItems(),
           listIngredients(),
+          listBlockedCosts(),
         ]);
         if (cancelled) return;
         setQueue(items);
         setMaterials(ingredients);
+        setBlocked(blockedCosts);
         setLoadError(null);
       } catch (error) {
         if (cancelled) return;
@@ -140,6 +150,10 @@ export default function RawMaterials() {
     if (naming !== null) nameInput.current?.focus();
   }, [naming]);
 
+  useEffect(() => {
+    if (answering !== null) packInput.current?.focus();
+  }, [answering]);
+
   /** Every decision goes through here: one request, then a reload of both
    * lists. One door for approve, reject, remap and unmap alike. */
   async function decide(id: string, action: () => Promise<unknown>, done: string) {
@@ -150,6 +164,8 @@ export default function RawMaterials() {
       setFeedback({ kind: "done", text: done });
       setNaming(null);
       setDraftName("");
+      setAnswering(null);
+      setDraftPack("");
       setReloadKey((key) => key + 1);
     } catch (error) {
       setFeedback({
@@ -211,7 +227,7 @@ export default function RawMaterials() {
     );
   }
 
-  if (queue === null || materials === null) {
+  if (queue === null || materials === null || blocked === null) {
     return (
       <div aria-busy="true" className="rounded-md border border-ink/10 bg-paper p-6">
         <p role="status" className="text-sm text-stone">
@@ -416,6 +432,126 @@ export default function RawMaterials() {
         ) : null}
       </section>
 
+      {/* M5 WP-55. A cost that cannot be computed is a line on a screen with
+          its own reason, never a guessed number - and never a silence either,
+          because a material with no price and no explanation looks like a bug
+          in the product rather than a gap in the paperwork. Derived from the
+          invoice lines; there is no issues table behind this. */}
+      {blocked.length > 0 ? (
+        <section className="space-y-3">
+          <div className="flex items-baseline justify-between gap-4">
+            <h2 className="font-display text-lg font-semibold text-ink">Can&apos;t be costed yet</h2>
+            <p className="text-sm text-stone">
+              {blocked.length} {blocked.length === 1 ? "product" : "products"}, most money first
+            </p>
+          </div>
+          <ul className="space-y-2">
+            {blocked.map((issue) => (
+              <li key={issue.id} className="rounded-md border border-ink/10 bg-paper p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-medium text-ink">{issue.product_name}</p>
+                    <p className="mt-0.5 text-sm text-stone">
+                      {[issue.supplier_name, issue.pack_size, issue.ingredient_name]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </p>
+                    <p className="mt-1 text-sm text-plum">{issue.reason}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-display text-lg font-semibold text-ink">
+                      {roundedAed(issue.spend)}
+                    </p>
+                    <p className="text-xs text-stone">
+                      on {issue.line_count} confirmed {issue.line_count === 1 ? "line" : "lines"}
+                    </p>
+                    <Link
+                      href={`/invoices/${issue.invoice_id}`}
+                      className="text-xs font-medium text-palm underline-offset-2 hover:underline"
+                    >
+                      See the invoice
+                    </Link>
+                  </div>
+                </div>
+
+                {/* Only a pack problem has an answer a person can give. A price
+                    or a quantity the invoice never printed is not something a
+                    conversion supplies, and offering a box to type in there
+                    would be a promise this screen cannot keep. */}
+                {issue.can_override && issue.supplier_item_id ? (
+                  answering === issue.id ? (
+                    <form
+                      className="mt-3 flex flex-wrap items-end gap-2 border-t border-ink/10 pt-3"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        const answer = draftPack.trim();
+                        const itemId = issue.supplier_item_id;
+                        if (!answer || !itemId) return;
+                        void decide(
+                          issue.id,
+                          () => setPackSizeOverride(itemId, answer),
+                          `One ${issue.product_name} holds ${answer}.`,
+                        );
+                      }}
+                    >
+                      <label className="flex flex-col gap-1 text-sm font-medium text-stone">
+                        How much is in one?
+                        <input
+                          ref={packInput}
+                          value={draftPack}
+                          onChange={(event) => setDraftPack(event.target.value)}
+                          placeholder="10 kg"
+                          className="w-40 rounded-sm border border-ink/20 bg-paper px-2 py-1.5 text-sm text-ink focus:border-palm focus:outline-none"
+                        />
+                      </label>
+                      <button
+                        type="submit"
+                        disabled={busyId === issue.id || draftPack.trim() === ""}
+                        className="rounded-sm bg-palm px-3 py-1.5 text-sm font-semibold text-white hover:bg-palm-deep disabled:opacity-50"
+                      >
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAnswering(null);
+                          setDraftPack("");
+                        }}
+                        className="rounded-sm px-2 py-1.5 text-sm font-medium text-stone hover:text-ink"
+                      >
+                        Cancel
+                      </button>
+                      <p className="w-full text-xs text-stone">
+                        Say it the way the invoice would: 10 kg, 750 ml, 24 x 400 ml. Every line of
+                        this product that has no cost is worked out from it; ones already costed
+                        stay as they are.
+                      </p>
+                    </form>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={busyId === issue.id}
+                      onClick={() => {
+                        setAnswering(issue.id);
+                        setDraftPack(issue.pack_size_override ?? "");
+                      }}
+                      className="mt-3 rounded-sm border border-palm/30 px-3 py-1.5 text-sm font-medium text-palm hover:border-palm disabled:opacity-50"
+                    >
+                      Say how much is in one
+                    </button>
+                  )
+                ) : null}
+              </li>
+            ))}
+          </ul>
+          <p className="max-w-2xl text-xs text-stone">
+            These are confirmed purchases the arithmetic could not turn into a cost. Nothing here is
+            guessed: a material has no price until every figure behind it comes from the invoice or
+            from someone who said so.
+          </p>
+        </section>
+      ) : null}
+
       <section className="space-y-3">
         <h2 className="font-display text-lg font-semibold text-ink">
           Materials{materials.length > 0 ? ` (${materials.length})` : ""}
@@ -459,7 +595,14 @@ export default function RawMaterials() {
                       </Link>
                     </div>
                   ) : (
-                    <p className="text-sm text-stone">No confirmed purchase yet</p>
+                    // "Nothing bought yet" and "nothing bought could be
+                    // costed" are different facts, and only one of them is
+                    // somebody's to fix.
+                    <p className="text-sm text-stone">
+                      {blocked.some((issue) => issue.ingredient_id === material.id)
+                        ? "No price yet - see above"
+                        : "No confirmed purchase yet"}
+                    </p>
                   )}
                 </div>
                 <ul className="mt-3 divide-y divide-ink/5 border-t border-ink/5">
@@ -476,6 +619,11 @@ export default function RawMaterials() {
                           <p className="text-xs text-stone">
                             {pack.supplier_name}
                             {pack.pack_size ? ` · ${pack.pack_size}` : ""}
+                            {/* A conversion someone entered stays visible, or
+                                it would vanish the moment it took effect. */}
+                            {pack.pack_size_override
+                              ? ` · one holds ${pack.pack_size_override}, you said`
+                              : ""}
                           </p>
                         </div>
                         <div className="flex items-center gap-3">

@@ -751,6 +751,10 @@ def _pack_summary(row: asyncpg.Record, cost: asyncpg.Record | None = None) -> di
         "unit": row["unit"],
         "pack_size": row["pack_size"],
         "supplier_name": row["supplier_name"],
+        # What a person said is in one of these, when the invoice never did
+        # (WP-55). Shown on the pack so the sentence does not disappear the
+        # moment it takes effect.
+        "pack_size_override": row["pack_size_override"],
         "last_price": _dec(row["last_price"]),
         "last_price_at": _iso(row["last_price_at"]),
         # What this particular pack most recently worked out at per kilo, which
@@ -798,11 +802,19 @@ MEASURE_WORDS = {"g": "by weight", "ml": "by volume", "pc": "by the piece"}
 
 
 def _item_base_unit(item: asyncpg.Record) -> str | None:
-    """Which base unit this pack reduces to, read from the pack column and
-    then from the name (a till receipt prints the pack inside the name and has
-    no pack column at all). None when it names no measurable pack - a bare
-    carton has no dimension until a human says what is in it (WP-55)."""
-    return units.base_unit_of(item["pack_size"]) or units.base_unit_of(item["canonical_name"])
+    """Which base unit this pack reduces to, read from the pack column, then
+    from the name (a till receipt prints the pack inside the name and has no
+    pack column at all), then from a conversion a person supplied.
+
+    None when none of the three names a measurable pack - a bare carton has no
+    dimension until a human says what is in it. Once they have said "one holds
+    10 kg" they have also said it is measured by weight, and asking them again
+    on the very next screen would be the product not listening (WP-55)."""
+    return (
+        units.base_unit_of(item["pack_size"])
+        or units.base_unit_of(item["canonical_name"])
+        or units.base_unit_of(item["pack_size_override"])
+    )
 
 
 @router.get("/ingredients")
@@ -972,6 +984,138 @@ async def unmap_supplier_item(item_id: uuid.UUID, request: Request) -> dict:
         ingredient_id=item["ingredient_id"],
     )
     return {"supplier_item_id": str(item_id), "ingredient": None}
+
+
+@router.get("/blocked-costs")
+async def list_blocked_costs(request: Request) -> dict:
+    """The lines this layer could not turn into a cost, each with its own
+    reason and what to do about it (M5 WP-55).
+
+    **Derived from the data, not an `issues` table.** The fact is already on
+    the line - it has no cost - and asking the same function that refused says
+    which of six things went wrong. PRD §24's first-class issue records with
+    severity and status are post-MVP; C5's "derived until real usage demands
+    more" is the standing precedent.
+
+    Grouped by product, because a carton bought twelve times is one question a
+    person answers once, not twelve identical rows that teach them to stop
+    reading the list. Most money first, like the mapping queue.
+    """
+    db: Database = request.app.state.db
+    tenant_id = await _tenant(db)
+    groups: dict[str, dict] = {}
+    for line in await db.list_blocked_costs(tenant_id):
+        blocked = costing.blocked_reason_for(
+            qty=line["qty"],
+            unit_price=line["unit_price"],
+            pack_size=line["pack_size"],
+            raw_name=line["raw_name"],
+            unit=line["unit"],
+            override=line["pack_size_override"],
+            foreign_currency=currency_differs(line["currency"], line["tenant_currency"]),
+        )
+        if blocked is None:
+            # Costable on today's inputs but not costed: only reachable for a
+            # line confirmed before this milestone shipped. Not an issue to put
+            # in front of a person - the next confirm of that product fixes it.
+            continue
+        # A line that never became a catalog row cannot be grouped with
+        # anything, and cannot be answered either; it stands on its own.
+        key = f"{line['supplier_item_id']}:{blocked.value}"
+        if line["supplier_item_id"] is None:
+            key = line["invoice_line_id"]
+        group = groups.get(key)
+        if group is None:
+            groups[key] = group = {
+                "id": key,
+                "supplier_item_id": line["supplier_item_id"],
+                "product_name": line["canonical_name"] or line["raw_name"],
+                "supplier_name": line["supplier_name"],
+                "pack_size": line["pack_size"],
+                "unit": line["unit"],
+                "pack_size_override": line["pack_size_override"],
+                "ingredient_id": line["ingredient_id"],
+                "ingredient_name": line["ingredient_name"],
+                "blocked": blocked.value,
+                "reason": costing.BLOCKED_REASONS[blocked],
+                # Only a pack problem has an answer a person can give. A price
+                # or a quantity the invoice never showed is not something a
+                # conversion supplies, and offering a box to type in would be a
+                # promise this screen cannot keep.
+                "can_override": (
+                    line["supplier_item_id"] is not None and blocked in costing.OVERRIDABLE
+                ),
+                "line_count": 0,
+                "spend": Decimal(0),
+                # The newest example, for the drill-through to the photo.
+                "invoice_id": line["invoice_id"],
+                "invoice_line_id": line["invoice_line_id"],
+                "position": line["position"],
+                "invoice_date": _iso(line["invoice_date"]),
+            }
+        group["line_count"] += 1
+        group["spend"] += line["line_total"] or Decimal(0)
+
+    ordered = sorted(groups.values(), key=lambda row: (-row["spend"], row["product_name"]))
+    return {"blocked": [{**row, "spend": _dec(row["spend"])} for row in ordered]}
+
+
+class PackSizeOverride(BaseModel):
+    """How much is in one of these, said by a person (WP-55). Free text in the
+    same forms an invoice prints - "10 kg", "24 x 400 ml" - read by the one
+    pack dictionary rather than by a second parser."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    pack_size: str
+
+
+@router.post("/supplier-items/{item_id}/pack-size")
+async def set_pack_size_override(
+    item_id: uuid.UUID, body: PackSizeOverride, request: Request
+) -> dict:
+    """Clear a blocked cost by saying what the invoice never did.
+
+    The refusals here are the point of the endpoint: an answer that is not an
+    amount, or that contradicts the material it feeds, would produce a cost
+    that is wrong in a way no later arithmetic could notice - and no photograph
+    shows a cost per gram."""
+    db: Database = request.app.state.db
+    item = await db.get_supplier_item_for_mapping(str(item_id))
+    if item is None:
+        raise HTTPException(status_code=404, detail="supplier item not found")
+
+    printed = _clean(body.pack_size)
+    pack = None if printed is None else units.parse(printed)
+    base_unit = None if printed is None else units.base_unit_of(printed)
+    if pack is None or base_unit is None:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Say how much is in one of these, as an amount with its unit - "
+                "like '10 kg', '750 ml' or '24 x 400 ml'."
+            ),
+        )
+    # The same refusal the approval gate makes, for the same reason: a material
+    # has one dimension, and a millilitre conversion feeding a gram material is
+    # wrong in a way nothing downstream can see.
+    material_unit = item["ingredient_base_unit"]
+    if material_unit is not None and material_unit != base_unit:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"{printed} is measured {MEASURE_WORDS[base_unit]}, but "
+                f"{item['ingredient_name']} is measured {MEASURE_WORDS[material_unit]}"
+            ),
+        )
+
+    costed = await db.set_pack_size_override(
+        str(item_id),
+        tenant_id=item["tenant_id"],
+        pack_size=printed,
+        actor=CONSOLE_ACTOR,
+    )
+    return {"supplier_item_id": str(item_id), "pack_size": printed, "lines_costed": costed}
 
 
 @router.post("/supplier-items/{item_id}/ingredient/reject")

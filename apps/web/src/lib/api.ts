@@ -24,10 +24,12 @@
 
 import { ApiError } from "./errors";
 import {
+  mockListBlockedCosts,
   mockListIngredients,
   mockListUnmappedSupplierItems,
   mockMapSupplierItem,
   mockRejectIngredient,
+  mockSetPackSizeOverride,
   mockUnmapSupplierItem,
 } from "./mock/materials";
 import {
@@ -40,6 +42,7 @@ import {
   mockUploadDocument,
 } from "./mock/store";
 import type {
+  BlockedCost,
   Correction,
   Ingredient,
   IngredientMappingInput,
@@ -48,6 +51,7 @@ import type {
   InvoiceSummary,
   ManualInvoiceInput,
   MappingResult,
+  PackSizeOverrideResult,
   PriceHistory,
   RejectionResult,
   UnmappedSupplierItem,
@@ -211,5 +215,34 @@ export async function rejectIngredient(
   return request<RejectionResult>(
     `/api/supplier-items/${encodeURIComponent(itemId)}/ingredient/reject`,
     jsonInit("POST", { ingredient_id: ingredientId }),
+  );
+}
+
+/**
+ * M5 WP-55: the costs that could not be computed, and the sentence that clears
+ * one.
+ *
+ *   GET  /api/blocked-costs                     grouped by product, most money first
+ *   POST /api/supplier-items/{id}/pack-size     "one of these holds 10 kg"
+ *
+ * The list is derived from the invoice lines - there is no issues table - and
+ * the answer writes one audit row, costs the lines that have no cost yet, and
+ * never rewrites one that has.
+ */
+
+export async function listBlockedCosts(): Promise<BlockedCost[]> {
+  if (MOCK) return mockListBlockedCosts();
+  const body = await request<{ blocked: BlockedCost[] }>("/api/blocked-costs");
+  return body.blocked;
+}
+
+export async function setPackSizeOverride(
+  itemId: string,
+  packSize: string,
+): Promise<PackSizeOverrideResult> {
+  if (MOCK) return mockSetPackSizeOverride(itemId, packSize);
+  return request<PackSizeOverrideResult>(
+    `/api/supplier-items/${encodeURIComponent(itemId)}/pack-size`,
+    jsonInit("POST", { pack_size: packSize }),
   );
 }

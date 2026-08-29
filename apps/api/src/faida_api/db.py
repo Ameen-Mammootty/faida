@@ -96,6 +96,95 @@ async def _write_line_cost(conn: asyncpg.Connection, line_id: str, cost: costing
     )
 
 
+async def _cost_stock_lines(
+    conn: asyncpg.Connection, invoice_id: str, *, only_uncosted: bool = False
+) -> None:
+    """Freeze the cost per base unit of an invoice's stock lines (WP-53).
+
+    One implementation, two doors. The confirm transaction runs it over the
+    whole invoice; a pack-size override (WP-55) runs it again over each invoice
+    holding a line it might now be able to cost. `only_uncosted` is the plan's
+    rule stated rather than implied: **an override costs the lines that have no
+    cost yet and never rewrites a line already costed**, so a figure a person
+    has already seen does not move under them because someone answered a
+    question about a different box.
+
+    Charge lines never get one - a delivery fee is not a thing you cook with -
+    and a foreign-currency invoice gets none at all, because a USD price in an
+    AED cost is not slightly wrong, it is meaningless (WP-28).
+    """
+    invoice = await conn.fetchrow(
+        """
+        select i.tax_treatment, i.tax, i.total, i.discount_total, i.currency, i.provenance,
+               t.currency as tenant_currency
+        from invoices i join tenants t on t.id = i.tenant_id
+        where i.id = $1
+        """,
+        invoice_id,
+    )
+    if invoice is None or currency_differs(invoice["currency"], invoice["tenant_currency"]):
+        return
+
+    # The same two factors price memory uses, from the same functions: C4 has
+    # one implementation, and a cost that disagreed with the price it came from
+    # would be a bug no screen could show.
+    net_factor = _net_price_factor(invoice["tax_treatment"], invoice["tax"], invoice["total"])
+    stock_sum = await conn.fetchval(
+        """
+        select sum(line_total) from invoice_lines
+        where invoice_id = $1 and line_kind = 'stock_item'
+        """,
+        invoice_id,
+    )
+    discount_factor = _discount_factor(invoice["discount_total"], stock_sum)
+
+    lines = await conn.fetch(
+        """
+        select l.id, l.position, l.raw_name, l.qty, l.unit, l.pack_size, l.unit_price,
+               l.cost_per_base_unit, s.pack_size_override
+        from invoice_lines l
+        left join supplier_items s on s.id = l.supplier_item_id
+        where l.invoice_id = $1 and l.line_kind = 'stock_item'
+        order by l.position
+        """,
+        invoice_id,
+    )
+    # `position` is fetched rather than counted. This query drops the charge
+    # lines, so a loop counter is not where a line sits on the invoice - and
+    # provenance is keyed by that position, so an invoice whose first line is a
+    # delivery charge would hand every stock line the row above's history and
+    # the wrong C9 label.
+    #
+    # C9: a cost is never greener than its worst input, and the pro rata
+    # discount makes every stock line an input to every other one, so one
+    # corrected line_total taints its neighbours' costs too. Every stock line's
+    # position goes in, including the ones this pass will skip.
+    asserted = asserted_fields(invoice["provenance"] or {})
+    stock_positions = [line["position"] for line in lines]
+    for line in lines:
+        if only_uncosted and line["cost_per_base_unit"] is not None:
+            continue
+        if line["qty"] is None or line["unit_price"] is None:
+            continue
+        await _write_line_cost(
+            conn,
+            line["id"],
+            costing.cost_line(
+                position=line["position"],
+                qty=line["qty"],
+                unit_price=line["unit_price"],
+                pack_size=line["pack_size"],
+                raw_name=line["raw_name"],
+                unit=line["unit"],
+                net_factor=net_factor,
+                discount_factor=discount_factor,
+                asserted=asserted,
+                stock_positions=stock_positions,
+                override=line["pack_size_override"],
+            ),
+        )
+
+
 async def _insert_audit_event(
     conn: asyncpg.Connection,
     *,
@@ -544,7 +633,7 @@ class Database:
         return await self.pool.fetch(
             """
             select s.id::text as id, s.ingredient_id::text as ingredient_id,
-                   s.canonical_name, s.unit, s.pack_size,
+                   s.canonical_name, s.unit, s.pack_size, s.pack_size_override,
                    s.last_price, s.last_price_at, sup.name as supplier_name
             from supplier_items s
             join suppliers sup on sup.id = s.supplier_id
@@ -630,6 +719,7 @@ class Database:
         return await self.pool.fetch(
             """
             select s.id::text as id, s.canonical_name, s.unit, s.pack_size,
+                   s.pack_size_override,
                    s.supplier_id::text as supplier_id, sup.name as supplier_name,
                    coalesce(sum(l.line_total) filter (where inv.id is not null), 0) as spend,
                    count(l.id) filter (where inv.id is not null) as line_count
@@ -649,7 +739,8 @@ class Database:
         return await self.pool.fetchrow(
             """
             select s.id::text as id, s.tenant_id::text as tenant_id, s.canonical_name,
-                   s.unit, s.pack_size, s.ingredient_id::text as ingredient_id,
+                   s.unit, s.pack_size, s.pack_size_override,
+                   s.ingredient_id::text as ingredient_id,
                    i.name as ingredient_name, i.base_unit as ingredient_base_unit
             from supplier_items s
             left join ingredients i on i.id = s.ingredient_id
@@ -795,6 +886,115 @@ class Database:
                 detail={"previous_ingredient_id": ingredient_id},
             )
 
+    async def set_pack_size_override(
+        self, supplier_item_id: str, *, tenant_id: str, pack_size: str, actor: str
+    ) -> int:
+        """A person says how much is in one of these, once (WP-55).
+
+        `extraction/units.py` refuses to guess what a carton holds, so the
+        sentence has to come from a human - and this is the whole of clearing a
+        blocked cost: the override, its audit row, and the lines it can now
+        cost, all in **one transaction**. An issue that is cleared but whose
+        costs did not move would be worse than one still open, because the
+        screen would say it was handled.
+
+        **It costs the lines that have no cost yet and never rewrites one that
+        has.** Both halves matter. Without the first, answering the question
+        changes nothing until the next delivery arrives. Without the second, a
+        figure someone already read moves under them because a colleague
+        answered a question about a different box, and no screen anywhere would
+        show that it had.
+
+        Returns how many lines it costed, which is what the reply tells the
+        person who answered.
+
+        `audit_events` is the version history: one row per change, naming who,
+        when, and what it replaced. There is no `container_conversions` table
+        because that would keep the same fact in two places (the duplication
+        migration 0010 was written to delete)."""
+        blocked = """
+            select count(*) from invoice_lines l join invoices i on i.id = l.invoice_id
+            where l.supplier_item_id = $1 and i.status = 'confirmed'
+              and l.line_kind = 'stock_item' and l.cost_per_base_unit is null
+            """
+        async with self.pool.acquire() as conn, conn.transaction():
+            previous = await conn.fetchval(
+                "select pack_size_override from supplier_items where id = $1", supplier_item_id
+            )
+            await conn.execute(
+                "update supplier_items set pack_size_override = $2 where id = $1",
+                supplier_item_id,
+                pack_size,
+            )
+            before = await conn.fetchval(blocked, supplier_item_id)
+            # Only invoices with something left to cost, and inside those only
+            # the lines with no cost. Both halves are the same rule at two
+            # scales, and both are needed: the filter here keeps an invoice
+            # whose lines are all costed out of the pass entirely, and
+            # `only_uncosted` protects a line already costed **from an earlier
+            # answer** when its invoice is pulled in by some *other* blocked
+            # line - which is what happens when two unlabelled products share
+            # one invoice and are answered on different days.
+            invoices = await conn.fetch(
+                """
+                select distinct l.invoice_id::text as id
+                from invoice_lines l join invoices i on i.id = l.invoice_id
+                where l.supplier_item_id = $1 and i.status = 'confirmed'
+                  and l.line_kind = 'stock_item' and l.cost_per_base_unit is null
+                """,
+                supplier_item_id,
+            )
+            for row in invoices:
+                await _cost_stock_lines(conn, row["id"], only_uncosted=True)
+            costed = before - await conn.fetchval(blocked, supplier_item_id)
+            await _insert_audit_event(
+                conn,
+                tenant_id=tenant_id,
+                actor=actor,
+                action="supplier_item.pack_size_set",
+                subject_type="supplier_item",
+                subject_id=supplier_item_id,
+                detail={"pack_size": pack_size, "previous_pack_size": previous},
+            )
+        return costed
+
+    async def list_blocked_costs(self, tenant_id: str) -> list[asyncpg.Record]:
+        """Every confirmed stock line this layer could not turn into a cost.
+
+        **Derived, not a table.** PRD §24's first-class issue records - severity,
+        impact, status, an inbox - are post-MVP, and C5's "derived until real
+        usage demands more" is the standing precedent. The fact is already on
+        the line: it has no cost, and re-asking the same function that refused
+        says which of six things went wrong.
+
+        Most money first, like the mapping queue, because that is the order in
+        which a missing cost hurts. The supplier comes off the *invoice* rather
+        than the catalog row, so a line that never became a catalog item at all
+        still says who sold it."""
+        return await self.pool.fetch(
+            """
+            select l.id::text as invoice_line_id, l.position, l.raw_name, l.qty, l.unit,
+                   l.pack_size, l.unit_price, l.line_total,
+                   i.id::text as invoice_id, i.invoice_date, i.currency,
+                   coalesce(sup.name, i.supplier_name) as supplier_name,
+                   t.currency as tenant_currency,
+                   s.id::text as supplier_item_id, s.canonical_name, s.pack_size_override,
+                   ing.id::text as ingredient_id, ing.name as ingredient_name
+            from invoice_lines l
+            join invoices i on i.id = l.invoice_id
+            join tenants t on t.id = i.tenant_id
+            left join suppliers sup on sup.id = i.supplier_id
+            left join supplier_items s on s.id = l.supplier_item_id
+            left join ingredients ing on ing.id = s.ingredient_id
+            where l.tenant_id = $1
+              and i.status = 'confirmed'
+              and l.line_kind = 'stock_item'
+              and l.cost_per_base_unit is null
+            order by l.line_total desc nulls last, l.id
+            """,
+            tenant_id,
+        )
+
     async def reject_ingredient_for_item(
         self, supplier_item_id: str, *, tenant_id: str, ingredient_id: str, actor: str
     ) -> None:
@@ -905,36 +1105,9 @@ class Database:
                 """,
                 invoice_id,
             )
-            # `position` is fetched rather than counted. This query drops the
-            # charge lines, so the loop counter is not where the line sits on
-            # the invoice - and provenance is keyed by that position, so an
-            # invoice whose first line is a delivery charge would hand every
-            # stock line the line above's history and the wrong C9 label.
-            #
-            # C9: a cost is never greener than its worst input, and the pro
-            # rata discount makes every stock line an input to every other one,
-            # so one corrected line_total taints its neighbours' costs too.
-            asserted = asserted_fields(invoice["provenance"] or {})
-            stock_positions = [line["position"] for line in lines]
             for line in lines:
                 if line["qty"] is None or line["unit_price"] is None:
                     continue
-                await _write_line_cost(
-                    conn,
-                    line["id"],
-                    costing.cost_line(
-                        position=line["position"],
-                        qty=line["qty"],
-                        unit_price=line["unit_price"],
-                        pack_size=line["pack_size"],
-                        raw_name=line["raw_name"],
-                        unit=line["unit"],
-                        net_factor=net_factor,
-                        discount_factor=discount_factor,
-                        asserted=asserted,
-                        stock_positions=stock_positions,
-                    ),
-                )
                 item_id = line["supplier_item_id"]
                 if item_id is None:
                     canonical_name = clean_name(line["raw_name"])
@@ -992,6 +1165,11 @@ class Database:
                     item_id,
                     net_price,
                 )
+
+            # Last, because a line that had not snapped only acquired its
+            # catalog row in the loop above - and that row is where a person's
+            # conversion for an unlabelled container lives (WP-55).
+            await _cost_stock_lines(conn, invoice_id)
 
     # -- Confirm flow (WP-21, C5) --------------------------------------------
 

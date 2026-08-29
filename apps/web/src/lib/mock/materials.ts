@@ -15,6 +15,9 @@
 import { ApiError } from "../errors";
 import type {
   BaseUnit,
+  BlockedCost,
+  CostBlocker,
+  CostPackSource,
   CostQuality,
   Ingredient,
   IngredientMappingInput,
@@ -22,9 +25,23 @@ import type {
   MappedPack,
   MappingResult,
   MaterialPrice,
+  PackSizeOverrideResult,
   RejectionResult,
   UnmappedSupplierItem,
 } from "../types";
+
+/** Plain English for a blocker, mirroring faida_api/costing.BLOCKED_REASONS. */
+const BLOCKED_REASONS: Record<CostBlocker, string> = {
+  foreign_currency: "This invoice is billed in another currency, so its prices are held back.",
+  missing_unit_price: "The invoice does not show a price for this line.",
+  missing_quantity: "The invoice does not show how many were bought, so nothing checks the price.",
+  zero_pack: "The pack size names a unit but no amount to divide by.",
+  bare_container: "Nothing on the invoice says how much one of these holds.",
+  unparseable_pack: "Nothing on this line reads as a pack size.",
+};
+
+/** The blockers a person's conversion can clear (costing.OVERRIDABLE). */
+const OVERRIDABLE = new Set<CostBlocker>(["zero_pack", "bare_container", "unparseable_pack"]);
 
 /**
  * What one of these packs last cost per kilo (M5 WP-53/54). Written out rather
@@ -48,6 +65,13 @@ interface PackCost {
   purchased_on: string;
   invoice_id: string;
   invoice_line_id: string;
+  /** Omitted means the pack column said so, and the cost is as good as this
+   * layer gets. A conversion a person entered says so instead, and drags the
+   * cost to *estimated* - C9 does that automatically on the server, and
+   * getting it wrong here would put a claim on the demo screen that the real
+   * product would never make. */
+  pack_source?: CostPackSource;
+  quality?: CostQuality;
 }
 
 interface MockPack {
@@ -63,6 +87,9 @@ interface MockPack {
   ingredient_id: string | null;
   /** Null when nothing on the invoice says how much is in one (WP-55). */
   cost: PackCost | null;
+  /** Why there is no cost, when there is none. */
+  blocked?: CostBlocker;
+  pack_size_override?: string | null;
 }
 
 interface MockIngredient {
@@ -191,6 +218,8 @@ const PACKS: MockPack[] = [
     line_count: 5,
     ingredient_id: null,
     cost: null,
+    blocked: "bare_container",
+    pack_size_override: null,
   },
 ];
 
@@ -255,15 +284,63 @@ function proposalsFor(pack: MockPack): IngredientProposal[] {
  * second caller. */
 const SINGLE_PACK_RE = new RegExp(PACK_RE.source, "i");
 
-function baseUnitOf(pack: MockPack): BaseUnit | null {
-  const text = `${pack.pack_size ?? ""} ${pack.canonical_name}`;
+function measureOf(text: string): { base: BaseUnit; quantity: number } | null {
   const match = SINGLE_PACK_RE.exec(text);
   if (!match) return null;
   const unit = match[3].toLowerCase();
-  if (/^(kgs?|kilos?|g|gm|gms|grams?|mg|lbs?|oz)$/.test(unit)) return "g";
-  if (/^(l|ltrs?|litres?|liters?|ml|cl|gal)$/.test(unit)) return "ml";
-  if (/^(pcs?|pieces?|nos?|dz|dozens?)$/.test(unit)) return "pc";
+  const amount = Number(match[2].replace(",", ".")) * Number(match[1]?.replace(",", ".") ?? 1);
+  if (!(amount > 0)) return null;
+  const scale: Record<string, number> = { kg: 1000, l: 1000, ltr: 1000, mg: 0.001, cl: 10, dz: 12 };
+  if (/^(kgs?|kilos?|g|gm|gms|grams?|mg|lbs?|oz)$/.test(unit)) {
+    return { base: "g", quantity: amount * (/^(kgs?|kilos?)$/.test(unit) ? 1000 : scale[unit] ?? 1) };
+  }
+  if (/^(l|ltrs?|litres?|liters?|ml|cl|gal)$/.test(unit)) {
+    return { base: "ml", quantity: amount * (/^(ml)$/.test(unit) ? 1 : /^(cl)$/.test(unit) ? 10 : 1000) };
+  }
+  if (/^(pcs?|pieces?|nos?|dz|dozens?)$/.test(unit)) {
+    return { base: "pc", quantity: amount * (/^(dz|dozens?)$/.test(unit) ? 12 : 1) };
+  }
   return null;
+}
+
+function baseUnitOf(pack: MockPack): BaseUnit | null {
+  return (
+    measureOf(`${pack.pack_size ?? ""} ${pack.canonical_name}`)?.base ??
+    // Once a person has said "one holds 10 kg" they have also said it is
+    // measured by weight; asking again on the next screen is not listening.
+    measureOf(pack.pack_size_override ?? "")?.base ??
+    null
+  );
+}
+
+/**
+ * A cost from a price and a pack, for the offline demo only.
+ *
+ * Ordinary JavaScript arithmetic, deliberately: the screen renders two
+ * decimals, so nothing here can be seen to be off, and the real answer is
+ * `Decimal` throughout `faida_api/costing.py` with C4's VAT and discount
+ * factors that this file has no business reproducing. This exists so a
+ * consultant can walk the WP-55 flow end to end without a backend - it is
+ * never the reference for what a cost is.
+ */
+function mockCost(price: string, packText: string): PackCost | null {
+  const measure = measureOf(packText);
+  if (!measure) return null;
+  const perBase = Number(price) / measure.quantity;
+  const factor = measure.base === "pc" ? 1 : 1000;
+  return {
+    per_base_unit: perBase.toFixed(8),
+    base_unit: measure.base,
+    per_display_unit: (perBase * factor).toFixed(2),
+    display_unit: measure.base === "pc" ? "each" : measure.base === "ml" ? "litre" : "kg",
+    pack: packText,
+    purchased_on: dateDaysAgo(3),
+    invoice_id: "inv-1001",
+    invoice_line_id: "line-1001-answered",
+    // No photograph shows this amount: a person did (C9).
+    pack_source: "override",
+    quality: "estimated",
+  };
 }
 
 // -- the endpoints ----------------------------------------------------------
@@ -273,9 +350,9 @@ function toPrice(pack: MockPack): MaterialPrice | null {
   if (!pack.cost) return null;
   return {
     ...pack.cost,
-    quality: RELIABLE,
+    quality: pack.cost.quality ?? RELIABLE,
     asserted: [],
-    pack_source: "pack_size",
+    pack_source: pack.cost.pack_source ?? "pack_size",
     supplier_name: pack.supplier_name,
     supplier_item_id: pack.id,
     product_name: pack.canonical_name,
@@ -290,6 +367,7 @@ function toMappedPack(pack: MockPack): MappedPack {
     unit: pack.unit,
     pack_size: pack.pack_size,
     supplier_name: pack.supplier_name,
+    pack_size_override: pack.pack_size_override ?? null,
     last_price: pack.last_price,
     last_price_at: pack.last_price_at,
     cost: toPrice(pack),
@@ -382,6 +460,64 @@ export async function mockUnmapSupplierItem(itemId: string): Promise<MappingResu
   if (pack.ingredient_id === null) throw new ApiError(409, "supplier item is not mapped");
   pack.ingredient_id = null;
   return { supplier_item_id: itemId, ingredient: null };
+}
+
+/** WP-55: the confirmed lines that could not be costed, grouped by product. */
+export async function mockListBlockedCosts(): Promise<BlockedCost[]> {
+  return PACKS.filter((pack) => pack.cost === null && pack.blocked !== undefined)
+    .map((pack) => ({
+      id: pack.id,
+      supplier_item_id: pack.id,
+      product_name: pack.canonical_name,
+      supplier_name: pack.supplier_name,
+      pack_size: pack.pack_size,
+      unit: pack.unit,
+      pack_size_override: pack.pack_size_override ?? null,
+      ingredient_id: pack.ingredient_id,
+      ingredient_name:
+        INGREDIENTS.find((row) => row.id === pack.ingredient_id)?.name ?? null,
+      blocked: pack.blocked as CostBlocker,
+      reason: BLOCKED_REASONS[pack.blocked as CostBlocker],
+      can_override: OVERRIDABLE.has(pack.blocked as CostBlocker),
+      line_count: pack.line_count,
+      spend: pack.spend,
+      invoice_id: "inv-1001",
+      invoice_line_id: `${pack.id}-line`,
+      position: 0,
+      invoice_date: dateDaysAgo(3),
+    }))
+    .sort((a, b) => Number(b.spend) - Number(a.spend));
+}
+
+/** WP-55: a person says how much is in one, once. */
+export async function mockSetPackSizeOverride(
+  itemId: string,
+  packSize: string,
+): Promise<PackSizeOverrideResult> {
+  const pack = findPack(itemId);
+  const answer = packSize.trim();
+  const measure = measureOf(answer);
+  if (!measure) {
+    throw new ApiError(
+      422,
+      "Say how much is in one of these, as an amount with its unit - " +
+        "like '10 kg', '750 ml' or '24 x 400 ml'.",
+    );
+  }
+  const material = INGREDIENTS.find((row) => row.id === pack.ingredient_id);
+  if (material && material.base_unit !== measure.base) {
+    throw new ApiError(
+      422,
+      `${answer} is measured ${MEASURE_WORDS[measure.base]}, but ${material.name} is ` +
+        `measured ${MEASURE_WORDS[material.base_unit]}`,
+    );
+  }
+  pack.pack_size_override = answer;
+  // Only lines with no cost yet, exactly as the server does: an answer never
+  // rewrites a figure someone has already read.
+  const costed = pack.cost === null ? pack.line_count : 0;
+  if (pack.cost === null) pack.cost = mockCost(pack.last_price ?? "0", answer);
+  return { supplier_item_id: itemId, pack_size: answer, lines_costed: costed };
 }
 
 export async function mockRejectIngredient(

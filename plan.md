@@ -747,14 +747,20 @@ them, not a rewrite of them.
       The two C4 factors are reused rather than recomputed, and the rounding happens once at the
       division: quantizing to fils first would put flour at 0.002 instead of 0.00174, which a
       test now pins against the real column
-- [ ] Container conversions, consultant-entered and versioned ("1 carton = 10 kg chicken"):
-      `units.py` deliberately refuses to guess what is inside a carton, so a human says once.
-      `audit_events` is the version history; an override costs the lines that have no cost yet and
-      never rewrites one already costed
-- [ ] An unparseable pack size is an **issue on a screen** (PRD §24), never a guessed number: it
+- [x] Container conversions, consultant-entered and versioned ("1 carton = 10 kg chicken")
+      (WP-55, done 2026-08-29, migration 0014). `units.py` deliberately refuses to guess what is
+      inside a carton, so a human says once. `audit_events` is the version history; an override
+      costs the lines that have no cost yet and never rewrites one already costed. Kept in its own
+      column, not written over `pack_size`: one is what a page printed and the other is what a
+      person asserted, and only the second makes a cost read *estimated*. Saying how much is in
+      one also says what it is measured in, so the approval gate stops asking
+- [x] An unparseable pack size is an **issue on a screen** (PRD §24), never a guessed number: it
       blocks that material's cost and says which invoice line it came from — **and so does every
       other reason a line cannot be costed** (missing unit price or quantity, a bare container, a
-      zero pack, the foreign-currency hold), each with its own reason
+      zero pack, the foreign-currency hold), each with its own reason (WP-55, done 2026-08-29).
+      Derived from the invoice lines with no `issues` table, grouped by product so a carton bought
+      twelve times is one question, and a box to type in only where a conversion can actually
+      answer it
 - [x] **C9 applied to the first derived number** (WP-53, done 2026-08-29): a cost per base unit
       inherits the quality of the invoice line under it, so one built on a reconstructed total or a
       corrected quantity reads *estimated* and names the line that made it so —
@@ -998,7 +1004,12 @@ pilot volume. Meta utility template cost applies only from M10 (verify live UAE 
   **Unmapping a wrong merge corrects the price with nothing to rebuild**, which is the whole return on not having an `ingredient_costs` table: mapping saffron onto milk powder takes the price to AED 52,250 a kilo, and one unmap puts it back to 20.20 with no refresh anywhere to have remembered.
   One query returns each pack's *own* newest cost as well as the material's, so the screen shows the comparison the merge exists to make: the same material at 20.20 and 23.50 a kilo from two suppliers, with the newer one marked as the one setting the price. That is the number M6 will multiply by a recipe quantity.
   **459 API tests green** (was 452; 7 new), eval 65 + smoke OK, ruff clean, web typecheck + eslint + build clean.
-  Next: WP-55 (blocked costs and the consultant's override).
+  **WP-55 shipped, and M5 is complete.** Every confirmed line that could not be costed appears on `/materials` with its own reason and the money behind it, grouped by product so a carton bought twelve times is one question; a consultant answers "one holds 10 kg" and every line of that product with no cost is worked out from it. Migration 0014, `supplier_items.pack_size_override`.
+  **The override is its own column, deliberately.** `pack_size` is what the first invoice a product ever appeared on printed - write-once and stale by design (`TODOS.md`) - while the override is what a person asserted about a container that printed nothing. Merging them would lose the only distinction that matters: one was seen by a camera and the other was not, and that is exactly what makes a cost built on it read *estimated* with no extra rule to remember.
+  **Two guards on "never rewrites a line already costed", and both were checked by breaking them.** Dropping the invoice-level filter makes a corrected conversion pull an old line from AED 14.80 a kilo to 12.33; dropping the line-level one does the same when two unlabelled products share an invoice and are answered on different days. The cost of the rule is stated rather than hidden: a conversion entered wrongly is **not** retro-fixed, so the earlier figure stands and the audit trail shows both answers.
+  Two things the screen caught that no test would have. The mock served every cost as read-from-the-invoice, so a price built on a person's conversion claimed on screen to come from the page - the exact false claim C9 exists to prevent, in the demo a founder would be shown. And a bare carton was still being asked what it measures *after* someone had said it holds 10 kg, which is the product not listening; the approval gate now reads the conversion too.
+  **473 API tests green** (was 459; 14 new), eval 65 + smoke OK, ruff clean, web typecheck + eslint + build clean.
+  Next: M6 decomposition (recipes and menu costing) - the demo gate.
 
 - 2026-08-29 - **All four lanes are one master again: WP-26/28 (landed earlier), the M4 loop-gate lane, WP-29 bilingual matching, and the Gemini 3 Flash swap - merged, tested together, deployed in one push.**
   Integration order was WP-29 then the provider swap, and the combined suite is green: 393 API tests, 65 eval tests, smoke, ruff on both trees.

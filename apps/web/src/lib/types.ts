@@ -360,9 +360,54 @@ export interface MappedPack {
   /** Ex-VAT unit price, C4 net-canonical. Money string. */
   last_price: string | null;
   last_price_at: string | null;
+  /** How much is in one of these, said by a person because the invoice never
+   * did (WP-55). Kept visible so the sentence does not disappear the moment it
+   * takes effect. */
+  pack_size_override: string | null;
   /** This pack's own newest cost per kilo - what makes two suppliers'
    * different pack sizes comparable at all. Null until one is confirmed. */
   cost: MaterialPrice | null;
+}
+
+/**
+ * M5 WP-55: a confirmed line this layer could not turn into a cost.
+ *
+ * Derived from the data, not an `issues` table: the fact is already on the
+ * line, and asking the same function that refused says which of six things
+ * went wrong. Grouped by product, because a carton bought twelve times is one
+ * question a person answers once.
+ */
+export interface BlockedCost {
+  id: string;
+  supplier_item_id: string | null;
+  product_name: string;
+  supplier_name: string | null;
+  pack_size: string | null;
+  unit: string | null;
+  pack_size_override: string | null;
+  ingredient_id: string | null;
+  ingredient_name: string | null;
+  blocked: CostBlocker;
+  /** Plain English, straight from the API. */
+  reason: string;
+  /** True only for a pack problem: no conversion supplies a price or a
+   * quantity the invoice never printed, so no box is offered for those. */
+  can_override: boolean;
+  line_count: number;
+  /** Money spent on the blocked lines. Money string. */
+  spend: string;
+  /** The newest example, for the drill-through to the photo. */
+  invoice_id: string;
+  invoice_line_id: string;
+  position: number;
+  invoice_date: string | null;
+}
+
+/** What answering the question returns: how many lines it costed. */
+export interface PackSizeOverrideResult {
+  supplier_item_id: string;
+  pack_size: string;
+  lines_costed: number;
 }
 
 export interface Ingredient {
