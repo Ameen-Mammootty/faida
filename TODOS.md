@@ -6,7 +6,9 @@ with later.
 
 Two lanes wrote into this file independently and it was unioned when they merged on 2026-08-29:
 the M5 raw-materials lane owns **Backend**, and the eval-phase2 lane (`/plan-eng-review`) owns
-**Extraction & matching** and **Plan corrections**. No entry appears twice.
+**Extraction & matching**. No entry appears twice. (The **Plan corrections** section the
+eval-phase2 lane also owned was applied to plan.md on 2026-08-29 - the TH-01 false-alarm
+correction, in the M6-decomposition commit - and retired from this file.)
 
 ## Backend (apps/api)
 
@@ -116,6 +118,7 @@ the schema and the F8 ground truth untouched.
 The hard part is deciding when trailing prose is an annotation rather than part of a real name,
 without truncating legitimately long supplier item names.
 A prompt rule is the wrong layer - plan.md §5, "accuracy is a pipeline property, not a prompt property".
+Proposed for M6 as WP-65 in the 2026-08-29 decomposition (plan.md §7.3); founder decision pending.
 
 **Effort:** M
 **Priority:** P2
@@ -233,49 +236,3 @@ is reviewable as exactly that. Do not bundle it with a content change.
 **Effort:** S
 **Priority:** P3
 **Depends on:** Founder availability for the F8 re-sign.
-
-## Plan corrections (for the loop-gate lane, which owns plan.md)
-
-### The 2026-08-29 bake-off entry records a false alarm about TH-01's subtotal
-
-**What:** Both the Decision Log row and the Progress Log entry dated 2026-08-29 describe Gemini
-3.1 Pro's TH-01 subtotal read as a silent wrong number that would store green. The trace above
-disproves it: the value is a legitimate alternative printing, `_check_subtotal` passes it by
-design, a genuinely wrong subtotal goes amber, and nothing downstream reads the field.
-
-**Why it matters enough to correct:** it was written up as "the subtotal miss is the finding that
-matters" and weighed in the Pro-versus-Flash comparison that preceded a model swap. A false alarm
-carrying weight in a shipped-model decision is worth un-recording, and CLAUDE.md is explicit that
-when plan.md and the code disagree, the code is right and the plan has the bug.
-
-**The sentence to replace** is `plan.md:894`, in the Progress Log entry beginning
-"The Gemini bake-off ran":
-
-> The subtotal miss is the finding that matters: TH-01 prints both "Subtotal (VAT inclusive):
-> 706.65" and "Net of VAT: 673.00", and Gemini filled `subtotal` from the net line - a printed
-> value from the wrong labeled cell, not an invention - and `subtotal` is the one header money
-> field the C4 identities do not cross-check (they anchor on the line sum), so in production this
-> would have stored green: a silent wrong number, the exact thing the §5 gate says must never
-> happen.
-
-**Suggested replacement:**
-
-> The subtotal miss turned out to be a false alarm, traced 2026-08-29 in the eval-phase2 lane:
-> TH-01 prints both "Subtotal (VAT inclusive): 706.65" and "Net of VAT: 673.00", and Gemini filled
-> `subtotal` from the net line. Both are legitimate printings of an inclusive invoice's subtotal,
-> and `validate._check_subtotal` accepts either on purpose - a genuinely wrong subtotal (670.00,
-> 707.00, 500.00 all tested) still goes amber, so the §5 gate holds. Nothing downstream reads the
-> field either: the tax treatment is derived from the line sum, never the printed subtotal, and the
-> net-price factor is built from `tax_treatment, tax, total`, so the price baseline stored on
-> confirm is identical under both readings. The eval scores it wrong only because ground truth
-> records one of the two legitimate rows. **The real finding from that bake-off was the pack sizes,
-> not the subtotal.**
-
-One knock-on edit in the same pass: the Decision Log row (`plan.md:807`) for the Flash swap says Flash "got right
-both cells that tripped Gemini 3.1 Pro (the TH-01 subtotal and the pack sizes embedded in item
-names)" - only the pack half was ever a real defect, and Flash was later measured missing the same
-subtotal row once in ten runs, so that clause overstates the gap between the two models.
-
-**Effort:** S
-**Priority:** P2 (it is a correctness claim in the sequencing document, not code)
-**Depends on:** Nothing. Belongs in the same commit as the loop-gate lane's next plan.md update.
