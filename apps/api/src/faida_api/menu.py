@@ -43,7 +43,7 @@ import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
 
-from . import plates
+from . import costing, plates
 from .api import (
     CONSOLE_ACTOR,
     MEASURE_WORDS,
@@ -69,12 +69,15 @@ router = APIRouter(prefix="/api", dependencies=[Depends(require_api_token)])
 class MenuItemCreate(BaseModel):
     """Name and selling price, both required - an item with no price has no
     margin to compute and nothing to show. The price is what the owner says
-    out loud, VAT inside it (WP-61 margins against the net and says so)."""
+    out loud, VAT inside it (WP-61 margins against the net and says so).
+    `category` is the menu's own section (Tea Corner, Special Gravy - design
+    D9); omitted when the menu prints none, never invented."""
 
     model_config = ConfigDict(extra="forbid")
 
     name: str
     selling_price: str
+    category: str | None = None
 
 
 class MenuItemPrice(BaseModel):
@@ -227,6 +230,42 @@ def _cost_component(
     )
 
 
+async def _menu_context(
+    db: Database, tenant_id: str
+) -> tuple[
+    list[asyncpg.Record],
+    dict[str, list[asyncpg.Record]],
+    dict[str, plates.Plate],
+    Decimal | None,
+]:
+    """The whole menu, costed, from a fixed number of queries (D10): every
+    item row, each item's current components, each item's plate answer, and
+    the VAT rate. Both menu reads - the list and the money moment - derive
+    from this same bundle, so they can never disagree on what a plate earns."""
+    prices, stale, vat_rate = await _pricing(db, tenant_id)
+    components_by_item: dict[str, list[asyncpg.Record]] = {}
+    for row in await db.list_current_recipe_components(tenant_id):
+        components_by_item.setdefault(row["menu_item_id"], []).append(row)
+
+    rows = await db.list_menu_items(tenant_id)
+    plate_by_item: dict[str, plates.Plate] = {}
+    for row in rows:
+        if row["recipe_id"] is None:
+            plate_by_item[row["id"]] = plates.no_recipe_plate()
+        else:
+            costed = [
+                _cost_component(component, prices, stale)
+                for component in components_by_item.get(row["id"], [])
+            ]
+            plate_by_item[row["id"]] = plates.plate(
+                costed,
+                yield_portions=row["yield_portions"],
+                selling_price=row["selling_price"],
+                vat_rate=vat_rate,
+            )
+    return rows, components_by_item, plate_by_item, vat_rate
+
+
 def _plate_payload(result: plates.Plate) -> dict:
     """The item's whole answer. Incomplete carries no numbers at all - only
     what is missing - so a hole in the data can never read as a fat margin.
@@ -295,6 +334,7 @@ async def _menu_item_detail(db: Database, menu_item_id: str) -> dict:
     return {
         "id": item["id"],
         "name": item["name"],
+        "category": item["category"],
         "selling_price": _dec(item["selling_price"]),
         "archived_at": _iso(item["archived_at"]),
         "created_at": _iso(item["created_at"]),
@@ -356,34 +396,17 @@ async def list_menu_items(request: Request) -> dict:
     invalidate."""
     db: Database = request.app.state.db
     tenant_id = await _tenant(db)
-    prices, stale, vat_rate = await _pricing(db, tenant_id)
-    components_by_item: dict[str, list[asyncpg.Record]] = {}
-    for row in await db.list_current_recipe_components(tenant_id):
-        components_by_item.setdefault(row["menu_item_id"], []).append(row)
-
-    items = []
-    for row in await db.list_menu_items(tenant_id):
-        if row["recipe_id"] is None:
-            result = plates.no_recipe_plate()
-        else:
-            costed = [
-                _cost_component(component, prices, stale)
-                for component in components_by_item.get(row["id"], [])
-            ]
-            result = plates.plate(
-                costed,
-                yield_portions=row["yield_portions"],
-                selling_price=row["selling_price"],
-                vat_rate=vat_rate,
-            )
-        items.append(
+    rows, _, plate_by_item, _ = await _menu_context(db, tenant_id)
+    return {
+        "menu_items": [
             {
                 "id": row["id"],
                 "name": row["name"],
+                "category": row["category"],
                 "selling_price": _dec(row["selling_price"]),
                 "archived_at": _iso(row["archived_at"]),
                 "created_at": _iso(row["created_at"]),
-                "plate": _plate_payload(result),
+                "plate": _plate_payload(plate_by_item[row["id"]]),
                 "recipe": None
                 if row["recipe_id"] is None
                 else {
@@ -394,8 +417,9 @@ async def list_menu_items(request: Request) -> dict:
                     "component_count": row["component_count"],
                 },
             }
-        )
-    return {"menu_items": items}
+            for row in rows
+        ]
+    }
 
 
 @router.get("/menu-items/{menu_item_id}")
@@ -413,7 +437,11 @@ async def create_menu_item(body: MenuItemCreate, request: Request) -> dict:
     price = _positive_number(body.selling_price, what="selling price", example="17.00")
     try:
         item = await db.create_menu_item(
-            tenant_id=tenant_id, name=name, selling_price=price, actor=CONSOLE_ACTOR
+            tenant_id=tenant_id,
+            name=name,
+            selling_price=price,
+            actor=CONSOLE_ACTOR,
+            category=_clean(body.category),
         )
     except asyncpg.UniqueViolationError:
         raise HTTPException(
@@ -535,3 +563,147 @@ async def create_recipe_version(
             "moment; reload it and try again",
         ) from None
     return await _menu_item_detail(db, str(menu_item_id))
+
+
+# --- the money moment (WP-63) -------------------------------------------------
+
+
+def _move_line(line: asyncpg.Record) -> dict:
+    """One purchase, as the money moment names it: which pack, from whom, at
+    what per kilo, on which invoice - so both sides of a move drill to their
+    photos."""
+    per_display, display_unit = costing.per_display_unit(
+        line["cost_per_base_unit"], line["base_unit"]
+    )
+    return {
+        "supplier_item_id": line["supplier_item_id"],
+        "product_name": line["canonical_name"],
+        "supplier_name": line["supplier_name"],
+        "pack_size": line["pack_size"],
+        "per_display_unit": _dec(per_display),
+        "display_unit": display_unit,
+        "invoice_id": line["invoice_id"],
+        "invoice_line_id": line["invoice_line_id"],
+        # The printed line position, for the /invoices/<id>#line-<position>
+        # anchor contract (design review): the drill lands on the row itself.
+        "position": line["position"],
+        "purchased_on": _iso(line["purchased_on"]),
+        "invoice_date": _iso(line["invoice_date"]),
+    }
+
+
+@router.get("/price-moves")
+async def list_price_moves(request: Request) -> dict:
+    """The money moment (WP-63): when a material's price moves, which menu
+    items just lost margin and by how much - M2's price alert finally carried
+    through to the plate. The alert names cartons; this names cups.
+
+    Each material contributes at most its **latest** move: its newest costed
+    line against what set the price before it. Same pack -> a real move, with
+    the delta and the per-plate impact (delta x the recipe's quantity in base
+    units / the batch yield); a different pack -> "price basis changed", both
+    packs named, **no delta** - a delta across packs is a pack artifact
+    wearing a percent sign, and the demo's money moment must not lie (D3,
+    WP-28's rule one layer up).
+
+    Only materials on the current menu appear (a moved material feeding no
+    recipe belongs to M2's alert, not this screen), and only costed items
+    carry before/after margins - an incomplete item has no margin to move.
+    A selling-price change also moves margin and lives in the audit trail;
+    this endpoint attributes cost moves only, and the screen says so.
+
+    Derived on every read like everything above the invoice line: confirming
+    the rehearsal invoice at a new milk price re-ranks the karak on the next
+    read - no cache, no recompute job, nothing to invalidate. Margin history
+    over time needs sales periods and is deliberately absent (M8/M9)."""
+    db: Database = request.app.state.db
+    tenant_id = await _tenant(db)
+    pairs: dict[str, list[asyncpg.Record]] = {}
+    for line in await db.list_price_move_pairs(tenant_id):
+        pairs.setdefault(line["ingredient_id"], []).append(line)
+    rows, components_by_item, plate_by_item, _ = await _menu_context(db, tenant_id)
+
+    moves: list[dict] = []
+    for ingredient_id, lines in pairs.items():
+        if len(lines) < 2:
+            continue  # a first purchase is a price, not a move
+        used = any(
+            component["ingredient_id"] == ingredient_id
+            for components in components_by_item.values()
+            for component in components
+        )
+        if not used:
+            continue
+        current, previous = lines
+        move = {
+            "ingredient_id": ingredient_id,
+            "ingredient_name": current["ingredient_name"],
+            "base_unit": current["base_unit"],
+            "current": _move_line(current),
+            "previous": _move_line(previous),
+        }
+
+        if current["supplier_item_id"] != previous["supplier_item_id"]:
+            moves.append(
+                {**move, "kind": "basis_changed", "delta_per_display_unit": None, "items": []}
+            )
+            continue
+
+        delta = current["cost_per_base_unit"] - previous["cost_per_base_unit"]
+        if delta == 0:
+            continue
+        factor = costing.DISPLAY_UNITS[current["base_unit"]][1]
+
+        items: list[dict] = []
+        for row in rows:
+            if row["archived_at"] is not None:
+                continue
+            plate = plate_by_item[row["id"]]
+            if plate.margin is None or plate.net_price is None:
+                continue
+            # Two components on the same material (rare, legal) sum before
+            # the impact is taken, so the item appears once with its whole
+            # exposure.
+            base_qty = Decimal(0)
+            for component in components_by_item.get(row["id"], []):
+                if component["ingredient_id"] != ingredient_id:
+                    continue
+                converted = plates.to_base_qty(component["qty"], component["unit"])
+                if converted is not None:
+                    base_qty += converted[0]
+            if base_qty == 0:
+                continue
+            impact = plates.margin_impact(delta, base_qty, row["yield_portions"])
+            if impact == 0:
+                continue
+            margin_before = plate.margin + impact
+            pct_before = (margin_before / plate.net_price * 100).quantize(
+                plates.PCT_QUANTUM, rounding=ROUND_HALF_UP
+            )
+            items.append(
+                {
+                    "menu_item_id": row["id"],
+                    "name": row["name"],
+                    "impact_per_portion": _dec(impact),
+                    "margin_before": _dec(margin_before),
+                    "margin_after": _dec(plate.margin),
+                    "margin_pct_before": _dec(pct_before),
+                    "margin_pct_after": _dec(plate.margin_pct),
+                }
+            )
+        items.sort(key=lambda item: abs(Decimal(item["impact_per_portion"])), reverse=True)
+        moves.append(
+            {
+                **move,
+                "kind": "moved",
+                "delta_per_display_unit": _dec(
+                    (delta * factor).quantize(costing.DISPLAY_QUANTUM, rounding=ROUND_HALF_UP)
+                ),
+                "items": items,
+            }
+        )
+
+    moves.sort(
+        key=lambda m: (m["current"]["purchased_on"] or "", m["ingredient_name"]), reverse=True
+    )
+    return {"moves": moves}

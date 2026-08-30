@@ -1038,7 +1038,8 @@ class Database:
         version: no pointer column to keep in sync, the table is the truth."""
         return await self.pool.fetch(
             """
-            select m.id::text as id, m.name, m.selling_price, m.archived_at, m.created_at,
+            select m.id::text as id, m.name, m.category, m.selling_price, m.archived_at,
+                   m.created_at,
                    r.id::text as recipe_id, r.version, r.yield_portions, r.yield_label,
                    (select count(*) from recipe_components c where c.recipe_id = r.id)
                      as component_count
@@ -1055,8 +1056,8 @@ class Database:
     async def get_menu_item(self, menu_item_id: str) -> asyncpg.Record | None:
         return await self.pool.fetchrow(
             """
-            select id::text as id, tenant_id::text as tenant_id, name, selling_price,
-                   archived_at, created_at
+            select id::text as id, tenant_id::text as tenant_id, name, category,
+                   selling_price, archived_at, created_at
             from menu_items where id = $1
             """,
             menu_item_id,
@@ -1163,8 +1164,72 @@ class Database:
             tenant_id,
         )
 
+    async def list_price_move_pairs(self, tenant_id: str) -> list[asyncpg.Record]:
+        """Per material, its two newest costed lines across **all** its mapped
+        packs - the raw material of WP-63's money moment.
+
+        `list_mapped_pack_costs` keeps each pack's newest line only, so the
+        winning pack's *own previous* purchase - the same-pack baseline D3
+        demands - is invisible there. This ranks every costed line per
+        material and returns the top two: the current price and whatever set
+        the price before it. The caller compares - same pack means a real
+        move with a delta; a different pack means the price basis changed,
+        and a delta across packs is a pack artifact wearing a percent sign,
+        so none is computed (WP-28's own rule, one layer up).
+
+        Same joins, filters and ordering as the price query, so 'newest'
+        means the same thing on every screen and a credit line wins
+        nothing."""
+        return await self.pool.fetch(
+            """
+            with costed as (
+                select ing.id::text as ingredient_id, ing.name as ingredient_name,
+                       ing.base_unit,
+                       s.id::text as supplier_item_id, s.canonical_name,
+                       sup.name as supplier_name,
+                       l.id as line_uuid, l.position, l.pack_size,
+                       l.cost_per_base_unit, l.cost_basis,
+                       inv.id::text as invoice_id, inv.invoice_date, inv.confirmed_at,
+                       coalesce(inv.invoice_date,
+                                (inv.confirmed_at at time zone 'UTC')::date) as purchased_on
+                from supplier_items s
+                join ingredients ing on ing.id = s.ingredient_id
+                join suppliers sup on sup.id = s.supplier_id
+                join invoice_lines l on l.supplier_item_id = s.id
+                join invoices inv on inv.id = l.invoice_id
+                where s.tenant_id = $1
+                  and s.ingredient_id is not null
+                  and inv.status = 'confirmed'
+                  and l.cost_per_base_unit is not null
+                  and l.cost_base_unit = ing.base_unit
+                  and coalesce(l.qty, 0) >= 0
+            ),
+            ranked as (
+                select *, row_number() over (
+                    partition by ingredient_id
+                    order by purchased_on desc, confirmed_at desc,
+                             position desc, line_uuid desc
+                ) as recency
+                from costed
+            )
+            select ingredient_id, ingredient_name, base_unit, supplier_item_id,
+                   canonical_name, supplier_name, line_uuid::text as invoice_line_id,
+                   position, pack_size, cost_per_base_unit, cost_basis, invoice_id,
+                   invoice_date, confirmed_at, purchased_on, recency
+            from ranked where recency <= 2
+            order by ingredient_id, recency
+            """,
+            tenant_id,
+        )
+
     async def create_menu_item(
-        self, *, tenant_id: str, name: str, selling_price: Decimal, actor: str
+        self,
+        *,
+        tenant_id: str,
+        name: str,
+        selling_price: Decimal,
+        actor: str,
+        category: str | None = None,
     ) -> asyncpg.Record:
         """One item, one audit row, one transaction. Raises UniqueViolationError
         when a live item already holds the name (the 0015 partial index); the
@@ -1172,18 +1237,21 @@ class Database:
 
         The price is quantized to the fils before anything sees it, so the
         audit detail and the column hold the same bytes - "17" typed and
-        "17.000" stored must not read as two different claims."""
+        "17.000" stored must not read as two different claims. `category` is
+        the menu's own section (0016, design D9), null when the menu prints
+        none."""
         selling_price = selling_price.quantize(PRICE_QUANTUM)
         async with self.pool.acquire() as conn, conn.transaction():
             row = await conn.fetchrow(
                 """
-                insert into menu_items (tenant_id, name, selling_price)
-                values ($1, $2, $3)
-                returning id::text as id, name, selling_price, archived_at, created_at
+                insert into menu_items (tenant_id, name, selling_price, category)
+                values ($1, $2, $3, $4)
+                returning id::text as id, name, category, selling_price, archived_at, created_at
                 """,
                 tenant_id,
                 name,
                 selling_price,
+                category,
             )
             await _insert_audit_event(
                 conn,
@@ -1192,7 +1260,7 @@ class Database:
                 action="menu_item.created",
                 subject_type="menu_item",
                 subject_id=row["id"],
-                detail={"name": name, "selling_price": str(selling_price)},
+                detail={"name": name, "selling_price": str(selling_price), "category": category},
             )
         return row
 

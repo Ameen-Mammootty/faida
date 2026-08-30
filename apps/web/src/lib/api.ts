@@ -32,7 +32,7 @@ import {
   mockSetPackSizeOverride,
   mockUnmapSupplierItem,
 } from "./mock/materials";
-import { mockGetMenuItem, mockListMenuItems } from "./mock/menu";
+import { mockGetMenuItem, mockListMenuItems, mockListPriceMoves } from "./mock/menu";
 import {
   mockConfirmInvoice,
   mockCreateManualInvoice,
@@ -55,6 +55,7 @@ import type {
   MenuItemDetail,
   MenuItemSummary,
   PackSizeOverrideResult,
+  PriceMove,
   PriceHistory,
   RejectionResult,
   UnmappedSupplierItem,
@@ -271,4 +272,15 @@ export async function listMenuItems(): Promise<MenuItemSummary[]> {
 export async function getMenuItem(id: string): Promise<MenuItemDetail> {
   if (MOCK) return mockGetMenuItem(id);
   return request<MenuItemDetail>(`/api/menu-items/${encodeURIComponent(id)}`);
+}
+
+/**
+ * M6 WP-63: the money moment. Each material's latest price move and what it
+ * did to every plate using it - or "price basis changed" with both packs
+ * named and no delta, when the winning pack itself switched.
+ */
+export async function listPriceMoves(): Promise<PriceMove[]> {
+  if (MOCK) return mockListPriceMoves();
+  const body = await request<{ moves: PriceMove[] }>("/api/price-moves");
+  return body.moves;
 }

@@ -24,7 +24,9 @@ from .conftest import DEMO_TENANT_ID, MIGRATIONS_DIR, SEED_FILE, TEST_DATABASE_U
 API_TOKEN = "test-api-token"
 AUTH = {"Authorization": f"Bearer {API_TOKEN}"}
 
-APPLY_FILE = pathlib.Path(__file__).resolve().parents[3] / "Docs" / "apply_m6_migrations.sql"
+DOCS = pathlib.Path(__file__).resolve().parents[3] / "Docs"
+APPLY_FILE = DOCS / "apply_m6_migrations.sql"
+CATEGORY_FILE = DOCS / "apply_m6_category.sql"
 
 
 @pytest.fixture
@@ -451,14 +453,15 @@ async def test_resending_the_same_price_writes_no_history(api, db):
 
 
 @requires_db
-async def test_apply_file_brings_a_0014_database_to_0015():
+async def test_apply_file_brings_a_0014_database_to_0016():
     """Docs/apply_m6_migrations.sql, run on a database at 0014, lands the menu
-    tables - proven by doing it, not by comparing file text."""
+    tables with the 0016 category column - proven by doing it, not by
+    comparing file text."""
     conn = await asyncpg.connect(TEST_DATABASE_URL)
     try:
         await conn.execute("drop schema public cascade; create schema public;")
         for migration in sorted(MIGRATIONS_DIR.glob("*.sql")):
-            if migration.name.startswith("0015"):
+            if migration.name.startswith(("0015", "0016")):
                 continue
             await conn.execute(migration.read_text())
         await conn.execute(SEED_FILE.read_text())
@@ -470,10 +473,66 @@ async def test_apply_file_brings_a_0014_database_to_0015():
 
         needs_0015 = await conn.fetchval("select to_regclass('public.menu_items') is null")
         assert needs_0015 is False
-        # And the write the schema exists for works end to end.
+        # And the write the schema exists for works end to end, category included.
         await conn.execute(
-            "insert into menu_items (tenant_id, name, selling_price) values ($1, 'Karak', 5)",
+            "insert into menu_items (tenant_id, name, selling_price, category) "
+            "values ($1, 'Karak', 5, 'Tea Corner')",
             DEMO_TENANT_ID,
         )
     finally:
         await conn.close()
+
+
+@requires_db
+async def test_category_file_brings_a_0015_database_to_0016():
+    """The live project ran 0015 before the design review added the category
+    column, so Docs/apply_m6_category.sql is its catch-up - proven the same
+    way, on a database stopped at 0015."""
+    conn = await asyncpg.connect(TEST_DATABASE_URL)
+    try:
+        await conn.execute("drop schema public cascade; create schema public;")
+        for migration in sorted(MIGRATIONS_DIR.glob("*.sql")):
+            if migration.name.startswith("0016"):
+                continue
+            await conn.execute(migration.read_text())
+        await conn.execute(SEED_FILE.read_text())
+
+        needs_0016 = await conn.fetchval(
+            "select not exists (select 1 from information_schema.columns "
+            "where table_name = 'menu_items' and column_name = 'category')"
+        )
+        assert needs_0016 is True
+
+        await conn.execute(CATEGORY_FILE.read_text())
+
+        await conn.execute(
+            "insert into menu_items (tenant_id, name, selling_price, category) "
+            "values ($1, 'Karak', 5, 'Tea Corner')",
+            DEMO_TENANT_ID,
+        )
+    finally:
+        await conn.close()
+
+
+@requires_db
+async def test_a_category_travels_from_creation_to_every_read(api):
+    """The menu's own section (0016, design D9): stored as typed, carried on
+    the list and the detail, and never invented when the menu prints none."""
+    response = await api.post(
+        "/api/menu-items",
+        json={"name": "Karak Tea", "selling_price": "5.00", "category": "Tea Corner"},
+        headers=AUTH,
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["category"] == "Tea Corner"
+
+    response = await api.post(
+        "/api/menu-items", json={"name": "Special Item", "selling_price": "9.00"}, headers=AUTH
+    )
+    assert response.json()["category"] is None
+
+    listed = {
+        row["name"]: row["category"]
+        for row in (await api.get("/api/menu-items", headers=AUTH)).json()["menu_items"]
+    }
+    assert listed == {"Karak Tea": "Tea Corner", "Special Item": None}

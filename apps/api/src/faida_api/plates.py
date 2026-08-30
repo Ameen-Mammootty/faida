@@ -157,6 +157,18 @@ def cost_component(
     return ComponentCost(position, cost=base_qty * price.cost_per_base_unit, quality=quality)
 
 
+def margin_impact(
+    delta_per_base_unit: Decimal, base_qty: Decimal, yield_portions: Decimal
+) -> Decimal:
+    """What one material's price move does to one plate's margin (WP-63): the
+    delta times the recipe's quantity in base units, divided by the batch
+    yield, quantized once. Positive when the price rose - the margin fell by
+    this much - because the sign belongs to the cost, not the feeling."""
+    return (delta_per_base_unit * base_qty / yield_portions).quantize(
+        PLATE_QUANTUM, rounding=ROUND_HALF_UP
+    )
+
+
 def net_of_vat(price: Decimal, vat_rate: Decimal | None) -> Decimal:
     """What the till keeps of a displayed price: 10.00 at 5%% is 9.524. A
     null rate (unlisted currency) leaves the price as-is - gross, and said so

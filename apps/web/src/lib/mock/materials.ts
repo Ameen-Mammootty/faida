@@ -65,6 +65,8 @@ interface PackCost {
   purchased_on: string;
   invoice_id: string;
   invoice_line_id: string;
+  /** The printed line position, for the invoice-row anchor. */
+  position?: number;
   /** Omitted means the pack column said so, and the cost is as good as this
    * layer gets. A conversion a person entered says so instead, and drags the
    * cost to *estimated* - C9 does that automatically on the server, and
@@ -356,6 +358,7 @@ function toPrice(pack: MockPack): MaterialPrice | null {
     supplier_name: pack.supplier_name,
     supplier_item_id: pack.id,
     product_name: pack.canonical_name,
+    position: pack.cost.position ?? 0,
     invoice_date: pack.cost.purchased_on,
     // The D11 stale flag never fires in the mock: every fixture pack's newest
     // purchase is the costed one, so claiming otherwise would demo a warning

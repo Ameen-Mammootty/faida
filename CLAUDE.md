@@ -114,5 +114,8 @@ validator or a reconciliation identity is. The point of a report is to make a de
 ## Product display rules
 
 Rounded AED headline numbers; exact figures only in invoice detail.
+Exception, pinned by the 2026-08-30 design review: per-plate costs and margins are fils-precise
+everywhere (a plate margin rounded to whole dirhams carries no information at karak prices);
+the rounding rule applies to totals and aggregates.
 No jargon; colour never carries meaning alone.
 Purchases ÷ net sales is never labelled "food cost %", and branch contribution is never labelled net profit.

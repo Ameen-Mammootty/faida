@@ -838,6 +838,9 @@ def _material_price(row: asyncpg.Record, stale_line: asyncpg.Record | None = Non
         "product_name": row["canonical_name"],
         "invoice_id": row["invoice_id"],
         "invoice_line_id": row["invoice_line_id"],
+        # The printed line position, for the /invoices/<id>#line-<position>
+        # anchor contract (design review): the drill lands on the row itself.
+        "position": row["position"],
         # The date we ranked by, and separately whether the invoice printed one:
         # "bought on 6 July" and "recorded on 29 August" are different claims.
         "purchased_on": _iso(row["purchased_on"]),

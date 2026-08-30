@@ -18,7 +18,13 @@
  */
 
 import { ApiError } from "../errors";
-import type { MaterialPrice, MenuItemDetail, MenuItemSummary, Plate } from "../types";
+import type {
+  MaterialPrice,
+  MenuItemDetail,
+  MenuItemSummary,
+  Plate,
+  PriceMove,
+} from "../types";
 
 const DAY = 86_400_000;
 const dateDaysAgo = (days: number) => new Date(Date.now() - days * DAY).toISOString().slice(0, 10);
@@ -42,6 +48,7 @@ const DUST: MaterialPrice = {
   product_name: "Karak Tea Dust",
   invoice_id: "inv-1001",
   invoice_line_id: "line-1001-2",
+  position: 1,
   purchased_on: dateDaysAgo(7),
   invoice_date: dateDaysAgo(7),
   newer_uncosted: null,
@@ -61,6 +68,7 @@ const EVAP: MaterialPrice = {
   product_name: "Evaporated Milk 48x400ml",
   invoice_id: "inv-1002",
   invoice_line_id: "line-1002-2",
+  position: 1,
   purchased_on: dateDaysAgo(7),
   invoice_date: dateDaysAgo(7),
   newer_uncosted: null,
@@ -80,6 +88,7 @@ const MILK_POWDER: MaterialPrice = {
   product_name: "Milk Powder 2.5kg",
   invoice_id: "inv-1001",
   invoice_line_id: "line-1001-1",
+  position: 0,
   purchased_on: dateDaysAgo(7),
   invoice_date: dateDaysAgo(7),
   newer_uncosted: null,
@@ -101,6 +110,7 @@ const GHEE: MaterialPrice = {
   product_name: "Ghee Tin",
   invoice_id: "inv-1001",
   invoice_line_id: "line-1001-3",
+  position: 2,
   purchased_on: dateDaysAgo(5),
   invoice_date: dateDaysAgo(5),
   newer_uncosted: null,
@@ -164,6 +174,7 @@ const CAKE_PLATE: Plate = {
 const DETAILS: MenuItemDetail[] = [
   {
     id: "menu-1",
+    category: "Tea Corner",
     name: "Karak Tea (Cup)",
     selling_price: "5.000",
     archived_at: null,
@@ -214,6 +225,7 @@ const DETAILS: MenuItemDetail[] = [
   },
   {
     id: "menu-2",
+    category: "Tea Corner",
     name: "Karak Tea (Flask 1 L)",
     selling_price: "35.000",
     archived_at: null,
@@ -264,6 +276,7 @@ const DETAILS: MenuItemDetail[] = [
   },
   {
     id: "menu-3",
+    category: "Shakes",
     name: "Nido Shake",
     selling_price: "8.000",
     archived_at: null,
@@ -314,6 +327,7 @@ const DETAILS: MenuItemDetail[] = [
   },
   {
     id: "menu-4",
+    category: "Mandi & Biryani",
     name: "Chicken Mandi",
     selling_price: "22.000",
     archived_at: null,
@@ -353,6 +367,7 @@ const DETAILS: MenuItemDetail[] = [
   },
   {
     id: "menu-5",
+    category: "Tea Corner",
     name: "Honey Cake",
     selling_price: "11.000",
     archived_at: null,
@@ -366,6 +381,7 @@ export async function mockListMenuItems(): Promise<MenuItemSummary[]> {
   return DETAILS.map((detail) => ({
     id: detail.id,
     name: detail.name,
+    category: detail.category,
     selling_price: detail.selling_price,
     archived_at: detail.archived_at,
     created_at: detail.created_at,
@@ -387,4 +403,116 @@ export async function mockGetMenuItem(id: string): Promise<MenuItemDetail> {
   const detail = DETAILS.find((row) => row.id === id);
   if (!detail) throw new ApiError(404, "menu item not found");
   return detail;
+}
+
+/**
+ * WP-63's money moment, hand-checked like everything else in this file: the
+ * evaporated milk carton moved from 4.19 to 4.69 a litre (0.0005/ml), so the
+ * cup (55 ml) lost 0.028, the flask (390 ml) lost 0.195 and the shake
+ * (100 ml) lost 0.050 - margins before are the plates' margins plus exactly
+ * those amounts. The basis-changed example carries no delta and no items, by
+ * the rule the screen exists to keep: a delta across pack sizes is a pack
+ * artifact wearing a percent sign.
+ */
+const MOVES: PriceMove[] = [
+  {
+    ingredient_id: "ing-evap",
+    ingredient_name: "Evaporated Milk",
+    base_unit: "ml",
+    kind: "moved",
+    current: {
+      supplier_item_id: "sitem-3",
+      product_name: "Evaporated Milk 48x400ml",
+      supplier_name: SEEB,
+      pack_size: "48x400ml",
+      per_display_unit: "4.69",
+      display_unit: "litre",
+      invoice_id: "inv-1002",
+      invoice_line_id: "line-1002-2",
+      position: 1,
+      purchased_on: dateDaysAgo(7),
+      invoice_date: dateDaysAgo(7),
+    },
+    previous: {
+      supplier_item_id: "sitem-3",
+      product_name: "Evaporated Milk 48x400ml",
+      supplier_name: SEEB,
+      pack_size: "48x400ml",
+      per_display_unit: "4.19",
+      display_unit: "litre",
+      invoice_id: "inv-1001",
+      invoice_line_id: "line-1001-4",
+      position: 3,
+      purchased_on: dateDaysAgo(21),
+      invoice_date: dateDaysAgo(21),
+    },
+    delta_per_display_unit: "0.50",
+    items: [
+      {
+        menu_item_id: "menu-2",
+        name: "Karak Tea (Flask 1 L)",
+        impact_per_portion: "0.195",
+        margin_before: "28.746",
+        margin_after: "28.551",
+        margin_pct_before: "86.2",
+        margin_pct_after: "85.7",
+      },
+      {
+        menu_item_id: "menu-3",
+        name: "Nido Shake",
+        impact_per_portion: "0.050",
+        margin_before: "5.992",
+        margin_after: "5.942",
+        margin_pct_before: "78.6",
+        margin_pct_after: "78.0",
+      },
+      {
+        menu_item_id: "menu-1",
+        name: "Karak Tea (Cup)",
+        impact_per_portion: "0.028",
+        margin_before: "4.110",
+        margin_after: "4.082",
+        margin_pct_before: "86.3",
+        margin_pct_after: "85.7",
+      },
+    ],
+  },
+  {
+    ingredient_id: "ing-nido",
+    ingredient_name: "Milk Powder",
+    base_unit: "g",
+    kind: "basis_changed",
+    current: {
+      supplier_item_id: "sitem-1",
+      product_name: "Milk Powder 2.5kg",
+      supplier_name: GULF,
+      pack_size: "2.5kg",
+      per_display_unit: "20.20",
+      display_unit: "kg",
+      invoice_id: "inv-1001",
+      invoice_line_id: "line-1001-1",
+      position: 0,
+      purchased_on: dateDaysAgo(7),
+      invoice_date: dateDaysAgo(7),
+    },
+    previous: {
+      supplier_item_id: "sitem-2",
+      product_name: "MILK PWDR 500G NIDO",
+      supplier_name: SEEB,
+      pack_size: "500g",
+      per_display_unit: "23.50",
+      display_unit: "kg",
+      invoice_id: "inv-1002",
+      invoice_line_id: "line-1002-1",
+      position: 0,
+      purchased_on: dateDaysAgo(12),
+      invoice_date: dateDaysAgo(12),
+    },
+    delta_per_display_unit: null,
+    items: [],
+  },
+];
+
+export async function mockListPriceMoves(): Promise<PriceMove[]> {
+  return MOVES;
 }

@@ -349,6 +349,9 @@ export interface MaterialPrice {
   product_name: string;
   invoice_id: string;
   invoice_line_id: string;
+  /** The printed line position, for the /invoices/<id>#line-<position>
+   * anchor - the drill lands on the row itself. */
+  position: number;
   /** The date this was ranked by: the printed one, or the confirm date. */
   purchased_on: string | null;
   /** The date the invoice actually printed, null when it printed none - so
@@ -542,6 +545,9 @@ export interface MenuRecipeSummary {
 export interface MenuItemSummary {
   id: string;
   name: string;
+  /** The menu's own section (Tea Corner, Special Gravy - 0016, design D9).
+   * Null when the menu prints none; the screen never invents one. */
+  category: string | null;
   /** As the owner states it, VAT inside it. Money string. */
   selling_price: string;
   archived_at: string | null;
@@ -589,9 +595,65 @@ export interface MenuRecipeDetail {
 export interface MenuItemDetail {
   id: string;
   name: string;
+  category: string | null;
   selling_price: string;
   archived_at: string | null;
   created_at: string;
   plate: Plate;
   recipe: MenuRecipeDetail | null;
+}
+
+/**
+ * M6 WP-63: the money moment - a price move landing on the plates.
+ *
+ * Each material contributes at most its latest move: its newest costed
+ * purchase against whatever set the price before it. Same pack -> a real
+ * move with a delta and per-plate impacts; a different pack -> the price
+ * *basis* changed, both packs are named, and there is **no delta** - a delta
+ * across pack sizes is a pack artifact wearing a percent sign, and the money
+ * moment must not lie. Only materials on the current menu appear.
+ */
+export type PriceMoveKind = "moved" | "basis_changed";
+
+/** One side of a move: which pack, from whom, at what per kilo, on which
+ * invoice - so both sides drill to their photos. */
+export interface PriceMoveLine {
+  supplier_item_id: string;
+  product_name: string;
+  supplier_name: string;
+  pack_size: string | null;
+  /** Per kilo / litre / each, two decimals. Money string. */
+  per_display_unit: string;
+  display_unit: string;
+  invoice_id: string;
+  invoice_line_id: string;
+  /** For the /invoices/<id>#line-<position> anchor. */
+  position: number;
+  purchased_on: string | null;
+  invoice_date: string | null;
+}
+
+/** What the move did to one costed menu item. */
+export interface PriceMoveItem {
+  menu_item_id: string;
+  name: string;
+  /** Signed decimal string: positive means the margin fell by this much. */
+  impact_per_portion: string;
+  margin_before: string;
+  margin_after: string;
+  margin_pct_before: string;
+  margin_pct_after: string;
+}
+
+export interface PriceMove {
+  ingredient_id: string;
+  ingredient_name: string;
+  base_unit: BaseUnit;
+  kind: PriceMoveKind;
+  current: PriceMoveLine;
+  previous: PriceMoveLine;
+  /** Signed money string per display unit; null when the basis changed. */
+  delta_per_display_unit: string | null;
+  /** Empty when the basis changed - no impact can honestly be attributed. */
+  items: PriceMoveItem[];
 }

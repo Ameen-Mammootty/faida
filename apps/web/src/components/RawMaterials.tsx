@@ -143,6 +143,23 @@ export default function RawMaterials() {
     };
   }, [reloadKey]);
 
+  // The /materials#material-<id> anchor contract (M6 design review): a menu
+  // drill lands on the material itself with a visible focus ring, so "fix on
+  // the materials screen" means arriving at the fix, not at the page top.
+  // Once only - later reloads after decisions must not yank focus back.
+  const arrived = useRef(false);
+  useEffect(() => {
+    if (materials === null || arrived.current) return;
+    const match = /^#material-(.+)$/.exec(window.location.hash);
+    if (!match) return;
+    arrived.current = true;
+    const element = document.getElementById(`material-${match[1]}`);
+    if (element) {
+      element.scrollIntoView({ block: "center" });
+      element.focus();
+    }
+  }, [materials]);
+
   useEffect(() => {
     if (naming !== null) nameInput.current?.focus();
   }, [naming]);
@@ -560,7 +577,12 @@ export default function RawMaterials() {
         ) : (
           <ul className="space-y-2">
             {materials.map((material) => (
-              <li key={material.id} className="rounded-md border border-ink/10 bg-paper p-4">
+              <li
+                key={material.id}
+                id={`material-${material.id}`}
+                tabIndex={-1}
+                className="rounded-md border border-ink/10 bg-paper p-4 focus:outline-none focus:ring-2 focus:ring-palm/40"
+              >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="font-medium text-ink">{material.name}</p>

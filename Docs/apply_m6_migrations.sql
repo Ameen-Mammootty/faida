@@ -1,4 +1,9 @@
--- Faida M6: migration 0015, applied by hand.
+-- Faida M6: migrations 0015 and 0016, applied by hand, for a database at 0014.
+--
+-- A live project that already ran the original 0015 (applied 2026-08-30,
+-- before the design review added the category column) needs
+-- Docs/apply_m6_category.sql instead - a paste of this file would fail on
+-- `create table menu_items`.
 --
 -- HOW TO USE THIS FILE
 --   Open it, select all, copy, paste into the Supabase SQL editor, run once.
@@ -8,7 +13,8 @@
 --   This project has no migration tracking table - migrations are applied by
 --   hand - so "the database is at 0014" is an assumption until you look. Run
 --   the query below on its own first. It must come back true. If it is false,
---   0015 is already applied and the run will fail on `create table menu_items`.
+--   0015 is already applied: use Docs/apply_m6_category.sql for the 0016
+--   catch-up instead.
 --
 --   select to_regclass('public.menu_items') is null as needs_0015;
 --
@@ -82,5 +88,17 @@ comment on column recipe_components.source_text is
 alter table menu_items enable row level security;
 alter table recipes enable row level security;
 alter table recipe_components enable row level security;
+
+-- ---------------------------------------------------------------------------
+-- 0016_menu_category.sql
+-- ---------------------------------------------------------------------------
+
+alter table menu_items add column category text;
+
+comment on column menu_items.category is
+  'the menu''s own section for this item (Tea Corner, Special Gravy...), as '
+  'the consultant loads it (WP-64''s CSV carries a category column). Null '
+  'means the menu prints no sections; the screen groups by this and never '
+  'invents one.';
 
 commit;

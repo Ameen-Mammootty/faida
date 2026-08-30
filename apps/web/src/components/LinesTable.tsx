@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ApiError } from "@/lib/errors";
 import { describeFields, groupedMoney, money, quantity } from "@/lib/format";
 import { blankToNone } from "@/lib/placeholders";
@@ -153,6 +153,20 @@ export default function LinesTable({ lines, editable, onSaveLine }: Props) {
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The /invoices/<id>#line-<position> anchor contract (M6 design review): a
+  // drill from the menu or materials screen lands on the row itself, quietly
+  // marked - "see the invoice" means see the line, not the top of the page.
+  // Imperative on purpose: an arrival affordance, not row state, so it never
+  // fights hydration or a later edit re-render. An amber wash outranks it -
+  // needing review is information, being linked to is navigation.
+  useEffect(() => {
+    const match = /^#line-(\d+)$/.exec(window.location.hash);
+    if (!match) return;
+    const row = document.getElementById(`line-${match[1]}`);
+    if (!row) return;
+    row.scrollIntoView({ block: "center" });
+    if (!row.classList.contains("bg-gold-soft/50")) row.classList.add("bg-mist");
+  }, []);
 
   function startEdit(line: InvoiceLine) {
     setEditing(line.position);
@@ -297,7 +311,10 @@ function LineRows({
   const note = costNote(line, amber);
   return (
     <>
-      <tr className={`border-b text-ink ${amber ? "border-caution/15 bg-gold-soft/50" : "border-ink/5"}`}>
+      <tr
+        id={`line-${line.position}`}
+        className={`border-b text-ink ${amber ? "border-caution/15 bg-gold-soft/50" : "border-ink/5"}`}
+      >
         <td className="py-2.5 pr-3 text-stone tabular-nums">{n}</td>
         <td className="py-2.5 pr-3">
           {line.raw_name}
