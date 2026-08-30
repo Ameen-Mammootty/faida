@@ -1022,6 +1022,258 @@ class Database:
                 detail={"ingredient_id": ingredient_id},
             )
 
+    # -- Menu and recipes (M6 WP-60) ------------------------------------------
+    #
+    # The one door for menu writes. Every function here is one transaction with
+    # one audit_events row naming its actor (C8) - selling-price history lives
+    # in those rows, not a price table, until a screen reads one (§2 rule 8).
+    # Refusals with reasons happen at the API layer; the constraints in 0015
+    # are the backstop, so a caller the API never met still cannot write the
+    # shapes that divide by zero or cost an empty set as pure margin.
+
+    async def list_menu_items(self, tenant_id: str) -> list[asyncpg.Record]:
+        """Every menu item - archived ones included, flagged - with its current
+        recipe version, in one query regardless of item count (the bounded-
+        queries rule, eng review D10). The current recipe is the newest
+        version: no pointer column to keep in sync, the table is the truth."""
+        return await self.pool.fetch(
+            """
+            select m.id::text as id, m.name, m.selling_price, m.archived_at, m.created_at,
+                   r.id::text as recipe_id, r.version, r.yield_portions, r.yield_label,
+                   (select count(*) from recipe_components c where c.recipe_id = r.id)
+                     as component_count
+            from menu_items m
+            left join lateral (
+                select * from recipes where menu_item_id = m.id order by version desc limit 1
+            ) r on true
+            where m.tenant_id = $1
+            order by m.name
+            """,
+            tenant_id,
+        )
+
+    async def get_menu_item(self, menu_item_id: str) -> asyncpg.Record | None:
+        return await self.pool.fetchrow(
+            """
+            select id::text as id, tenant_id::text as tenant_id, name, selling_price,
+                   archived_at, created_at
+            from menu_items where id = $1
+            """,
+            menu_item_id,
+        )
+
+    async def get_current_recipe(self, menu_item_id: str) -> asyncpg.Record | None:
+        """The newest version - which is what 'current' means here, by schema
+        rather than by a pointer that could drift."""
+        return await self.pool.fetchrow(
+            """
+            select id::text as id, version, yield_portions, yield_label, created_at
+            from recipes where menu_item_id = $1
+            order by version desc limit 1
+            """,
+            menu_item_id,
+        )
+
+    async def get_recipe_components(self, recipe_id: str) -> list[asyncpg.Record]:
+        return await self.pool.fetch(
+            """
+            select c.position, c.ingredient_id::text as ingredient_id, c.qty, c.unit,
+                   c.source_text, ing.name as ingredient_name, ing.base_unit
+            from recipe_components c
+            join ingredients ing on ing.id = c.ingredient_id
+            where c.recipe_id = $1
+            order by c.position
+            """,
+            recipe_id,
+        )
+
+    async def create_menu_item(
+        self, *, tenant_id: str, name: str, selling_price: Decimal, actor: str
+    ) -> asyncpg.Record:
+        """One item, one audit row, one transaction. Raises UniqueViolationError
+        when a live item already holds the name (the 0015 partial index); the
+        API turns that into the plain sentence.
+
+        The price is quantized to the fils before anything sees it, so the
+        audit detail and the column hold the same bytes - "17" typed and
+        "17.000" stored must not read as two different claims."""
+        selling_price = selling_price.quantize(PRICE_QUANTUM)
+        async with self.pool.acquire() as conn, conn.transaction():
+            row = await conn.fetchrow(
+                """
+                insert into menu_items (tenant_id, name, selling_price)
+                values ($1, $2, $3)
+                returning id::text as id, name, selling_price, archived_at, created_at
+                """,
+                tenant_id,
+                name,
+                selling_price,
+            )
+            await _insert_audit_event(
+                conn,
+                tenant_id=tenant_id,
+                actor=actor,
+                action="menu_item.created",
+                subject_type="menu_item",
+                subject_id=row["id"],
+                detail={"name": name, "selling_price": str(selling_price)},
+            )
+        return row
+
+    async def set_menu_item_price(
+        self, menu_item_id: str, *, tenant_id: str, selling_price: Decimal, actor: str
+    ) -> bool:
+        """The owner said a new price out loud. The audit row carries old and
+        new - that trail *is* the selling-price history until a screen needs
+        more (§2 rule 8). Returns False untouched when the price is the same,
+        so re-sending a form cannot mint a history of nothing changing.
+        Quantized like the insert, so detail and column never disagree."""
+        selling_price = selling_price.quantize(PRICE_QUANTUM)
+        async with self.pool.acquire() as conn, conn.transaction():
+            previous = await conn.fetchval(
+                "select selling_price from menu_items where id = $1 for update", menu_item_id
+            )
+            if previous is None or previous == selling_price:
+                return False
+            await conn.execute(
+                "update menu_items set selling_price = $2 where id = $1",
+                menu_item_id,
+                selling_price,
+            )
+            await _insert_audit_event(
+                conn,
+                tenant_id=tenant_id,
+                actor=actor,
+                action="menu_item.price_changed",
+                subject_type="menu_item",
+                subject_id=menu_item_id,
+                detail={
+                    "selling_price": str(selling_price),
+                    "previous_selling_price": str(previous),
+                },
+            )
+        return True
+
+    async def archive_menu_item(self, menu_item_id: str, *, tenant_id: str, actor: str) -> bool:
+        """The reverse gear the menu needs (Codex 9): out of the ranking and
+        the coverage count, never deleted, one click back. Returns False when
+        it was already archived - no second audit row for a no-op."""
+        async with self.pool.acquire() as conn, conn.transaction():
+            row = await conn.fetchval(
+                """
+                update menu_items set archived_at = now()
+                where id = $1 and archived_at is null
+                returning id
+                """,
+                menu_item_id,
+            )
+            if row is None:
+                return False
+            await _insert_audit_event(
+                conn,
+                tenant_id=tenant_id,
+                actor=actor,
+                action="menu_item.archived",
+                subject_type="menu_item",
+                subject_id=menu_item_id,
+            )
+        return True
+
+    async def unarchive_menu_item(self, menu_item_id: str, *, tenant_id: str, actor: str) -> bool:
+        """One click back. Raises UniqueViolationError when a live item has
+        taken the name meanwhile - two live rows with one name is exactly what
+        the 0015 partial index refuses, whichever door tries it."""
+        async with self.pool.acquire() as conn, conn.transaction():
+            row = await conn.fetchval(
+                """
+                update menu_items set archived_at = null
+                where id = $1 and archived_at is not null
+                returning id
+                """,
+                menu_item_id,
+            )
+            if row is None:
+                return False
+            await _insert_audit_event(
+                conn,
+                tenant_id=tenant_id,
+                actor=actor,
+                action="menu_item.unarchived",
+                subject_type="menu_item",
+                subject_id=menu_item_id,
+            )
+        return True
+
+    async def create_recipe_version(
+        self,
+        menu_item_id: str,
+        *,
+        tenant_id: str,
+        yield_portions: Decimal,
+        yield_label: str | None,
+        components: list[dict],
+        actor: str,
+    ) -> asyncpg.Record:
+        """Append the next version - editing never touches an old one, so
+        'versioned' is a property of the schema rather than a subsystem.
+
+        `version = max+1` is computed inside the insert, inside the
+        transaction, and `unique (menu_item_id, version)` makes two concurrent
+        saves fail loudly instead of minting the same number twice (D17); the
+        API answers the loser with a sentence, not a stack trace.
+
+        A component naming another tenant's ingredient raises
+        ForeignKeyViolationError from the 0012-shape composite key - Postgres
+        enforces tenancy at the write, whatever the application forgot."""
+        async with self.pool.acquire() as conn, conn.transaction():
+            recipe = await conn.fetchrow(
+                """
+                insert into recipes (tenant_id, menu_item_id, version, yield_portions, yield_label)
+                values ($1, $2,
+                        (select coalesce(max(version), 0) + 1
+                         from recipes where menu_item_id = $2),
+                        $3, $4)
+                returning id::text as id, version, yield_portions, yield_label, created_at
+                """,
+                tenant_id,
+                menu_item_id,
+                yield_portions,
+                yield_label,
+            )
+            await conn.executemany(
+                """
+                insert into recipe_components (tenant_id, recipe_id, position, ingredient_id,
+                                               qty, unit, source_text)
+                values ($1, $2, $3, $4, $5, $6, $7)
+                """,
+                [
+                    (
+                        tenant_id,
+                        recipe["id"],
+                        position,
+                        component["ingredient_id"],
+                        component["qty"],
+                        component["unit"],
+                        component.get("source_text"),
+                    )
+                    for position, component in enumerate(components)
+                ],
+            )
+            await _insert_audit_event(
+                conn,
+                tenant_id=tenant_id,
+                actor=actor,
+                action="recipe.version_created",
+                subject_type="menu_item",
+                subject_id=menu_item_id,
+                detail={
+                    "recipe_id": recipe["id"],
+                    "version": recipe["version"],
+                    "component_count": len(components),
+                },
+            )
+        return recipe
+
     async def record_confirmed_prices(
         self, invoice_id: str, *, conn: asyncpg.Connection | None = None
     ) -> None:
