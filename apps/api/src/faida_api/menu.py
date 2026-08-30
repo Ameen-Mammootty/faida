@@ -37,15 +37,28 @@ the C6 convention.
 """
 
 import uuid
+from decimal import ROUND_HALF_UP, Decimal
 
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
 
-from .api import CONSOLE_ACTOR, MEASURE_WORDS, _clean, _dec, _iso, _tenant, require_api_token
+from . import plates
+from .api import (
+    CONSOLE_ACTOR,
+    MEASURE_WORDS,
+    _clean,
+    _dec,
+    _iso,
+    _material_price,
+    _tenant,
+    blocked_line_reason,
+    require_api_token,
+)
 from .confirm import _parse_number
 from .db import Database
 from .extraction import units
+from .extraction.constants import VAT_RATE_BY_CURRENCY
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_api_token)])
 
@@ -148,24 +161,144 @@ def _component_unit(unit_text: str, ingredient: asyncpg.Record) -> str:
     return text
 
 
+# --- costing (WP-61) ---------------------------------------------------------
+#
+# Nothing below is stored. A plate cost derives on every read from the same
+# WP-54 derivation the materials screen shows, so confirming a cheaper milk
+# invoice moves every karak on the next screen load with zero writes to any
+# menu table - no cache, no recompute job, nothing to invalidate.
+
+
+async def _pricing(
+    db: Database, tenant_id: str
+) -> tuple[dict[str, asyncpg.Record], dict[str, asyncpg.Record], Decimal | None]:
+    """The three facts every plate reads, fetched once per request whatever
+    the menu's length (D10): each material's current price (the newest costed
+    line among its packs, WP-54), the materials whose newest purchase could
+    not be costed (the D11 stale flag), and the VAT rate inside this tenant's
+    menu prices."""
+    currency = await db.tenant_currency(tenant_id)
+    vat_rate = VAT_RATE_BY_CURRENCY.get(currency or "")
+    prices: dict[str, asyncpg.Record] = {}
+    for row in await db.list_mapped_pack_costs(tenant_id):
+        prices.setdefault(row["ingredient_id"], row)
+    stale = {
+        row["ingredient_id"]: row
+        for row in await db.list_newest_purchases(tenant_id)
+        if not row["costed"]
+    }
+    return prices, stale, vat_rate
+
+
+def _cost_component(
+    row: asyncpg.Record,
+    prices: dict[str, asyncpg.Record],
+    stale: dict[str, asyncpg.Record],
+) -> plates.ComponentCost:
+    ingredient_id = row["ingredient_id"]
+    price_row = prices.get(ingredient_id)
+    stale_line = stale.get(ingredient_id)
+    if price_row is None:
+        # The blocked newer purchase, when known, lends the missing sentence
+        # its WP-55 reason - the same words the blocked-cost queue shows.
+        reason = None if stale_line is None else blocked_line_reason(stale_line)
+        return plates.cost_component(
+            position=row["position"],
+            qty=row["qty"],
+            unit=row["unit"],
+            ingredient_name=row["ingredient_name"],
+            has_packs=row["has_packs"],
+            price=None,
+            no_price_reason=reason,
+        )
+    basis = price_row["cost_basis"] or {}
+    return plates.cost_component(
+        position=row["position"],
+        qty=row["qty"],
+        unit=row["unit"],
+        ingredient_name=row["ingredient_name"],
+        has_packs=row["has_packs"],
+        price=plates.Priced(
+            cost_per_base_unit=price_row["cost_per_base_unit"],
+            base_unit=price_row["cost_base_unit"],
+            quality=basis.get("quality"),
+            stale=stale_line is not None,
+        ),
+    )
+
+
+def _plate_payload(result: plates.Plate) -> dict:
+    """The item's whole answer. Incomplete carries no numbers at all - only
+    what is missing - so a hole in the data can never read as a fat margin.
+    The word is *margin*, never "profit" and never "food cost %" (§3)."""
+    return {
+        "quality": result.quality.value,
+        "missing": list(result.missing),
+        "cost_per_portion": _dec(result.cost_per_portion),
+        "net_price": _dec(result.net_price),
+        "vat_rate": _dec(result.vat_rate),
+        "margin": _dec(result.margin),
+        "margin_pct": _dec(result.margin_pct),
+    }
+
+
+def _component_cost_payload(
+    row: asyncpg.Record,
+    costed: plates.ComponentCost,
+    prices: dict[str, asyncpg.Record],
+    stale: dict[str, asyncpg.Record],
+) -> dict:
+    """One component's cost with its full forensics - the material price it
+    multiplied, down to the invoice line id and the photo behind it - or the
+    plain-words reason there is no number."""
+    if costed.cost is None:
+        return {"cost": None, "missing": costed.missing}
+    ingredient_id = row["ingredient_id"]
+    return {
+        "cost": {
+            "amount": _dec(costed.cost.quantize(plates.PLATE_QUANTUM, rounding=ROUND_HALF_UP)),
+            "quality": costed.quality.value,
+            "price": _material_price(prices[ingredient_id], stale.get(ingredient_id)),
+        },
+        "missing": None,
+    }
+
+
 # --- serialization ----------------------------------------------------------
 
 
 async def _menu_item_detail(db: Database, menu_item_id: str) -> dict:
     """The full item payload every write returns (C6): the item, its current
-    recipe version and that version's components, each carrying its
-    ingredient's name so the screen never joins by hand."""
+    recipe version, that version's components each carrying its cost and the
+    invoice line the price came from, and the plate answer on top. The
+    forensics of the *current* number - reproducing a past screen is M8's
+    calculation-run subsystem, not this milestone."""
     item = await db.get_menu_item(menu_item_id)
     if item is None:
         raise HTTPException(status_code=404, detail="menu item not found")
     recipe = await db.get_current_recipe(menu_item_id)
     components = [] if recipe is None else await db.get_recipe_components(recipe["id"])
+    prices, stale, vat_rate = await _pricing(db, item["tenant_id"])
+
+    if recipe is None:
+        result = plates.no_recipe_plate()
+        costed: list[plates.ComponentCost] = []
+    else:
+        costed = [_cost_component(row, prices, stale) for row in components]
+        result = plates.plate(
+            costed,
+            yield_portions=recipe["yield_portions"],
+            selling_price=item["selling_price"],
+            vat_rate=vat_rate,
+        )
+
     return {
         "id": item["id"],
         "name": item["name"],
         "selling_price": _dec(item["selling_price"]),
         "archived_at": _iso(item["archived_at"]),
         "created_at": _iso(item["created_at"]),
+        "plate": _plate_payload(result),
         "recipe": None
         if recipe is None
         else {
@@ -183,8 +316,9 @@ async def _menu_item_detail(db: Database, menu_item_id: str) -> dict:
                     "qty": _dec(component["qty"]),
                     "unit": component["unit"],
                     "source_text": component["source_text"],
+                    **_component_cost_payload(component, cost, prices, stale),
                 }
-                for component in components
+                for component, cost in zip(components, costed, strict=True)
             ],
         },
     }
@@ -211,19 +345,45 @@ async def _live_item(db: Database, menu_item_id: uuid.UUID) -> asyncpg.Record:
 
 @router.get("/menu-items")
 async def list_menu_items(request: Request) -> dict:
-    """Every item with its current recipe version - archived ones included and
-    flagged, because the loader grid names them rather than pretending they
-    are gone (WP-64). One query however long the menu grows (D10)."""
+    """Every item with its current recipe version and its plate answer -
+    cost, margin in AED and margin %% at its own menu price, or the list of
+    what is missing. Archived items are included and flagged, because the
+    loader grid names them rather than pretending they are gone (WP-64).
+
+    A fixed number of queries however long the menu grows (D10): the items,
+    the current components, the material prices, the stale flags and the
+    tenant currency - joined in Python, nothing stored, nothing to
+    invalidate."""
     db: Database = request.app.state.db
     tenant_id = await _tenant(db)
-    return {
-        "menu_items": [
+    prices, stale, vat_rate = await _pricing(db, tenant_id)
+    components_by_item: dict[str, list[asyncpg.Record]] = {}
+    for row in await db.list_current_recipe_components(tenant_id):
+        components_by_item.setdefault(row["menu_item_id"], []).append(row)
+
+    items = []
+    for row in await db.list_menu_items(tenant_id):
+        if row["recipe_id"] is None:
+            result = plates.no_recipe_plate()
+        else:
+            costed = [
+                _cost_component(component, prices, stale)
+                for component in components_by_item.get(row["id"], [])
+            ]
+            result = plates.plate(
+                costed,
+                yield_portions=row["yield_portions"],
+                selling_price=row["selling_price"],
+                vat_rate=vat_rate,
+            )
+        items.append(
             {
                 "id": row["id"],
                 "name": row["name"],
                 "selling_price": _dec(row["selling_price"]),
                 "archived_at": _iso(row["archived_at"]),
                 "created_at": _iso(row["created_at"]),
+                "plate": _plate_payload(result),
                 "recipe": None
                 if row["recipe_id"] is None
                 else {
@@ -234,9 +394,8 @@ async def list_menu_items(request: Request) -> dict:
                     "component_count": row["component_count"],
                 },
             }
-            for row in await db.list_menu_items(tenant_id)
-        ]
-    }
+        )
+    return {"menu_items": items}
 
 
 @router.get("/menu-items/{menu_item_id}")

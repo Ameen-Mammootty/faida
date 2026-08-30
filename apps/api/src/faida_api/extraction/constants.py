@@ -27,6 +27,22 @@ GCC_VAT_RATES = (
     Decimal("0.15"),  # Saudi Arabia
 )
 
+# M6 WP-61: the VAT rate sitting inside a menu price, by the currency the
+# tenant keeps its books in (`tenants.currency`). GCC menu prices are displayed
+# VAT-inclusive, so a margin computed against the gross price would overstate
+# every plate by the rate below - the single commonest costing error in menu
+# work. The tuple above names rates for reconciliation; this maps them to a
+# tenant's money. A currency not listed margins against the gross, and the
+# payload says so by carrying a null rate rather than a guessed one.
+VAT_RATE_BY_CURRENCY: dict[str, Decimal] = {
+    "AED": Decimal("0.05"),  # UAE
+    "OMR": Decimal("0.05"),  # Oman
+    "BHD": Decimal("0.10"),  # Bahrain
+    "SAR": Decimal("0.15"),  # Saudi Arabia
+    "QAR": Decimal("0"),  # Qatar - no VAT
+    "KWD": Decimal("0"),  # Kuwait - no VAT
+}
+
 # Repair pass (plan.md §5 layer 3): one scoped round, never more.
 MAX_REPAIR_ROUNDS = 1
 

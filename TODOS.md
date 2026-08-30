@@ -88,30 +88,14 @@ already implements.
 **Priority:** P3
 **Depends on:** M5 shipped, plus enough repeat-purchase history to compare against.
 
-### A material with a blocked newer purchase silently shows its older price as current
+### ~~A material with a blocked newer purchase silently shows its older price as current~~ done 2026-08-30
 
-**What:** When a material's newest confirmed stock line cannot be costed (unreadable pack, bare
-container, foreign-currency hold), flag the material - price shown with its date, quality capped
-at *estimated*, the blocked line named - instead of silently presenting the older costed price as
-current.
-
-**Why:** `db.list_mapped_pack_costs` filters `cost_per_base_unit is not null` before picking the
-newest line, and `list_blocked_costs` is a separate display queue; nothing connects them. So a
-blocked newer purchase leaves the older price looking current on `/materials`, and from M6 every
-plate margin built on it would read *reliable* - the silent-stale-number class the pipeline
-exists to prevent, one layer up.
-
-**Context:** Found by the M6 eng review's outside voice (Codex finding 7) on 2026-08-29 and
-verified against the query. The scheduled fix is M6 WP-61's derivation amendment 3 (plan.md
-§7.3); this entry records the gap window in shipped code in case M6 slips or is reshaped - if it
-does, fix standalone at the same place. The other half of the same finding (a costed credit line
-winning "newest purchase" by uuid coin flip, Codex finding 8) was fixed immediately the same day:
-`coalesce(l.qty, 0) >= 0` plus position tie-breaks in both orderings, with a test that fails 6/6
-against the old query.
-
-**Effort:** S/M
-**Priority:** P2
-**Depends on:** Nothing. Superseded by M6 WP-61 when it lands.
+Closed by WP-61 (derivation amendment 3, D11): `db.list_newest_purchases` asks what the newest
+confirmed purchase was, costed or not, with the same ordering and qty >= 0 rule as the price
+query; a `costed = false` winner caps its material and every plate above it at *estimated*, keeps
+the older price visible with its date, and names the blocked line with its WP-55 reason - on the
+materials screen and in every plate answer. Tested end to end in
+`tests/test_plates.py::test_a_newer_uncosted_purchase_caps_the_material_and_its_plates`.
 
 ## Extraction & matching
 

@@ -782,7 +782,39 @@ def _pack_summary(row: asyncpg.Record, cost: asyncpg.Record | None = None) -> di
     }
 
 
-def _material_price(row: asyncpg.Record) -> dict:
+def blocked_line_reason(line: asyncpg.Record) -> str:
+    """Why a confirmed purchase line has no cost, in the WP-55 sentence the
+    blocked-cost queue uses - one vocabulary, wherever the line surfaces."""
+    blocked = costing.blocked_reason_for(
+        qty=line["qty"],
+        unit_price=line["unit_price"],
+        pack_size=line["pack_size"],
+        raw_name=line["raw_name"],
+        unit=line["unit"],
+        override=line["pack_size_override"],
+        foreign_currency=currency_differs(line["currency"], line["tenant_currency"]),
+    )
+    # Costable on today's inputs but not costed: only a line confirmed before
+    # M5 shipped. The next confirm of that product fixes it.
+    if blocked is None:
+        return "This purchase has not been costed yet."
+    return costing.BLOCKED_REASONS[blocked]
+
+
+def newer_uncosted_summary(line: asyncpg.Record) -> dict:
+    """The blocked newer purchase, named (WP-61 amendment 3, D11): which line,
+    on which invoice, bought when, and the WP-55 reason it has no cost."""
+    return {
+        "invoice_line_id": line["invoice_line_id"],
+        "invoice_id": line["invoice_id"],
+        "position": line["position"],
+        "raw_name": line["raw_name"],
+        "purchased_on": _iso(line["purchased_on"]),
+        "reason": blocked_line_reason(line),
+    }
+
+
+def _material_price(row: asyncpg.Record, stale_line: asyncpg.Record | None = None) -> dict:
     """A material's price per kilo, and the purchase it came from (WP-54).
 
     Not a stored number: it is the newest costed line among the packs mapped to
@@ -791,8 +823,15 @@ def _material_price(row: asyncpg.Record) -> dict:
     summary-table row, which is a more precise thing for M6 to name as a
     plate's cost snapshot - and it is what lets the screen put the photo one
     click away from the figure.
+
+    `stale_line` is the D11 flag (WP-61 amendment 3): the material's newest
+    confirmed purchase could not be costed, so this price is real but not
+    current. The figure stays visible with its date; the quality caps at
+    *estimated* and the blocked line is named, so the screen can say "the
+    newer delivery is the question to answer" instead of showing an old
+    number wearing a good label.
     """
-    return {
+    payload = {
         **_cost_figure(row),
         "supplier_name": row["supplier_name"],
         "supplier_item_id": row["supplier_item_id"],
@@ -803,7 +842,12 @@ def _material_price(row: asyncpg.Record) -> dict:
         # "bought on 6 July" and "recorded on 29 August" are different claims.
         "purchased_on": _iso(row["purchased_on"]),
         "invoice_date": _iso(row["invoice_date"]),
+        "newer_uncosted": None,
     }
+    if stale_line is not None:
+        payload["quality"] = costing.Quality.ESTIMATED.value
+        payload["newer_uncosted"] = newer_uncosted_summary(stale_line)
+    return payload
 
 
 async def _tenant(db: Database) -> str:
@@ -856,6 +900,15 @@ async def list_ingredients(request: Request) -> dict:
         costs.setdefault(cost["ingredient_id"], []).append(cost)
     by_pack = {cost["supplier_item_id"]: cost for rows_ in costs.values() for cost in rows_}
 
+    # D11 (WP-61 amendment 3): a material whose newest confirmed purchase
+    # could not be costed keeps its price visible but capped at *estimated*,
+    # with the blocked line named - never an old number wearing a good label.
+    stale: dict[str, asyncpg.Record] = {
+        line["ingredient_id"]: line
+        for line in await db.list_newest_purchases(tenant_id)
+        if not line["costed"]
+    }
+
     packs: dict[str, list[dict]] = {}
     for pack in await db.list_mapped_packs(tenant_id):
         packs.setdefault(pack["ingredient_id"], []).append(
@@ -868,7 +921,9 @@ async def list_ingredients(request: Request) -> dict:
                 "name": row["name"],
                 "base_unit": row["base_unit"],
                 "pack_count": row["pack_count"],
-                "price": _material_price(costs[row["id"]][0]) if costs.get(row["id"]) else None,
+                "price": _material_price(costs[row["id"]][0], stale.get(row["id"]))
+                if costs.get(row["id"])
+                else None,
                 "packs": packs.get(row["id"], []),
             }
             for row in rows

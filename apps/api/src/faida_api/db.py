@@ -1075,16 +1075,92 @@ class Database:
         )
 
     async def get_recipe_components(self, recipe_id: str) -> list[asyncpg.Record]:
+        """One version's components. `has_packs` says whether any supplier
+        product is mapped onto the ingredient yet - the difference between
+        "map a product to it" and "confirm a purchase of it", which are two
+        different sentences on the screen (WP-61)."""
         return await self.pool.fetch(
             """
             select c.position, c.ingredient_id::text as ingredient_id, c.qty, c.unit,
-                   c.source_text, ing.name as ingredient_name, ing.base_unit
+                   c.source_text, ing.name as ingredient_name, ing.base_unit,
+                   exists (select 1 from supplier_items si where si.ingredient_id = ing.id)
+                     as has_packs
             from recipe_components c
             join ingredients ing on ing.id = c.ingredient_id
             where c.recipe_id = $1
             order by c.position
             """,
             recipe_id,
+        )
+
+    async def list_current_recipe_components(self, tenant_id: str) -> list[asyncpg.Record]:
+        """Every item's *current* recipe version with its components, one query
+        however long the menu grows (WP-61, the bounded-queries rule D10). The
+        menu screen joins this against the material prices in Python - the
+        `list_mapped_pack_costs` shape one layer up."""
+        return await self.pool.fetch(
+            """
+            with current as (
+                select distinct on (menu_item_id) id, menu_item_id
+                from recipes
+                where tenant_id = $1
+                order by menu_item_id, version desc, id desc
+            )
+            select cur.menu_item_id::text as menu_item_id,
+                   c.position, c.ingredient_id::text as ingredient_id, c.qty, c.unit,
+                   c.source_text, ing.name as ingredient_name, ing.base_unit,
+                   exists (select 1 from supplier_items si where si.ingredient_id = ing.id)
+                     as has_packs
+            from current cur
+            join recipe_components c on c.recipe_id = cur.id
+            join ingredients ing on ing.id = c.ingredient_id
+            order by cur.menu_item_id, c.position
+            """,
+            tenant_id,
+        )
+
+    async def list_newest_purchases(self, tenant_id: str) -> list[asyncpg.Record]:
+        """The newest confirmed stock line per material - costed **or not**
+        (WP-61 amendment 3, D11).
+
+        `list_mapped_pack_costs` picks the newest *costed* line, which is the
+        price. This asks the prior question: what was the newest *purchase*?
+        When the two disagree - the newest purchase could not be costed (a
+        bare carton, a missing price, a foreign-currency hold) - the older
+        price silently looks current, which is the silent-stale-number class
+        one layer up from WP-19. The caller compares: a `costed = false` row
+        here caps its material and every plate above it at *estimated* and
+        names this line as the reason.
+
+        Same ordering and same qty >= 0 rule as the price query, so 'newest'
+        means the same thing in both and a credit line wins neither."""
+        return await self.pool.fetch(
+            """
+            select distinct on (ing.id)
+                   ing.id::text as ingredient_id,
+                   l.id::text as invoice_line_id, l.position, l.raw_name, l.qty, l.unit,
+                   l.pack_size, l.unit_price,
+                   (l.cost_per_base_unit is not null and l.cost_base_unit = ing.base_unit)
+                     as costed,
+                   s.pack_size_override,
+                   inv.id::text as invoice_id, inv.invoice_date, inv.currency,
+                   t.currency as tenant_currency,
+                   coalesce(inv.invoice_date,
+                            (inv.confirmed_at at time zone 'UTC')::date) as purchased_on
+            from supplier_items s
+            join ingredients ing on ing.id = s.ingredient_id
+            join invoice_lines l on l.supplier_item_id = s.id
+            join invoices inv on inv.id = l.invoice_id
+            join tenants t on t.id = inv.tenant_id
+            where s.tenant_id = $1
+              and s.ingredient_id is not null
+              and inv.status = 'confirmed'
+              and l.line_kind = 'stock_item'
+              and coalesce(l.qty, 0) >= 0
+            order by ing.id, purchased_on desc, inv.confirmed_at desc,
+                     l.position desc, l.id desc
+            """,
+            tenant_id,
         )
 
     async def create_menu_item(
