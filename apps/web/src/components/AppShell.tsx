@@ -12,10 +12,10 @@ export default function AppShell({
   current,
   children,
 }: {
-  current: "invoices" | "materials";
+  current: "invoices" | "materials" | "menu";
   children: React.ReactNode;
 }) {
-  const linkClasses = (name: "invoices" | "materials") =>
+  const linkClasses = (name: "invoices" | "materials" | "menu") =>
     current === name
       ? "text-sm font-semibold text-palm"
       : "text-sm font-medium text-stone hover:text-palm";
@@ -53,6 +53,13 @@ export default function AppShell({
               className={linkClasses("materials")}
             >
               Materials
+            </Link>
+            <Link
+              href="/menu"
+              aria-current={current === "menu" ? "page" : undefined}
+              className={linkClasses("menu")}
+            >
+              Menu
             </Link>
           </div>
         </div>

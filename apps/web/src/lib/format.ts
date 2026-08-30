@@ -47,6 +47,19 @@ export function quantity(value: string): string {
   return value.replace(/0+$/, "").replace(/\.$/, "");
 }
 
+/**
+ * A headline figure, rounded to whole dirhams (plan.md section 3: rounded
+ * headline numbers, exact figures only in detail). String operations only -
+ * money is never parsed to a number on these screens - so this truncates
+ * rather than rounds, which can only ever understate a ranking figure by
+ * under a dirham. Lived in RawMaterials until the menu screen needed it too.
+ */
+export function roundedAed(value: string): string {
+  const whole = value.split(".")[0].replace("-", "");
+  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return `AED ${value.startsWith("-") ? "-" : ""}${grouped}`;
+}
+
 /** Plain English for the header fields C8 keys provenance by. */
 const FIELD_WORDS: Record<string, string> = {
   supplier_name: "the supplier name",

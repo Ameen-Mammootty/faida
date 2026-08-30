@@ -32,6 +32,7 @@ import {
   mockSetPackSizeOverride,
   mockUnmapSupplierItem,
 } from "./mock/materials";
+import { mockGetMenuItem, mockListMenuItems } from "./mock/menu";
 import {
   mockConfirmInvoice,
   mockCreateManualInvoice,
@@ -51,6 +52,8 @@ import type {
   InvoiceSummary,
   ManualInvoiceInput,
   MappingResult,
+  MenuItemDetail,
+  MenuItemSummary,
   PackSizeOverrideResult,
   PriceHistory,
   RejectionResult,
@@ -245,4 +248,27 @@ export async function setPackSizeOverride(
     `/api/supplier-items/${encodeURIComponent(itemId)}/pack-size`,
     jsonInit("POST", { pack_size: packSize }),
   );
+}
+
+/**
+ * M6 WP-61/62: the menu, costed.
+ *
+ *   GET /api/menu-items         every item + its plate answer (cost, margin, or what is missing)
+ *   GET /api/menu-items/{id}    the drill: the current recipe, each component's cost and the
+ *                               invoice line its price came from
+ *
+ * Plate costs are derived on every read from the same material prices the
+ * materials screen shows - nothing stored, nothing to invalidate, so a newly
+ * confirmed invoice moves these numbers on the next load.
+ */
+
+export async function listMenuItems(): Promise<MenuItemSummary[]> {
+  if (MOCK) return mockListMenuItems();
+  const body = await request<{ menu_items: MenuItemSummary[] }>("/api/menu-items");
+  return body.menu_items;
+}
+
+export async function getMenuItem(id: string): Promise<MenuItemDetail> {
+  if (MOCK) return mockGetMenuItem(id);
+  return request<MenuItemDetail>(`/api/menu-items/${encodeURIComponent(id)}`);
 }

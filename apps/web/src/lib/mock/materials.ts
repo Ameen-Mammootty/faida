@@ -357,6 +357,10 @@ function toPrice(pack: MockPack): MaterialPrice | null {
     supplier_item_id: pack.id,
     product_name: pack.canonical_name,
     invoice_date: pack.cost.purchased_on,
+    // The D11 stale flag never fires in the mock: every fixture pack's newest
+    // purchase is the costed one, so claiming otherwise would demo a warning
+    // the data does not support.
+    newer_uncosted: null,
   };
 }
 

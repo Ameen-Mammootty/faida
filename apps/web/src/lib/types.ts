@@ -354,6 +354,22 @@ export interface MaterialPrice {
   /** The date the invoice actually printed, null when it printed none - so
    * "bought on" and "recorded on" are never confused for each other. */
   invoice_date: string | null;
+  /** M6 WP-61 (D11): set when this material's newest confirmed purchase could
+   * not be costed. The figure above is real but not current - the quality is
+   * already capped at "estimated" by the API - and this names the delivery
+   * that is the unanswered question. */
+  newer_uncosted: NewerUncosted | null;
+}
+
+/** The blocked newer purchase behind a stale-capped price (WP-61, D11). */
+export interface NewerUncosted {
+  invoice_line_id: string;
+  invoice_id: string;
+  position: number;
+  raw_name: string;
+  purchased_on: string | null;
+  /** The WP-55 sentence: why that line has no cost. */
+  reason: string;
 }
 
 /** A purchasable pack that has been mapped onto a material. */
@@ -474,4 +490,108 @@ export interface MappingResult {
 export interface RejectionResult {
   supplier_item_id: string;
   rejected_ingredient_id: string;
+}
+
+/**
+ * M6 WP-61/62: the menu, costed.
+ *
+ * A plate cost is **derived on every read** from the same material prices the
+ * materials screen shows - nothing is stored, so confirming a cheaper milk
+ * invoice moves every karak on the next load with nothing to invalidate.
+ *
+ * The quality vocabulary is the cost one plus "incomplete", and the word
+ * "verified" still does not exist. An incomplete item carries **no numbers at
+ * all** - only its list of what is missing - because a half-costed dish
+ * showing a fat margin is a lie the ranking would repeat.
+ *
+ * The word on every screen is *margin*: labour, rent and waste are absent, so
+ * it is never "profit", and it is never "food cost %" (plan.md section 3).
+ */
+export type PlateQuality = "reliable_with_limitations" | "estimated" | "incomplete";
+
+/** The whole answer for one menu item. Numbers are null iff incomplete. */
+export interface Plate {
+  quality: PlateQuality;
+  /** What stands between this item and a margin, in plain words. */
+  missing: string[];
+  /** Money strings, three decimals. */
+  cost_per_portion: string | null;
+  /** The margin base: selling price net of VAT. */
+  net_price: string | null;
+  /** The VAT rate inside the menu price ("0.05"), null when unknown - the
+   * screen says the basis in words either way. */
+  vat_rate: string | null;
+  /** Margin in AED per portion - what the ranking orders by. */
+  margin: string | null;
+  /** Margin as a percentage of the net price, one decimal ("64.1"). */
+  margin_pct: string | null;
+}
+
+/** The current recipe version, as the list endpoint summarizes it. */
+export interface MenuRecipeSummary {
+  id: string;
+  version: number;
+  /** The batch divisor: one pot makes this many portions. Decimal string. */
+  yield_portions: string;
+  /** Display text only ("cups"); nothing ever converts against it. */
+  yield_label: string | null;
+  component_count: number;
+}
+
+/** One row of GET /api/menu-items (envelope {"menu_items": [...]}). */
+export interface MenuItemSummary {
+  id: string;
+  name: string;
+  /** As the owner states it, VAT inside it. Money string. */
+  selling_price: string;
+  archived_at: string | null;
+  created_at: string;
+  plate: Plate;
+  recipe: MenuRecipeSummary | null;
+}
+
+/** One component's cost and its full forensics: the material price it
+ * multiplied, down to the invoice line and the photo behind it. */
+export interface MenuComponentCost {
+  /** This component's share of one portion's cost. Money string. */
+  amount: string;
+  quality: CostQuality;
+  price: MaterialPrice;
+}
+
+/** One line of the current recipe, in the detail payload. */
+export interface MenuComponent {
+  position: number;
+  ingredient_id: string;
+  ingredient_name: string;
+  base_unit: BaseUnit;
+  /** The consultant's converted number. Decimal string. */
+  qty: string;
+  unit: string;
+  /** The recipe card's own words ("1 cup"), kept beside the conversion -
+   * the only audit a typed quantity will ever have. */
+  source_text: string | null;
+  /** Exactly one of these is set. */
+  cost: MenuComponentCost | null;
+  missing: string | null;
+}
+
+export interface MenuRecipeDetail {
+  id: string;
+  version: number;
+  yield_portions: string;
+  yield_label: string | null;
+  created_at: string | null;
+  components: MenuComponent[];
+}
+
+/** GET /api/menu-items/{id}: the drill behind one ranked row. */
+export interface MenuItemDetail {
+  id: string;
+  name: string;
+  selling_price: string;
+  archived_at: string | null;
+  created_at: string;
+  plate: Plate;
+  recipe: MenuRecipeDetail | null;
 }

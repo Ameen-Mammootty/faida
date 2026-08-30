@@ -11,7 +11,7 @@ import {
   setPackSizeOverride,
   unmapSupplierItem,
 } from "@/lib/api";
-import { describeFields, formatDate, groupedMoney } from "@/lib/format";
+import { describeFields, formatDate, groupedMoney, roundedAed } from "@/lib/format";
 import type {
   BaseUnit,
   BlockedCost,
@@ -77,6 +77,16 @@ function priceSource(price: MaterialPrice): string {
  * but nothing anywhere cross-checks the pack size it was divided by.
  */
 function priceQuality(price: MaterialPrice): string {
+  // D11 (M6 WP-61): the newest delivery could not be costed, so this figure
+  // is real but not current - and the unanswered delivery is named, because
+  // "estimated" with nothing after it is a warning people learn to scroll
+  // past.
+  if (price.newer_uncosted) {
+    const when = price.newer_uncosted.purchased_on
+      ? ` on ${formatDate(price.newer_uncosted.purchased_on)}`
+      : "";
+    return `Estimated: a newer delivery${when} has no cost yet - ${price.newer_uncosted.reason}`;
+  }
   if (price.pack_source === "override") {
     return `Estimated: divided by ${price.pack}, which someone entered for this product.`;
   }
@@ -84,19 +94,6 @@ function priceQuality(price: MaterialPrice): string {
     return `Estimated: leans on ${describeFields(price.asserted)}, supplied by a person.`;
   }
   return `From ${price.pack} on the invoice, which nothing cross-checks.`;
-}
-
-/**
- * A headline figure, rounded to whole dirhams (plan.md section 3: rounded
- * headline numbers, exact figures only in detail). String operations only -
- * money is never parsed to a number on this screen - so this truncates rather
- * than rounds, which can only ever understate a ranking figure by under a
- * dirham.
- */
-function roundedAed(value: string): string {
-  const whole = value.split(".")[0].replace("-", "");
-  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-  return `AED ${value.startsWith("-") ? "-" : ""}${grouped}`;
 }
 
 type Feedback = { kind: "error" | "done"; text: string } | null;
