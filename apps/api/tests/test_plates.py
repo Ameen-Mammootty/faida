@@ -565,3 +565,26 @@ async def test_the_menu_screens_query_count_does_not_grow_with_the_menu(api, db)
         db.pool = counting._inner
 
     assert small_menu == large_menu
+
+
+@requires_db
+async def test_one_material_missing_twice_is_named_once(api, db):
+    """The real menu draws lemon twice in one dish - 7 g in the marinade and
+    20 g as the wedge - so an unmapped material would be listed as two jobs
+    when it is one click, in the very place a person looks to find out what to
+    do next (found loading F7's menu, 2026-08-31)."""
+    supplier_id = await _supplier(db)
+    pack = await _catalog_item(db, supplier_id, "LEMON 5KG", "5kg")
+    lemon = await _material(db, pack, "Lemon", "g")
+    item_id = await _menu_item(api, "Chicken 65 Dry", "17.00")
+    await _recipe(
+        api,
+        item_id,
+        [
+            {"ingredient_id": lemon, "qty": "7.143", "unit": "g"},
+            {"ingredient_id": lemon, "qty": "20", "unit": "g"},
+        ],
+    )
+    plate = (await _detail(api, item_id))["plate"]
+    assert plate["quality"] == "incomplete"
+    assert plate["missing"] == ["Lemon has no costed purchase yet"]

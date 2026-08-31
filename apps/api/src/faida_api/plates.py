@@ -208,7 +208,13 @@ def plate(
     net price. Quantized once, at the end."""
     if not components:
         return Plate(quality=PlateQuality.INCOMPLETE, missing=(EMPTY_RECIPE,))
-    missing = tuple(c.missing for c in components if c.missing is not None)
+    # One sentence per missing *thing*, not per component that wants it. The
+    # real menu draws lemon twice in one dish (7 g in the marinade, 20 g as
+    # the wedge), so an unmapped material would otherwise be listed as two
+    # jobs when it is one click - and the screen would repeat itself in the
+    # place a person goes to find out what to do next. Order is the recipe's,
+    # so the first line that needs it is the one that names it.
+    missing = tuple(dict.fromkeys(c.missing for c in components if c.missing is not None))
     if missing:
         return Plate(quality=PlateQuality.INCOMPLETE, missing=missing)
 

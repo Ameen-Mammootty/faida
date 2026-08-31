@@ -701,9 +701,9 @@ function LoadRow({
         <td className="px-4 py-1.5">
           {sentences.length > 0 ? (
             <ul className="space-y-0.5">
-              {sentences.map((sentence) => (
+              {sentences.map((sentence, index) => (
                 <li
-                  key={sentence}
+                  key={index}
                   className={item.missing.length > 0 && !result ? "text-sm text-stone" : "text-sm text-plum"}
                 >
                   {sentence}

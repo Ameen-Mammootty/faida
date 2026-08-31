@@ -343,6 +343,20 @@ function MarginFigure({ item }: { item: MenuItemSummary }) {
 
 const COLLAPSED_ROWS = 5;
 
+/**
+ * How many missing pieces an incomplete item names before it counts the rest.
+ *
+ * The design was drawn for a handful of incomplete items; the real 45-item
+ * menu arrives with **every** item incomplete and up to fifteen unmapped
+ * materials each, which renders "no supplier product is mapped to ... yet"
+ * some four hundred times and buries the one thing the reader wants - which
+ * materials. Four named, the rest counted: the small case (the steady state,
+ * once mapping is underway) is unchanged, and the big one stays readable.
+ * The full list lives on the materials screen, which is where the work is
+ * done and where the link already points.
+ */
+const MISSING_SHOWN = 4;
+
 export default function MenuMargins() {
   const [items, setItems] = useState<MenuItemSummary[] | null>(null);
   const [moves, setMoves] = useState<PriceMove[] | null>(null);
@@ -615,11 +629,16 @@ export default function MenuMargins() {
                           sells at AED {money(item.selling_price)}
                         </p>
                         <ul className="mt-1 space-y-0.5">
-                          {item.plate.missing.map((sentence) => (
-                            <li key={sentence} className="text-sm text-plum">
+                          {item.plate.missing.slice(0, MISSING_SHOWN).map((sentence, index) => (
+                            <li key={index} className="text-sm text-plum">
                               {sentence}
                             </li>
                           ))}
+                          {item.plate.missing.length > MISSING_SHOWN ? (
+                            <li className="text-sm text-stone">
+                              and {item.plate.missing.length - MISSING_SHOWN} more
+                            </li>
+                          ) : null}
                         </ul>
                       </div>
                       {item.plate.missing.some((sentence) => sentence !== "no recipe yet") ? (
