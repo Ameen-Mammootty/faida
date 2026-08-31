@@ -29,7 +29,7 @@ These do **not** replace `Docs/demo-invoices/DEMO-1..3` — those are act one's 
 | KAS-1 | Al Aweer Fresh Produce LLC, AAF-2026-3318 | 24/08/2026 | 16 | 753.90 | every vegetable on the menu |
 | KAS-2 | Deira Spice & Dry Foods Trading LLC, DSF-26-08-441 | 24/08/2026 | 24 | 2,732.10 | sugar, salt, every spice, the dals and nuts |
 | KAS-3 | Al Madina Trading Co., AMT-26-1203 | 25/08/2026 | 14 | 2,977.28 | dairy, eggs, paneer, the frozen proteins |
-| KAS-4 | Gulf Foods Trading L.L.C., GFT-2026-0908 | 25/08/2026 | 28 | 3,833.55 | tea and beverage powders, bakery, sauces, water, all disposables |
+| KAS-4 | Gulf Foods Trading L.L.C., GFT-2026-0908 | 25/08/2026 | 27 | 3,739.05 | tea and beverage powders, bakery, sauces, all disposables |
 | **KAS-5** | **Al Madina Trading Co., AMT-26-1274** | **31/08/2026** | **4** | **1,527.75** | **the on-stage paper: the same packs a week later, prices moved** |
 
 Confirm KAS-1 to KAS-4 during preparation. **KAS-5 is the one you forward live** - it is a
@@ -45,10 +45,10 @@ source table. Last run 2026-08-31:
 | KAS-1 | 16 | 16 | 718.00 / 35.90 / 753.90 | green, exclusive 5% | 5.7 s |
 | KAS-2 | 24 | 24 | 2,602.00 / 130.10 / 2,732.10 | green, exclusive 5% | 11.0 s |
 | KAS-3 | 14 | 14 | 2,835.50 / 141.78 / 2,977.28 | green, exclusive 5% | 5.3 s |
-| KAS-4 | 28 | 28 | 3,651.00 / 182.55 / 3,833.55 | green, exclusive 5% | 7.8 s |
+| KAS-4 | 27 | 27 | 3,561.00 / 178.05 / 3,739.05 | green, exclusive 5% | 7.8 s |
 | KAS-5 | 4 | 4 | 1,455.00 / 72.75 / 1,527.75 | green, exclusive 5% | 3.5 s |
 
-**86 of 86 lines, zero mismatches** on name, quantity, unit, pack size and unit price. Supplier,
+**85 of 85 lines, zero mismatches** on name, quantity, unit, pack size and unit price. Supplier,
 invoice number, day-first date, currency and credit terms all read correctly on every paper, and
 the VAT treatment is *derived* from the arithmetic rather than taken from the document's claim.
 Every latency is inside the ~20 s forward-to-reply target with room for the rest of the loop.
@@ -80,22 +80,32 @@ all-or-nothing. Measured on this menu:
 
 | materials costed | items that can be costed (of 45) |
 |---|---|
-| 20 | 11 |
-| 40 | 24 |
-| 60 | 28 |
-| 80 | 43 |
-| 82 | 45 |
+| 20 | 3 |
+| 60 | 20 |
+| 75 | 37 |
+| 80 | 40 |
+| 81 | 45 |
 
-M6's done-when is 90% of items by count, so it needs roughly 80 of the 82. Four invoices is not
-a shortcut - it is the smallest number of real papers that covers a cafeteria's actual buying.
+M6's done-when is 90% of items by count, and that needs **80 of the 81**. Dropping Water barely
+moved it, which is the point: the constraint is the long tail, not any one ingredient. Four
+invoices is not a shortcut - it is the smallest number of real papers that covers a cafeteria's
+actual buying, and all four are needed.
 
 ## Two things in the menu that these papers had to solve
 
-**Water is in 23 of the 45 items**, and nobody invoices the tap. Left alone, those 23 items stay
-*incomplete* for ever and the 90% gate is unreachable. KAS-4 therefore buys **bottled water in
-18.9 L bottles**, which is what a UAE cafeteria running a tea counter actually does.
-**Founder call needed:** if Koukh Al Shay uses filtered mains water, the honest fix is to take
-Water out of the recipes instead - it is not a purchase, so it is not a cost.
+**Water was in 23 of the 45 items, and it has been taken out of the recipes** - founder's call,
+2026-08-31. The cafeteria runs mains water, so it is not a purchase, and a cost line for
+something nobody buys would be an invented number in the layer this whole product exists to keep
+honest. Two things followed: the menu CSV dropped its 23 Water rows (45 items intact, 81
+materials now), and KAS-4 lost the bottled-water line it had been carrying to make those items
+costable. The alternative - invoicing 18.9 L bottles - was the wrong shape: it would have made
+the numbers *work* rather than making them *true*.
+
+Consequence to expect on a menu already loaded: re-uploading the corrected CSV writes a new
+recipe version for each of those 23 items, which is D8 doing its job. The Water material stays
+in the catalog as an orphan with no pack and no price - there is deliberately no delete door for
+a material (M5 gives mapping an undo, not ingredients a delete), and an unused shelf costs
+nothing and lies about nothing.
 
 **Egg is measured in grams** in the recipes (4.167 g per portion), so its pack has to be a mass.
 A 30-egg tray is a *count*, and the mapping door correctly refuses a piece pack onto a gram

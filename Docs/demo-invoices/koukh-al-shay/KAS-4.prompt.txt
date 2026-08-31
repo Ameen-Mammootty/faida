@@ -23,7 +23,7 @@ Deliver to: Koukh Al Shay, Al Qusais Branch, Damascus Street, Al Qusais, Dubai, 
 Payment terms: 30 days credit
 Currency: AED
 
--- Line items, all 28 of them, in this exact order --
+-- Line items, all 27 of them, in this exact order --
 COLUMNS, left to right: # | Item code | Description | Qty | Unit | Pack size | Unit price AED | Amount AED
 
 1 | BEV-CTC-05 | CTC BLACK TEA | 4 | bag | 5 kg | 92.00 | 368.00
@@ -41,23 +41,22 @@ COLUMNS, left to right: # | Item code | Description | Qty | Unit | Pack size | U
 13 | AMB-SOY-05 | LIGHT SOY SAUCE | 2 | can | 5 l | 32.00 | 64.00
 14 | AMB-RCS-05 | RED CHILLI SAUCE | 2 | can | 5 l | 29.00 | 58.00
 15 | AMB-KTC-05 | TOMATO KETCHUP | 3 | can | 5 l | 26.00 | 78.00
-16 | BEV-WTR-19 | WATER 5 GALLON | 12 | btl | 18.9 l | 7.50 | 90.00
-17 | BKY-HON-01 | HONEY CAKE WHOLE (10 SLICES) | 4 | pc | 1 pc | 34.00 | 136.00
-18 | BKY-ZAF-01 | ZAFRAN CAKE WHOLE (10 SLICES) | 4 | pc | 1 pc | 36.00 | 144.00
-19 | BKY-LOT-01 | LOTUS CAKE WHOLE (10 SLICES) | 4 | pc | 1 pc | 42.00 | 168.00
-20 | PKG-CKB-100 | CAKE BOX + FORK | 2 | ctn | 100 pcs | 38.00 | 76.00
-21 | PKG-DCS-100 | DELIVERY CUP S + LID | 4 | ctn | 100 pcs | 21.00 | 84.00
-22 | PKG-DCM-100 | DELIVERY CUP M + LID | 4 | ctn | 100 pcs | 24.00 | 96.00
-23 | PKG-DCL-100 | DELIVERY CUP L + LID | 4 | ctn | 100 pcs | 28.00 | 112.00
-24 | PKG-FL1-50 | DISPOSABLE FLASK 1 L | 3 | ctn | 50 pcs | 62.00 | 186.00
-25 | PKG-FL2-50 | DISPOSABLE FLASK 2 L | 3 | ctn | 50 pcs | 88.00 | 264.00
-26 | PKG-PCS-100 | PAPER CUP SMALL + LID | 8 | ctn | 100 pcs | 17.50 | 140.00
-27 | PKG-PCL-100 | PAPER CUP LARGE + LID | 8 | ctn | 100 pcs | 21.00 | 168.00
-28 | PKG-TWC-100 | TAKEAWAY CONTAINER + LID | 10 | ctn | 100 pcs | 33.00 | 330.00
+16 | BKY-HON-01 | HONEY CAKE WHOLE (10 SLICES) | 4 | pc | 1 pc | 34.00 | 136.00
+17 | BKY-ZAF-01 | ZAFRAN CAKE WHOLE (10 SLICES) | 4 | pc | 1 pc | 36.00 | 144.00
+18 | BKY-LOT-01 | LOTUS CAKE WHOLE (10 SLICES) | 4 | pc | 1 pc | 42.00 | 168.00
+19 | PKG-CKB-100 | CAKE BOX + FORK | 2 | ctn | 100 pcs | 38.00 | 76.00
+20 | PKG-DCS-100 | DELIVERY CUP S + LID | 4 | ctn | 100 pcs | 21.00 | 84.00
+21 | PKG-DCM-100 | DELIVERY CUP M + LID | 4 | ctn | 100 pcs | 24.00 | 96.00
+22 | PKG-DCL-100 | DELIVERY CUP L + LID | 4 | ctn | 100 pcs | 28.00 | 112.00
+23 | PKG-FL1-50 | DISPOSABLE FLASK 1 L | 3 | ctn | 50 pcs | 62.00 | 186.00
+24 | PKG-FL2-50 | DISPOSABLE FLASK 2 L | 3 | ctn | 50 pcs | 88.00 | 264.00
+25 | PKG-PCS-100 | PAPER CUP SMALL + LID | 8 | ctn | 100 pcs | 17.50 | 140.00
+26 | PKG-PCL-100 | PAPER CUP LARGE + LID | 8 | ctn | 100 pcs | 21.00 | 168.00
+27 | PKG-TWC-100 | TAKEAWAY CONTAINER + LID | 10 | ctn | 100 pcs | 33.00 | 330.00
 
 -- Totals block, lower right --
-Subtotal: AED 3,651.00
-VAT 5%: AED 182.55
-TOTAL DUE: AED 3,833.55
+Subtotal: AED 3,561.00
+VAT 5%: AED 178.05
+TOTAL DUE: AED 3,739.05
 
 The printed prices are exclusive of VAT.

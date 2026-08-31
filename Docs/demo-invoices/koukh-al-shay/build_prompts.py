@@ -86,7 +86,6 @@ Dsup = [  # Gulf general trading: beverages, bakery, ambient, disposables
  ("AMB-SOY-05","LIGHT SOY SAUCE",2,"can","5 l",32.00),
  ("AMB-RCS-05","RED CHILLI SAUCE",2,"can","5 l",29.00),
  ("AMB-KTC-05","TOMATO KETCHUP",3,"can","5 l",26.00),
- ("BEV-WTR-19","WATER 5 GALLON",12,"btl","18.9 l",7.50),
  ("BKY-HON-01","HONEY CAKE WHOLE (10 SLICES)",4,"pc","1 pc",34.00),
  ("BKY-ZAF-01","ZAFRAN CAKE WHOLE (10 SLICES)",4,"pc","1 pc",36.00),
  ("BKY-LOT-01","LOTUS CAKE WHOLE (10 SLICES)",4,"pc","1 pc",42.00),
