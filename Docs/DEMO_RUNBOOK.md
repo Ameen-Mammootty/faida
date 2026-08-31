@@ -149,19 +149,27 @@ On stage, switch to the backup demo phone first and debug later.
 Signed image URLs expire; refresh the page and the screen re-fetches a fresh signed URL.
 If it still fails, show the fields and the sparkline, which carry the story without the photo.
 
-## E0. The 5x-run log (completed 2026-08-29 - on Opus; re-run owed on Flash)
+## E0. The 5x-run log (2026-08-29 on Opus; re-run clean on Flash 2026-08-30)
 
-> **Engine swap 2026-08-29:** Gemini 3 Flash became the shipped extraction model after this
-> table was earned on Opus 5. The table stands as evidence of the loop's mechanics, but the
-> loop gate closes on the shipped engine: the 5x runs, the meme, and both rehearsals re-run
-> on Flash before the gate is called passed. Expect faster replies, not slower.
+> **Engine swap 2026-08-29, and the re-run that settled it.** Gemini 3 Flash became the
+> shipped extraction model after the table below was earned on Opus 5. The papers, the 5x
+> runs and the meme were **re-run on Flash on 2026-08-30 and came back clean** (founder), so
+> the shipped engine now carries the evidence and the Opus table stands as history.
+>
+> **The seconds in the table are still the Opus measurement** - per-run timings were not
+> captured on the Flash pass, and no number here is a Flash number. That is a gap in the
+> record rather than in the loop: the next rehearsal logs its own timings from the `latency
+> document=` lines (section E), and those become the shipped engine's figures.
+>
+> Still owed on Flash: **the two full rehearsals**, which are the gate itself and not this
+> table.
 
 Every paper through the full loop five times, verified run-by-run against the live
 database; the meme once (plus an accidental video, which proved the unsupported-media
 reply too). Zero pipeline flakes; the only incident was a drained Anthropic credit
 balance mid-session, now a section A precondition.
 
-| Paper | Runs | Forward-to-reply (s) | Replies | Repair rounds |
+| Paper | Runs | Forward-to-reply (s) - **Opus** | Replies | Repair rounds |
 |---|---|---|---|---|
 | DEMO-1 (alert pair) | 5/5 | 14.3, 17.2, 14.3, 14.9, 15.4 | byte-identical, both alerts exact | 0 |
 | DEMO-2 (single alert) | 5/5 | 15.0, 15.5, 17.1, 13.6, 14.0 | byte-identical, flour silent | 0 |
@@ -195,7 +203,8 @@ Both acts count as one run: the gate is the **full** §6 script - loop, mapping,
 A run with any manual intervention does not count; fix the cause and run it again.
 
 Still owed before this gate can be called passed (neither is this runbook's to close):
-M4's Flash re-run (section E0's table was earned on Opus), and F7's real menu loaded through `/menu/load`.
+**these two rehearsals themselves**, on Flash, and F7's real menu loaded into the demo project through `/menu/load`.
+M4's Flash re-run of the papers and the meme closed 2026-08-30 (section E0).
 
 ## F. Act two: the screens (added 2026-08-31, WP-66)
 
