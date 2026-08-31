@@ -1,0 +1,51 @@
+Produce one photorealistic image of a single real-world paper document. The image contains nothing but that document and the surface it rests on. Do not add captions, arrows, labels, borders, mock-up frames, logos of real companies, or any text of your own invention.
+
+PHYSICAL ARTEFACT
+A crisp A4 laser-printed business document, flat, evenly lit, no shadow, no skew, pure white paper, as if produced by a flatbed scanner at 300 dpi. Whole page in frame with a thin white margin.
+A clean laser print on the supplier's own pre-printed letterhead.
+
+LANGUAGE
+All text is in English with western digits.
+
+EXACT CONTENT. Reproduce every character and every digit exactly as written below. Do not round, recalculate, reorder, translate, abbreviate, expand, add or omit anything. The arithmetic below is already correct.
+
+-- Header --
+SUPPLIER NAME (top of the document): Al Aweer Fresh Produce LLC
+SUPPLIER ADDRESS: Shop 214, Central Fruit & Vegetable Market, Al Aweer, Dubai, UAE
+SUPPLIER PHONE: +971 4 320 7714
+SUPPLIER TRN: 100447821900003
+DOCUMENT TITLE: TAX INVOICE
+Invoice number: AAF-2026-3318
+Date: 24/08/2026
+Bill to: Koukh Al Shay Cafeteria LLC
+Customer TRN: 100662310500003
+Deliver to: Koukh Al Shay, Al Qusais Branch, Damascus Street, Al Qusais, Dubai, UAE
+Payment terms: 30 days credit
+Currency: AED
+
+-- Line items, all 16 of them, in this exact order --
+COLUMNS, left to right: # | Item code | Description | Qty | Unit | Pack size | Unit price AED | Amount AED
+
+1 | VEG-ONI-10 | ONION | 6 | bag | 10 kg | 22.00 | 132.00
+2 | VEG-TOM-06 | TOMATO | 5 | box | 6 kg | 15.00 | 75.00
+3 | VEG-CAP-05 | CAPSICUM GREEN | 3 | box | 5 kg | 21.00 | 63.00
+4 | VEG-GNG-05 | GINGER | 1 | box | 5 kg | 34.00 | 34.00
+5 | VEG-GAR-05 | GARLIC PEELED | 1 | box | 5 kg | 46.00 | 46.00
+6 | VEG-CHI-01 | GREEN CHILLI | 2 | bag | 1 kg | 9.50 | 19.00
+7 | VEG-COR-01 | CORIANDER FRESH | 3 | bag | 1 kg | 12.00 | 36.00
+8 | VEG-CUR-500 | CURRY LEAVES | 2 | bag | 500 g | 11.00 | 22.00
+9 | VEG-SPO-02 | SPRING ONION | 2 | bag | 2 kg | 16.00 | 32.00
+10 | VEG-LEM-05 | LEMON | 2 | box | 5 kg | 19.50 | 39.00
+11 | VEG-MUS-02 | MUSHROOM | 2 | box | 2 kg | 27.00 | 54.00
+12 | VEG-SPI-02 | SPINACH | 1 | box | 2 kg | 13.00 | 13.00
+13 | VEG-CAU-06 | CAULIFLOWER | 1 | box | 6 kg | 18.00 | 18.00
+14 | VEG-PEA-01 | GREEN PEAS | 4 | bag | 1 kg | 8.75 | 35.00
+15 | VEG-COC-01 | COCONUT GRATED | 2 | bag | 1 kg | 14.00 | 28.00
+16 | VEG-GGP-01 | GINGER GARLIC PASTE | 4 | tub | 1 kg | 18.00 | 72.00
+
+-- Totals block, lower right --
+Subtotal: AED 718.00
+VAT 5%: AED 35.90
+TOTAL DUE: AED 753.90
+
+The printed prices are exclusive of VAT.

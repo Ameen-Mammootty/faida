@@ -1,0 +1,39 @@
+Produce one photorealistic image of a single real-world paper document. The image contains nothing but that document and the surface it rests on. Do not add captions, arrows, labels, borders, mock-up frames, logos of real companies, or any text of your own invention.
+
+PHYSICAL ARTEFACT
+A crisp A4 laser-printed business document, flat, evenly lit, no shadow, no skew, pure white paper, as if produced by a flatbed scanner at 300 dpi. Whole page in frame with a thin white margin.
+A clean laser print, identical house style to the earlier Al Madina paper.
+
+LANGUAGE
+All text is in English with western digits.
+
+EXACT CONTENT. Reproduce every character and every digit exactly as written below. Do not round, recalculate, reorder, translate, abbreviate, expand, add or omit anything. The arithmetic below is already correct.
+
+-- Header --
+SUPPLIER NAME (top of the document): Al Madina Trading Co.
+SUPPLIER ADDRESS: Warehouse 7, Al Quoz Industrial 3, Dubai, UAE
+SUPPLIER PHONE: +971 4 339 1120
+SUPPLIER TRN: 100338745600003
+DOCUMENT TITLE: TAX INVOICE
+Invoice number: AMT-26-1274
+Date: 31/08/2026
+Bill to: Koukh Al Shay Cafeteria LLC
+Customer TRN: 100662310500003
+Deliver to: Koukh Al Shay, Al Qusais Branch, Damascus Street, Al Qusais, Dubai, UAE
+Payment terms: 30 days credit
+Currency: AED
+
+-- Line items, all 4 of them, in this exact order --
+COLUMNS, left to right: # | Item code | Description | Qty | Unit | Pack size | Unit price AED | Amount AED
+
+1 | DRY-EVP-48 | EVAP MILK 48X400ML | 6 | ctn | 48x400ml | 99.00 | 594.00
+2 | DRY-MPW-25 | MILK POWDER | 1 | sack | 25 kg | 432.00 | 432.00
+3 | CHL-FRM-12 | FRESH MILK 12X1L | 8 | ctn | 12x1l | 42.00 | 336.00
+4 | FRZ-CHB-10 | CHICKEN BONELESS | 3 | ctn | 10 kg | 31.00 | 93.00
+
+-- Totals block, lower right --
+Subtotal: AED 1,455.00
+VAT 5%: AED 72.75
+TOTAL DUE: AED 1,527.75
+
+The printed prices are exclusive of VAT.
