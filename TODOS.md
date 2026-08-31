@@ -88,6 +88,32 @@ already implements.
 **Priority:** P3
 **Depends on:** M5 shipped, plus enough repeat-purchase history to compare against.
 
+### A held duplicate invoice has no resolution door - it sits in needs_review forever
+
+**What:** A way for the reviewer to resolve a duplicate-held invoice from the review screen -
+mark it as the duplicate it is and remove it from the working list (an archive status plus an
+audit row, most likely; hard delete loses the record that a double-send happened).
+
+**Why:** WP-44 holds the second copy of a re-sent paper, which is correct - but the hold is a
+dead end. The held row shows in the invoice list as *needs review* with nothing to review: chat
+OK cannot touch it (only `awaiting_confirm` resolves), the screen offers correct/confirm paths
+that make no sense for it, and there is no delete or archive door at all. In production a
+salesman **will** double-send - that is the whole reason the hold exists - so every real tenant
+will accumulate these.
+
+**Customer quote (the §2 rule):** the founder, 2026-08-31, after double-forwarding KAS-3 during
+demo preparation: *"the duplicate invoice of al madina is in my invoice list, and there is no
+option to mark duplicate and delete it."*
+
+**Context:** Found on the live demo project the day before the M6 gate. Not built then because
+M6's lane was closed and it touches the shipped review-screen path right before the rehearsals;
+the one accidental copy was cleared with a documented one-off
+(`Docs/apply_remove_duplicate_kas3.sql`). The right shape is probably one endpoint
+(`POST /api/invoices/{id}/dismiss`, allowed only for never-confirmed invoices, actor recorded,
+audit row written) plus one button on the review screen shown only for held/needs_review rows -
+the same one-door pattern every other write uses. Belongs with M7's approvals work, where "who
+may dismiss" gets a real answer.
+
 ### ~~A material with a blocked newer purchase silently shows its older price as current~~ done 2026-08-30
 
 Closed by WP-61 (derivation amendment 3, D11): `db.list_newest_purchases` asks what the newest
