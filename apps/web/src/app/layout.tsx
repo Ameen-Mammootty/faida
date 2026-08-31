@@ -27,7 +27,10 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    // globals.css sets scroll-behavior: smooth (the invoice-line anchors land
+    // gently); Next asks for this attribute so it does not also smooth-scroll
+    // route transitions, which reads as lag.
+    <html lang="en" data-scroll-behavior="smooth">
       <body className={`${inter.variable} ${manrope.variable}`}>{children}</body>
     </html>
   );

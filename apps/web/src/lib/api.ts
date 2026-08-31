@@ -27,12 +27,20 @@ import {
   mockListBlockedCosts,
   mockListIngredients,
   mockListUnmappedSupplierItems,
+  mockCreateIngredient,
   mockMapSupplierItem,
   mockRejectIngredient,
   mockSetPackSizeOverride,
   mockUnmapSupplierItem,
 } from "./mock/materials";
-import { mockGetMenuItem, mockListMenuItems, mockListPriceMoves } from "./mock/menu";
+import {
+  mockArchiveMenuItem,
+  mockGetMenuItem,
+  mockListMenuItems,
+  mockListPriceMoves,
+  mockLoadMenuItem,
+  mockUnarchiveMenuItem,
+} from "./mock/menu";
 import {
   mockConfirmInvoice,
   mockCreateManualInvoice,
@@ -46,14 +54,18 @@ import type {
   BlockedCost,
   Correction,
   Ingredient,
+  IngredientCreateInput,
   IngredientMappingInput,
+  IngredientProposal,
   InvoiceDetail,
   InvoiceFilters,
   InvoiceSummary,
   ManualInvoiceInput,
   MappingResult,
   MenuItemDetail,
+  MenuItemLoadInput,
   MenuItemSummary,
+  MenuLoadResult,
   PackSizeOverrideResult,
   PriceMove,
   PriceHistory,
@@ -185,6 +197,18 @@ export async function listIngredients(): Promise<Ingredient[]> {
   return body.ingredients;
 }
 
+/**
+ * M6 WP-64: create a raw material a recipe names before any invoice does.
+ * One click per material, never bulk - a CSV that mints twelve materials in
+ * one keystroke is M5's forbidden auto-merge coming in through a side door.
+ */
+export async function createIngredient(
+  body: IngredientCreateInput,
+): Promise<IngredientProposal> {
+  if (MOCK) return mockCreateIngredient(body);
+  return request<IngredientProposal>("/api/ingredients", jsonInit("POST", body));
+}
+
 export async function listUnmappedSupplierItems(): Promise<UnmappedSupplierItem[]> {
   if (MOCK) return mockListUnmappedSupplierItems();
   const body = await request<{ items: UnmappedSupplierItem[] }>("/api/supplier-items/unmapped");
@@ -283,4 +307,38 @@ export async function listPriceMoves(): Promise<PriceMove[]> {
   if (MOCK) return mockListPriceMoves();
   const body = await request<{ moves: PriceMove[] }>("/api/price-moves");
   return body.moves;
+}
+
+/**
+ * M6 WP-64: the batch loader.
+ *
+ *   POST /api/menu-items/load            one recipe, one transaction
+ *   POST /api/menu-items/{id}/archive    off the menu, never deleted
+ *   POST /api/menu-items/{id}/unarchive  the click back
+ *
+ * The loader drives `loadMenuItem` once per recipe rather than posting the
+ * whole file, for the reason the transaction exists: a row that fails leaves
+ * the other forty-four alone, and the grid can restamp each row as its answer
+ * arrives instead of after the last one.
+ *
+ * Archiving is always a person's click. A CSV missing half the menu must not
+ * vaporize it, so the loader names what is absent and archives nothing.
+ */
+export async function loadMenuItem(body: MenuItemLoadInput): Promise<MenuLoadResult> {
+  if (MOCK) return mockLoadMenuItem(body);
+  return request<MenuLoadResult>("/api/menu-items/load", jsonInit("POST", body));
+}
+
+export async function archiveMenuItem(id: string): Promise<MenuItemDetail> {
+  if (MOCK) return mockArchiveMenuItem(id);
+  return request<MenuItemDetail>(`/api/menu-items/${encodeURIComponent(id)}/archive`, {
+    method: "POST",
+  });
+}
+
+export async function unarchiveMenuItem(id: string): Promise<MenuItemDetail> {
+  if (MOCK) return mockUnarchiveMenuItem(id);
+  return request<MenuItemDetail>(`/api/menu-items/${encodeURIComponent(id)}/unarchive`, {
+    method: "POST",
+  });
 }

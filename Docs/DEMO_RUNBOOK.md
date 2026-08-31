@@ -1,8 +1,12 @@
-# Faida Demo Runbook (M4 loop gate - act one of the demo)
+# Faida Demo Runbook (both acts; M4 loop gate, M6 demo gate)
 
-This is the operating manual for the invoice-loop portion of the demo (plan.md §6) and for the two loop rehearsals before the M4 gate (F7).
-Since 2026-08-28 the full demo is two acts and gates at M6 (§1: the loop, then materials and menu margins); this runbook owns act one, and the loop gate stands on its own: the loop runs end to end twice in a row with zero intervention before anything is built on its numbers.
+This is the operating manual for the demo (plan.md §6) and for the rehearsals before its two gates.
+Since 2026-08-28 the full demo is two acts and gates at M6 (§1: the loop, then materials and menu margins).
+**Act one** (sections A-E) is the invoice loop on WhatsApp and stands on its own as the M4 loop gate: it runs end to end twice in a row with zero intervention before anything is built on its numbers.
+**Act two** (section F, added 2026-08-31 by WP-66) is the screens - materials, then menu margins, closing on "push this, fix that".
 Every reply quoted below is the exact template from `apps/api/src/faida_api/replies.py`, so if the phone shows different words, something is wrong.
+
+> **What gates and what only rehearses.** The staged menu in `supabase/demo_seed.sql` exists so act two can be practised today, on a laptop, without waiting on anything. It is **not** what the milestone closes on: M6's done-when ("one real menu loads in under a day of consultant time") and the demo gate both close on F7's real menu, loaded through `/menu/load`. Rehearse on the seed; gate on the real one.
 
 ## A. Preconditions checklist
 
@@ -93,7 +97,7 @@ The script from plan.md §6 M4, verbatim: forward invoice, reply appears with pr
 13. Back in WhatsApp, forward the meme and say: "And when someone sends it nonsense?"
 14. First the same ack arrives (`Got it - invoice received and saved. I'll reply with the details here soon.`), then after the read, the decline, exactly: `That doesn't look like a supplier invoice, so I'll leave it - forward an invoice photo and I'll read it.`
 15. Say: "It refuses politely instead of inventing numbers. That discipline is why you can trust the numbers it does record."
-16. Close on the plan's line: "no app, no login, no training - the salesman already knows how to do this."
+16. Close on the plan's line: "no app, no login, no training - the salesman already knows how to do this." Then go straight into **act two (section F)** without changing rooms: the screens are already open in the same browser.
 
 ## C. Reset between rehearsals
 
@@ -114,6 +118,7 @@ Re-check after the reset:
 2. `select name, wa_phone_e164 from branches where tenant_id = 'd0000000-0000-0000-0000-000000000001';` still shows the founder phone on Al Qusais Branch.
 3. `curl https://<host>/health` returns `{"ok":true,"db":true}`.
 4. The review screen's invoice list for the demo chain is empty again.
+5. `select count(*) from menu_items where tenant_id = 'd0000000-0000-0000-0000-000000000001';` returns `5`, and `/menu` shows four costed items with Paratha in the "can't be costed yet" section (act two's staged state, section F).
 
 ## D. Failure playbook
 
@@ -180,9 +185,77 @@ latency document=<id> webhook_to_reply_ms=<n> stages=ingest:<n>,extract:<n>,repa
 Grep the Railway logs for `latency document=` and divide `webhook_to_reply_ms` by 1000.
 The target is under about 20 seconds from forward to reply; 18.7 s was measured on a real forward at prompt v3 (2026-08-28) with no repair round - a curated invoice that keeps triggering repair should be swapped out.
 
-| Run # | Date | Forward-to-reply (s) | Flakes seen (and the fix shipped) |
-|---|---|---|---|
-| 1 | | | |
-| 2 | | | |
+Both acts count as one run: the gate is the **full** §6 script - loop, mapping, menu margins, "push this, fix that" - twice in a row with zero intervention, on the demo phones and on **F7's real menu**, not the staged one.
+
+| Run # | Date | Act one: forward-to-reply (s) | Act two: clean? | Flakes seen (and the fix shipped) |
+|---|---|---|---|---|
+| 1 | | | | |
+| 2 | | | | |
 
 A run with any manual intervention does not count; fix the cause and run it again.
+
+Still owed before this gate can be called passed (neither is this runbook's to close):
+M4's Flash re-run (section E0's table was earned on Opus), and F7's real menu loaded through `/menu/load`.
+
+## F. Act two: the screens (added 2026-08-31, WP-66)
+
+Act one ends with the owner's phone. Act two answers the question it leaves hanging: *so what did that price change actually cost me?*
+Three screens, one browser, no navigation gymnastics - and one manual page reload, which is the whole point and is called out below rather than hidden.
+
+Run it straight after step 16 of section B, in the same browser, starting on the Materials tab.
+
+**1. Materials - "every price you pay, on one shelf each" (about 40 seconds).**
+
+Open `/materials`.
+Say: "The invoice just went in. This is what it did to the shelf."
+Point at Milk Powder: one price per kilo, the supplier and the date under it, and the packs it came from.
+Then point at the one row waiting in the queue - Chakki Atta Flour has no material yet - and say: "It never guesses. When it doesn't know which shelf something belongs on, it asks, and a person answers once."
+
+Say what the figure is *not*: no figure here is marked verified, because nothing outside the invoice corroborates a printed pack size. The screen says so itself in its footnote.
+
+**2. Menu - "what each plate actually earns" (about 60 seconds).**
+
+Open `/menu`. Read the first callout out loud, whatever it says today:
+
+```
+Earns the most per plate: Cardamom Chai (Flask 2 L), AED 42.58 of 55.00.
+Push it - nothing else on the menu banks more per sale.
+```
+
+Then the table: every item ranked by what it earns in dirhams, with the percentage beside it, grouped by the menu's own sections.
+Say: "This is margin, not profit - rent and wages are not in it. And it is per plate, to the fils, because at karak prices a rounded dirham tells you nothing."
+
+Click an item name. The drill opens **in the row** - the ranking never leaves the screen - and shows the recipe version, every ingredient, what each one cost in this plate, which supplier it came from and when, and a link straight to the invoice line it was priced from.
+Say: "Every number on this screen goes back to a photograph of a piece of paper. Three clicks."
+
+Then scroll to the quiet section at the bottom: **Paratha, sells at AED 3.00, no cost and no margin at all**, with the sentence "no supplier product is mapped to Atta Flour yet" and a link to fix it.
+This is the beat that sells the whole product, so do not skip it: "It would be easy to show a number here. A half-costed dish shows up as the best thing on your menu, and you'd push it. So it shows nothing, and tells you exactly what it is waiting for."
+
+**3. The money moment - "push this, fix that" (about 40 seconds).**
+
+Still on `/menu`, read the second callout:
+
+```
+Milk Powder is up AED 1.60 per kg since 31 Aug 2026.
+Cardamom Chai (Flask 2 L) earns AED 0.22 less a portion - check the price or the recipe.
+Also Karak Tea (Flask 1 L) -0.11, Nido Milk Tea -0.06 · was AED 20.20 per kg · See the invoice
+```
+
+Say: "The WhatsApp alert said milk powder is up four dirhams a sack. This says what that costs you per cup, on every item that uses it. That is the difference between a number and a decision."
+
+Close on the founder's line: **"push this, fix that."**
+
+> **The reload is a real step, not a workaround.** Everything above the invoice line is derived on read, so confirming an invoice moves these numbers the next time the page loads - there is no cache, no recompute job and nothing to invalidate. If `/menu` was already open when you replied OK in act one, **reload it** before step 3. Nobody built polling and nobody should: the reload is the demo's own gesture and takes half a second.
+
+If the price-move callout is absent, the invoice was never confirmed (act one step 9) or the page was not reloaded.
+If it names white sugar instead of milk powder, the seed was re-applied after the confirm - re-run act one, or run section C and start again.
+
+**The loader is not in this script.** `/menu/load` is a consultant tool, reachable from the quiet link at the foot of `/menu` and never from the owner's nav. Show it only if asked how a menu gets in, and then show the CSV template first: "the whole menu, one morning, in a spreadsheet the owner watches you fill in."
+
+### Act two preconditions
+
+- [ ] The demo seed is applied and includes act two's menu (section C check 5).
+- [ ] `/materials` and `/menu` both load against the demo chain's data with the API token set.
+- [ ] The browser has `/materials` and `/menu` in two tabs, already loaded, before going on.
+- [ ] Zoom the browser to about 125% so the back row can read the margin column.
+- [ ] Run act two once immediately after act one in every rehearsal - the price-move callout only exists once an invoice has been confirmed in that same reset cycle.

@@ -285,6 +285,7 @@ async def _karak(db, api) -> dict:
         "tea": tea,
         "milk": milk,
         "cup": cup,
+        "tea_pack": tea_pack,
         "milk_pack": milk_pack,
     }
 

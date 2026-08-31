@@ -756,6 +756,21 @@ class IngredientMapping(BaseModel):
     base_unit: Literal["g", "ml", "pc"] | None = None
 
 
+class IngredientCreate(BaseModel):
+    """A shelf with nothing on it yet (M6 WP-64). The loader needs this
+    because a menu names materials long before an invoice does.
+
+    It sends the recipe row's own measure - "g", "ml", "ea" - rather than a
+    base unit, so which shelf a material sits on is decided by `units.py` and
+    nowhere else. A browser that guessed "ea" meant pieces would be a second
+    unit dictionary, and two dictionaries drift."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    unit: str
+
+
 class IngredientRejection(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -931,6 +946,49 @@ async def list_ingredients(request: Request) -> dict:
             }
             for row in rows
         ]
+    }
+
+
+@router.post("/ingredients", status_code=201)
+async def create_ingredient(body: IngredientCreate, request: Request) -> dict:
+    """Create a raw material with no pack mapped to it yet (M6 WP-64).
+
+    Until M6, a material could only be born through a merge - there was no
+    reason for a shelf nobody had bought anything for. A recipe is that
+    reason: the menu says "Saffron" months before an invoice does, and the
+    plate that uses it reads *incomplete* naming exactly that missing pack,
+    which is the honest answer and the consultant's next task.
+
+    One click per material, never a bulk keystroke - a CSV that mints twelve
+    materials in one press is M5's forbidden auto-merge coming in through a
+    side door (row 64). The screen enforces the click; this endpoint creates
+    exactly one and names its actor."""
+    db: Database = request.app.state.db
+    tenant_id = await _tenant(db)
+    name = _clean(body.name)
+    if not name:
+        raise HTTPException(status_code=422, detail="a raw material needs a name")
+    base_unit = units.measure_base_unit(body.unit)
+    if base_unit is None:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"'{body.unit.strip()}' does not say whether {name} is measured by "
+                "weight (g, kg), by volume (ml, l) or in pieces"
+            ),
+        )
+    try:
+        ingredient = await db.create_ingredient(
+            tenant_id=tenant_id, name=name, base_unit=base_unit, actor=CONSOLE_ACTOR
+        )
+    except asyncpg.UniqueViolationError:
+        raise HTTPException(
+            status_code=409, detail=f"a raw material called '{name}' already exists"
+        ) from None
+    return {
+        "id": ingredient["id"],
+        "name": ingredient["name"],
+        "base_unit": ingredient["base_unit"],
     }
 
 

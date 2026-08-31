@@ -401,6 +401,24 @@ def base_unit_of(text: str | None) -> str | None:
     return None if pack is None else BASE_UNITS.get(pack.unit.dimension)
 
 
+def measure_base_unit(word: str | None) -> str | None:
+    """`base_unit_of`'s companion for a bare *measure word* rather than a
+    printed pack: "g" -> "g", "ea" -> "pc", "l" -> "ml".
+
+    A recipe row names a measure with no magnitude beside it ("ingredient,
+    qty, unit" - the qty is its own column), so `parse` has nothing to chew
+    on. None when the word is not a measure this system knows ("cup") or is a
+    container with no dimension ("ctn") - both of which mean the same thing to
+    the caller: this word does not say how much.
+
+    M6 asks this when a recipe names a material no invoice has yet (WP-64), so
+    which shelf that material sits on is decided here and nowhere else."""
+    canonical = canonical_unit(word)
+    if canonical is None:
+        return None
+    return BASE_UNITS.get(UNITS[canonical].dimension)
+
+
 def strip_packs(text: str | None) -> str:
     """The string with its pack sizes taken out: "MILK PWDR 2.5KG NIDO" ->
     "MILK PWDR NIDO".

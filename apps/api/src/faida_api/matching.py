@@ -26,6 +26,16 @@ The veto compares harmonized pack sizes from `extraction.units`, so "2kg" and
 price history too, and a supplier who only changed their printing would fire
 the price alert.
 
+Delivery notes (WP-65, EDGE-01): a clerk writes "Credit: one box returned,
+soft fruit" in the margin beside a line, the model reads the note as part of
+the product name, and "Avocado Credit: one box returned, soft fruit" scores
+0.29 against the catalog's "Avocado" - so the snap misses and confirm mints a
+*second* Avocado. By M6 that is not cosmetic: the mapped row goes stale while
+the new row collects the prices, and the plate margin quietly freezes at an
+old cost with nothing on any screen looking wrong. `strip_delivery_note` is
+the answer, and it is deliberately a **second chance rather than a rewrite** -
+see `snap_item`.
+
 Bilingual names (WP-29): GCC suppliers print bilingual letterheads, and the
 model copies both scripts joined on some runs and one script on others. Scoring
 is script-aware (see _similarity) so a joined "English / عربى" name still
@@ -163,6 +173,83 @@ def _similarity(a: str, b: str) -> float:
     return score
 
 
+# The words a clerk writes in the margin about *this delivery* - never about
+# the goods. Each is a token sequence matched whole against the normalized
+# name, so no substring can fire it.
+#
+# The list is short on purpose, and what is missing from it matters more than
+# what is in it. "free" is absent: the corpus prints "Garlic Whole Peeled
+# Free", "Eggs Free Range Large Tray 30" and "Large Free-Range Egg", and
+# trimming any of those would break a name that snaps correctly today. Bare
+# "short" is absent for "Cucumber Local Short"; only the phrases a note uses
+# ("short supplied", "short delivered", "shortage") are here. Every one of the
+# 125 names in the corpus is checked against this list by a test, because the
+# hard part of this rule is not catching notes - it is never catching a
+# product (WP-65's acceptance is measured, not asserted).
+_NOTE_PHRASES: tuple[tuple[str, ...], ...] = tuple(
+    tuple(phrase.split())
+    for phrase in (
+        "credit",
+        "credited",
+        "credit note",
+        "return",
+        "returns",
+        "returned",
+        "damaged",
+        "damage",
+        "breakage",
+        "broken",
+        "leaking",
+        "leaked",
+        "spoiled",
+        "spoilt",
+        "rotten",
+        "expired",
+        "expiry",
+        "short supplied",
+        "short delivered",
+        "short shipped",
+        "shortage",
+        "replaced",
+        "replacement",
+        "rejected",
+        "refused",
+        "not delivered",
+        "not supplied",
+        "out of stock",
+        "no stock",
+        "as per",
+        "see note",
+        "per note",
+        "handwritten",
+        "complimentary",
+        "goodwill",
+        "wrong item",
+        "wrong size",
+    )
+)
+
+
+def strip_delivery_note(name: str) -> str | None:
+    """The product half of "Avocado Credit: one box returned, soft fruit", or
+    None when the name carries no delivery note (WP-65, EDGE-01).
+
+    Two guards keep this from eating a real product name. The note must begin
+    at a phrase from `_NOTE_PHRASES`, matched as whole tokens; and it may
+    never begin at the **first** token, because a name that is nothing but a
+    note is not a name this can rescue - it is a line for a person to look at.
+
+    Returns the normalized head, which is all a comparison needs. The stored
+    catalog name is not touched: renaming what a supplier printed is a
+    different decision, with a screen and an audit row behind it."""
+    tokens = normalize(name).split()
+    for index in range(1, len(tokens)):
+        for phrase in _NOTE_PHRASES:
+            if tuple(tokens[index : index + len(phrase)]) == phrase:
+                return " ".join(tokens[:index])
+    return None
+
+
 def _pack_tokens(text: str) -> set[tuple[str, str, Decimal]]:
     """The harmonized pack sizes named in a string: "MILK PWDR 2.5KG" and
     "Milk Powder 2500 g" produce the same token, so they never veto each
@@ -225,23 +312,46 @@ def match_supplier(suppliers: Sequence[Row], extracted_name: str | None) -> Row 
     return best if best_score >= SUPPLIER_MATCH_THRESHOLD else None
 
 
-def snap_item(items: Sequence[Row], raw_name: str) -> Row | None:
-    """The supplier item whose canonical_name best matches a line's raw_name,
-    or None when nothing clears SNAP_THRESHOLD. A snap across pack sizes never
-    happens: when both sides name pack sizes (canonical_name or the item's
-    pack_size column) and share none, the item is out regardless of score."""
-    if not raw_name:
-        return None
+def _best_item(items: Sequence[Row], raw_name: str, *, strip_notes: bool) -> Row | None:
+    """One scoring pass over the catalog. `strip_notes` also trims a delivery
+    note off each *catalog* name, which is how a catalog already split by one
+    bad read stops splitting further instead of growing a third row."""
     raw_packs = _pack_tokens(raw_name)
     best: Row | None = None
     best_score = 0.0
     for item in items:
-        item_packs = _pack_tokens(item["canonical_name"]) | _pack_tokens(
-            item.get("pack_size") or ""
-        )
+        name = item["canonical_name"]
+        if strip_notes:
+            name = strip_delivery_note(name) or name
+        item_packs = _pack_tokens(name) | _pack_tokens(item.get("pack_size") or "")
         if raw_packs and item_packs and not (raw_packs & item_packs):
             continue
-        score = _similarity(raw_name, item["canonical_name"])
+        score = _similarity(raw_name, name)
         if score > best_score:
             best, best_score = item, score
     return best if best_score >= SNAP_THRESHOLD else None
+
+
+def snap_item(items: Sequence[Row], raw_name: str) -> Row | None:
+    """The supplier item whose canonical_name best matches a line's raw_name,
+    or None when nothing clears SNAP_THRESHOLD. A snap across pack sizes never
+    happens: when both sides name pack sizes (canonical_name or the item's
+    pack_size column) and share none, the item is out regardless of score.
+
+    **The delivery-note pass is a second chance, never a rewrite** (WP-65).
+    The name as printed is scored first, against the catalog as stored; only
+    when *nothing* clears the threshold is the note trimmed off and the
+    catalog asked again. That ordering is the whole safety argument: a name
+    that snaps correctly today cannot be changed by this, because the trimmed
+    pass never runs for it. The rule can add a match; it can never move one."""
+    if not raw_name:
+        return None
+    match = _best_item(items, raw_name, strip_notes=False)
+    if match is not None:
+        return match
+    # The note can be on either side: on the line, when the clerk annotated
+    # this delivery, or on the catalog row, when a tenant's very first read of
+    # that product carried one. Both are trimmed here, so a catalog already
+    # split by one bad read attracts the next clean read instead of growing a
+    # third row.
+    return _best_item(items, strip_delivery_note(raw_name) or raw_name, strip_notes=True)

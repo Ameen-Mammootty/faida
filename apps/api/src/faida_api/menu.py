@@ -11,6 +11,7 @@ write here names `console` as its actor until then):
     POST  /api/menu-items/{id}/archive        out of ranking and coverage, one click back
     POST  /api/menu-items/{id}/unarchive      the click back
     POST  /api/menu-items/{id}/recipe         append the next recipe version
+    POST  /api/menu-items/load                one CSV recipe, one transaction (WP-64)
 
 M6 invents no new numbers, so this module writes only what a consultant typed
 and refuses the shapes that would later lie: the refusal set is stated, not
@@ -111,6 +112,26 @@ class RecipeVersion(BaseModel):
     components: list[RecipeComponent] = []
 
 
+class MenuItemLoad(BaseModel):
+    """One whole recipe as the batch loader has it (WP-64): the item's own
+    facts and its components together, because they commit together.
+
+    The item is identified by `name` - there is no menu-code column, and the
+    code printed on the consultant's spreadsheet identifies the row on their
+    page, not ours. `category` and `selling_price` are the CSV's word on the
+    item and are applied through the same doors a person's click uses; the
+    recipe is appended only when D8 says it actually says something new."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    selling_price: str
+    category: str | None = None
+    yield_portions: str
+    yield_label: str | None = None
+    components: list[RecipeComponent] = []
+
+
 # --- the refusal set (each with its own plain sentence) ----------------------
 
 
@@ -144,7 +165,7 @@ def _component_unit(unit_text: str, ingredient: asyncpg.Record) -> str:
                 "by weight (g, kg), by volume (ml, l) or in pieces"
             ),
         )
-    base = units.BASE_UNITS.get(units.UNITS[canonical].dimension)
+    base = units.measure_base_unit(text)
     if base is None:
         raise HTTPException(
             status_code=422,
@@ -162,6 +183,44 @@ def _component_unit(unit_text: str, ingredient: asyncpg.Record) -> str:
             ),
         )
     return text
+
+
+async def _validated_components(
+    db: Database, tenant_id: str, components: list[RecipeComponent]
+) -> list[dict]:
+    """The recipe half of the refusal set, in one place because there are now
+    two doors into it - a person saving one recipe and the loader committing
+    forty-five - and a rule enforced twice is a rule that drifts.
+
+    An empty version is refused here rather than by the schema: Σ over nothing
+    costs 0 and would read as a 100%%-margin plate (D4)."""
+    if not components:
+        raise HTTPException(
+            status_code=422,
+            detail="a recipe needs at least one component: an empty recipe would "
+            "cost nothing and read as pure margin",
+        )
+    validated: list[dict] = []
+    for index, component in enumerate(components):
+        ingredient = await db.get_ingredient(str(component.ingredient_id))
+        # 404 with the same wording for missing and cross-tenant alike (the M5
+        # pattern): another tenant's materials do not exist here, and Postgres'
+        # composite key refuses the write regardless of what this check missed.
+        if ingredient is None or ingredient["tenant_id"] != tenant_id:
+            raise HTTPException(
+                status_code=404, detail=f"component {index + 1}: ingredient not found"
+            )
+        qty = _positive_number(component.qty, what="quantity", example="130")
+        unit = _component_unit(component.unit, ingredient)
+        validated.append(
+            {
+                "ingredient_id": str(component.ingredient_id),
+                "qty": qty,
+                "unit": unit,
+                "source_text": _clean(component.source_text),
+            }
+        )
+    return validated
 
 
 # --- costing (WP-61) ---------------------------------------------------------
@@ -517,33 +576,7 @@ async def create_recipe_version(
     item = await _live_item(db, menu_item_id)
 
     yield_portions = _positive_number(body.yield_portions, what="yield", example="40")
-    if not body.components:
-        raise HTTPException(
-            status_code=422,
-            detail="a recipe needs at least one component: an empty recipe would "
-            "cost nothing and read as pure margin",
-        )
-
-    components: list[dict] = []
-    for index, component in enumerate(body.components):
-        ingredient = await db.get_ingredient(str(component.ingredient_id))
-        # 404 with the same wording for missing and cross-tenant alike (the M5
-        # pattern): another tenant's materials do not exist here, and Postgres'
-        # composite key refuses the write regardless of what this check missed.
-        if ingredient is None or ingredient["tenant_id"] != item["tenant_id"]:
-            raise HTTPException(
-                status_code=404, detail=f"component {index + 1}: ingredient not found"
-            )
-        qty = _positive_number(component.qty, what="quantity", example="130")
-        unit = _component_unit(component.unit, ingredient)
-        components.append(
-            {
-                "ingredient_id": str(component.ingredient_id),
-                "qty": qty,
-                "unit": unit,
-                "source_text": _clean(component.source_text),
-            }
-        )
+    components = await _validated_components(db, item["tenant_id"], body.components)
 
     try:
         await db.create_recipe_version(
@@ -563,6 +596,85 @@ async def create_recipe_version(
             "moment; reload it and try again",
         ) from None
     return await _menu_item_detail(db, str(menu_item_id))
+
+
+# --- the batch loader's door (WP-64) ------------------------------------------
+
+
+@router.post("/menu-items/load")
+async def load_menu_item(body: MenuItemLoad, request: Request) -> dict:
+    """One CSV recipe, **one transaction** (WP-64): the item, its price, its
+    category and its recipe version commit together or not at all.
+
+    A half-loaded row is the failure this exists to prevent - an item created
+    with no recipe reads *incomplete* on the menu screen for a reason nobody
+    can see, and a consultant re-uploading would not know which half landed.
+    A refused row leaves every other recipe in the file untouched, which is
+    what makes fix-in-spreadsheet-and-re-upload a loop rather than a restart.
+
+    The answer says what it actually did, because the grid restamps its rows
+    from this and not from what it predicted:
+
+        created         a new item and version 1
+        version_added   the recipe says something new (D8), so a new version
+        unchanged       the same yield and the same amounts of the same
+                        ingredients, in any order - nothing was written
+
+    plus `changed`, naming any of the item's own facts the CSV moved. Selling
+    price and category go through the doors a person's click uses, each with
+    its own audit row: the CSV is the single source for those, so a category
+    corrected in the spreadsheet is corrected on the menu screen's headings
+    too (D19). Committing the same file twice writes nothing.
+
+    This door adds no validation of its own - the same `_validated_components`
+    and the same `_positive_number` the by-hand door uses, so a CSV cannot
+    reach a shape a person could not type."""
+    db: Database = request.app.state.db
+    tenant_id = await _tenant(db)
+    name = _clean(body.name)
+    if name is None:
+        raise HTTPException(status_code=422, detail="a menu item needs a name")
+    selling_price = _positive_number(body.selling_price, what="selling price", example="17.00")
+    yield_portions = _positive_number(body.yield_portions, what="yield", example="40")
+    components = await _validated_components(db, tenant_id, body.components)
+
+    try:
+        result = await db.load_menu_recipe(
+            tenant_id=tenant_id,
+            name=name,
+            category=_clean(body.category),
+            selling_price=selling_price,
+            yield_portions=yield_portions,
+            yield_label=_clean(body.yield_label),
+            components=components,
+            actor=CONSOLE_ACTOR,
+        )
+    except asyncpg.UniqueViolationError:
+        # Either another loader created this name a moment ago, or another
+        # save minted the same version number (D17). Both are the same answer
+        # to the person holding the spreadsheet: read it again, run it again.
+        raise HTTPException(
+            status_code=409,
+            detail=f"'{name}' was written by someone else at the same moment; "
+            "reload the menu and upload again",
+        ) from None
+
+    if result["outcome"] == "archived":
+        # Never resurrected quietly: the partial unique index would allow a
+        # second live row under the same name, and a re-upload that forks a
+        # dish somebody took off the menu is worse than asking for a click.
+        raise HTTPException(
+            status_code=409,
+            detail=f"'{name}' is archived in Faida. Bring it back first, or take the "
+            "row out of the spreadsheet",
+        )
+
+    return {
+        "outcome": result["outcome"],
+        "changed": result["changed"],
+        "version": result["version"],
+        "menu_item": await _menu_item_detail(db, result["menu_item_id"]),
+    }
 
 
 # --- the money moment (WP-63) -------------------------------------------------
@@ -703,7 +815,21 @@ async def list_price_moves(request: Request) -> dict:
             }
         )
 
-    moves.sort(
-        key=lambda m: (m["current"]["purchased_on"] or "", m["ingredient_name"]), reverse=True
-    )
+    # Newest first, and **within one day, the one that costs the most per
+    # plate** (WP-66). A delivery brings five materials at once, so ties on the
+    # date are the ordinary case rather than the edge - and the screen reads
+    # the first of these out as its second callout. Breaking that tie on the
+    # ingredient's name put "White sugar is up 5 fils a kilo" on the demo's
+    # closing image ahead of the milk powder the WhatsApp alert had just named.
+    # Most money first is the rule everywhere else here; it belongs here too.
+    # A basis change carries no number at all, so it sorts behind any real
+    # move of the same day, and the name breaks what is left - the order is
+    # the same on every run.
+    def _worst_impact(move: dict) -> Decimal:
+        return max(
+            (abs(Decimal(item["impact_per_portion"])) for item in move["items"]), default=Decimal(0)
+        )
+
+    moves.sort(key=lambda m: m["ingredient_name"])
+    moves.sort(key=lambda m: (m["current"]["purchased_on"] or "", _worst_impact(m)), reverse=True)
     return {"moves": moves}

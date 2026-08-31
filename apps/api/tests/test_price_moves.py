@@ -196,3 +196,38 @@ async def test_a_moved_material_off_the_menu_stays_off_this_screen(api, db):
     )
 
     assert await _moves(api) == []
+
+
+@requires_db
+async def test_two_moves_on_one_day_are_ranked_by_what_they_cost_a_plate(api, db):
+    """One delivery brings several materials at once, so a tie on the date is
+    the ordinary case, not the edge - and the screen reads the first of these
+    out as its second callout (WP-62's callout two).
+
+    Ranking that tie by the ingredient's name put "white sugar is up 5 fils a
+    kilo" on the demo's closing image ahead of the milk the WhatsApp alert had
+    just named (found assembling the stage, WP-66). Most money first is the
+    rule on every other screen here; it is the rule here too."""
+    scenario = await _karak(db, api)
+    for pack, pack_size, price, name in (
+        (scenario["tea_pack"], "5kg", Decimal("120.00"), "CTC TEA 5KG"),
+        (scenario["milk_pack"], "1l", Decimal("8.10"), "EVAP MILK 1L"),
+    ):
+        await _delivery(
+            db,
+            pack,
+            supplier_id=scenario["supplier_id"],
+            pack_size=pack_size,
+            unit_price=price,
+            invoice_date="2026-08-15",
+            raw_name=name,
+        )
+
+    moves = await _moves(api)
+    # Tea: 4 g x 0.006/g = 0.024 a cup. Milk: 60 ml x 0.0001/ml = 0.006.
+    assert [move["ingredient_name"] for move in moves] == [
+        "CTC Black Tea",
+        "Evaporated Milk",
+    ]
+    assert moves[0]["items"][0]["impact_per_portion"] == "0.024"
+    assert moves[1]["items"][0]["impact_per_portion"] == "0.006"

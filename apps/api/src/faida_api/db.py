@@ -13,8 +13,9 @@ import asyncpg
 from . import costing
 from .contracts import InvoiceStatus
 from .extraction.currency import currency_differs
-from .matching import clean_name
+from .matching import clean_name, snap_item, strip_delivery_note
 from .provenance import asserted_fields
+from .recipes import RecipeKey, component_key, recipe_key, recipes_match
 
 RETRY_LIMIT = 3
 RETRY_BACKOFF_SECONDS = 30
@@ -814,6 +815,48 @@ class Database:
                 rejected.setdefault(row["supplier_item_id"], set()).add(row["ingredient_id"])
         return rejected
 
+    async def create_ingredient(
+        self, *, tenant_id: str, name: str, base_unit: str, actor: str
+    ) -> asyncpg.Record:
+        """A shelf with nothing on it yet - the loader's material door (WP-64).
+
+        M5 could only ever create a material *through* a merge, because until
+        M6 a material with no pack mapped to it had no reason to exist. A
+        recipe gives it one: the menu names "Saffron" long before any invoice
+        does, and the plate that uses it reads *incomplete* naming exactly
+        that, which is the honest answer and the consultant's next task.
+
+        Front-loading the catalog this way also makes the M5 queue easier
+        rather than harder - the matcher can only propose materials that
+        already exist, so a menu loaded first turns a blank mapping queue into
+        a list of proposals.
+
+        One row, one audit row, one transaction, and the tenant-name unique
+        index refuses a second "Saffron" - creation stays one click per row,
+        never a bulk keystroke that mints twelve materials through a side
+        door (row 64)."""
+        async with self.pool.acquire() as conn, conn.transaction():
+            row = await conn.fetchrow(
+                """
+                insert into ingredients (tenant_id, name, base_unit)
+                values ($1, $2, $3)
+                returning id::text as id, tenant_id::text as tenant_id, name, base_unit
+                """,
+                tenant_id,
+                name,
+                base_unit,
+            )
+            await _insert_audit_event(
+                conn,
+                tenant_id=tenant_id,
+                actor=actor,
+                action="ingredient.created",
+                subject_type="ingredient",
+                subject_id=row["id"],
+                detail={"name": name, "base_unit": base_unit},
+            )
+        return row
+
     async def map_supplier_item(
         self,
         supplier_item_id: str,
@@ -1063,6 +1106,27 @@ class Database:
             menu_item_id,
         )
 
+    async def live_menu_item_by_name(self, tenant_id: str, name: str) -> asyncpg.Record | None:
+        """The item the loader is about to write into, found the way the menu
+        itself identifies one: by name, among the live rows (WP-64).
+
+        There is no menu code column and there is not going to be one until a
+        menu shows two dishes with the same name - the printed code on the
+        consultant's spreadsheet identifies the row on *their* page, not ours.
+        An archived namesake is deliberately not returned: bringing it back is
+        a click a person makes, and a re-upload must never resurrect a dish
+        somebody took off the menu."""
+        return await self.pool.fetchrow(
+            """
+            select id::text as id, tenant_id::text as tenant_id, name, category,
+                   selling_price, archived_at, created_at
+            from menu_items
+            where tenant_id = $1 and name = $2 and archived_at is null
+            """,
+            tenant_id,
+            name,
+        )
+
     async def get_current_recipe(self, menu_item_id: str) -> asyncpg.Record | None:
         """The newest version - which is what 'current' means here, by schema
         rather than by a pointer that could drift."""
@@ -1230,6 +1294,7 @@ class Database:
         selling_price: Decimal,
         actor: str,
         category: str | None = None,
+        conn: asyncpg.Connection | None = None,
     ) -> asyncpg.Record:
         """One item, one audit row, one transaction. Raises UniqueViolationError
         when a live item already holds the name (the 0015 partial index); the
@@ -1241,7 +1306,7 @@ class Database:
         the menu's own section (0016, design D9), null when the menu prints
         none."""
         selling_price = selling_price.quantize(PRICE_QUANTUM)
-        async with self.pool.acquire() as conn, conn.transaction():
+        async with self._txn(conn) as conn:
             row = await conn.fetchrow(
                 """
                 insert into menu_items (tenant_id, name, selling_price, category)
@@ -1265,7 +1330,13 @@ class Database:
         return row
 
     async def set_menu_item_price(
-        self, menu_item_id: str, *, tenant_id: str, selling_price: Decimal, actor: str
+        self,
+        menu_item_id: str,
+        *,
+        tenant_id: str,
+        selling_price: Decimal,
+        actor: str,
+        conn: asyncpg.Connection | None = None,
     ) -> bool:
         """The owner said a new price out loud. The audit row carries old and
         new - that trail *is* the selling-price history until a screen needs
@@ -1273,7 +1344,7 @@ class Database:
         so re-sending a form cannot mint a history of nothing changing.
         Quantized like the insert, so detail and column never disagree."""
         selling_price = selling_price.quantize(PRICE_QUANTUM)
-        async with self.pool.acquire() as conn, conn.transaction():
+        async with self._txn(conn) as conn:
             previous = await conn.fetchval(
                 "select selling_price from menu_items where id = $1 for update", menu_item_id
             )
@@ -1295,6 +1366,41 @@ class Database:
                     "selling_price": str(selling_price),
                     "previous_selling_price": str(previous),
                 },
+            )
+        return True
+
+    async def set_menu_item_category(
+        self,
+        menu_item_id: str,
+        *,
+        tenant_id: str,
+        category: str | None,
+        actor: str,
+        conn: asyncpg.Connection | None = None,
+    ) -> bool:
+        """The menu's own section moved (Tea Corner -> Hot Drinks), or the
+        spreadsheet's typo in it was fixed. The price door's twin, for the
+        same reason: the menu screen *groups* by this, so a category the CSV
+        has corrected and Faida has not is a wrong heading on the demo's
+        closing image (WP-64, D19). Returns False untouched when it already
+        reads that way, so a re-upload writes no history of nothing changing."""
+        async with self._txn(conn) as conn:
+            row = await conn.fetchrow(
+                "select category from menu_items where id = $1 for update", menu_item_id
+            )
+            if row is None or row["category"] == category:
+                return False
+            await conn.execute(
+                "update menu_items set category = $2 where id = $1", menu_item_id, category
+            )
+            await _insert_audit_event(
+                conn,
+                tenant_id=tenant_id,
+                actor=actor,
+                action="menu_item.category_changed",
+                subject_type="menu_item",
+                subject_id=menu_item_id,
+                detail={"category": category, "previous_category": row["category"]},
             )
         return True
 
@@ -1357,6 +1463,7 @@ class Database:
         yield_label: str | None,
         components: list[dict],
         actor: str,
+        conn: asyncpg.Connection | None = None,
     ) -> asyncpg.Record:
         """Append the next version - editing never touches an old one, so
         'versioned' is a property of the schema rather than a subsystem.
@@ -1369,7 +1476,7 @@ class Database:
         A component naming another tenant's ingredient raises
         ForeignKeyViolationError from the 0012-shape composite key - Postgres
         enforces tenancy at the write, whatever the application forgot."""
-        async with self.pool.acquire() as conn, conn.transaction():
+        async with self._txn(conn) as conn:
             recipe = await conn.fetchrow(
                 """
                 insert into recipes (tenant_id, menu_item_id, version, yield_portions, yield_label)
@@ -1417,6 +1524,145 @@ class Database:
                 },
             )
         return recipe
+
+    async def load_menu_recipe(
+        self,
+        *,
+        tenant_id: str,
+        name: str,
+        category: str | None,
+        selling_price: Decimal,
+        yield_portions: Decimal,
+        yield_label: str | None,
+        components: list[dict],
+        actor: str,
+    ) -> dict:
+        """One row of the batch loader: **one recipe, one transaction** (WP-64).
+
+        A CSV row that half-loads is the failure this method exists to make
+        impossible - an item created with no recipe reads *incomplete* on the
+        menu screen for a reason nobody can see, and a consultant re-uploading
+        would not know which half landed. So the item, its price, its category
+        and the recipe version commit together or not at all, and a refused
+        row leaves the other 44 recipes untouched.
+
+        It writes through the doors already here rather than beside them:
+        `create_menu_item`, `set_menu_item_price`, `set_menu_item_category`
+        and `create_recipe_version`, each joining this transaction and each
+        still landing its own audit row naming the actor (C8). Nothing about
+        a CSV upload is privileged.
+
+        Idempotent by D8's rule (`recipes.py`): loading a file whose recipes
+        already say what Faida says writes nothing at all and returns
+        `unchanged`, so committing the same file twice is a no-op and a
+        43-of-45-rows-unchanged re-upload costs 43 no-ops.
+
+        An **archived** namesake is refused rather than resurrected: the
+        partial unique index would happily allow a second live "Nido Shake",
+        and a re-upload that quietly forks a dish somebody took off the menu
+        is worse than a sentence asking for a click.
+        """
+        incoming = recipe_key(
+            yield_portions,
+            [component_key(c["ingredient_id"], c["qty"], c["unit"]) for c in components],
+        )
+        async with self.pool.acquire() as conn, conn.transaction():
+            item = await conn.fetchrow(
+                """
+                select id::text as id, archived_at
+                from menu_items where tenant_id = $1 and name = $2
+                order by archived_at nulls first
+                limit 1
+                for update
+                """,
+                tenant_id,
+                name,
+            )
+            if item is not None and item["archived_at"] is not None:
+                return {"outcome": "archived", "menu_item_id": item["id"], "changed": []}
+
+            if item is None:
+                created = await self.create_menu_item(
+                    tenant_id=tenant_id,
+                    name=name,
+                    selling_price=selling_price,
+                    category=category,
+                    actor=actor,
+                    conn=conn,
+                )
+                recipe = await self.create_recipe_version(
+                    created["id"],
+                    tenant_id=tenant_id,
+                    yield_portions=yield_portions,
+                    yield_label=yield_label,
+                    components=components,
+                    actor=actor,
+                    conn=conn,
+                )
+                return {
+                    "outcome": "created",
+                    "menu_item_id": created["id"],
+                    "version": recipe["version"],
+                    "changed": [],
+                }
+
+            menu_item_id = item["id"]
+            changed: list[str] = []
+            if await self.set_menu_item_price(
+                menu_item_id,
+                tenant_id=tenant_id,
+                selling_price=selling_price,
+                actor=actor,
+                conn=conn,
+            ):
+                changed.append("selling price")
+            if await self.set_menu_item_category(
+                menu_item_id, tenant_id=tenant_id, category=category, actor=actor, conn=conn
+            ):
+                changed.append("category")
+
+            current = await conn.fetchrow(
+                """
+                select id::text as id, version, yield_portions
+                from recipes where menu_item_id = $1 order by version desc limit 1
+                """,
+                menu_item_id,
+            )
+            stored: RecipeKey | None = None
+            if current is not None:
+                rows = await conn.fetch(
+                    "select ingredient_id::text as ingredient_id, qty, unit "
+                    "from recipe_components where recipe_id = $1",
+                    current["id"],
+                )
+                stored = recipe_key(
+                    current["yield_portions"],
+                    [component_key(r["ingredient_id"], r["qty"], r["unit"]) for r in rows],
+                )
+
+            if stored is not None and recipes_match(stored, incoming):
+                return {
+                    "outcome": "unchanged",
+                    "menu_item_id": menu_item_id,
+                    "version": current["version"],
+                    "changed": changed,
+                }
+
+            recipe = await self.create_recipe_version(
+                menu_item_id,
+                tenant_id=tenant_id,
+                yield_portions=yield_portions,
+                yield_label=yield_label,
+                components=components,
+                actor=actor,
+                conn=conn,
+            )
+            return {
+                "outcome": "version_added",
+                "menu_item_id": menu_item_id,
+                "version": recipe["version"],
+                "changed": changed,
+            }
 
     async def record_confirmed_prices(
         self, invoice_id: str, *, conn: asyncpg.Connection | None = None
@@ -1511,10 +1757,36 @@ class Database:
                 """,
                 invoice_id,
             )
+            # WP-65 (EDGE-01): the catalog rows this supplier already has,
+            # plus the ones this very invoice is about to create. Read once,
+            # and only consulted for a line whose printed name carries a
+            # delivery note - the one case where we know the name is not the
+            # product's. EDGE-01 is exactly that shape: line 1 "Avocado"
+            # creates the row and line 6 arrives as "Avocado Credit: one box
+            # returned, soft fruit", so without this the same invoice mints
+            # both of them.
+            known = [
+                dict(row)
+                for row in await conn.fetch(
+                    "select id, canonical_name, pack_size from supplier_items "
+                    "where supplier_id = $1",
+                    supplier_id,
+                )
+            ]
+
             for line in lines:
                 if line["qty"] is None or line["unit_price"] is None:
                     continue
                 item_id = line["supplier_item_id"]
+                if item_id is None and strip_delivery_note(line["raw_name"] or "") is not None:
+                    snapped = snap_item(known, line["raw_name"])
+                    if snapped is not None:
+                        item_id = snapped["id"]
+                        await conn.execute(
+                            "update invoice_lines set supplier_item_id = $2 where id = $1",
+                            line["id"],
+                            item_id,
+                        )
                 if item_id is None:
                     canonical_name = clean_name(line["raw_name"])
                     if not canonical_name:
@@ -1538,6 +1810,13 @@ class Database:
                         "update invoice_lines set supplier_item_id = $2 where id = $1",
                         line["id"],
                         item_id,
+                    )
+                    known.append(
+                        {
+                            "id": item_id,
+                            "canonical_name": canonical_name,
+                            "pack_size": line["pack_size"],
+                        }
                     )
                 # The history append doubles as the idempotency marker: when
                 # this (item, invoice) observation already exists, a re-run

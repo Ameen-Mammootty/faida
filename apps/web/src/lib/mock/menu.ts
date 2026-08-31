@@ -17,11 +17,15 @@
  * what is missing; and nothing anywhere says "verified".
  */
 
+import { mockListIngredients } from "./materials";
 import { ApiError } from "../errors";
 import type {
   MaterialPrice,
+  MenuComponent,
   MenuItemDetail,
+  MenuItemLoadInput,
   MenuItemSummary,
+  MenuLoadResult,
   Plate,
   PriceMove,
 } from "../types";
@@ -402,6 +406,197 @@ export async function mockListMenuItems(): Promise<MenuItemSummary[]> {
 export async function mockGetMenuItem(id: string): Promise<MenuItemDetail> {
   const detail = DETAILS.find((row) => row.id === id);
   if (!detail) throw new ApiError(404, "menu item not found");
+  return detail;
+}
+
+// --- the batch loader, offline (WP-64) --------------------------------------
+//
+// The loader has to run with no backend at all - that is how the demo and
+// every QA pass drive it - so these reproduce the door's *decisions* while
+// computing no money whatsoever.
+//
+// A recipe loaded here therefore reads **incomplete**, which is not a mock
+// shortcut but the honest answer: sample data starts with an empty material
+// catalog, so a freshly loaded dish is waiting on exactly the mapping work
+// the materials screen exists for. Where every material a recipe names does
+// have a price, the mock says plainly that it does not cost recipes loaded in
+// this session rather than inventing a figure - a second implementation of
+// the money in a demo mock is what plan.md section 2 rule 3 refuses.
+
+let loadedCounter = 0;
+
+const nameKey = (name: string) => name.trim().toLowerCase().replace(/\s+/g, " ");
+
+/** "550" and "550.0000" are one amount; "mls" and "ml" are one measure. */
+const amountKey = (value: string) => {
+  const text = value.trim();
+  const whole = text.includes(".") ? text.replace(/0+$/, "").replace(/\.$/, "") : text;
+  return whole.replace(/^0+(?=\d)/, "");
+};
+const unitKey = (unit: string) => {
+  const word = unit.trim().toLowerCase();
+  if (/^(kgs?|kilos?|kilograms?)$/.test(word)) return "kg";
+  if (/^(g|gm|gms|gs|gr|grams?|gramme|grms)$/.test(word)) return "g";
+  if (/^(ml|mls|millilitres?|cc)$/.test(word)) return "ml";
+  if (/^(l|lt|lts|ltrs?|litres?|liters?)$/.test(word)) return "l";
+  if (/^(pcs?|pce|pces|pieces?|ea|each|nos?|units?)$/.test(word)) return "pc";
+  return word;
+};
+const lineKey = (ingredientId: string, qty: string, unit: string) =>
+  `${ingredientId}|${amountKey(qty)}|${unitKey(unit)}`;
+
+/** D8's rule: the same yield and the same multiset of (ingredient, amount,
+ * measure), in any order. Free text is outside it. */
+function sameRecipe(detail: MenuItemDetail, body: MenuItemLoadInput): boolean {
+  const recipe = detail.recipe;
+  if (!recipe) return false;
+  if (amountKey(recipe.yield_portions) !== amountKey(body.yield_portions)) return false;
+  if (recipe.components.length !== body.components.length) return false;
+  const stored = recipe.components
+    .map((component) => lineKey(component.ingredient_id, component.qty, component.unit))
+    .sort();
+  const incoming = body.components
+    .map((component) => lineKey(component.ingredient_id, component.qty, component.unit))
+    .sort();
+  return stored.every((value, position) => value === incoming[position]);
+}
+
+/** What a loaded recipe is waiting for, in the real screen's own words. */
+async function plateFor(body: MenuItemLoadInput): Promise<{ plate: Plate; names: Map<string, string> }> {
+  const materials = await mockListIngredients();
+  const names = new Map(materials.map((row) => [row.id, row.name]));
+  const missing = body.components
+    .filter((component) => {
+      const material = materials.find((row) => row.id === component.ingredient_id);
+      return material === undefined || material.price === null;
+    })
+    .map((component) => {
+      const material = materials.find((row) => row.id === component.ingredient_id);
+      const label = material?.name ?? "this ingredient";
+      return material && material.pack_count > 0
+        ? `no confirmed purchase of ${label} yet`
+        : `no supplier product is mapped to ${label} yet`;
+    });
+  const plate: Plate = {
+    quality: "incomplete",
+    missing:
+      missing.length > 0
+        ? [...new Set(missing)]
+        : ["sample data does not cost recipes loaded in this session"],
+    cost_per_portion: null,
+    net_price: null,
+    vat_rate: null,
+    margin: null,
+    margin_pct: null,
+  };
+  return { plate, names };
+}
+
+/**
+ * One recipe, one transaction - reproduced by doing all of it or none of it
+ * before anything is pushed. Returns the same three outcomes as the door, so
+ * the grid restamps identically in both modes.
+ */
+export async function mockLoadMenuItem(body: MenuItemLoadInput): Promise<MenuLoadResult> {
+  const name = body.name.trim();
+  const key = nameKey(name);
+  const archived = DETAILS.find((row) => nameKey(row.name) === key && row.archived_at !== null);
+  const existing = DETAILS.find((row) => nameKey(row.name) === key && row.archived_at === null);
+  if (!existing && archived) {
+    throw new ApiError(
+      409,
+      `'${name}' is archived in Faida. Bring it back first, or take the row out of the ` +
+        "spreadsheet",
+    );
+  }
+
+  const { plate, names } = await plateFor(body);
+  const components: MenuComponent[] = body.components.map((component, position) => ({
+    position,
+    ingredient_id: component.ingredient_id,
+    ingredient_name: names.get(component.ingredient_id) ?? "Unknown material",
+    base_unit: "g",
+    qty: component.qty,
+    unit: component.unit,
+    source_text: component.source_text,
+    cost: null,
+    missing: plate.missing[0],
+  }));
+
+  if (!existing) {
+    const detail: MenuItemDetail = {
+      id: `menu-loaded-${(loadedCounter += 1)}`,
+      name,
+      category: body.category,
+      selling_price: body.selling_price,
+      archived_at: null,
+      created_at: new Date().toISOString(),
+      plate,
+      recipe: {
+        id: `recipe-loaded-${loadedCounter}`,
+        version: 1,
+        yield_portions: body.yield_portions,
+        yield_label: body.yield_label,
+        created_at: new Date().toISOString(),
+        components,
+      },
+    };
+    DETAILS.push(detail);
+    return { outcome: "created", changed: [], version: 1, menu_item: detail };
+  }
+
+  const changed: string[] = [];
+  if (amountKey(existing.selling_price) !== amountKey(body.selling_price)) {
+    existing.selling_price = body.selling_price;
+    changed.push("selling price");
+  }
+  if ((existing.category ?? "") !== (body.category ?? "")) {
+    existing.category = body.category;
+    changed.push("category");
+  }
+
+  if (sameRecipe(existing, body)) {
+    return {
+      outcome: "unchanged",
+      changed,
+      version: existing.recipe?.version ?? 1,
+      menu_item: existing,
+    };
+  }
+
+  const version = (existing.recipe?.version ?? 0) + 1;
+  existing.recipe = {
+    id: `recipe-loaded-${(loadedCounter += 1)}`,
+    version,
+    yield_portions: body.yield_portions,
+    yield_label: body.yield_label,
+    created_at: new Date().toISOString(),
+    components,
+  };
+  existing.plate = plate;
+  return { outcome: "version_added", changed, version, menu_item: existing };
+}
+
+/** Off the ranking and the coverage count, never deleted - always a click. */
+export async function mockArchiveMenuItem(id: string): Promise<MenuItemDetail> {
+  const detail = DETAILS.find((row) => row.id === id);
+  if (!detail) throw new ApiError(404, "menu item not found");
+  if (detail.archived_at !== null) throw new ApiError(409, "menu item is already archived");
+  detail.archived_at = new Date().toISOString();
+  return detail;
+}
+
+export async function mockUnarchiveMenuItem(id: string): Promise<MenuItemDetail> {
+  const detail = DETAILS.find((row) => row.id === id);
+  if (!detail) throw new ApiError(404, "menu item not found");
+  if (detail.archived_at === null) throw new ApiError(409, "menu item is not archived");
+  if (DETAILS.some((row) => row !== detail && nameKey(row.name) === nameKey(detail.name) && row.archived_at === null)) {
+    throw new ApiError(
+      409,
+      `another live menu item is already called '${detail.name}'; rename or archive it first`,
+    );
+  }
+  detail.archived_at = null;
   return detail;
 }
 

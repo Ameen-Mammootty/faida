@@ -604,6 +604,56 @@ export interface MenuItemDetail {
 }
 
 /**
+ * M6 WP-64: the batch loader.
+ *
+ * `POST /api/ingredients` creates a raw material a menu names before any
+ * invoice does. It sends the recipe row's own measure word, never a base
+ * unit, so which shelf the material sits on is decided by the API's unit
+ * dictionary and nowhere else - a browser that guessed "ea" meant pieces
+ * would be a second dictionary, and two dictionaries drift.
+ */
+export interface IngredientCreateInput {
+  name: string;
+  unit: string;
+}
+
+/** One whole recipe as the loader commits it: **one recipe, one transaction**
+ * (`POST /api/menu-items/load`). The item is identified by name; its category
+ * and selling price travel with it, because the spreadsheet is the single
+ * source for those and each goes through the door a person's click uses. */
+export interface MenuItemLoadInput {
+  name: string;
+  category: string | null;
+  selling_price: string;
+  yield_portions: string;
+  yield_label: string | null;
+  components: {
+    ingredient_id: string;
+    qty: string;
+    unit: string;
+    source_text: string | null;
+  }[];
+}
+
+/**
+ * What the door actually did - the grid restamps its rows from this and never
+ * from what it predicted.
+ *
+ * `unchanged` means D8 found the same yield and the same amounts of the same
+ * ingredients, in any order, so nothing was written: committing the same file
+ * twice is a no-op. `changed` names any of the item's own facts that moved
+ * even so ("selling price", "category").
+ */
+export type MenuLoadOutcome = "created" | "version_added" | "unchanged";
+
+export interface MenuLoadResult {
+  outcome: MenuLoadOutcome;
+  changed: string[];
+  version: number;
+  menu_item: MenuItemDetail;
+}
+
+/**
  * M6 WP-63: the money moment - a price move landing on the plates.
  *
  * Each material contributes at most its latest move: its newest costed

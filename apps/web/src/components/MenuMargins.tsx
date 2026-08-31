@@ -479,8 +479,15 @@ export default function MenuMargins() {
       {live.length === 0 ? (
         // Empty state one: no menu at all. The loader is the way in.
         <p className="rounded-md border border-ink/10 bg-paper px-4 py-6 text-sm text-stone">
-          No menu yet. The batch loader brings a whole menu in from a spreadsheet in one sitting -
-          margins appear here the moment it runs.
+          No menu yet.{" "}
+          <Link
+            href="/menu/load"
+            className="font-medium text-palm underline-offset-2 hover:underline"
+          >
+            The batch loader
+          </Link>{" "}
+          brings a whole menu in from a spreadsheet in one sitting - margins appear here the
+          moment it runs.
         </p>
       ) : (
         <>
@@ -636,6 +643,14 @@ export default function MenuMargins() {
           ) : null}
         </>
       )}
+
+      {/* The loader is a consultant tool: reachable from here, never a fourth
+          item in the nav the owner reads every morning (WP-62/64). */}
+      <p className="text-xs text-stone">
+        <Link href="/menu/load" className="underline-offset-2 hover:underline">
+          Load or update the menu from a spreadsheet
+        </Link>
+      </p>
     </div>
   );
 }

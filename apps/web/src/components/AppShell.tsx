@@ -34,9 +34,11 @@ export default function AppShell({
               faida
             </span>
           </Link>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3 sm:gap-4">
             {isMockMode() ? (
-              <span className="rounded-sm bg-mist px-2 py-0.5 text-xs font-medium text-stone">
+              // nowrap: at 390 px it wrapped to two lines and crowded the
+              // wordmark. The chip is one short phrase or it is nothing.
+              <span className="rounded-sm bg-mist px-2 py-0.5 text-xs font-medium whitespace-nowrap text-stone">
                 Sample data
               </span>
             ) : null}

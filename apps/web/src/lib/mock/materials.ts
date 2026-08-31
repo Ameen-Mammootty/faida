@@ -20,6 +20,7 @@ import type {
   CostPackSource,
   CostQuality,
   Ingredient,
+  IngredientCreateInput,
   IngredientMappingInput,
   IngredientProposal,
   MappedPack,
@@ -461,6 +462,50 @@ export async function mockMapSupplierItem(
   pack.ingredient_id = ingredient.id;
   return { supplier_item_id: itemId, ingredient: { ...ingredient } };
 }
+
+/**
+ * M6 WP-64: a raw material a recipe names before any invoice does.
+ *
+ * It takes the row's measure word, exactly like the real endpoint, so the
+ * base unit is derived here in one place rather than guessed by the screen.
+ * A container word says how many, not how much, and is refused in the API's
+ * own sentence.
+ */
+export async function mockCreateIngredient(
+  body: IngredientCreateInput,
+): Promise<IngredientProposal> {
+  const name = body.name.trim();
+  if (!name) throw new ApiError(422, "a raw material needs a name");
+  const baseUnit = MEASURE_OF_WORD[body.unit.trim().toLowerCase()];
+  if (!baseUnit) {
+    throw new ApiError(
+      422,
+      `'${body.unit.trim()}' does not say whether ${name} is measured by weight (g, kg), ` +
+        "by volume (ml, l) or in pieces",
+    );
+  }
+  if (INGREDIENTS.some((row) => row.name.toLowerCase() === name.toLowerCase())) {
+    throw new ApiError(409, `a raw material called '${name}' already exists`);
+  }
+  const ingredient: MockIngredient = { id: `ing-${nextId++}`, name, base_unit: baseUnit };
+  INGREDIENTS.push(ingredient);
+  return { ...ingredient };
+}
+
+/** The measure words a recipe row writes, reduced to their shelf - the same
+ * table `units.py` keeps, held to what a recipe card actually says. */
+const MEASURE_OF_WORD: Record<string, BaseUnit> = {
+  g: "g", gm: "g", gms: "g", gr: "g", gram: "g", grams: "g", gramme: "g", grms: "g",
+  kg: "g", kgs: "g", kilo: "g", kilos: "g", kilogram: "g", kilograms: "g", kgm: "g",
+  mg: "g", lb: "g", lbs: "g", pound: "g", pounds: "g", oz: "g", ozs: "g", ounce: "g",
+  ounces: "g",
+  ml: "ml", mls: "ml", millilitre: "ml", millilitres: "ml", cc: "ml", cl: "ml",
+  l: "ml", lt: "ml", lts: "ml", ltr: "ml", ltrs: "ml", litre: "ml", litres: "ml",
+  liter: "ml", liters: "ml", gal: "ml", gals: "ml", gallon: "ml", gallons: "ml",
+  pc: "pc", pcs: "pc", pce: "pc", pces: "pc", piece: "pc", pieces: "pc", ea: "pc",
+  each: "pc", no: "pc", nos: "pc", unit: "pc", units: "pc", dz: "pc", dzn: "pc",
+  doz: "pc", dozen: "pc", dozens: "pc",
+};
 
 export async function mockUnmapSupplierItem(itemId: string): Promise<MappingResult> {
   const pack = findPack(itemId);
