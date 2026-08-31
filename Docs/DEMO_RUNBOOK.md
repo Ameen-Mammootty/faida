@@ -44,7 +44,7 @@ Run through this list the day before, and again 30 minutes before going on.
 - [ ] The stage is reset (see section C for which file): `supabase/demo_seed.sql` on a practice database, `supabase/demo_reset_loop.sql` on the real stage. Never `demo_seed.sql` on the real stage - it deletes the loaded menu, and it now refuses to run when it sees one.
 - [ ] The founder phone is mapped to the demo chain: the commented UPDATE at the bottom of `supabase/demo_seed.sql` has been run once, so the sender resolves to Al Qusais Branch of Karak Al Khaleej Cafeterias.
 - [ ] The review screen loads real data with its API token configured, and the invoice list for the demo chain carries no rehearsal leftovers - on the practice stage that means empty; on the real stage it means only the KAS-1..4 preparation purchases and the chain's own real invoices, nothing from a previous run of the props (DEMO-1..3, KAS-5).
-- [ ] The 3 curated invoice photos and 1 meme image are saved on the demo phone, in order, first in the gallery.
+- [ ] The right papers are on the demo phone, first in the gallery: on the practice stage, the 3 curated invoice photos and the meme; on the real stage, **KAS-5** and the meme (KAS-1..4 were confirmed once during preparation and are not forwarded again - a re-forward trips the duplicate hold).
 - [ ] **One warm-up forward before going on.** On the Opus fallback this is load-bearing: the
       first request after a schema change pays a server-side grammar compilation measured in
       minutes (155 s observed 2026-08-28) - run `apps/api/.venv/bin/python -m eval.schema_probe`
@@ -76,6 +76,8 @@ Curate credit invoices only: an invoice marked cash gets the cash-hold closing i
 ## B. The 4-minute script
 
 The script from plan.md §6 M4, verbatim: forward invoice, reply appears with price alert, "OK", open review screen with photo beside data all green, show the sparkline for the item that moved, forward a meme, polite decline, close on the no-app line.
+
+> **Which paper, which stage.** On the practice stage the forward is curated invoice 1 (DEMO-1) and the replies below are its exact words. On the real stage the forward is **KAS-5** (`Docs/demo-invoices/koukh-al-shay/README.md` has its read-out): the same beats with its own numbers - three alerts fire (evaporated milk and milk powder up, chicken **down**, worth pointing at) and fresh milk stays deliberately silent. DEMO-1..3 are tuned to the staged catalog and are dead props on the real stage: DEMO-1's printed date (20/08/2026) is older than KAS-3's preparation purchase (25/08/2026), and costing ranks by the printed date, so its confirm would not move a single plate there (§A's freshness rule).
 
 1. Open WhatsApp on the demo phone with the chat to the Faida number already on screen.
 2. Say: "This is a supplier invoice from this morning's delivery. Watch what the salesman does with it."
