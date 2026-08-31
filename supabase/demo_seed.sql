@@ -21,6 +21,13 @@
 -- rehearsals stay in the bucket - originals are immutable evidence and nothing
 -- references them once their documents rows are gone.
 --
+-- THIS FILE IS THE PRACTICE STAGE ONLY. Its reset deletes every menu,
+-- ingredient and mapping row for the demo chain, so once F7's real menu is
+-- loaded through /menu/load it would destroy that menu without a warning
+-- beyond the guard below. On a database carrying a real menu, the
+-- between-rehearsals reset is supabase/demo_reset_loop.sql, which re-arms
+-- act one and touches nothing a consultant built.
+--
 -- STAGED PRICES vs THE CURATED DEMO INVOICES (plan.md §6 M4 script):
 -- the alert fires when |invoice price - last_price| >= AED 0.25 AND >= 5% of
 -- last_price (extraction/constants.py). Intended on-stage numbers:
@@ -48,15 +55,25 @@
 -- menu gates**: M6's done-when ("one real menu loads in under a day") and the
 -- demo gate both close on F7's menu, never on these five items.
 --
--- Two confirmed purchase invoices are staged, three weeks and one week back,
--- carrying the same prices the sparkline history shows. They exist because
+-- Two confirmed purchase invoices are staged, five and four weeks back,
+-- carrying the same prices the sparkline history ends on. They exist because
 -- everything above the invoice line is *derived*: a plate cost reads the
 -- newest costed invoice line for each material, so with no invoices the menu
 -- is honestly incomplete and act two has nothing to show. Two of them, not
 -- one, so the money moment (WP-63) has a "previous" to compare against before
 -- the on-stage confirm makes a third.
 --
---   material            21 days ago   7 days ago   on-stage demo invoice
+-- WHY 35/28 DAYS WHEN THE SPARKLINE DRIFTS 21/14/7: costing and the money
+-- moment rank purchases by the PRINTED invoice date (db.list_price_move_pairs:
+-- purchased_on = coalesce(invoice_date, confirmed_at)), and the curated
+-- on-stage papers print real dates that age between demos. A staged purchase
+-- dated newer than the on-stage paper stays "newest" after the confirm: the
+-- plates never move and the callout can read "down" while the phone said
+-- "up". Four weeks of headroom covers any paper printed this month; runbook
+-- §A pins the matching curation rule. The sparkline reads observations
+-- (supplier_item_prices), not invoices, so its three-week story is untouched.
+--
+--   material            35 days ago  28 days ago   on-stage demo invoice
 --   Milk Powder 2.5kg        49.25        50.50    54.50  -> the plates drop
 --   Karak Tea Dust           21.00        22.00    18.75  -> the plates rise
 --   Sugar 50kg              112.50       115.00    115.00
@@ -75,6 +92,21 @@
 -- drifted from the shipped arithmetic fails CI rather than the demo.
 
 begin;
+
+-- Tripwire: the staged menu is five items; a real menu is dozens. If this
+-- database carries what looks like a real menu, refuse to vaporize it - the
+-- between-rehearsals reset for a real stage is demo_reset_loop.sql.
+do $$
+declare n int;
+begin
+  select count(*) into n from menu_items
+   where tenant_id = 'd0000000-0000-0000-0000-000000000001';
+  if n > 20 then
+    raise exception 'demo_seed.sql: the demo chain has % menu items - that looks like a real '
+      'menu, and this reset would delete it with its materials and mappings. Between '
+      'rehearsals on a real stage, run supabase/demo_reset_loop.sql instead.', n;
+  end if;
+end $$;
 
 -- ---------------------------------------------------------------------------
 -- Reset: delete rehearsal residue for the demo chain, most-dependent first.
@@ -314,32 +346,34 @@ insert into invoices (id, tenant_id, branch_id, document_id, supplier_id, suppli
                       invoice_no, invoice_date, currency, subtotal, tax, total,
                       tax_treatment, vat_rate, payment_kind, status, confirmed_at)
 values
-  -- Three weeks ago: the baseline the money moment compares against.
+  -- Five weeks ago: the baseline the money moment compares against.
   ('d0000000-0000-0000-0000-000000000311', 'd0000000-0000-0000-0000-000000000001',
    'd0000000-0000-0000-0000-000000000011', 'd0000000-0000-0000-0000-000000000301',
    'd0000000-0000-0000-0000-000000000021', 'Gulf Foods Trading L.L.C.',
-   'GF-20418', (now() - interval '21 days')::date, 'AED',
+   'GF-20418', (now() - interval '35 days')::date, 'AED',
    641.00, 32.05, 673.05, 'exclusive', 0.05, 'credit', 'confirmed',
-   now() - interval '21 days'),
+   now() - interval '35 days'),
   ('d0000000-0000-0000-0000-000000000312', 'd0000000-0000-0000-0000-000000000001',
    'd0000000-0000-0000-0000-000000000011', 'd0000000-0000-0000-0000-000000000302',
    'd0000000-0000-0000-0000-000000000022', 'Al Madina Trading Co.',
-   'AM-7731', (now() - interval '21 days')::date, 'AED',
+   'AM-7731', (now() - interval '35 days')::date, 'AED',
    174.00, 8.70, 182.70, 'exclusive', 0.05, 'credit', 'confirmed',
-   now() - interval '21 days'),
-  -- One week ago: what the menu screen shows before anyone touches the stage.
+   now() - interval '35 days'),
+  -- Four weeks ago: what the menu screen shows before anyone touches the
+  -- stage, and deliberately older than any date a curated paper prints (the
+  -- header explains the 35/28 choice).
   ('d0000000-0000-0000-0000-000000000313', 'd0000000-0000-0000-0000-000000000001',
    'd0000000-0000-0000-0000-000000000011', 'd0000000-0000-0000-0000-000000000303',
    'd0000000-0000-0000-0000-000000000021', 'Gulf Foods Trading L.L.C.',
-   'GF-20655', (now() - interval '7 days')::date, 'AED',
+   'GF-20655', (now() - interval '28 days')::date, 'AED',
    660.00, 33.00, 693.00, 'exclusive', 0.05, 'credit', 'confirmed',
-   now() - interval '7 days'),
+   now() - interval '28 days'),
   ('d0000000-0000-0000-0000-000000000314', 'd0000000-0000-0000-0000-000000000001',
    'd0000000-0000-0000-0000-000000000011', 'd0000000-0000-0000-0000-000000000304',
    'd0000000-0000-0000-0000-000000000022', 'Al Madina Trading Co.',
-   'AM-7902', (now() - interval '7 days')::date, 'AED',
+   'AM-7902', (now() - interval '28 days')::date, 'AED',
    180.00, 9.00, 189.00, 'exclusive', 0.05, 'credit', 'confirmed',
-   now() - interval '7 days');
+   now() - interval '28 days');
 
 -- cost_per_base_unit = unit_price / what is in the pack, worked out here and
 -- re-derived through costing.py by tests/test_demo_seed.py:
@@ -360,7 +394,7 @@ select 'd0000000-0000-0000-0000-000000000001', l.invoice_id, l.position, l.raw_n
                           'pack', l.pack_size, 'pack_base_quantity', l.pack_base_quantity,
                           'pack_source', 'pack_size')
 from (values
-  -- 21 days ago, Gulf Foods
+  -- 35 days ago, Gulf Foods
   ('d0000000-0000-0000-0000-000000000311'::uuid, 0, 'MILK PWDR 2.5KG NIDO',
    'd0000000-0000-0000-0000-000000000101'::uuid, 4, 'sack', 49.25, 197.00, '2.5kg',
    0.01970000, 'g', '2500.0'),
@@ -373,11 +407,11 @@ from (values
   ('d0000000-0000-0000-0000-000000000311', 3, 'CARDAMOM PWD 500G',
    'd0000000-0000-0000-0000-000000000104', 4, 'tin', 23.25, 93.00, '500g',
    0.04650000, 'g', '500'),
-  -- 21 days ago, Al Madina
+  -- 35 days ago, Al Madina
   ('d0000000-0000-0000-0000-000000000312', 0, 'EVAP MILK 48X400ML',
    'd0000000-0000-0000-0000-000000000105', 2, 'carton', 87.00, 174.00, '48x400ml',
    0.00453125, 'ml', '19200'),
-  -- 7 days ago, Gulf Foods
+  -- 28 days ago, Gulf Foods
   ('d0000000-0000-0000-0000-000000000313', 0, 'MILK PWDR 2.5KG NIDO',
    'd0000000-0000-0000-0000-000000000101', 4, 'sack', 50.50, 202.00, '2.5kg',
    0.02020000, 'g', '2500.0'),
@@ -390,7 +424,7 @@ from (values
   ('d0000000-0000-0000-0000-000000000313', 3, 'CARDAMOM PWD 500G',
    'd0000000-0000-0000-0000-000000000104', 4, 'tin', 24.00, 96.00, '500g',
    0.04800000, 'g', '500'),
-  -- 7 days ago, Al Madina
+  -- 28 days ago, Al Madina
   ('d0000000-0000-0000-0000-000000000314', 0, 'EVAP MILK 48X400ML',
    'd0000000-0000-0000-0000-000000000105', 2, 'carton', 90.00, 180.00, '48x400ml',
    0.00468750, 'ml', '19200')

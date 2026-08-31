@@ -103,3 +103,10 @@ The numbers came from a script, so change them there rather than by hand - the t
 and the per-base-unit deltas all have to stay consistent with each other and with the alert
 thresholds. If you change a description, re-check it against `propose_ingredients` before
 printing; if you change a pack size, re-check it against `costing.cost_line`.
+If you change an **invoice number**, update the prop list in `supabase/demo_reset_loop.sql` in
+the same commit - the between-rehearsals reset identifies rehearsal residue by those numbers,
+and a renumbered KAS-5 it does not know about would survive the reset and hold the next
+rehearsal as a duplicate.
+KAS-5's **printed date** must also stay newer than KAS-1..4's - costing ranks purchases by the
+printed date (runbook §A's freshness rule), so a stale on-stage paper slots behind the
+preparation purchases and the money moment never fires.

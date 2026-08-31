@@ -41,9 +41,9 @@ Run through this list the day before, and again 30 minutes before going on.
       2026-08-29: a drained balance presents as the failure reply after ~70 s - three retries
       of a 400 - while every other dashboard looks healthy. There is no low-balance warning
       anywhere in our system.
-- [ ] The demo seed is applied: `psql "$DATABASE_URL" -f supabase/demo_seed.sql` (see section C).
+- [ ] The stage is reset (see section C for which file): `supabase/demo_seed.sql` on a practice database, `supabase/demo_reset_loop.sql` on the real stage. Never `demo_seed.sql` on the real stage - it deletes the loaded menu, and it now refuses to run when it sees one.
 - [ ] The founder phone is mapped to the demo chain: the commented UPDATE at the bottom of `supabase/demo_seed.sql` has been run once, so the sender resolves to Al Qusais Branch of Karak Al Khaleej Cafeterias.
-- [ ] The review screen loads real data with its API token configured, and the invoice list for the demo chain is empty (no rehearsal leftovers).
+- [ ] The review screen loads real data with its API token configured, and the invoice list for the demo chain carries no rehearsal leftovers - on the practice stage that means empty; on the real stage it means only the KAS-1..4 preparation purchases and the chain's own real invoices, nothing from a previous run of the props (DEMO-1..3, KAS-5).
 - [ ] The 3 curated invoice photos and 1 meme image are saved on the demo phone, in order, first in the gallery.
 - [ ] **One warm-up forward before going on.** On the Opus fallback this is load-bearing: the
       first request after a schema change pays a server-side grammar compilation measured in
@@ -68,6 +68,9 @@ What every curated paper must print (the reply echoes these, so they are part of
 a distinct invoice number per paper (the same supplier + number + total sent twice is HELD as a duplicate since 2026-08-28 - correct in production, wrong on stage);
 a printed date (the reply now reads it out as "dated 20 Aug 2026" - printing it day-first, like 20/08/2026, quietly demos the date reading);
 AED amounts; credit terms or no terms line at all.
+**The printed date must be fresh - within the last three weeks, and newer than the chain's newest confirmed purchase of the same materials (ideally the demo week itself).**
+Costing and the money moment rank purchases by the printed date, not by when the confirm happened, so a prop that has aged past the purchase evidence slots in as history: the plates never move after the on-stage confirm, or the callout reads "down" while the phone just said "up".
+The staged purchase evidence sits 35 and 28 days back to give the props four weeks of headroom, but a curated paper is a prop with a shelf life - re-print it when it goes stale.
 Curate credit invoices only: an invoice marked cash gets the cash-hold closing instead of "Reply OK to confirm", and OK will not confirm it from chat.
 
 ## B. The 4-minute script
@@ -101,15 +104,29 @@ The script from plan.md §6 M4, verbatim: forward invoice, reply appears with pr
 
 ## C. Reset between rehearsals
 
-One command restores the exact staged state, however messy the last run was:
+Two stages, two reset files - and running the wrong one on the real stage destroys the real menu, which is why `demo_seed.sql` refuses to run when it sees one (added 2026-08-31).
+
+**Practice stage** (a laptop database the seed staged entirely, including the five-item menu):
 
 ```bash
 psql "$DATABASE_URL" -f supabase/demo_seed.sql
 ```
 
+This restores the complete staged state, however messy the last run was: it deletes every rehearsal trace for the demo chain (documents, invoices, lines, messages, jobs, runs, confirm-created catalog rows, appended price history, menu edits) and re-stages everything; it cannot touch any other tenant, and it preserves the branch phone mapping.
+
+**Real stage** (F7's menu loaded through `/menu/load` - the live demo project):
+
+```bash
+psql "$DATABASE_URL" -f supabase/demo_reset_loop.sql
+```
+
+This removes only what a rehearsal creates - the props' documents, invoices, lines, runs, messages and jobs, and the price observations their confirms appended - then recomputes every pack's baseline from the purchases that survive, so the alerts re-arm.
+It works by scope: rehearsal residue is any demo-chain invoice printing one of the props' fixed numbers (DEMO-1 `GFT-2026-0834`, DEMO-2 `AMT-26-1187`, DEMO-3 `GFT-2026-0871`, KAS-5 `AMT-26-1274`), so the loaded menu, its materials, every mapping, and the KAS-1..4 preparation purchases - which share suppliers with the props on purpose - are out of reach by construction.
+Regenerating a prop with a new number means updating the list in that file in the same commit.
+`demo_seed.sql` must NEVER run against the live project once the real menu is loaded - its reset would delete the menu, its 82 materials and every mapping.
+
 `$DATABASE_URL` is the same session-pooler URI Railway uses (README §M0 step 2).
-The reset deletes every rehearsal trace for the demo chain (documents, invoices, lines, messages, jobs, runs, confirm-created catalog rows, appended price history) and re-stages the baselines; it cannot touch any other tenant, and it preserves the branch phone mapping.
-Run it after EVERY rehearsal run, confirmed or not (this got stricter 2026-08-28): confirming moves `last_price` to 54.50 so the alert will not fire again, and even without confirming, re-forwarding the same paper now trips the duplicate hold (WP-44) - the second copy is held with "This one is already recorded..." instead of being read out. Both are correct product behavior and both ruin a rehearsal that expected the full reply.
+Run the reset after EVERY rehearsal run, confirmed or not (this got stricter 2026-08-28): confirming moves `last_price` to 54.50 so the alert will not fire again, and even without confirming, re-forwarding the same paper now trips the duplicate hold (WP-44) - the second copy is held with "This one is already recorded..." instead of being read out. Both are correct product behavior and both ruin a rehearsal that expected the full reply.
 Rehearsal images stay in the storage bucket; that is intended, since originals are immutable and nothing references them after the reset.
 
 Re-check after the reset:
@@ -117,8 +134,8 @@ Re-check after the reset:
 1. `select last_price, prev_price from supplier_items where id = 'd0000000-0000-0000-0000-000000000101';` returns `50.500 | 49.750`.
 2. `select name, wa_phone_e164 from branches where tenant_id = 'd0000000-0000-0000-0000-000000000001';` still shows the founder phone on Al Qusais Branch.
 3. `curl https://<host>/health` returns `{"ok":true,"db":true}`.
-4. The review screen's invoice list for the demo chain is empty again.
-5. `select count(*) from menu_items where tenant_id = 'd0000000-0000-0000-0000-000000000001';` returns `5`, and `/menu` shows four costed items with Paratha in the "can't be costed yet" section (act two's staged state, section F).
+4. The review screen's invoice list for the demo chain carries no rehearsal leftovers (§A's wording: empty on the practice stage; only preparation purchases and real invoices on the real one).
+5. Practice stage only: `select count(*) from menu_items where tenant_id = 'd0000000-0000-0000-0000-000000000001';` returns `5`, and `/menu` shows four costed items with Paratha in the "can't be costed yet" section (act two's staged state, section F). On the real stage, `/menu` shows the loaded menu unchanged - a loop reset that altered any menu number is a bug.
 
 ## D. Failure playbook
 
@@ -256,7 +273,7 @@ Close on the founder's line: **"push this, fix that."**
 
 > **The reload is a real step, not a workaround.** Everything above the invoice line is derived on read, so confirming an invoice moves these numbers the next time the page loads - there is no cache, no recompute job and nothing to invalidate. If `/menu` was already open when you replied OK in act one, **reload it** before step 3. Nobody built polling and nobody should: the reload is the demo's own gesture and takes half a second.
 
-If the price-move callout is absent, the invoice was never confirmed (act one step 9) or the page was not reloaded.
+If the price-move callout is absent, the invoice was never confirmed (act one step 9), the page was not reloaded, or the paper's printed date is older than the newest purchase already recorded for that material - §A's freshness rule; check `invoice_date` on the confirmed invoice against the staged purchases.
 If it names white sugar instead of milk powder, the seed was re-applied after the confirm - re-run act one, or run section C and start again.
 
 **The loader is not in this script.** `/menu/load` is a consultant tool, reachable from the quiet link at the foot of `/menu` and never from the owner's nav. Show it only if asked how a menu gets in, and then show the CSV template first: "the whole menu, one morning, in a spreadsheet the owner watches you fill in."
