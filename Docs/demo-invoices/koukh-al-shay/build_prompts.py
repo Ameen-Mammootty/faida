@@ -1,4 +1,8 @@
-"""Build the five Koukh Al Shay demo papers in the corpus house format."""
+"""The five Koukh Al Shay demo papers: one source of truth for their numbers.
+
+Run it to write the generator prompts; import it (SUPPLIERS, build) to render the
+papers themselves - `render_papers.py` does, so the prompt text and the printed
+document can never disagree about a digit."""
 from decimal import Decimal, ROUND_HALF_UP
 import pathlib, sys
 
@@ -176,8 +180,19 @@ def build(key):
     (OUT / f"{key}.prompt.txt").write_text(text)
     return key, supplier, number, date, len(rows), money(subtotal), money(vat), money(total)
 
-OUT.mkdir(parents=True, exist_ok=True)
-print(f"{'paper':7} {'supplier':34} {'number':16} {'date':11} {'lines':>5} {'subtotal':>10} {'VAT':>8} {'total':>10}")
-for k in SUPPLIERS:
-    key, sup, num, date, n, sub, vat, tot = build(k)
-    print(f"{key:7} {sup[:34]:34} {num:16} {date:11} {n:5d} {sub:>10} {vat:>8} {tot:>10}")
+def totals(key):
+    """Subtotal, VAT and total for one paper, as Decimals."""
+    rows = SUPPLIERS[key][6]
+    subtotal = sum((D(q) * D(p)).quantize(D("0.01"), rounding=ROUND_HALF_UP)
+                   for *_, q, _u, _pk, p in ((r[0], r[1], r[2], r[3], r[4], r[5]) for r in rows))
+    vat = (subtotal * D("0.05")).quantize(D("0.01"), rounding=ROUND_HALF_UP)
+    return subtotal, vat, subtotal + vat
+
+
+if __name__ == "__main__":
+    OUT.mkdir(parents=True, exist_ok=True)
+    print(f"{'paper':7} {'supplier':34} {'number':16} {'date':11} {'lines':>5} "
+          f"{'subtotal':>10} {'VAT':>8} {'total':>10}")
+    for k in SUPPLIERS:
+        key, sup, num, date, n, sub, vat, tot = build(k)
+        print(f"{key:7} {sup[:34]:34} {num:16} {date:11} {n:5d} {sub:>10} {vat:>8} {tot:>10}")

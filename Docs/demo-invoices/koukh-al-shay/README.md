@@ -1,10 +1,25 @@
 # Five papers to put Koukh Al Shay's real menu on its feet (M6 demo gate)
 
-Generator prompts in the corpus house format, arithmetic-checked, sized against the real
+The five papers themselves (`KAS-1.png` … `KAS-5.png`), the generator prompts that describe
+them, the renderer that produced them and the script that verifies them. Sized against the real
 45-recipe menu in `~/Downloads/Menu engineer/koukh-al-shay/faida-loader-preview.csv`.
-Generate each with the same image tool that produced `eval/fixtures/generated/`, save the
-results here as `KAS-1.png` … `KAS-5.png`, and pre-verify every one through the live upload
-door before any of them touches the demo phone.
+
+**These are rendered, not image-generated, and that is the point.** Every total, every VAT line
+and every per-base-unit delta here is load-bearing - the on-stage alert thresholds are computed
+off them to the fils. An image model rewrites digits, which is why the corpus prompts have to
+shout "reproduce every character exactly" and why every generated paper needs proofreading. A
+render cannot get a digit wrong, so the paper on the phone is the paper the arithmetic was
+checked against. `KAS-*.prompt.txt` are kept anyway: they are the corpus-format description of
+each paper, and the route to take if a photographed-on-a-desk variant is ever wanted.
+
+    apps/api/.venv/bin/python Docs/demo-invoices/koukh-al-shay/render_papers.py   # HTML
+    # then, per paper, with the browse skill:
+    #   $B viewport 1055x1491
+    #   $B goto file://$PWD/Docs/demo-invoices/koukh-al-shay/KAS-1.html
+    #   $B screenshot Docs/demo-invoices/koukh-al-shay/KAS-1.png --selector .page
+
+`build_prompts.py` holds the numbers; the prompts and the rendered papers both import them, so
+they cannot drift apart.
 
 These do **not** replace `Docs/demo-invoices/DEMO-1..3` — those are act one's papers, tuned to
 `demo_seed.sql`'s staged catalog. These are act two's: they exist so the real menu can be costed.
@@ -19,6 +34,30 @@ These do **not** replace `Docs/demo-invoices/DEMO-1..3` — those are act one's 
 
 Confirm KAS-1 to KAS-4 during preparation. **KAS-5 is the one you forward live** - it is a
 repeat purchase, which is the only way the money moment can exist at all.
+
+## Verified by reading them back, on the shipped engine
+
+`verify_papers.py` extracts all five with Gemini 3 Flash and compares every line against the
+source table. Last run 2026-08-31:
+
+| Paper | Lines | Read | Totals | Reconciles | Latency |
+|---|---|---|---|---|---|
+| KAS-1 | 16 | 16 | 718.00 / 35.90 / 753.90 | green, exclusive 5% | 5.7 s |
+| KAS-2 | 24 | 24 | 2,602.00 / 130.10 / 2,732.10 | green, exclusive 5% | 11.0 s |
+| KAS-3 | 14 | 14 | 2,835.50 / 141.78 / 2,977.28 | green, exclusive 5% | 5.3 s |
+| KAS-4 | 28 | 28 | 3,651.00 / 182.55 / 3,833.55 | green, exclusive 5% | 7.8 s |
+| KAS-5 | 4 | 4 | 1,455.00 / 72.75 / 1,527.75 | green, exclusive 5% | 3.5 s |
+
+**86 of 86 lines, zero mismatches** on name, quantity, unit, pack size and unit price. Supplier,
+invoice number, day-first date, currency and credit terms all read correctly on every paper, and
+the VAT treatment is *derived* from the arithmetic rather than taken from the document's claim.
+Every latency is inside the ~20 s forward-to-reply target with room for the rest of the loop.
+
+Re-run it after any edit:
+
+    apps/api/.venv/bin/python Docs/demo-invoices/koukh-al-shay/verify_papers.py
+
+It needs `GEMINI_API_KEY` and costs about a fils a paper.
 
 ## What was checked before these were written
 
