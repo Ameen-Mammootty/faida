@@ -161,8 +161,8 @@ If it still fails, show the fields and the sparkline, which carry the story with
 > record rather than in the loop: the next rehearsal logs its own timings from the `latency
 > document=` lines (section E), and those become the shipped engine's figures.
 >
-> Still owed on Flash: **the two full rehearsals**, which are the gate itself and not this
-> table.
+> The two full rehearsals followed the same day and were also clean - see section E. M4's
+> loop gate is passed.
 
 Every paper through the full loop five times, verified run-by-run against the live
 database; the meme once (plus an accidental video, which proved the unsupported-media
@@ -183,7 +183,7 @@ the gallery order, is the referee.
 
 ## E. The rehearsal log
 
-Plan.md §6 M4 requires the full script rehearsed twice on the demo phones with zero intervention.
+Plan.md §6 M4 required the loop portion rehearsed twice on the demo phones with zero intervention - **passed 2026-08-30**. The M6 demo gate requires the same of the full two-act script on the real menu, and that is still open.
 Forward-to-reply seconds come from the latency summary the API logs at pipeline completion, one line per document:
 
 ```
@@ -193,18 +193,18 @@ latency document=<id> webhook_to_reply_ms=<n> stages=ingest:<n>,extract:<n>,repa
 Grep the Railway logs for `latency document=` and divide `webhook_to_reply_ms` by 1000.
 The target is under about 20 seconds from forward to reply; 18.7 s was measured on a real forward at prompt v3 (2026-08-28) with no repair round - a curated invoice that keeps triggering repair should be swapped out.
 
-Both acts count as one run: the gate is the **full** §6 script - loop, mapping, menu margins, "push this, fix that" - twice in a row with zero intervention, on the demo phones and on **F7's real menu**, not the staged one.
+**M4's loop gate: passed 2026-08-30.** Act one rehearsed twice on the demo phones, both runs clean with zero intervention, on Gemini 3 Flash.
 
 | Run # | Date | Act one: forward-to-reply (s) | Act two: clean? | Flakes seen (and the fix shipped) |
 |---|---|---|---|---|
-| 1 | | | | |
-| 2 | | | | |
+| 1 | 2026-08-30 | not captured | n/a - act two did not exist yet | none |
+| 2 | 2026-08-30 | not captured | n/a - act two did not exist yet | none |
 
-A run with any manual intervention does not count; fix the cause and run it again.
+Seconds were not logged on those runs. That is a gap in the record, not in the loop, and the fix is mechanical: grep the Railway logs for `latency document=` during the next rehearsal and the numbers arrive on their own.
 
-Still owed before this gate can be called passed (neither is this runbook's to close):
-**these two rehearsals themselves**, on Flash, and F7's real menu loaded into the demo project through `/menu/load`.
-M4's Flash re-run of the papers and the meme closed 2026-08-30 (section E0).
+**The M6 demo gate is a different and later claim** and this table does not close it: the *full* script, both acts, twice in a row with zero intervention, on **F7's real menu** rather than the staged one. Fill in rows 3 and 4 when those runs happen.
+
+One thing to arrange first, not this runbook's to close: loading the real menu leaves every item reading *incomplete* until invoices exist for its materials, so put a few of that chain's own supplier invoices through the loop before rehearsing act two on it - otherwise the closing screen is a list of homework instead of a margin ranking. The staged seed carries two purchase invoices for exactly this reason.
 
 ## F. Act two: the screens (added 2026-08-31, WP-66)
 
