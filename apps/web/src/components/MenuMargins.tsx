@@ -12,7 +12,7 @@ import type {
   PriceMove,
   PriceMoveLine,
 } from "@/lib/types";
-import { AlertIcon, TrendDownIcon, TrendUpIcon } from "./icons";
+import { AlertIcon, ChevronIcon, TrendDownIcon, TrendUpIcon } from "./icons";
 
 /**
  * M6 WP-62/63: the menu screen - the demo's closing image, variant C
@@ -106,9 +106,14 @@ function EstimatedChip() {
  * alone, and never mistakable for a thin-but-positive figure. */
 function LossFigure({ margin }: { margin: string }) {
   return (
-    <span className="inline-flex items-center gap-1.5 font-medium text-plum">
-      <AlertIcon className="h-3.5 w-3.5" />
-      <span className="tabular-nums">-AED {summaryMoney(margin.replace("-", ""))}</span>
+    // The figure and its icon never split: in a fixed-width margin column the
+    // label is what wraps to the next line, not "-AED 0.40" away from the
+    // symbol that says it is bad news.
+    <span className="inline-flex flex-wrap items-center justify-end gap-x-1.5 font-medium text-plum">
+      <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+        <AlertIcon className="h-3.5 w-3.5" />
+        <span className="tabular-nums">-AED {summaryMoney(margin.replace("-", ""))}</span>
+      </span>
       <span className="text-xs font-normal">this plate loses money</span>
     </span>
   );
@@ -137,6 +142,21 @@ function TopEarnerCallout({ item }: { item: MenuItemSummary }) {
     </div>
   );
 }
+
+/**
+ * How many other affected items the price-move callout names before it counts
+ * the rest - the incomplete section's own rule (MISSING_SHOWN), one layer up.
+ *
+ * The line was a comma-run of every item the move touched. On the real menu
+ * that reached nine and read as three lines of grey: "Also Coffee Milk - Flask
+ * 2 L -0.35, Habbat Al Souda Tea -0.32, ...", where the dash inside an item's
+ * name is the same glyph as the minus in front of its figure, and neither
+ * figure carries AED or "a portion" - so nothing in it could be compared with
+ * the sentence above. Three named with their figures in brackets, the rest
+ * counted; the whole list lives on the materials screen, which is where the
+ * work is done.
+ */
+const ALSO_NAMED = 3;
 
 /** Callout two, priority loss > price move > absent (D8). Two lines in the
  * operator voice: the finding, then the action. */
@@ -170,13 +190,20 @@ function FixCallout({ loss, move }: { loss: MenuItemSummary | null; move: PriceM
           <AlertIcon className="h-3.5 w-3.5" />
           Price basis changed
         </p>
+        {/* Finding first, then the evidence - the shape the other two callouts
+            use. It read the other way round: three lines of product codes and
+            two legal entity names in one sentence, with the point of the card
+            ("there is nothing to compare") demoted to a grey line underneath.
+            Both packs are still named, which is the rule this card exists for. */}
         <p className="mt-1.5 font-medium text-ink">
-          {move.ingredient_name} is now priced from {move.current.product_name} (
-          {move.current.supplier_name}), not {move.previous.product_name} (
-          {move.previous.supplier_name}).
+          {move.ingredient_name} is priced from a different pack now, so there is no before and
+          after to show.
         </p>
         <p className="mt-0.5 text-sm text-stone">
-          Different pack sizes - no comparison shown.{" "}
+          Now {move.current.product_name} from {move.current.supplier_name}, was{" "}
+          {move.previous.product_name} from {move.previous.supplier_name}.
+        </p>
+        <p className="mt-1 text-xs text-stone">
           <Link
             href={`/invoices/${move.current.invoice_id}#line-${move.current.position}`}
             className="font-medium text-palm underline-offset-2 hover:underline"
@@ -213,18 +240,20 @@ function FixCallout({ loss, move }: { loss: MenuItemSummary | null; move: PriceM
       ) : (
         <p className="mt-0.5 text-sm text-stone">No costed menu item uses it yet.</p>
       )}
+      {rest.length > 0 ? (
+        <p className="mt-1 text-xs text-stone">
+          Also earning {up ? "less" : "more"}:{" "}
+          {rest.slice(0, ALSO_NAMED).map((item, index) => (
+            <span key={item.menu_item_id}>
+              {index > 0 ? ", " : ""}
+              {item.name} (AED {summaryMoney(item.impact_per_portion.replace("-", ""))})
+            </span>
+          ))}
+          {rest.length > ALSO_NAMED ? `, and ${rest.length - ALSO_NAMED} more items` : ""}.
+        </p>
+      ) : null}
       <p className="mt-1 text-xs text-stone">
-        {rest.length > 0
-          ? `Also ${rest
-              .map(
-                (item) =>
-                  `${item.name} ${up ? "-" : "+"}${summaryMoney(
-                    item.impact_per_portion.replace("-", ""),
-                  )}`,
-              )
-              .join(", ")} · `
-          : ""}
-        was {movePrice(move.previous)} ·{" "}
+        Was {movePrice(move.previous)} ·{" "}
         <Link
           href={`/invoices/${move.current.invoice_id}#line-${move.current.position}`}
           className="font-medium text-palm underline-offset-2 hover:underline"
@@ -270,7 +299,11 @@ function ComponentRow({ component }: { component: MenuComponent }) {
             {pricePerUnit(component.cost.price)} · {priceSource(component.cost.price)}
           </p>
           {component.cost.quality === "estimated" ? (
-            <p className="text-xs text-stone">
+            // In Attention Amber, not the same grey as the supplier-and-date
+            // caption above it: the line saying this figure may be out of date
+            // was the quietest of four grey lines stacked in one corner, while
+            // the far less useful *label* upstairs wore a chip.
+            <p className="text-xs text-caution">
               Estimated: {estimatedBecause(component.cost.price)}.
             </p>
           ) : null}
@@ -342,6 +375,18 @@ function MarginFigure({ item }: { item: MenuItemSummary }) {
 }
 
 const COLLAPSED_ROWS = 5;
+
+/**
+ * The table and the card rows are both always in the DOM - only one of them is
+ * ever displayed - so a ref shared between them keeps whichever React attached
+ * last, which is the card. Above 640 px that made every focus call land on a
+ * `display: none` element, where it silently does nothing: pressing Enter on a
+ * row left focus sitting on the button instead of moving into the expansion
+ * (WP-62's acceptance). This keeps only the copy that is actually on screen.
+ */
+function onScreen(el: HTMLElement | null): boolean {
+  return el !== null && el.offsetParent !== null;
+}
 
 /**
  * How many missing pieces an incomplete item names before it counts the rest.
@@ -478,8 +523,19 @@ export default function MenuMargins() {
   const renderRows = (groupKey: string, groupItems: MenuItemSummary[]) => {
     const expanded = showAll.has(groupKey);
     const visible = expanded ? groupItems : groupItems.slice(0, COLLAPSED_ROWS);
-    return { visible, hidden: groupItems.length - visible.length };
+    return { visible, expanded, collapsible: groupItems.length > COLLAPSED_ROWS };
   };
+
+  // The expander is a toggle, not a one-way door: it used to only ever add to
+  // the set and then unmount itself, so a category opened mid-demo stayed open
+  // until the page was reloaded - on a 45-item menu that is the closing image
+  // gone for the rest of the run.
+  const toggleGroup = (groupKey: string) =>
+    setShowAll((set) => {
+      const next = new Set(set);
+      if (!next.delete(groupKey)) next.add(groupKey);
+      return next;
+    });
 
   return (
     <div className="space-y-8">
@@ -523,7 +579,7 @@ export default function MenuMargins() {
             <section className="space-y-5">
               {orderedGroups.map(([category, groupItems]) => {
                 const groupKey = category ?? "(none)";
-                const { visible, hidden } = renderRows(groupKey, groupItems);
+                const { visible, expanded, collapsible } = renderRows(groupKey, groupItems);
                 const heading = onlyGroup ? null : (category ?? "Other items");
                 return (
                   <div key={groupKey}>
@@ -536,12 +592,33 @@ export default function MenuMargins() {
                     {/* The table, for screens that fit one (real semantics:
                         caption, thead, a real button as the drill trigger). */}
                     <div className="hidden overflow-hidden rounded-md border border-ink/10 bg-paper sm:block">
-                      <table className="w-full text-sm">
+                      <table className="w-full table-fixed text-sm">
                         <caption className="sr-only">
                           {heading ?? "Menu items"} ranked by margin in AED per item
                         </caption>
+                        {/* One grid for the whole ranking. Each category is its
+                            own table (its own caption and header, which is what
+                            makes it readable to a screen reader), and with the
+                            browser's automatic layout each one sized its columns
+                            from its own rows: at 1280 the "Sells at" column
+                            started 56 px further right under Shakes than under
+                            Tea Corner, and a single loss row pushed it 138 px.
+                            Down a 45-item menu that is a different grid per
+                            section. Fixed widths make the margin column land in
+                            the same place in every one. The money shares are
+                            sized off the narrowest table this layout ever
+                            renders (a 640 px viewport, just above the card
+                            breakpoint), so "AED 35.00" and "AED 28.55 85.7%"
+                            still fit on one line there; a long item name wraps
+                            instead, which costs nothing. */}
+                        <colgroup>
+                          <col className="w-[36%]" />
+                          <col className="w-[18%]" />
+                          <col className="w-[18%]" />
+                          <col className="w-[28%]" />
+                        </colgroup>
                         <thead>
-                          <tr className="border-b border-ink/10 text-left text-[11px] font-medium tracking-wider text-stone uppercase">
+                          <tr className="border-b border-ink/10 text-left text-xs font-medium tracking-wider text-stone uppercase">
                             <th scope="col" className="px-4 py-2 font-medium">
                               Item
                             </th>
@@ -590,13 +667,16 @@ export default function MenuMargins() {
                       ))}
                     </ul>
 
-                    {hidden > 0 ? (
+                    {collapsible ? (
                       <button
                         type="button"
-                        onClick={() => setShowAll((set) => new Set(set).add(groupKey))}
+                        onClick={() => toggleGroup(groupKey)}
+                        aria-expanded={expanded}
                         className="mt-2 min-h-11 rounded-sm border border-palm/30 px-3 py-1.5 text-sm font-medium text-palm hover:border-palm"
                       >
-                        Show all {groupItems.length} items
+                        {expanded
+                          ? `Show the top ${COLLAPSED_ROWS} only`
+                          : `Show all ${groupItems.length} items`}
                       </button>
                     ) : null}
                   </div>
@@ -615,41 +695,47 @@ export default function MenuMargins() {
           {incomplete.length > 0 ? (
             // The quieter section, on mist, owning the coverage line - the
             // owner's first read above is the conclusion, not the homework.
-            <section className="space-y-3 rounded-md bg-mist p-4">
+            <section className="space-y-4 rounded-md bg-mist p-4">
               <h2 className="font-display text-lg font-semibold text-ink">
                 {incomplete.length} of {live.length} items can&apos;t be costed yet
               </h2>
-              <ul className="space-y-2">
+              {/* One quiet surface, not two. Each item used to sit on its own
+                  white card inside the mist panel, and the two stacked surfaces
+                  made this the heaviest block on the page - on a day with
+                  nothing to report it out-measured the ranking it is supposed to
+                  sit beneath, which is the opposite of what "quieter section"
+                  is for. Hairlines carry the separation instead, the way the
+                  materials screen's own can't-be-costed-yet section does.
+                  The fix link comes down out of the far right corner too: it
+                  used to float most of a screen's width away from the sentence
+                  it acts on. */}
+              <ul className="divide-y divide-ink/10">
                 {incomplete.map((item) => (
-                  <li key={item.id} className="rounded-md border border-ink/10 bg-paper p-4">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="font-medium text-ink">{item.name}</p>
-                        <p className="mt-0.5 text-sm text-stone">
-                          sells at AED {money(item.selling_price)}
-                        </p>
-                        <ul className="mt-1 space-y-0.5">
-                          {item.plate.missing.slice(0, MISSING_SHOWN).map((sentence, index) => (
-                            <li key={index} className="text-sm text-plum">
-                              {sentence}
-                            </li>
-                          ))}
-                          {item.plate.missing.length > MISSING_SHOWN ? (
-                            <li className="text-sm text-stone">
-                              and {item.plate.missing.length - MISSING_SHOWN} more
-                            </li>
-                          ) : null}
-                        </ul>
-                      </div>
-                      {item.plate.missing.some((sentence) => sentence !== "no recipe yet") ? (
-                        <Link
-                          href="/materials"
-                          className="text-xs font-medium text-palm underline-offset-2 hover:underline"
-                        >
-                          Fix on the materials screen
-                        </Link>
+                  <li key={item.id} className="py-3 first:pt-0">
+                    <p className="font-medium text-ink">{item.name}</p>
+                    <p className="mt-0.5 text-sm text-stone">
+                      sells at AED {money(item.selling_price)}
+                    </p>
+                    <ul className="mt-1 space-y-0.5">
+                      {item.plate.missing.slice(0, MISSING_SHOWN).map((sentence, index) => (
+                        <li key={index} className="text-sm text-plum">
+                          {sentence}
+                        </li>
+                      ))}
+                      {item.plate.missing.length > MISSING_SHOWN ? (
+                        <li className="text-sm text-stone">
+                          and {item.plate.missing.length - MISSING_SHOWN} more
+                        </li>
                       ) : null}
-                    </div>
+                    </ul>
+                    {item.plate.missing.some((sentence) => sentence !== "no recipe yet") ? (
+                      <Link
+                        href="/materials"
+                        className="inline-flex min-h-11 items-center text-sm font-medium text-palm underline-offset-2 hover:underline"
+                      >
+                        Fix on the materials screen
+                      </Link>
+                    ) : null}
                   </li>
                 ))}
               </ul>
@@ -664,12 +750,17 @@ export default function MenuMargins() {
       )}
 
       {/* The loader is a consultant tool: reachable from here, never a fourth
-          item in the nav the owner reads every morning (WP-62/64). */}
-      <p className="text-xs text-stone">
-        <Link href="/menu/load" className="underline-offset-2 hover:underline">
-          Load or update the menu from a spreadsheet
-        </Link>
-      </p>
+          item in the nav the owner reads every morning (WP-62/64). It stands
+          down on an empty menu, where the empty state's own sentence already
+          points at it and two links to the same place 75 px apart is just
+          noise on a page that has nothing else on it. */}
+      {live.length > 0 ? (
+        <p className="text-xs text-stone">
+          <Link href="/menu/load" className="underline-offset-2 hover:underline">
+            Load or update the menu from a spreadsheet
+          </Link>
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -698,14 +789,18 @@ function MenuRow({
           <button
             type="button"
             ref={(el) => {
-              if (el) rowButtons.current.set(item.id, el);
-              else rowButtons.current.delete(item.id);
+              if (onScreen(el)) rowButtons.current.set(item.id, el!);
             }}
             onClick={onToggle}
             aria-expanded={open}
-            className="min-h-11 rounded-sm py-1 text-left font-medium text-ink underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-palm/30"
+            className="group inline-flex min-h-11 items-center gap-1.5 rounded-sm py-1 text-left font-medium text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-palm/30"
           >
-            {item.name}
+            <ChevronIcon
+              className={`h-3 w-3 shrink-0 text-stone transition-transform ${
+                open ? "rotate-90" : ""
+              }`}
+            />
+            <span className="underline-offset-2 group-hover:underline">{item.name}</span>
           </button>
           {item.plate.quality === "estimated" ? (
             <span className="ml-2 align-middle">
@@ -724,7 +819,13 @@ function MenuRow({
       {open ? (
         <tr className="border-b border-ink/5 last:border-b-0">
           <td colSpan={4} className="px-4 pb-3">
-            <div ref={drillRef} tabIndex={-1} className="focus:outline-none">
+            <div
+              ref={(el) => {
+                if (onScreen(el)) drillRef.current = el;
+              }}
+              tabIndex={-1}
+              className="focus:outline-none"
+            >
               <DrillContent detail={detail} error={detailError} />
             </div>
           </td>
@@ -760,13 +861,18 @@ function MenuCard({
             ref={(el) => {
               // The card and the table never render at the same width, so the
               // shared ref map holds whichever button is actually on screen.
-              if (el) rowButtons.current.set(item.id, el);
+              if (onScreen(el)) rowButtons.current.set(item.id, el!);
             }}
             onClick={onToggle}
             aria-expanded={open}
-            className="min-h-11 rounded-sm py-1 text-left font-medium text-ink underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-palm/30"
+            className="group inline-flex min-h-11 items-center gap-1.5 rounded-sm py-1 text-left font-medium text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-palm/30"
           >
-            {item.name}
+            <ChevronIcon
+              className={`h-3 w-3 shrink-0 text-stone transition-transform ${
+                open ? "rotate-90" : ""
+              }`}
+            />
+            <span className="underline-offset-2 group-hover:underline">{item.name}</span>
           </button>
           {item.plate.quality === "estimated" ? (
             <span className="ml-2 align-middle">
@@ -783,7 +889,13 @@ function MenuCard({
         {summaryMoney(item.plate.cost_per_portion ?? "0")}
       </p>
       {open ? (
-        <div ref={drillRef} tabIndex={-1} className="focus:outline-none">
+        <div
+          ref={(el) => {
+            if (onScreen(el)) drillRef.current = el;
+          }}
+          tabIndex={-1}
+          className="focus:outline-none"
+        >
           <DrillContent detail={detail} error={detailError} />
         </div>
       ) : null}

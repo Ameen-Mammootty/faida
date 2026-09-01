@@ -30,8 +30,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     // globals.css sets scroll-behavior: smooth (the invoice-line anchors land
     // gently); Next asks for this attribute so it does not also smooth-scroll
     // route transitions, which reads as lag.
-    <html lang="en" data-scroll-behavior="smooth">
-      <body className={`${inter.variable} ${manrope.variable}`}>{children}</body>
+    // The font variables go on <html>, not <body>: globals.css resolves
+    // --font-sans through var(--font-inter) inside @theme, which Tailwind
+    // emits on :root. A custom property that references one declared further
+    // down the tree is invalid at computed-value time, so --font-sans came out
+    // empty and every screen fell back to the system stack - Manrope and Inter
+    // were downloaded and never used (design review 2026-09-01).
+    <html lang="en" data-scroll-behavior="smooth" className={`${inter.variable} ${manrope.variable}`}>
+      <body>{children}</body>
     </html>
   );
 }
