@@ -106,9 +106,14 @@ function EstimatedChip() {
  * alone, and never mistakable for a thin-but-positive figure. */
 function LossFigure({ margin }: { margin: string }) {
   return (
-    <span className="inline-flex items-center gap-1.5 font-medium text-plum">
-      <AlertIcon className="h-3.5 w-3.5" />
-      <span className="tabular-nums">-AED {summaryMoney(margin.replace("-", ""))}</span>
+    // The figure and its icon never split: in a fixed-width margin column the
+    // label is what wraps to the next line, not "-AED 0.40" away from the
+    // symbol that says it is bad news.
+    <span className="inline-flex flex-wrap items-center justify-end gap-x-1.5 font-medium text-plum">
+      <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+        <AlertIcon className="h-3.5 w-3.5" />
+        <span className="tabular-nums">-AED {summaryMoney(margin.replace("-", ""))}</span>
+      </span>
       <span className="text-xs font-normal">this plate loses money</span>
     </span>
   );
@@ -536,10 +541,31 @@ export default function MenuMargins() {
                     {/* The table, for screens that fit one (real semantics:
                         caption, thead, a real button as the drill trigger). */}
                     <div className="hidden overflow-hidden rounded-md border border-ink/10 bg-paper sm:block">
-                      <table className="w-full text-sm">
+                      <table className="w-full table-fixed text-sm">
                         <caption className="sr-only">
                           {heading ?? "Menu items"} ranked by margin in AED per item
                         </caption>
+                        {/* One grid for the whole ranking. Each category is its
+                            own table (its own caption and header, which is what
+                            makes it readable to a screen reader), and with the
+                            browser's automatic layout each one sized its columns
+                            from its own rows: at 1280 the "Sells at" column
+                            started 56 px further right under Shakes than under
+                            Tea Corner, and a single loss row pushed it 138 px.
+                            Down a 45-item menu that is a different grid per
+                            section. Fixed widths make the margin column land in
+                            the same place in every one. The money shares are
+                            sized off the narrowest table this layout ever
+                            renders (a 640 px viewport, just above the card
+                            breakpoint), so "AED 35.00" and "AED 28.55 85.7%"
+                            still fit on one line there; a long item name wraps
+                            instead, which costs nothing. */}
+                        <colgroup>
+                          <col className="w-[36%]" />
+                          <col className="w-[18%]" />
+                          <col className="w-[18%]" />
+                          <col className="w-[28%]" />
+                        </colgroup>
                         <thead>
                           <tr className="border-b border-ink/10 text-left text-[11px] font-medium tracking-wider text-stone uppercase">
                             <th scope="col" className="px-4 py-2 font-medium">
