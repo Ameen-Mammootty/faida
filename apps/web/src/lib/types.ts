@@ -15,15 +15,24 @@ export type CheckStatus = "passed" | "failed" | "indeterminate";
 
 export type FieldStatus = "green" | "amber";
 
-export type InvoiceStatus = "draft" | "awaiting_confirm" | "confirmed" | "needs_review";
+export type InvoiceStatus =
+  | "draft"
+  | "awaiting_confirm"
+  | "confirmed"
+  | "needs_review"
+  /** A WP-44 duplicate hold the reviewer resolved. Terminal, and out of the
+   * working list - reachable only by asking for it: /invoices?status=dismissed. */
+  | "dismissed";
 
 export type PaymentKind = "credit" | "cash";
 
 export type DocumentSource = "whatsapp" | "upload" | "manual";
 
-/** C1 document machine: received -> processing -> extracted | failed, plus
- * confirmed once the invoice is confirmed. */
-export type DocumentStatus = "received" | "processing" | "extracted" | "confirmed" | "failed";
+/** C1 document machine: received -> processing -> extracted | failed.
+ * `extracted` is terminal - migration 0010 took `confirmed` out of the document
+ * vocabulary, because both tables claimed it and only application code kept the
+ * pair in step. Whether the invoice was confirmed is read from the invoice. */
+export type DocumentStatus = "received" | "processing" | "extracted" | "failed";
 
 export type DocumentClassification = "invoice" | "z_report" | "other";
 
@@ -107,6 +116,34 @@ export interface InvoiceSummary {
   branch_id: string | null;
   branch_name: string | null;
   document_id: string;
+  /** WP-44: the invoice this one duplicates, or null on an ordinary invoice.
+   * A held duplicate is this being set AND the status not being `confirmed` -
+   * the WhatsApp reply invites confirming a copy that really is a new invoice,
+   * so a confirmed row can carry this too. */
+  duplicate_of_invoice_id: string | null;
+}
+
+/**
+ * One row of the invoice list: the summary plus the duplicated invoice's
+ * number, which arrives on the list query's own join.
+ *
+ * Deliberately NOT on InvoiceSummary, which InvoiceDetail extends - the detail
+ * payload has no join on it and does not send this field. Putting it on the
+ * shared shape would have the types promise something the wire never carries,
+ * which is the same trap the API-side serializer split avoids.
+ */
+export interface InvoiceListRow extends InvoiceSummary {
+  duplicate_of_invoice_no: string | null;
+}
+
+/** The paper a held duplicate copies, for the review screen's banner. */
+export interface DuplicateOf {
+  id: string;
+  supplier_name: string | null;
+  invoice_no: string | null;
+  currency: string;
+  total: string | null;
+  created_at: string;
 }
 
 /**
@@ -191,6 +228,8 @@ export interface InvoiceDocument {
  * same payload, so the screen never refetches after a write.
  */
 export interface InvoiceDetail extends InvoiceSummary {
+  /** Set only on a held duplicate; the detail read pays for it only then. */
+  duplicate_of: DuplicateOf | null;
   subtotal: string | null;
   tax: string | null;
   payment_kind: PaymentKind | null;

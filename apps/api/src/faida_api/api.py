@@ -158,6 +158,25 @@ def _invoice_summary(row: asyncpg.Record) -> dict:
         "branch_id": _maybe_str(row["branch_id"]),
         "branch_name": row["branch_name"],
         "document_id": str(row["document_id"]),
+        # WP-44's hold, so the screen can tell a held duplicate from a cash
+        # hold - they are the same status. Present on both callers' rows:
+        # list_invoices selects it, and get_invoice takes i.*.
+        "duplicate_of_invoice_id": _maybe_str(row["duplicate_of_invoice_id"]),
+    }
+
+
+def _invoice_list_row(row: asyncpg.Record) -> dict:
+    """The list payload: the summary plus the duplicated invoice's number,
+    which arrives on the list query's own join.
+
+    Deliberately NOT folded into `_invoice_summary`. That function is spread
+    into the detail payload too, whose row comes from `get_invoice` and has no
+    join on it - so a joined column added to the shared serializer raises
+    KeyError on every detail request, taking out GET detail, confirm and manual
+    entry together. One serializer, two queries: the joined half lives here."""
+    return {
+        **_invoice_summary(row),
+        "duplicate_of_invoice_no": row["duplicate_of_invoice_no"],
     }
 
 
@@ -257,8 +276,26 @@ async def _invoice_detail(request: Request, invoice_id: str) -> dict:
     costed = invoice["status"] == InvoiceStatus.CONFIRMED
     foreign_currency = currency_differs(invoice["currency"], invoice["tenant_currency"])
 
+    # The paper this one duplicates, so the screen can say which (WP-44 spends
+    # this on the WhatsApp sentence; the pointer is what survives). One extra
+    # read, and only for a held duplicate - the detail path pays nothing on an
+    # ordinary invoice.
+    duplicate_of = None
+    if invoice["duplicate_of_invoice_id"] is not None:
+        original = await db.get_invoice(str(invoice["duplicate_of_invoice_id"]))
+        if original is not None:  # the composite FK makes a dangling pointer unreachable
+            duplicate_of = {
+                "id": str(original["id"]),
+                "supplier_name": original["supplier_name"],
+                "invoice_no": original["invoice_no"],
+                "currency": original["currency"],
+                "total": _dec(original["total"]),
+                "created_at": _iso(original["created_at"]),
+            }
+
     return {
         **_invoice_summary(invoice),
+        "duplicate_of": duplicate_of,
         "subtotal": _dec(invoice["subtotal"]),
         "tax": _dec(invoice["tax"]),
         "payment_kind": invoice["payment_kind"],
@@ -312,7 +349,7 @@ async def list_invoices(
         supplier_id=_maybe_str(supplier_id),
         status=None if status is None else status.value,
     )
-    return {"invoices": [_invoice_summary(row) for row in rows]}
+    return {"invoices": [_invoice_list_row(row) for row in rows]}
 
 
 @router.get("/invoices/{invoice_id}")
@@ -433,15 +470,66 @@ async def confirm_invoice(invoice_id: uuid.UUID, request: Request) -> dict:
     else:
         confirmed = False
     if not confirmed:
-        # Already confirmed, still a draft, or lost a race to another confirm.
+        # Already confirmed, still a draft, or lost a race to another writer.
+        # Re-read: see _fresh_status.
         raise HTTPException(
-            status_code=409, detail=f"invoice is {invoice['status']}; cannot confirm"
+            status_code=409,
+            detail=f"invoice is {await _fresh_status(db, str(invoice_id))}; cannot confirm",
         )
 
     # The price baseline moved inside the same transaction as the status flip
     # (WP-50), so there is nothing to do here but render the result. Two
     # transactions used to leave a confirmed invoice with no prices and this
     # endpoint answering 409 for ever.
+    return await _invoice_detail(request, str(invoice_id))
+
+
+async def _fresh_status(db: Database, invoice_id: str) -> str | None:
+    """The invoice's status *now*, for a refusal sentence.
+
+    Both write endpoints read the invoice, run a guarded update, and answer 409
+    when the guard refuses. Building that sentence from the earlier read names
+    whatever the status was a moment ago, which was near enough while confirm
+    raced only against another confirm - and stopped being near enough the
+    moment dismiss gave the same row a second door. Two tabs, one dismisses,
+    the other confirms, and the screen said "invoice is needs_review; cannot
+    confirm" about a row that was nothing of the sort."""
+    row = await db.get_invoice(invoice_id)
+    return None if row is None else row["status"]
+
+
+@router.post("/invoices/{invoice_id}/dismiss")
+async def dismiss_invoice(invoice_id: uuid.UUID, request: Request) -> dict:
+    """The way out of a WP-44 duplicate hold, from the review screen.
+
+    Held duplicates only, never a confirmed invoice, and never the original -
+    the original carries no pointer, which is what stops a reviewer dismissing
+    it and then the copy and losing the paper entirely. The guard is repeated in
+    the single write (db.dismiss_invoice); this endpoint checks first so it can
+    say which rule refused.
+
+    The actor is `console`, never taken from the client (C8): a name anyone
+    holding the shared token can choose looks like identity without being it."""
+    db: Database = request.app.state.db
+    invoice = await db.get_invoice(str(invoice_id))
+    if invoice is None:
+        raise HTTPException(status_code=404, detail="invoice not found")
+    if invoice["duplicate_of_invoice_id"] is None:
+        raise HTTPException(
+            status_code=409,
+            detail="invoice is not a held duplicate; only a duplicate copy can be dismissed",
+        )
+
+    if not await db.dismiss_invoice(str(invoice_id), actor=CONSOLE_ACTOR):
+        status = await _fresh_status(db, str(invoice_id))
+        if status == InvoiceStatus.CONFIRMED:
+            detail = "invoice is confirmed; a recorded invoice cannot be dismissed"
+        elif status == InvoiceStatus.DISMISSED:
+            detail = "invoice is already dismissed"
+        else:
+            detail = f"invoice is {status}; cannot dismiss"
+        raise HTTPException(status_code=409, detail=detail)
+
     return await _invoice_detail(request, str(invoice_id))
 
 

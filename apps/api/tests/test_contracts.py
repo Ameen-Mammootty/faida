@@ -4,15 +4,19 @@ precision, and reject shapes the pipeline would mispersist."""
 
 from decimal import Decimal
 
+import asyncpg
 import pytest
 from pydantic import ValidationError
 
+from faida_api.contracts import InvoiceStatus
 from faida_api.extraction.schema import (
     Classification,
     ExtractedLine,
     ExtractionResult,
     RepairResult,
 )
+
+from .conftest import DEMO_TENANT_ID, requires_db
 
 INVOICE_PAYLOAD = {
     "classification": "invoice",
@@ -75,3 +79,60 @@ def test_repair_patch_accepts_json_line_indexes():
         raw_name="KARAK TEA DUST", qty=Decimal("4"), line_total=Decimal("75.00")
     )
     assert patch.subtotal is None
+
+
+# --- C1: the status vocabulary lives in two places ---------------------------
+
+
+async def _blank_document(db, marker: str) -> str:
+    return await db.pool.fetchval(
+        """
+        insert into documents (tenant_id, storage_path, sha256, mime, source, status)
+        values ($1, $2, $3, 'image/jpeg', 'upload', 'extracted')
+        returning id
+        """,
+        DEMO_TENANT_ID,
+        f"{DEMO_TENANT_ID}/documents/{marker}/original",
+        f"sha256-{marker}",
+    )
+
+
+@requires_db
+async def test_the_database_accepts_every_invoice_status_the_enum_declares(db):
+    """`InvoiceStatus` and the `invoices_status_check` constraint are two copies
+    of one list, kept in step until now by a sentence in this module's own
+    docstring and by nothing else.
+
+    Drift does not surface as a red test. It surfaces as a live invoice write
+    raising a constraint violation, because Python cheerfully produced a string
+    Postgres refuses - on the ingest path, where the sender just gets silence.
+
+    Behavioural on purpose: reading the constraint's SQL text back and comparing
+    strings would be a test that asserts on code text, which plan.md §2 rule 6
+    bans outright. Inserting one row per member asks the database the question
+    directly, and survives any rewording of the constraint."""
+    for index, status in enumerate(InvoiceStatus):
+        document_id = await _blank_document(db, f"status-{index}")
+        await db.pool.execute(
+            "insert into invoices (tenant_id, document_id, status) values ($1, $2, $3)",
+            DEMO_TENANT_ID,
+            document_id,
+            status.value,
+        )
+
+    stored = await db.pool.fetchval("select count(distinct status) from invoices")
+    assert stored == len(InvoiceStatus)
+
+
+@requires_db
+async def test_a_status_outside_the_enum_is_refused_by_postgres(db):
+    """The other half: the constraint is real, so this test cannot pass just
+    because the column happens to accept anything."""
+    document_id = await _blank_document(db, "junk")
+    with pytest.raises(asyncpg.exceptions.CheckViolationError):
+        await db.pool.execute(
+            "insert into invoices (tenant_id, document_id, status) values ($1, $2, $3)",
+            DEMO_TENANT_ID,
+            document_id,
+            "archived",
+        )

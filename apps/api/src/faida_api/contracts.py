@@ -2,7 +2,10 @@
 
 Frozen for parallel delegation: a change here goes through the manager and the
 Decision Log, never a sub-agent working alone. Values must stay in lockstep with
-the check constraints in supabase/migrations/0001_init.sql.
+the check constraints in supabase/migrations/ - 0001_init.sql defines both, and
+0010 (documents) and 0017 (invoices) have since replaced them, so the newest
+migration naming a table is the one that owns its vocabulary. The lockstep is
+enforced behaviourally in tests/test_contracts.py, not by this sentence.
 """
 
 from enum import StrEnum
@@ -31,6 +34,7 @@ class InvoiceStatus(StrEnum):
     AWAITING_CONFIRM = "awaiting_confirm"
     CONFIRMED = "confirmed"
     NEEDS_REVIEW = "needs_review"  # e.g. cash invoices held for approval
+    DISMISSED = "dismissed"  # a WP-44 duplicate hold, resolved from the screen
 
 
 # Ingest states only: the worker owns every document transition, and EXTRACTED
@@ -46,10 +50,16 @@ DOCUMENT_TRANSITIONS: dict[DocumentStatus, set[DocumentStatus]] = {
 }
 
 # Corrections keep an invoice in AWAITING_CONFIRM (no transition); NEEDS_REVIEW
-# clears through the review screen (M3) or cash approval (M7).
+# clears through the review screen (M3) or cash approval (M7), or - when it is a
+# WP-44 duplicate hold - through DISMISSED. Only NEEDS_REVIEW reaches DISMISSED
+# because only a held duplicate carries duplicate_of_invoice_id, and the
+# pipeline sets that in the same branch that sets NEEDS_REVIEW. Both terminal
+# states are terminal: a dismissed invoice is refused by the single confirm
+# write, and a confirmed one is a financial record.
 INVOICE_TRANSITIONS: dict[InvoiceStatus, set[InvoiceStatus]] = {
     InvoiceStatus.DRAFT: {InvoiceStatus.AWAITING_CONFIRM, InvoiceStatus.NEEDS_REVIEW},
     InvoiceStatus.AWAITING_CONFIRM: {InvoiceStatus.CONFIRMED, InvoiceStatus.NEEDS_REVIEW},
-    InvoiceStatus.NEEDS_REVIEW: {InvoiceStatus.CONFIRMED},
+    InvoiceStatus.NEEDS_REVIEW: {InvoiceStatus.CONFIRMED, InvoiceStatus.DISMISSED},
     InvoiceStatus.CONFIRMED: set(),
+    InvoiceStatus.DISMISSED: set(),
 }

@@ -346,6 +346,11 @@ async def _persist_extracted(
         confidence=confidence,
         provenance=provenance,
         lines=lines,
+        # The hold, recorded rather than spent on the reply and forgotten. It is
+        # what lets the review screen name the paper this one copies, and what
+        # the dismiss door keys on - so the original, which carries none, can
+        # never be dismissed.
+        duplicate_of_invoice_id=str(duplicate["id"]) if duplicate is not None else None,
     )
     await _record_run(
         db,

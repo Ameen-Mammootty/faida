@@ -43,6 +43,7 @@ import {
 } from "./mock/menu";
 import {
   mockConfirmInvoice,
+  mockDismissInvoice,
   mockCreateManualInvoice,
   mockGetInvoice,
   mockGetSupplierItemPrices,
@@ -59,7 +60,7 @@ import type {
   IngredientProposal,
   InvoiceDetail,
   InvoiceFilters,
-  InvoiceSummary,
+  InvoiceListRow,
   ManualInvoiceInput,
   MappingResult,
   MenuItemDetail,
@@ -118,14 +119,14 @@ function jsonInit(method: string, body: unknown): RequestInit {
   };
 }
 
-export async function listInvoices(filters: InvoiceFilters = {}): Promise<InvoiceSummary[]> {
+export async function listInvoices(filters: InvoiceFilters = {}): Promise<InvoiceListRow[]> {
   if (MOCK) return mockListInvoices(filters);
   const params = new URLSearchParams();
   if (filters.status) params.set("status", filters.status);
   if (filters.branch_id) params.set("branch_id", filters.branch_id);
   if (filters.supplier_id) params.set("supplier_id", filters.supplier_id);
   const query = params.size > 0 ? `?${params.toString()}` : "";
-  const body = await request<{ invoices: InvoiceSummary[] }>(`/api/invoices${query}`);
+  const body = await request<{ invoices: InvoiceListRow[] }>(`/api/invoices${query}`);
   return body.invoices;
 }
 
@@ -149,6 +150,16 @@ export async function patchInvoiceFields(
 export async function confirmInvoice(id: string): Promise<InvoiceDetail> {
   if (MOCK) return mockConfirmInvoice(id);
   return request<InvoiceDetail>(`/api/invoices/${encodeURIComponent(id)}/confirm`, {
+    method: "POST",
+  });
+}
+
+/** Resolve a WP-44 duplicate hold: the copy leaves the working list. Held
+ * duplicates only - the endpoint refuses anything else, including the original
+ * the copy points at. Resolves to the updated detail, like confirm. */
+export async function dismissInvoice(id: string): Promise<InvoiceDetail> {
+  if (MOCK) return mockDismissInvoice(id);
+  return request<InvoiceDetail>(`/api/invoices/${encodeURIComponent(id)}/dismiss`, {
     method: "POST",
   });
 }

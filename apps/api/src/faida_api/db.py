@@ -432,6 +432,7 @@ class Database:
         lines: list[dict],
         document_classification: str | None = "invoice",
         created_by: str | None = None,
+        duplicate_of_invoice_id: str | None = None,
     ) -> str:
         """Draft invoice + lines + the document transition, one transaction:
         C1 says 'extracted' means a draft invoice with checks exists, so the
@@ -446,6 +447,10 @@ class Database:
         checks now exists for it.
 
         `provenance` is C8's per-field record of where each value came from.
+        `duplicate_of_invoice_id` is WP-44's hold, recorded rather than spent
+        on the reply and thrown away: the earlier invoice this paper duplicates.
+        Null on every ordinary invoice, and it is what the dismiss door keys on.
+
         `created_by` names a *person* who created this invoice by hand, and
         writes the audit event in the same transaction; the pipeline leaves it
         None because a model run is recorded in extraction_runs instead - the
@@ -458,9 +463,9 @@ class Database:
                                       supplier_name, invoice_no, invoice_date, currency,
                                       subtotal, tax, total, payment_kind, status, confidence,
                                       tax_treatment, vat_rate, discount_total, rounding_amount,
-                                      provenance)
+                                      provenance, duplicate_of_invoice_id)
                 values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
-                        $17, $18, $19)
+                        $17, $18, $19, $20)
                 returning id::text
                 """,
                 tenant_id,
@@ -482,6 +487,7 @@ class Database:
                 discount_total,
                 rounding_amount,
                 provenance,
+                duplicate_of_invoice_id,
             )
             await conn.executemany(
                 """
@@ -534,17 +540,28 @@ class Database:
         status: str | None = None,
     ) -> list[asyncpg.Record]:
         """C6 invoice list, newest first; every filter optional. Carries the
-        branch name (WP-32: the list shows names, not UUIDs)."""
+        branch name (WP-32: the list shows names, not UUIDs) and, for a held
+        duplicate, the number of the invoice it copies - joined rather than
+        fetched per row, so the list stays one query.
+
+        **A dismissed invoice is not in the working list.** Asking for no status
+        means every status a reviewer still has work on, which is what the
+        founder wanted back: a resolved duplicate leaves. Asking for it by name
+        (`?status=dismissed`) still returns it, so the record is reachable
+        without a screen having to exist for it."""
         return await self.pool.fetch(
             """
             select i.id, i.supplier_name, i.supplier_id, i.invoice_no, i.invoice_date,
                    i.currency, i.total, i.status, i.created_at, i.branch_id, i.document_id,
-                   b.name as branch_name
+                   i.duplicate_of_invoice_id, b.name as branch_name,
+                   dup.invoice_no as duplicate_of_invoice_no
             from invoices i
             left join branches b on b.id = i.branch_id
+            left join invoices dup on dup.id = i.duplicate_of_invoice_id
             where ($1::uuid is null or i.branch_id = $1)
               and ($2::uuid is null or i.supplier_id = $2)
               and ($3::text is null or i.status = $3)
+              and ($3::text is not null or i.status <> 'dismissed')
             order by i.created_at desc, i.id desc
             """,
             branch_id,
@@ -557,13 +574,18 @@ class Database:
         duplicate check compares the incoming paper against these in Python,
         so the normalization rule (matching.normalize_invoice_no) lives once,
         never re-implemented in SQL. Fine at demo volume; revisit with an
-        index and a WHERE clause when a tenant has thousands (§2 rule 8)."""
+        index and a WHERE clause when a tenant has thousands (§2 rule 8).
+
+        Dismissed rows are excluded: `find_duplicate` takes the newest match, so
+        leaving them in would hold a third send against a copy the reviewer has
+        already thrown away, and the reply would read out its date."""
         return await self.pool.fetch(
             """
             select id, supplier_id, supplier_name, invoice_no, invoice_date, currency,
                    total, status, created_at
             from invoices
             where tenant_id = $1
+              and status <> 'dismissed'
             order by created_at desc, id desc
             """,
             tenant_id,
@@ -1987,6 +2009,65 @@ class Database:
                 detail={"from_status": from_status},
             )
             await self.record_confirmed_prices(invoice_id, conn=conn)
+        return True
+
+    async def dismiss_invoice(self, invoice_id: str, *, actor: str) -> bool:
+        """The review screen's way out of a WP-44 duplicate hold: the held copy
+        leaves the working list without being recorded and without being
+        deleted. The founder, the day before the M6 gate: "the duplicate invoice
+        of al madina is in my invoice list, and there is no option to mark
+        duplicate and delete it."
+
+        Guarded the way `_confirm` is guarded, and for its reason - the rule
+        lives in the one write, so a door written later cannot widen it. Two
+        clauses, both load-bearing:
+
+        `status not in ('confirmed', 'dismissed')` - a confirmed invoice is a
+        financial record, and dismissing twice writes no second trail entry.
+
+        `duplicate_of_invoice_id is not null` - **a held duplicate, nothing
+        else.** An ordinary invoice, a cash hold, and above all the *original*
+        of a duplicated paper all carry a null pointer. That last one is why
+        this clause is here rather than in the endpoint: when a copy arrives the
+        original is usually still awaiting_confirm, so a wider guard would let a
+        reviewer dismiss the original and then the copy, and the paper would be
+        gone from the product with one WhatsApp reply as its only trace.
+
+        `from_status` is read inside the transaction under FOR UPDATE. Not from
+        RETURNING, which yields the row as it now is; and not from the caller's
+        earlier read, which is exactly the stale value the 409 path stopped
+        trusting.
+
+        Returns False without touching anything when the guard refuses, so it is
+        safe to re-run."""
+        async with self.pool.acquire() as conn, conn.transaction():
+            from_status = await conn.fetchval(
+                "select status from invoices where id = $1 for update", invoice_id
+            )
+            row = await conn.fetchrow(
+                """
+                update invoices set status = 'dismissed'
+                 where id = $1
+                   and status not in ('confirmed', 'dismissed')
+                   and duplicate_of_invoice_id is not null
+                returning tenant_id::text, duplicate_of_invoice_id::text
+                """,
+                invoice_id,
+            )
+            if row is None:
+                return False
+            await _insert_audit_event(
+                conn,
+                tenant_id=row["tenant_id"],
+                actor=actor,
+                action="invoice.dismissed",
+                subject_type="invoice",
+                subject_id=invoice_id,
+                detail={
+                    "from_status": from_status,
+                    "duplicate_of_invoice_id": row["duplicate_of_invoice_id"],
+                },
+            )
         return True
 
     async def apply_invoice_correction(
