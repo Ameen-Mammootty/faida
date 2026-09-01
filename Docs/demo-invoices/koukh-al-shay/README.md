@@ -14,9 +14,14 @@ each paper, and the route to take if a photographed-on-a-desk variant is ever wa
 
     apps/api/.venv/bin/python Docs/demo-invoices/koukh-al-shay/render_papers.py   # HTML
     # then, per paper, with the browse skill:
-    #   $B viewport 1055x1491
+    #   $B viewport 1055x1491 --scale 2
     #   $B goto file://$PWD/Docs/demo-invoices/koukh-al-shay/KAS-1.html
     #   $B screenshot Docs/demo-invoices/koukh-al-shay/KAS-1.png --selector .page
+
+`--scale 2` is the setting `render_papers.py` documents and the one the 2026-09-01 papers were
+rasterised at: A4 at 2110x2982, which is what a 300 dpi scan of the same page looks like. The
+snippet here used to omit it and produced half-resolution papers - harmless for extraction, but
+the two instructions disagreed, and the renderer's is the right one.
 
 `build_prompts.py` holds the numbers; the prompts and the rendered papers both import them, so
 they cannot drift apart.
@@ -26,11 +31,18 @@ These do **not** replace `Docs/demo-invoices/DEMO-1..3` — those are act one's 
 
 | Paper | Supplier | Date | Lines | Total AED | Why it exists |
 |---|---|---|---|---|---|
-| KAS-1 | Al Aweer Fresh Produce LLC, AAF-2026-3318 | 24/08/2026 | 16 | 753.90 | every vegetable on the menu |
-| KAS-2 | Deira Spice & Dry Foods Trading LLC, DSF-26-08-441 | 24/08/2026 | 24 | 2,732.10 | sugar, salt, every spice, the dals and nuts |
-| KAS-3 | Al Madina Trading Co., AMT-26-1203 | 25/08/2026 | 14 | 2,977.28 | dairy, eggs, paneer, the frozen proteins |
-| KAS-4 | Gulf Foods Trading L.L.C., GFT-2026-0908 | 25/08/2026 | 27 | 3,739.05 | tea and beverage powders, bakery, sauces, all disposables |
-| **KAS-5** | **Al Madina Trading Co., AMT-26-1274** | **31/08/2026** | **4** | **1,527.75** | **the on-stage paper: the same packs a week later, prices moved** |
+| KAS-1 | Al Aweer Fresh Produce LLC, AAF-2026-3318 | 24/08/2026 | 16 | 776.00 | every vegetable on the menu |
+| KAS-2 | Deira Spice & Dry Foods Trading LLC, DSF-26-08-441 | 24/08/2026 | 24 | 3,001.95 | sugar, salt, every spice, the dals and nuts |
+| KAS-3 | Al Madina Trading Co., AMT-26-1203 | 25/08/2026 | 14 | 5,335.79 | dairy, eggs, paneer, the frozen proteins |
+| KAS-4 | Gulf Foods Trading L.L.C., GFT-2026-0908 | 25/08/2026 | 27 | 4,285.00 | tea and beverage powders, bakery, sauces, all disposables |
+| **KAS-5** | **Al Madina Trading Co., AMT-26-1274** | **31/08/2026** | **4** | **2,873.33** | **the on-stage paper: the same packs a week later, prices moved** |
+
+**The prices on these papers are real** - researched against UAE foodservice and wholesale
+sources on 2026-09-01, one row per line with its source and date in
+[`price-research-2026-09.md`](price-research-2026-09.md). The first draft's numbers were built
+to make the arithmetic work (boneless chicken at AED 3.45/kg), which made the closing margin
+screen read as a toy. Change a number in `build_prompts.py` and update that file in the same
+commit.
 
 Confirm KAS-1 to KAS-4 during preparation. **KAS-5 is the one you forward live** - it is a
 repeat purchase, which is the only way the money moment can exist at all.
@@ -38,15 +50,15 @@ repeat purchase, which is the only way the money moment can exist at all.
 ## Verified by reading them back, on the shipped engine
 
 `verify_papers.py` extracts all five with Gemini 3 Flash and compares every line against the
-source table. Last run 2026-08-31:
+source table. Last run 2026-09-01, after the repricing:
 
 | Paper | Lines | Read | Totals | Reconciles | Latency |
 |---|---|---|---|---|---|
-| KAS-1 | 16 | 16 | 718.00 / 35.90 / 753.90 | green, exclusive 5% | 5.7 s |
-| KAS-2 | 24 | 24 | 2,602.00 / 130.10 / 2,732.10 | green, exclusive 5% | 11.0 s |
-| KAS-3 | 14 | 14 | 2,835.50 / 141.78 / 2,977.28 | green, exclusive 5% | 5.3 s |
-| KAS-4 | 27 | 27 | 3,561.00 / 178.05 / 3,739.05 | green, exclusive 5% | 7.8 s |
-| KAS-5 | 4 | 4 | 1,455.00 / 72.75 / 1,527.75 | green, exclusive 5% | 3.5 s |
+| KAS-1 | 16 | 16 | 739.05 / 36.95 / 776.00 | green, exclusive 5% | 5.3 s |
+| KAS-2 | 24 | 24 | 2,859.00 / 142.95 / 3,001.95 | green, exclusive 5% | 10.2 s |
+| KAS-3 | 14 | 14 | 5,081.70 / 254.09 / 5,335.79 | green, exclusive 5% | 5.1 s |
+| KAS-4 | 27 | 27 | 4,080.95 / 204.05 / 4,285.00 | green, exclusive 5% | 7.3 s |
+| KAS-5 | 4 | 4 | 2,736.50 / 136.83 / 2,873.33 | green, exclusive 5% | 3.5 s |
 
 **85 of 85 lines, zero mismatches** on name, quantity, unit, pack size and unit price. Supplier,
 invoice number, day-first date, currency and credit terms all read correctly on every paper, and
@@ -63,9 +75,9 @@ It needs `GEMINI_API_KEY` and costs about a fils a paper.
 
 Run against the shipped code, not asserted:
 
-- **All 86 lines cost.** Every pack size parses in `units.py` and `costing.cost_line` returns a
+- **All 85 lines cost.** Every pack size parses in `units.py` and `costing.cost_line` returns a
   number for every line - no blocked costs, so no WP-55 queue to clear before the menu lights up.
-- **All 82 materials the menu names have a line behind them.** 80 of them will be *proposed* by
+- **All 81 materials the menu names have a line behind them.** 79 of them will be *proposed* by
   the matcher on the `/materials` queue; exactly two (`Garlic`, `Oil`) need the name typed,
   because the invoice prints "GARLIC PEELED" and "OIL SUNFLOWER" and a one-word material cannot
   clear the 0.70 proposal threshold once a description adds words. That is the matcher choosing
@@ -116,20 +128,32 @@ material. KAS-3 prints eggs as a 1.8 kg tray, which is legitimate and maps clean
 KAS-5 repeats four of KAS-3's exact packs, so "previous" is same-pack and the comparison is
 honest (D3 - a delta across pack sizes is a pack artifact wearing a percent sign).
 
-| Line | KAS-3 | KAS-5 | Per base unit | WhatsApp alert | On the menu |
+| Line | KAS-3 | KAS-5 | Per base unit | WhatsApp alert | Worst plate |
 |---|---|---|---|---|---|
-| EVAP MILK 48X400ML | 90.00 | 99.00 | 4.69 → 5.16 per litre | up AED 9.00 (+10%) | every karak and coffee-milk item earns less |
-| MILK POWDER 25 kg | 395.00 | 432.00 | 15.80 → 17.28 per kg | up AED 37.00 (+9.4%) | the milk-powder drinks follow |
-| FRESH MILK 12X1L | 42.00 | 42.00 | unchanged | **silent** | nothing moves - not everything alarms |
-| CHICKEN BONELESS 10 kg | 34.50 | 31.00 | 3.45 → 3.10 per kg | down AED 3.50 (-10.1%) | the chicken curries earn **more** |
+| EVAP MILK 48X400ML | 221.00 | 237.00 | 11.51 → 12.34 per litre | up AED 16.00 (+7.2%) | Karak Flask 2 L, **-0.650** |
+| MILK POWDER 25 kg | 333.50 | 360.00 | 13.34 → 14.40 per kg | up AED 26.50 (+7.9%) | Cappuccino Large, -0.013 |
+| FRESH MILK 12X1L | 56.50 | 56.50 | unchanged | **silent** | nothing moves - not everything alarms |
+| CHICKEN BONELESS 10 kg | 180.00 | 167.50 | 18.00 → 16.75 per kg | down AED 12.50 (-6.9%) | Butter Chicken, **+0.163** |
 
 The alert threshold is >= AED 0.25 and >= 5% of the last price, so three of the four fire and
 the fresh milk deliberately does not. The chicken going *down* is worth pointing at on stage:
 the callout is not a bad-news feed, it is what changed.
 
-The menu screen's second callout ranks same-day moves by **what they cost a plate**, so it will
-lead with whichever of these hits the biggest per-portion figure - the 2 L flask's 780 ml of
-evaporated milk, on these numbers. Confirm KAS-5, **reload `/menu`**, and it is there.
+**The two callouts deliberately disagree about what matters, and that is the point.** The
+WhatsApp alert ranks by what the *supplier* changed, so milk powder's +7.9% reads as the joint
+headline. The menu screen's second callout ranks by **what the move costs a plate** (WP-63), and
+on the real menu that is not close: evaporated milk takes the top six places, because a 2 L karak
+flask carries 780 ml of it, while milk powder appears in two drinks at about 12 g each and costs
+them just over a fil. A price alert is not a margin alert - showing both, ranked differently and
+each honest about its own question, is the argument for the layer. Confirm KAS-5, **reload
+`/menu`**, and it is there.
+
+| What it costs a plate | Item |
+|---|---|
+| -0.650 | 52b Karak Tea - Flask 2 L |
+| -0.633 | 53b Coffee Milk - Flask 2 L |
+| -0.583 | 54b Habbat Al Hamra - Flask 2 L |
+| -0.325 | 52a Karak Tea - Flask 1 L |
 
 ## House rules these papers keep
 
@@ -152,6 +176,17 @@ The numbers came from a script, so change them there rather than by hand - the t
 and the per-base-unit deltas all have to stay consistent with each other and with the alert
 thresholds. If you change a description, re-check it against `propose_ingredients` before
 printing; if you change a pack size, re-check it against `costing.cost_line`.
+**And check what it does to the menu before you print it:**
+
+    apps/api/.venv/bin/python Docs/demo-invoices/koukh-al-shay/plate_costs.py --materials --moves
+
+`plate_costs.py` runs the whole chain locally - invoice line to cost per base unit to material
+price to plate cost to margin - by importing the shipped `costing.cost_line` and `plates.plate`
+rather than reimplementing them, so what it prints is what `/menu` will show. It costs the real
+45-recipe menu off these papers, ranks it, names any item that turns thin or negative, and prints
+the money moment with the per-plate impact of each move. It needs no database and no API key.
+A price that reads fine on the paper and quietly puts a plate under water is the failure this
+catches; it also fails loudly if a pack stops parsing or a line stops costing.
 If you change an **invoice number**, update the prop list in `supabase/demo_reset_loop.sql` in
 the same commit - the between-rehearsals reset identifies rehearsal residue by those numbers,
 and a renumbered KAS-5 it does not know about would survive the reset and hold the next

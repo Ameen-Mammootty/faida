@@ -26,37 +26,37 @@ Currency: AED
 -- Line items, all 27 of them, in this exact order --
 COLUMNS, left to right: # | Item code | Description | Qty | Unit | Pack size | Unit price AED | Amount AED
 
-1 | BEV-CTC-05 | CTC BLACK TEA | 4 | bag | 5 kg | 92.00 | 368.00
-2 | BEV-INC-01 | INSTANT COFFEE | 2 | tin | 1 kg | 78.00 | 156.00
-3 | BEV-KGT-01 | KASHMIRI GREEN TEA LEAVES | 1 | pkt | 1 kg | 54.00 | 54.00
-4 | BEV-HAH-01 | HABBAT AL HAMRA BLEND | 1 | pkt | 1 kg | 68.00 | 68.00
-5 | BEV-BST-450 | BOOST POWDER | 6 | tin | 450 g | 22.50 | 135.00
-6 | BEV-HRL-500 | HORLICKS POWDER | 6 | tin | 500 g | 24.00 | 144.00
-7 | BEV-DCH-01 | DRINKING CHOCOLATE POWDER | 2 | tin | 1 kg | 34.00 | 68.00
-8 | BEV-COC-01 | COCOA POWDER | 1 | tin | 1 kg | 42.00 | 42.00
-9 | BEV-SAH-500 | SAHLAB POWDER | 2 | pkt | 500 g | 28.00 | 56.00
-10 | BEV-ROS-500 | ROSE WATER | 4 | btl | 500 ml | 6.50 | 26.00
-11 | AMB-OIL-05 | OIL SUNFLOWER | 8 | tin | 5 l | 39.00 | 312.00
-12 | AMB-VIN-05 | VINEGAR | 2 | can | 5 l | 14.00 | 28.00
-13 | AMB-SOY-05 | LIGHT SOY SAUCE | 2 | can | 5 l | 32.00 | 64.00
-14 | AMB-RCS-05 | RED CHILLI SAUCE | 2 | can | 5 l | 29.00 | 58.00
-15 | AMB-KTC-05 | TOMATO KETCHUP | 3 | can | 5 l | 26.00 | 78.00
-16 | BKY-HON-01 | HONEY CAKE WHOLE (10 SLICES) | 4 | pc | 1 pc | 34.00 | 136.00
-17 | BKY-ZAF-01 | ZAFRAN CAKE WHOLE (10 SLICES) | 4 | pc | 1 pc | 36.00 | 144.00
-18 | BKY-LOT-01 | LOTUS CAKE WHOLE (10 SLICES) | 4 | pc | 1 pc | 42.00 | 168.00
-19 | PKG-CKB-100 | CAKE BOX + FORK | 2 | ctn | 100 pcs | 38.00 | 76.00
-20 | PKG-DCS-100 | DELIVERY CUP S + LID | 4 | ctn | 100 pcs | 21.00 | 84.00
-21 | PKG-DCM-100 | DELIVERY CUP M + LID | 4 | ctn | 100 pcs | 24.00 | 96.00
-22 | PKG-DCL-100 | DELIVERY CUP L + LID | 4 | ctn | 100 pcs | 28.00 | 112.00
-23 | PKG-FL1-50 | DISPOSABLE FLASK 1 L | 3 | ctn | 50 pcs | 62.00 | 186.00
-24 | PKG-FL2-50 | DISPOSABLE FLASK 2 L | 3 | ctn | 50 pcs | 88.00 | 264.00
-25 | PKG-PCS-100 | PAPER CUP SMALL + LID | 8 | ctn | 100 pcs | 17.50 | 140.00
-26 | PKG-PCL-100 | PAPER CUP LARGE + LID | 8 | ctn | 100 pcs | 21.00 | 168.00
-27 | PKG-TWC-100 | TAKEAWAY CONTAINER + LID | 10 | ctn | 100 pcs | 33.00 | 330.00
+1 | BEV-CTC-05 | CTC BLACK TEA | 4 | bag | 5 kg | 85.00 | 340.00
+2 | BEV-INC-200 | INSTANT COFFEE | 10 | jar | 200 g | 17.62 | 176.20
+3 | BEV-KGT-01 | KASHMIRI GREEN TEA LEAVES | 1 | pkt | 1 kg | 87.00 | 87.00
+4 | BEV-HAH-01 | HABBAT AL HAMRA SEEDS | 1 | pkt | 1 kg | 26.50 | 26.50
+5 | BEV-BST-450 | BOOST POWDER | 6 | tin | 450 g | 21.45 | 128.70
+6 | BEV-HRL-500 | HORLICKS POWDER | 6 | tin | 500 g | 21.00 | 126.00
+7 | BEV-DCH-01 | DRINKING CHOCOLATE POWDER | 2 | tin | 1 kg | 71.50 | 143.00
+8 | BEV-COC-01 | COCOA POWDER | 1 | tin | 1 kg | 73.20 | 73.20
+9 | BEV-SAH-500 | SAHLAB POWDER | 2 | pkt | 500 g | 19.95 | 39.90
+10 | BEV-ROS-500 | ROSE WATER | 4 | btl | 500 ml | 3.35 | 13.40
+11 | AMB-OIL-05 | OIL SUNFLOWER | 8 | tin | 5 l | 37.50 | 300.00
+12 | AMB-VIN-05 | VINEGAR | 2 | can | 5 l | 20.90 | 41.80
+13 | AMB-SOY-04 | LIGHT SOY SAUCE | 2 | can | 4 l | 17.50 | 35.00
+14 | AMB-RCS-05 | RED CHILLI SAUCE | 2 | can | 5 l | 64.00 | 128.00
+15 | AMB-KTC-05 | TOMATO KETCHUP | 3 | can | 5 l | 27.25 | 81.75
+16 | BKY-HON-01 | HONEY CAKE WHOLE (10 SLICES) | 4 | pc | 1 pc | 57.00 | 228.00
+17 | BKY-ZAF-01 | ZAFRAN CAKE WHOLE (10 SLICES) | 4 | pc | 1 pc | 35.00 | 140.00
+18 | BKY-LOT-01 | LOTUS CAKE WHOLE (10 SLICES) | 4 | pc | 1 pc | 51.50 | 206.00
+19 | PKG-CKB-100 | CAKE BOX + FORK | 2 | ctn | 100 pcs | 42.00 | 84.00
+20 | PKG-DCS-100 | DELIVERY CUP S + LID | 4 | ctn | 100 pcs | 23.00 | 92.00
+21 | PKG-DCM-100 | DELIVERY CUP M + LID | 4 | ctn | 100 pcs | 27.20 | 108.80
+22 | PKG-DCL-100 | DELIVERY CUP L + LID | 4 | ctn | 100 pcs | 33.20 | 132.80
+23 | PKG-FL1-50 | DISPOSABLE FLASK 1 L | 3 | ctn | 50 pcs | 67.00 | 201.00
+24 | PKG-FL2-50 | DISPOSABLE FLASK 2 L | 3 | ctn | 50 pcs | 101.50 | 304.50
+25 | PKG-PCS-100 | PAPER CUP SMALL + LID | 8 | ctn | 100 pcs | 12.00 | 96.00
+26 | PKG-PCL-100 | PAPER CUP LARGE + LID | 8 | ctn | 100 pcs | 20.30 | 162.40
+27 | PKG-TWC-100 | TAKEAWAY CONTAINER + LID | 10 | ctn | 100 pcs | 58.50 | 585.00
 
 -- Totals block, lower right --
-Subtotal: AED 3,561.00
-VAT 5%: AED 178.05
-TOTAL DUE: AED 3,739.05
+Subtotal: AED 4,080.95
+VAT 5%: AED 204.05
+TOTAL DUE: AED 4,285.00
 
 The printed prices are exclusive of VAT.
