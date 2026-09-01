@@ -292,7 +292,11 @@ function ComponentRow({ component }: { component: MenuComponent }) {
             {pricePerUnit(component.cost.price)} · {priceSource(component.cost.price)}
           </p>
           {component.cost.quality === "estimated" ? (
-            <p className="text-xs text-stone">
+            // In Attention Amber, not the same grey as the supplier-and-date
+            // caption above it: the line saying this figure may be out of date
+            // was the quietest of four grey lines stacked in one corner, while
+            // the far less useful *label* upstairs wore a chip.
+            <p className="text-xs text-caution">
               Estimated: {estimatedBecause(component.cost.price)}.
             </p>
           ) : null}
