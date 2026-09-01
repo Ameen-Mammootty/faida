@@ -3,11 +3,13 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { listInvoices } from "@/lib/api";
+import { dismissInvoice, listInvoices } from "@/lib/api";
 import { ApiError } from "@/lib/errors";
 import { formatDate, money } from "@/lib/format";
 import { branchOptions as deriveBranches, supplierOptions as deriveSuppliers } from "@/lib/options";
-import type { InvoiceFilters, InvoiceStatus, InvoiceSummary } from "@/lib/types";
+import type { InvoiceFilters, InvoiceListRow, InvoiceStatus, InvoiceSummary } from "@/lib/types";
+import DuplicateChip from "./DuplicateChip";
+import { AlertIcon } from "./icons";
 import StatusChip from "./StatusChip";
 
 const STATUS_TABS: { value: InvoiceStatus | "all"; label: string }[] = [
@@ -18,7 +20,24 @@ const STATUS_TABS: { value: InvoiceStatus | "all"; label: string }[] = [
   { value: "draft", label: "Drafts" },
 ];
 
-const VALID_STATUSES = new Set<string>(["draft", "awaiting_confirm", "confirmed", "needs_review"]);
+// Typed against InvoiceStatus on purpose. As a Set<string> this silently fell
+// out of step with the union - a status added to the type compiled fine here
+// and its ?status= URL was quietly dropped, so the API answered and the screen
+// did not. Adding a member now fails the build until it is listed.
+const VALID_STATUSES: ReadonlySet<InvoiceStatus> = new Set<InvoiceStatus>([
+  "draft",
+  "awaiting_confirm",
+  "confirmed",
+  "needs_review",
+  "dismissed",
+]);
+
+/** WP-44. The status test matters: the WhatsApp reply invites confirming a copy
+ * that really is a new invoice, so a confirmed row can carry the pointer - and
+ * once confirmed it is a recorded invoice, not a copy to resolve. */
+function isHeldDuplicate(invoice: InvoiceListRow): boolean {
+  return invoice.duplicate_of_invoice_id !== null && invoice.status !== "confirmed";
+}
 
 type SortDir = "desc" | "asc";
 
@@ -27,8 +46,9 @@ function sortDate(invoice: InvoiceSummary): string {
   return invoice.invoice_date ?? invoice.created_at;
 }
 
-/** Newest first by default; ISO strings compare lexicographically. */
-function sortInvoices(invoices: InvoiceSummary[], dir: SortDir): InvoiceSummary[] {
+/** Newest first by default; ISO strings compare lexicographically. Generic so
+ * the caller's row type survives the sort - it only reads summary fields. */
+function sortInvoices<T extends InvoiceSummary>(invoices: T[], dir: SortDir): T[] {
   // desc: an earlier date sorts after a later one (newest first).
   const earlierFirst = dir === "desc" ? 1 : -1;
   return [...invoices].sort((a, b) => {
@@ -46,7 +66,9 @@ export default function InvoiceList() {
   const searchParams = useSearchParams();
 
   const rawStatus = searchParams.get("status") ?? "all";
-  const status = VALID_STATUSES.has(rawStatus) ? (rawStatus as InvoiceStatus) : undefined;
+  const status = VALID_STATUSES.has(rawStatus as InvoiceStatus)
+    ? (rawStatus as InvoiceStatus)
+    : undefined;
   const branchId = searchParams.get("branch_id") ?? undefined;
   const supplierId = searchParams.get("supplier_id") ?? undefined;
   const activeTab = status ?? "all";
@@ -54,13 +76,18 @@ export default function InvoiceList() {
 
   const [result, setResult] = useState<{
     key: string;
-    invoices?: InvoiceSummary[];
+    invoices?: InvoiceListRow[];
     error?: string;
   } | null>(null);
   // The filter dropdowns list every branch/supplier, so their options come
   // from one unfiltered fetch - reused from the main load when possible.
-  const [options, setOptions] = useState<InvoiceSummary[] | null>(null);
+  const [options, setOptions] = useState<InvoiceListRow[] | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [dismissingId, setDismissingId] = useState<string | null>(null);
+  // One strip, both outcomes. A dismiss that fails has nowhere else to speak
+  // from: the row it belongs to is still in the table and unchanged, so a
+  // dropped rejection would read as a broken button.
+  const [notice, setNotice] = useState<{ text: string; tone: "done" | "error" } | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const key = `${activeTab}:${branchId ?? ""}:${supplierId ?? ""}:${reloadKey}`;
 
@@ -131,6 +158,33 @@ export default function InvoiceList() {
     }
     const query = params.toString();
     return query ? `/invoices?${query}` : "/invoices";
+  }
+
+  async function dismiss(invoice: InvoiceListRow) {
+    setDismissingId(invoice.id);
+    setNotice(null);
+    try {
+      await dismissInvoice(invoice.id);
+      const named = invoice.duplicate_of_invoice_no ?? invoice.invoice_no;
+      setNotice({
+        text: named
+          ? `Dismissed the duplicate copy of ${named}.`
+          : "Dismissed the duplicate copy.",
+        tone: "done",
+      });
+      setReloadKey((n) => n + 1);
+    } catch (err) {
+      // The server's own sentence: after the refusal branch started re-reading,
+      // it names the status the row actually has rather than the one this page
+      // last saw. The row stays put, so the reader can try again or reload.
+      setNotice({
+        text:
+          err instanceof ApiError ? err.message : "Couldn't dismiss this copy. Try again.",
+        tone: "error",
+      });
+    } finally {
+      setDismissingId(null);
+    }
   }
 
   const selectClasses =
@@ -221,6 +275,20 @@ export default function InvoiceList() {
           </select>
         </label>
       </div>
+
+      {notice ? (
+        <p
+          role="status"
+          className={
+            notice.tone === "error"
+              ? "flex items-center gap-2 rounded-md border border-plum/30 bg-paper px-3 py-2.5 text-sm font-medium text-plum"
+              : "flex items-center gap-2 rounded-md border border-ink/10 bg-mist px-3 py-2.5 text-sm text-ink"
+          }
+        >
+          {notice.tone === "error" ? <AlertIcon /> : null}
+          {notice.text}
+        </p>
+      ) : null}
 
       {error ? (
         <div className="rounded-md border border-plum/30 bg-paper p-6">
@@ -313,6 +381,9 @@ export default function InvoiceList() {
                 <th scope="col" className="px-4 py-2.5 font-medium">
                   Status
                 </th>
+                <th scope="col" className="px-4 py-2.5 font-medium">
+                  <span className="sr-only">Actions</span>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -346,7 +417,27 @@ export default function InvoiceList() {
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    <StatusChip status={invoice.status} />
+                    {/* A copy reads as a copy, not as work to do. */}
+                    {isHeldDuplicate(invoice) ? (
+                      <DuplicateChip />
+                    ) : (
+                      <StatusChip status={invoice.status} />
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {isHeldDuplicate(invoice) ? (
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void dismiss(invoice);
+                        }}
+                        disabled={dismissingId !== null}
+                        className="min-h-11 rounded-sm border border-ink/10 px-3 text-xs font-medium text-stone hover:border-plum/40 hover:text-plum disabled:opacity-60"
+                      >
+                        {dismissingId === invoice.id ? "Dismissing" : "Dismiss"}
+                      </button>
+                    ) : null}
                   </td>
                 </tr>
               ))}

@@ -122,6 +122,7 @@ export const STATUS_LABEL: Record<InvoiceStatus, string> = {
   awaiting_confirm: "To confirm",
   confirmed: "Confirmed",
   needs_review: "Needs approval",
+  dismissed: "Dismissed",
 };
 
 export const PAYMENT_LABEL: Record<PaymentKind, string> = {

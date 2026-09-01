@@ -88,31 +88,96 @@ already implements.
 **Priority:** P3
 **Depends on:** M5 shipped, plus enough repeat-purchase history to compare against.
 
-### A held duplicate invoice has no resolution door - it sits in needs_review forever
+### ~~A held duplicate invoice has no resolution door - it sits in needs_review forever~~ done 2026-09-01
 
-**What:** A way for the reviewer to resolve a duplicate-held invoice from the review screen -
-mark it as the duplicate it is and remove it from the working list (an archive status plus an
-audit row, most likely; hard delete loses the record that a double-send happened).
+Closed by the dismiss door (migration 0017, `POST /api/invoices/{id}/dismiss`). WP-44 now
+*records* its hold instead of spending it on the reply and forgetting it -
+`invoices.duplicate_of_invoice_id`, written by the pipeline in the same branch that sets
+`needs_review` - so the review screen can name the paper a copy duplicates, and the door can key on
+it. `invoices.status` gained a terminal `dismissed`: the single confirm write already guards on
+status equality, so a dismissed invoice is refused by both confirm doors with no new code, and
+`_EDITABLE_STATUSES` refuses a PATCH for free.
 
-**Why:** WP-44 holds the second copy of a re-sent paper, which is correct - but the hold is a
-dead end. The held row shows in the invoice list as *needs review* with nothing to review: chat
-OK cannot touch it (only `awaiting_confirm` resolves), the screen offers correct/confirm paths
-that make no sense for it, and there is no delete or archive door at all. In production a
-salesman **will** double-send - that is the whole reason the hold exists - so every real tenant
-will accumulate these.
+**Only a held duplicate can be dismissed** - `duplicate_of_invoice_id is not null` sits in the
+write, not just the endpoint. The original carries no pointer, so the two-click path to erasing a
+real paper (dismiss the original, then the copy) is unreachable rather than merely discouraged.
+Dismissal is not deletion: the row, its lines, its document and its photo all stay, and
+`?status=dismissed` still returns it.
 
-**Customer quote (the §2 rule):** the founder, 2026-08-31, after double-forwarding KAS-3 during
-demo preparation: *"the duplicate invoice of al madina is in my invoice list, and there is no
-option to mark duplicate and delete it."*
+The screen gained a `Duplicate` chip on list and detail alike, the WhatsApp sentence as an amber
+banner linking to the original, `Dismiss this copy` as the primary action with `Confirm` demoted to
+the outline treatment, and a row-level Dismiss whose success *and* failure both speak through one
+`role="status"` strip. The action condition was inverted while there: written as a bare `else`,
+`dismissed` would have been offered a Confirm button the API is guaranteed to refuse.
 
-**Context:** Found on the live demo project the day before the M6 gate. Not built then because
-M6's lane was closed and it touches the shipped review-screen path right before the rehearsals;
-the one accidental copy was cleared with a documented one-off
-(`Docs/apply_remove_duplicate_kas3.sql`). The right shape is probably one endpoint
-(`POST /api/invoices/{id}/dismiss`, allowed only for never-confirmed invoices, actor recorded,
-audit row written) plus one button on the review screen shown only for held/needs_review rows -
-the same one-door pattern every other write uses. Belongs with M7's approvals work, where "who
-may dismiss" gets a real answer.
+Tested end to end in
+`tests/test_api.py::test_dismissing_a_copy_clears_the_list_and_leaves_the_original_alone`, with
+eleven beside it (the original refused, an ordinary invoice refused, a confirmed copy refused,
+double-dismiss, the confirm/dismiss race naming the real status, a third send held against the live
+original), plus the enum-to-CHECK lockstep in
+`tests/test_contracts.py::test_the_database_accepts_every_invoice_status_the_enum_declares`.
+
+### A dismissal cannot be undone from any screen
+
+**What:** An un-dismiss action, and a way to reach dismissed rows so one can be found at all.
+
+**Why:** The dismiss door is one-way. The row survives and `/invoices?status=dismissed` reaches it,
+but there is no tab, no button and no path a reviewer can walk - a misclick is recoverable only
+within that page view, through the status strip. The blast radius is small, because the guard
+refuses anything without a duplicate pointer: the worst case is losing a real invoice that WP-44
+held by mistake. That is exactly the fallible case that argued against auto-hiding duplicates in the
+first place, so it should not stay unaddressed for ever.
+
+**Context:** Deliberately not built 2026-09-01 - nobody has asked (§2 rule 8), and designing a
+dismissed-rows screen for a list that is empty on every tenant is speculation. It pairs with M7,
+which has to answer "who may dismiss" anyway; the same answer covers "who may un-dismiss". Start at
+`db.dismiss_invoice` (the guarded update inverts cleanly) and `InvoiceList.tsx`, where the tab list
+and the typed status set both live.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** M7's roles, which decide who is allowed.
+
+### The runbook's leftover check got weaker when the invoice list started hiding rows
+
+**What:** One sentence in `Docs/DEMO_RUNBOOK.md` §A, so its "no rehearsal leftovers in the invoice
+list" check accounts for the rows the list now hides.
+
+**Why:** The runbook has the operator verify by eye, before a demo, that the demo chain's invoice
+list carries no leftovers (`DEMO_RUNBOOK.md:139`, checklist at `:46`). Dismissed rows are out of
+that list by default, so a dismissed leftover would pass a check written to catch it. Nothing
+actually breaks - `demo_reset_loop.sql` deletes by the props' printed invoice numbers regardless of
+status - but the human step no longer verifies quite what its sentence claims, and it is the step
+standing between a rehearsal and a live audience.
+
+**Context:** Not fixed alongside the dismiss door because that file was fenced off while the M6 gate
+was pending. The gate passed 2026-09-01, so it is editable again; it was kept out of that change to
+keep the diff on the door.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None.
+
+### The invoice list is not usable at 390 px without a sideways swipe
+
+**What:** Card rows under 640 px on `/invoices`, the shape `/menu` already uses.
+
+**Why:** The list is a six-column table inside an `overflow-x-auto` wrapper. At 390 px the table is
+549 px wide before the dismiss work and 674 px after, so Total, Status and the row action all sit
+off-screen behind a horizontal swipe *inside* the table. The page itself does not overflow and the
+content is reachable, so nothing is broken - it is a table pretending to be responsive. Measured
+2026-09-01 during the dismiss-door QA: `/menu`, `/materials` and `/invoices/new` all report 390 vs
+390 at that width, and only `/invoices` does not.
+
+**Context:** Pre-existing - Status was already off-screen before the dismiss work, which made an
+existing weakness one column worse rather than creating it. Deliberately not fixed there: the answer
+is M6 design decision D11's card-row treatment (`MenuMargins.tsx:538,578` - a real table above
+640 px, cards below, the headline figure first), and applying that to the invoice list is a redesign
+of a shipped screen that deserves its own design pass rather than riding along on a bug fix.
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** None. Worth a `/plan-design-review` first, as the menu screen's version had.
 
 ### ~~A material with a blocked newer purchase silently shows its older price as current~~ done 2026-08-30
 

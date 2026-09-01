@@ -127,6 +127,9 @@ export interface Fixture {
   classification?: DocumentClassification | null;
   image_url: string | null;
   created_at: string;
+  /** WP-44: the fixture id of the invoice this one duplicates. Omitted on
+   * every ordinary invoice - it is what marks a held copy. */
+  duplicate_of_invoice_id?: string | null;
   lines: FixtureLine[];
 }
 
@@ -395,6 +398,84 @@ export const FIXTURES: Fixture[] = [
         snapped: null,
         // A bunch is a container: nothing says how much coriander is in one.
         cost: cannotCost("bare_container"),
+      },
+    ],
+  },
+  // WP-44's hold: Al Madina's INV-10482 forwarded a second time, exactly the
+  // double-send the founder hit. Same supplier, same number, same total as
+  // inv-1001, so the pipeline holds it instead of reading it out - and the
+  // review screen offers the way out. The paper is the same paper, so the
+  // lines are inv-1001's line for line; no cost, because a copy is never
+  // confirmed and a cost exists only from confirm (WP-53).
+  {
+    id: "inv-1004",
+    document_id: "doc-9004",
+    branch_id: "br-01",
+    branch_name: "Al Quoz",
+    supplier_id: "sup-01",
+    supplier_name: "Al Madina Foodstuff Trading LLC",
+    invoice_no: "INV-10482",
+    invoice_date: "2026-08-21",
+    currency: "AED",
+    subtotal: "682.75",
+    tax: "34.14",
+    total: "716.89",
+    payment_kind: "credit",
+    status: "needs_review",
+    source: "whatsapp",
+    image_url: "/fixtures/inv-1001.svg",
+    created_at: "2026-08-21T14:16:00+00:00",
+    duplicate_of_invoice_id: "inv-1001",
+    lines: [
+      {
+        raw_name: "Rainbow Milk Powder 2.25kg",
+        qty: "6",
+        unit: "tin",
+        pack_size: "2.25kg",
+        unit_price: "54.50",
+        line_total: "327.00",
+        supplier_item_id: "si-2001",
+        snapped: true,
+      },
+      {
+        raw_name: "Karak Tea Dust 5kg",
+        qty: "2",
+        unit: "bag",
+        pack_size: "5kg",
+        unit_price: "49.00",
+        line_total: "98.00",
+        supplier_item_id: "si-2002",
+        snapped: true,
+      },
+      {
+        raw_name: "Sugar 50kg",
+        qty: "1",
+        unit: "sack",
+        pack_size: "50kg",
+        unit_price: "118.75",
+        line_total: "118.75",
+        supplier_item_id: "si-2003",
+        snapped: true,
+      },
+      {
+        raw_name: "Cardamom Powder 500g",
+        qty: "3",
+        unit: "pack",
+        pack_size: "500g",
+        unit_price: "24.00",
+        line_total: "72.00",
+        supplier_item_id: "si-2004",
+        snapped: true,
+      },
+      {
+        raw_name: "Paper Cups 8oz x1000",
+        qty: "2",
+        unit: "carton",
+        pack_size: "1000pc",
+        unit_price: "33.50",
+        line_total: "67.00",
+        supplier_item_id: "si-2005",
+        snapped: true,
       },
     ],
   },

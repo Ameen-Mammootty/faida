@@ -618,6 +618,12 @@ async def test_same_paper_twice_is_held_naming_the_first(api, db):
 
     rows = await db.pool.fetch("select * from invoices order by created_at, id")
     assert [row["status"] for row in rows] == ["awaiting_confirm", "needs_review"]
+    # The hold is recorded, not just spoken: the copy names the paper it copies,
+    # and the original names nothing. That pointer is what the review screen
+    # reads, and what the dismiss door keys on - so a bug that set it on every
+    # invoice, or on none, is caught right here.
+    assert rows[1]["duplicate_of_invoice_id"] == rows[0]["id"]
+    assert rows[0]["duplicate_of_invoice_id"] is None
     # Both papers stay recorded - held, never dropped - and only the first is
     # reachable from chat (C5 lists awaiting_confirm only).
     assert (await outbound_bodies(db))[-1] == compose_duplicate_hold_reply(

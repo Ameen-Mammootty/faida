@@ -32,6 +32,7 @@ import type {
   InvoiceFilters,
   InvoiceLine,
   InvoiceStatus,
+  InvoiceListRow,
   InvoiceSummary,
   LineCost,
   ManualInvoiceInput,
@@ -83,10 +84,14 @@ function deriveProvenance(
 }
 const EDITABLE_STATUSES = new Set<InvoiceStatus>(["awaiting_confirm", "needs_review"]);
 
-/** C1: the document status implied by the invoice status. */
-function documentStatus(invoiceStatus: InvoiceStatus): DocumentStatus {
-  return invoiceStatus === "confirmed" ? "confirmed" : "extracted";
-}
+/** C1: a document's status tracks ingest only, and `extracted` is terminal - so
+ * every document behind a persisted invoice reads the same.
+ *
+ * This used to be a function of the invoice's status, answering "confirmed" for
+ * a confirmed invoice: a value migration 0010 deleted from
+ * documents_status_check, and one the real API therefore can never return. The
+ * mock was claiming a state the product does not have. */
+const DOCUMENT_STATUS: DocumentStatus = "extracted";
 
 function buildDetail(fixture: Fixture): InvoiceDetail {
   const lineChecks = fixture.lines.map((line, index) => checkLine(index, line));
@@ -107,7 +112,21 @@ function buildDetail(fixture: Fixture): InvoiceDetail {
     // from asking it and getting nothing.
     cost: fixture.status === "confirmed" ? (line.cost ?? null) : null,
   }));
+  const originalFixture = fixture.duplicate_of_invoice_id
+    ? FIXTURES.find((f) => f.id === fixture.duplicate_of_invoice_id)
+    : undefined;
   return {
+    duplicate_of_invoice_id: fixture.duplicate_of_invoice_id ?? null,
+    duplicate_of: originalFixture
+      ? {
+          id: originalFixture.id,
+          supplier_name: originalFixture.supplier_name,
+          invoice_no: originalFixture.invoice_no,
+          currency: originalFixture.currency,
+          total: originalFixture.total,
+          created_at: originalFixture.created_at,
+        }
+      : null,
     id: fixture.id,
     supplier_name: fixture.supplier_name,
     supplier_id: fixture.supplier_id,
@@ -129,7 +148,7 @@ function buildDetail(fixture: Fixture): InvoiceDetail {
     lines,
     document: {
       id: fixture.document_id,
-      status: documentStatus(fixture.status),
+      status: DOCUMENT_STATUS,
       // Manual entries pass null explicitly: no model classified anything.
       classification: fixture.classification === undefined ? "invoice" : fixture.classification,
       source: fixture.source,
@@ -174,6 +193,7 @@ function nowIso(): string {
 
 function summarize(detail: InvoiceDetail): InvoiceSummary {
   return {
+    duplicate_of_invoice_id: detail.duplicate_of_invoice_id,
     id: detail.id,
     supplier_name: detail.supplier_name,
     supplier_id: detail.supplier_id,
@@ -208,8 +228,21 @@ function revalidate(detail: InvoiceDetail): InvoiceDetail {
   };
 }
 
-export async function mockListInvoices(filters: InvoiceFilters = {}): Promise<InvoiceSummary[]> {
+/** The list row: the summary plus the duplicated invoice's number, which the
+ * server gets from a join. Kept off `summarize` for the reason the API keeps it
+ * off `_invoice_summary` - the detail payload has no such field. */
+function listRow(detail: InvoiceDetail): InvoiceListRow {
+  const original = detail.duplicate_of_invoice_id
+    ? invoices.get(detail.duplicate_of_invoice_id)
+    : undefined;
+  return { ...summarize(detail), duplicate_of_invoice_no: original?.invoice_no ?? null };
+}
+
+export async function mockListInvoices(filters: InvoiceFilters = {}): Promise<InvoiceListRow[]> {
   const all = [...invoices.values()]
+    // Asking for no status means every status with work left on it: a resolved
+    // duplicate leaves the working list. Asking for it by name still finds it.
+    .filter((inv) => (filters.status ? true : inv.status !== "dismissed"))
     .filter((inv) => !filters.status || inv.status === filters.status)
     .filter((inv) => !filters.branch_id || inv.branch_id === filters.branch_id)
     .filter((inv) => !filters.supplier_id || inv.supplier_id === filters.supplier_id)
@@ -218,11 +251,33 @@ export async function mockListInvoices(filters: InvoiceFilters = {}): Promise<In
       if (a.created_at !== b.created_at) return a.created_at < b.created_at ? 1 : -1;
       return a.id < b.id ? 1 : -1;
     });
-  return respond(all.map(summarize));
+  return respond(all.map(listRow));
 }
 
 export async function mockGetInvoice(id: string): Promise<InvoiceDetail> {
   return respond(getOrThrow(id));
+}
+
+/** POST /api/invoices/{id}/dismiss. Refusals are the server's sentences, word
+ * for word, in the server's order - the screen renders whatever comes back, so
+ * a mock that paraphrases would let copy drift out of QA's sight. */
+export async function mockDismissInvoice(id: string): Promise<InvoiceDetail> {
+  const current = getOrThrow(id);
+  if (current.duplicate_of_invoice_id === null) {
+    throw new ApiError(
+      409,
+      "invoice is not a held duplicate; only a duplicate copy can be dismissed",
+    );
+  }
+  if (current.status === "confirmed") {
+    throw new ApiError(409, "invoice is confirmed; a recorded invoice cannot be dismissed");
+  }
+  if (current.status === "dismissed") {
+    throw new ApiError(409, "invoice is already dismissed");
+  }
+  const dismissed: InvoiceDetail = { ...clone(current), status: "dismissed" };
+  invoices.set(id, dismissed);
+  return respond(dismissed);
 }
 
 /** confirm.py _parse_number: strip trailing sentence punctuation, then accept
@@ -387,7 +442,6 @@ export async function mockConfirmInvoice(id: string): Promise<InvoiceDetail> {
       cost: costs?.[index] ?? null,
     })),
   };
-  if (confirmed.document) confirmed.document.status = "confirmed";
   invoices.set(id, confirmed);
   recordConfirmedPrices(confirmed);
   return respond(confirmed);

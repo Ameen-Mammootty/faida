@@ -7,6 +7,7 @@ const STYLE: Record<InvoiceStatus, { classes: string; Icon: typeof CheckIcon }> 
   awaiting_confirm: { classes: "bg-mist text-palm", Icon: PendingIcon },
   needs_review: { classes: "bg-gold-soft text-caution", Icon: AlertIcon },
   draft: { classes: "bg-mist text-stone", Icon: PendingIcon },
+  dismissed: { classes: "bg-mist text-stone", Icon: PendingIcon },
 };
 
 export default function StatusChip({ status }: { status: InvoiceStatus }) {
