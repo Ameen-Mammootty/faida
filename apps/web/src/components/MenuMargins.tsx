@@ -190,13 +190,20 @@ function FixCallout({ loss, move }: { loss: MenuItemSummary | null; move: PriceM
           <AlertIcon className="h-3.5 w-3.5" />
           Price basis changed
         </p>
+        {/* Finding first, then the evidence - the shape the other two callouts
+            use. It read the other way round: three lines of product codes and
+            two legal entity names in one sentence, with the point of the card
+            ("there is nothing to compare") demoted to a grey line underneath.
+            Both packs are still named, which is the rule this card exists for. */}
         <p className="mt-1.5 font-medium text-ink">
-          {move.ingredient_name} is now priced from {move.current.product_name} (
-          {move.current.supplier_name}), not {move.previous.product_name} (
-          {move.previous.supplier_name}).
+          {move.ingredient_name} is priced from a different pack now, so there is no before and
+          after to show.
         </p>
         <p className="mt-0.5 text-sm text-stone">
-          Different pack sizes - no comparison shown.{" "}
+          Now {move.current.product_name} from {move.current.supplier_name}, was{" "}
+          {move.previous.product_name} from {move.previous.supplier_name}.
+        </p>
+        <p className="mt-1 text-xs text-stone">
           <Link
             href={`/invoices/${move.current.invoice_id}#line-${move.current.position}`}
             className="font-medium text-palm underline-offset-2 hover:underline"
