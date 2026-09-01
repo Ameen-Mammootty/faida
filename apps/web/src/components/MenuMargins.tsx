@@ -366,6 +366,18 @@ function MarginFigure({ item }: { item: MenuItemSummary }) {
 const COLLAPSED_ROWS = 5;
 
 /**
+ * The table and the card rows are both always in the DOM - only one of them is
+ * ever displayed - so a ref shared between them keeps whichever React attached
+ * last, which is the card. Above 640 px that made every focus call land on a
+ * `display: none` element, where it silently does nothing: pressing Enter on a
+ * row left focus sitting on the button instead of moving into the expansion
+ * (WP-62's acceptance). This keeps only the copy that is actually on screen.
+ */
+function onScreen(el: HTMLElement | null): boolean {
+  return el !== null && el.offsetParent !== null;
+}
+
+/**
  * How many missing pieces an incomplete item names before it counts the rest.
  *
  * The design was drawn for a handful of incomplete items; the real 45-item
@@ -500,8 +512,19 @@ export default function MenuMargins() {
   const renderRows = (groupKey: string, groupItems: MenuItemSummary[]) => {
     const expanded = showAll.has(groupKey);
     const visible = expanded ? groupItems : groupItems.slice(0, COLLAPSED_ROWS);
-    return { visible, hidden: groupItems.length - visible.length };
+    return { visible, expanded, collapsible: groupItems.length > COLLAPSED_ROWS };
   };
+
+  // The expander is a toggle, not a one-way door: it used to only ever add to
+  // the set and then unmount itself, so a category opened mid-demo stayed open
+  // until the page was reloaded - on a 45-item menu that is the closing image
+  // gone for the rest of the run.
+  const toggleGroup = (groupKey: string) =>
+    setShowAll((set) => {
+      const next = new Set(set);
+      if (!next.delete(groupKey)) next.add(groupKey);
+      return next;
+    });
 
   return (
     <div className="space-y-8">
@@ -545,7 +568,7 @@ export default function MenuMargins() {
             <section className="space-y-5">
               {orderedGroups.map(([category, groupItems]) => {
                 const groupKey = category ?? "(none)";
-                const { visible, hidden } = renderRows(groupKey, groupItems);
+                const { visible, expanded, collapsible } = renderRows(groupKey, groupItems);
                 const heading = onlyGroup ? null : (category ?? "Other items");
                 return (
                   <div key={groupKey}>
@@ -633,13 +656,16 @@ export default function MenuMargins() {
                       ))}
                     </ul>
 
-                    {hidden > 0 ? (
+                    {collapsible ? (
                       <button
                         type="button"
-                        onClick={() => setShowAll((set) => new Set(set).add(groupKey))}
+                        onClick={() => toggleGroup(groupKey)}
+                        aria-expanded={expanded}
                         className="mt-2 min-h-11 rounded-sm border border-palm/30 px-3 py-1.5 text-sm font-medium text-palm hover:border-palm"
                       >
-                        Show all {groupItems.length} items
+                        {expanded
+                          ? `Show the top ${COLLAPSED_ROWS} only`
+                          : `Show all ${groupItems.length} items`}
                       </button>
                     ) : null}
                   </div>
@@ -741,8 +767,7 @@ function MenuRow({
           <button
             type="button"
             ref={(el) => {
-              if (el) rowButtons.current.set(item.id, el);
-              else rowButtons.current.delete(item.id);
+              if (onScreen(el)) rowButtons.current.set(item.id, el!);
             }}
             onClick={onToggle}
             aria-expanded={open}
@@ -767,7 +792,13 @@ function MenuRow({
       {open ? (
         <tr className="border-b border-ink/5 last:border-b-0">
           <td colSpan={4} className="px-4 pb-3">
-            <div ref={drillRef} tabIndex={-1} className="focus:outline-none">
+            <div
+              ref={(el) => {
+                if (onScreen(el)) drillRef.current = el;
+              }}
+              tabIndex={-1}
+              className="focus:outline-none"
+            >
               <DrillContent detail={detail} error={detailError} />
             </div>
           </td>
@@ -803,7 +834,7 @@ function MenuCard({
             ref={(el) => {
               // The card and the table never render at the same width, so the
               // shared ref map holds whichever button is actually on screen.
-              if (el) rowButtons.current.set(item.id, el);
+              if (onScreen(el)) rowButtons.current.set(item.id, el!);
             }}
             onClick={onToggle}
             aria-expanded={open}
@@ -826,7 +857,13 @@ function MenuCard({
         {summaryMoney(item.plate.cost_per_portion ?? "0")}
       </p>
       {open ? (
-        <div ref={drillRef} tabIndex={-1} className="focus:outline-none">
+        <div
+          ref={(el) => {
+            if (onScreen(el)) drillRef.current = el;
+          }}
+          tabIndex={-1}
+          className="focus:outline-none"
+        >
           <DrillContent detail={detail} error={detailError} />
         </div>
       ) : null}
