@@ -688,41 +688,47 @@ export default function MenuMargins() {
           {incomplete.length > 0 ? (
             // The quieter section, on mist, owning the coverage line - the
             // owner's first read above is the conclusion, not the homework.
-            <section className="space-y-3 rounded-md bg-mist p-4">
+            <section className="space-y-4 rounded-md bg-mist p-4">
               <h2 className="font-display text-lg font-semibold text-ink">
                 {incomplete.length} of {live.length} items can&apos;t be costed yet
               </h2>
-              <ul className="space-y-2">
+              {/* One quiet surface, not two. Each item used to sit on its own
+                  white card inside the mist panel, and the two stacked surfaces
+                  made this the heaviest block on the page - on a day with
+                  nothing to report it out-measured the ranking it is supposed to
+                  sit beneath, which is the opposite of what "quieter section"
+                  is for. Hairlines carry the separation instead, the way the
+                  materials screen's own can't-be-costed-yet section does.
+                  The fix link comes down out of the far right corner too: it
+                  used to float most of a screen's width away from the sentence
+                  it acts on. */}
+              <ul className="divide-y divide-ink/10">
                 {incomplete.map((item) => (
-                  <li key={item.id} className="rounded-md border border-ink/10 bg-paper p-4">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="font-medium text-ink">{item.name}</p>
-                        <p className="mt-0.5 text-sm text-stone">
-                          sells at AED {money(item.selling_price)}
-                        </p>
-                        <ul className="mt-1 space-y-0.5">
-                          {item.plate.missing.slice(0, MISSING_SHOWN).map((sentence, index) => (
-                            <li key={index} className="text-sm text-plum">
-                              {sentence}
-                            </li>
-                          ))}
-                          {item.plate.missing.length > MISSING_SHOWN ? (
-                            <li className="text-sm text-stone">
-                              and {item.plate.missing.length - MISSING_SHOWN} more
-                            </li>
-                          ) : null}
-                        </ul>
-                      </div>
-                      {item.plate.missing.some((sentence) => sentence !== "no recipe yet") ? (
-                        <Link
-                          href="/materials"
-                          className="text-xs font-medium text-palm underline-offset-2 hover:underline"
-                        >
-                          Fix on the materials screen
-                        </Link>
+                  <li key={item.id} className="py-3 first:pt-0">
+                    <p className="font-medium text-ink">{item.name}</p>
+                    <p className="mt-0.5 text-sm text-stone">
+                      sells at AED {money(item.selling_price)}
+                    </p>
+                    <ul className="mt-1 space-y-0.5">
+                      {item.plate.missing.slice(0, MISSING_SHOWN).map((sentence, index) => (
+                        <li key={index} className="text-sm text-plum">
+                          {sentence}
+                        </li>
+                      ))}
+                      {item.plate.missing.length > MISSING_SHOWN ? (
+                        <li className="text-sm text-stone">
+                          and {item.plate.missing.length - MISSING_SHOWN} more
+                        </li>
                       ) : null}
-                    </div>
+                    </ul>
+                    {item.plate.missing.some((sentence) => sentence !== "no recipe yet") ? (
+                      <Link
+                        href="/materials"
+                        className="inline-flex min-h-11 items-center text-sm font-medium text-palm underline-offset-2 hover:underline"
+                      >
+                        Fix on the materials screen
+                      </Link>
+                    ) : null}
                   </li>
                 ))}
               </ul>
