@@ -143,6 +143,21 @@ function TopEarnerCallout({ item }: { item: MenuItemSummary }) {
   );
 }
 
+/**
+ * How many other affected items the price-move callout names before it counts
+ * the rest - the incomplete section's own rule (MISSING_SHOWN), one layer up.
+ *
+ * The line was a comma-run of every item the move touched. On the real menu
+ * that reached nine and read as three lines of grey: "Also Coffee Milk - Flask
+ * 2 L -0.35, Habbat Al Souda Tea -0.32, ...", where the dash inside an item's
+ * name is the same glyph as the minus in front of its figure, and neither
+ * figure carries AED or "a portion" - so nothing in it could be compared with
+ * the sentence above. Three named with their figures in brackets, the rest
+ * counted; the whole list lives on the materials screen, which is where the
+ * work is done.
+ */
+const ALSO_NAMED = 3;
+
 /** Callout two, priority loss > price move > absent (D8). Two lines in the
  * operator voice: the finding, then the action. */
 function FixCallout({ loss, move }: { loss: MenuItemSummary | null; move: PriceMove | null }) {
@@ -218,18 +233,20 @@ function FixCallout({ loss, move }: { loss: MenuItemSummary | null; move: PriceM
       ) : (
         <p className="mt-0.5 text-sm text-stone">No costed menu item uses it yet.</p>
       )}
+      {rest.length > 0 ? (
+        <p className="mt-1 text-xs text-stone">
+          Also earning {up ? "less" : "more"}:{" "}
+          {rest.slice(0, ALSO_NAMED).map((item, index) => (
+            <span key={item.menu_item_id}>
+              {index > 0 ? ", " : ""}
+              {item.name} (AED {summaryMoney(item.impact_per_portion.replace("-", ""))})
+            </span>
+          ))}
+          {rest.length > ALSO_NAMED ? `, and ${rest.length - ALSO_NAMED} more items` : ""}.
+        </p>
+      ) : null}
       <p className="mt-1 text-xs text-stone">
-        {rest.length > 0
-          ? `Also ${rest
-              .map(
-                (item) =>
-                  `${item.name} ${up ? "-" : "+"}${summaryMoney(
-                    item.impact_per_portion.replace("-", ""),
-                  )}`,
-              )
-              .join(", ")} · `
-          : ""}
-        was {movePrice(move.previous)} ·{" "}
+        Was {movePrice(move.previous)} ·{" "}
         <Link
           href={`/invoices/${move.current.invoice_id}#line-${move.current.position}`}
           className="font-medium text-palm underline-offset-2 hover:underline"
