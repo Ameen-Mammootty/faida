@@ -737,12 +737,17 @@ export default function MenuMargins() {
       )}
 
       {/* The loader is a consultant tool: reachable from here, never a fourth
-          item in the nav the owner reads every morning (WP-62/64). */}
-      <p className="text-xs text-stone">
-        <Link href="/menu/load" className="underline-offset-2 hover:underline">
-          Load or update the menu from a spreadsheet
-        </Link>
-      </p>
+          item in the nav the owner reads every morning (WP-62/64). It stands
+          down on an empty menu, where the empty state's own sentence already
+          points at it and two links to the same place 75 px apart is just
+          noise on a page that has nothing else on it. */}
+      {live.length > 0 ? (
+        <p className="text-xs text-stone">
+          <Link href="/menu/load" className="underline-offset-2 hover:underline">
+            Load or update the menu from a spreadsheet
+          </Link>
+        </p>
+      ) : null}
     </div>
   );
 }
