@@ -12,7 +12,7 @@ import type {
   PriceMove,
   PriceMoveLine,
 } from "@/lib/types";
-import { AlertIcon, TrendDownIcon, TrendUpIcon } from "./icons";
+import { AlertIcon, ChevronIcon, TrendDownIcon, TrendUpIcon } from "./icons";
 
 /**
  * M6 WP-62/63: the menu screen - the demo's closing image, variant C
@@ -771,9 +771,14 @@ function MenuRow({
             }}
             onClick={onToggle}
             aria-expanded={open}
-            className="min-h-11 rounded-sm py-1 text-left font-medium text-ink underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-palm/30"
+            className="group inline-flex min-h-11 items-center gap-1.5 rounded-sm py-1 text-left font-medium text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-palm/30"
           >
-            {item.name}
+            <ChevronIcon
+              className={`h-3 w-3 shrink-0 text-stone transition-transform ${
+                open ? "rotate-90" : ""
+              }`}
+            />
+            <span className="underline-offset-2 group-hover:underline">{item.name}</span>
           </button>
           {item.plate.quality === "estimated" ? (
             <span className="ml-2 align-middle">
@@ -838,9 +843,14 @@ function MenuCard({
             }}
             onClick={onToggle}
             aria-expanded={open}
-            className="min-h-11 rounded-sm py-1 text-left font-medium text-ink underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-palm/30"
+            className="group inline-flex min-h-11 items-center gap-1.5 rounded-sm py-1 text-left font-medium text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-palm/30"
           >
-            {item.name}
+            <ChevronIcon
+              className={`h-3 w-3 shrink-0 text-stone transition-transform ${
+                open ? "rotate-90" : ""
+              }`}
+            />
+            <span className="underline-offset-2 group-hover:underline">{item.name}</span>
           </button>
           {item.plate.quality === "estimated" ? (
             <span className="ml-2 align-middle">

@@ -89,3 +89,20 @@ export function PendingIcon({ className = "h-3.5 w-3.5" }: IconProps) {
     </svg>
   );
 }
+
+/** The disclosure marker on an expandable row: points right when the row is
+ * shut, down when it is open. Rotation, not two glyphs, so the state reads as
+ * one thing moving. */
+export function ChevronIcon({ className = "h-3 w-3" }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" className={className}>
+      <path
+        d="M6 3.5l5 4.5-5 4.5"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
