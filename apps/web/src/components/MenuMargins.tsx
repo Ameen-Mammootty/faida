@@ -611,7 +611,7 @@ export default function MenuMargins() {
                           <col className="w-[28%]" />
                         </colgroup>
                         <thead>
-                          <tr className="border-b border-ink/10 text-left text-[11px] font-medium tracking-wider text-stone uppercase">
+                          <tr className="border-b border-ink/10 text-left text-xs font-medium tracking-wider text-stone uppercase">
                             <th scope="col" className="px-4 py-2 font-medium">
                               Item
                             </th>
