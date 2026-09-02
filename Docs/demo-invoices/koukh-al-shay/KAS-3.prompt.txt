@@ -26,24 +26,24 @@ Currency: AED
 -- Line items, all 14 of them, in this exact order --
 COLUMNS, left to right: # | Item code | Description | Qty | Unit | Pack size | Unit price AED | Amount AED
 
-1 | DRY-EVP-48 | EVAP MILK 48X400ML | 6 | ctn | 48x400ml | 90.00 | 540.00
-2 | DRY-CDM-48 | CONDENSED MILK 48X395G | 3 | ctn | 48x395g | 145.00 | 435.00
-3 | CHL-FRM-12 | FRESH MILK 12X1L | 8 | ctn | 12x1l | 42.00 | 336.00
-4 | DRY-MPW-25 | MILK POWDER | 1 | sack | 25 kg | 395.00 | 395.00
-5 | CHL-BUT-10 | BUTTER | 1 | ctn | 10 kg | 235.00 | 235.00
-6 | CHL-GHE-05 | GHEE | 1 | tin | 5 kg | 148.00 | 148.00
-7 | CHL-CRM-12 | CREAM COOKING 12X1L | 2 | ctn | 12x1l | 96.00 | 192.00
-8 | CHL-YOG-05 | YOGHURT | 2 | tub | 5 kg | 34.00 | 68.00
-9 | CHL-EGG-18 | EGG | 4 | tray | 1.8 kg | 13.50 | 54.00
-10 | CHL-PAN-01 | PANEER | 6 | pkt | 1 kg | 26.00 | 156.00
-11 | FRZ-CHB-10 | CHICKEN BONELESS | 3 | ctn | 10 kg | 34.50 | 103.50
-12 | FRZ-CHW-10 | CHICKEN WINGS | 1 | ctn | 10 kg | 29.00 | 29.00
-13 | FRZ-BEF-05 | BEEF BONELESS | 1 | ctn | 5 kg | 68.00 | 68.00
-14 | FRZ-PRW-01 | PRAWNS PEELED | 2 | bag | 1 kg | 38.00 | 76.00
+1 | DRY-EVP-48 | EVAP MILK 48X400ML | 6 | ctn | 48x400ml | 221.00 | 1,326.00
+2 | DRY-CDM-48 | CONDENSED MILK 48X395G | 3 | ctn | 48x395g | 376.50 | 1,129.50
+3 | CHL-FRM-12 | FRESH MILK 12X1L | 8 | ctn | 12x1l | 56.50 | 452.00
+4 | DRY-MPW-25 | MILK POWDER | 1 | sack | 25 kg | 333.50 | 333.50
+5 | CHL-BUT-10 | BUTTER | 1 | ctn | 10 kg | 265.00 | 265.00
+6 | CHL-GHE-05 | GHEE | 1 | tin | 5 kg | 146.50 | 146.50
+7 | CHL-CRM-12 | CREAM COOKING 12X1L | 2 | ctn | 12x1l | 160.00 | 320.00
+8 | CHL-YOG-05 | YOGHURT | 2 | tub | 5 kg | 31.50 | 63.00
+9 | CHL-EGG-18 | EGG | 4 | tray | 1.8 kg | 15.80 | 63.20
+10 | CHL-PAN-01 | PANEER | 6 | pkt | 1 kg | 25.00 | 150.00
+11 | FRZ-CHB-10 | CHICKEN BONELESS | 3 | ctn | 10 kg | 180.00 | 540.00
+12 | FRZ-CHW-10 | CHICKEN WINGS | 1 | ctn | 10 kg | 135.00 | 135.00
+13 | FRZ-BEF-05 | BEEF BONELESS | 1 | ctn | 5 kg | 110.00 | 110.00
+14 | FRZ-PRW-01 | PRAWNS PEELED | 2 | bag | 1 kg | 24.00 | 48.00
 
 -- Totals block, lower right --
-Subtotal: AED 2,835.50
-VAT 5%: AED 141.78
-TOTAL DUE: AED 2,977.28
+Subtotal: AED 5,081.70
+VAT 5%: AED 254.09
+TOTAL DUE: AED 5,335.79
 
 The printed prices are exclusive of VAT.

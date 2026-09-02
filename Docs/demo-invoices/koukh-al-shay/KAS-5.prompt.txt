@@ -26,14 +26,14 @@ Currency: AED
 -- Line items, all 4 of them, in this exact order --
 COLUMNS, left to right: # | Item code | Description | Qty | Unit | Pack size | Unit price AED | Amount AED
 
-1 | DRY-EVP-48 | EVAP MILK 48X400ML | 6 | ctn | 48x400ml | 99.00 | 594.00
-2 | DRY-MPW-25 | MILK POWDER | 1 | sack | 25 kg | 432.00 | 432.00
-3 | CHL-FRM-12 | FRESH MILK 12X1L | 8 | ctn | 12x1l | 42.00 | 336.00
-4 | FRZ-CHB-10 | CHICKEN BONELESS | 3 | ctn | 10 kg | 31.00 | 93.00
+1 | DRY-EVP-48 | EVAP MILK 48X400ML | 6 | ctn | 48x400ml | 237.00 | 1,422.00
+2 | DRY-MPW-25 | MILK POWDER | 1 | sack | 25 kg | 360.00 | 360.00
+3 | CHL-FRM-12 | FRESH MILK 12X1L | 8 | ctn | 12x1l | 56.50 | 452.00
+4 | FRZ-CHB-10 | CHICKEN BONELESS | 3 | ctn | 10 kg | 167.50 | 502.50
 
 -- Totals block, lower right --
-Subtotal: AED 1,455.00
-VAT 5%: AED 72.75
-TOTAL DUE: AED 1,527.75
+Subtotal: AED 2,736.50
+VAT 5%: AED 136.83
+TOTAL DUE: AED 2,873.33
 
 The printed prices are exclusive of VAT.

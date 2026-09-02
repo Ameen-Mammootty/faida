@@ -139,6 +139,45 @@ Re-check after the reset:
 4. The review screen's invoice list for the demo chain carries no rehearsal leftovers (§A's wording: empty on the practice stage; only preparation purchases and real invoices on the real one).
 5. Practice stage only: `select count(*) from menu_items where tenant_id = 'd0000000-0000-0000-0000-000000000001';` returns `5`, and `/menu` shows four costed items with Paratha in the "can't be costed yet" section (act two's staged state, section F). On the real stage, `/menu` shows the loaded menu unchanged - a loop reset that altered any menu number is a bug.
 
+## C2. One-off: adopting the repriced papers (founder's call 2026-09-01)
+
+Run this ONCE, before the performance, and never again. It is not part of the rehearsal loop.
+
+**Why.** The KAS papers confirmed on the live project carry the first draft's prices - boneless chicken at AED 3.45/kg - and `/menu` answers with chicken curries at 89% margin. `build_prompts.py` now holds researched UAE wholesale prices with a source and a date per line (`Docs/demo-invoices/koukh-al-shay/price-research-2026-09.md`). Adopting means redoing the preparation against the new papers: the old purchases have to go, because costing ranks by printed invoice date and the old and new KAS-1..4 print the *same* dates.
+
+**What survives, by construction:** the 45-item menu, its recipes, the 81 materials, and every one of the 79 mappings a human approved. Only the four preparation purchases and their price history go. Verified on a local replica before this was written, including the part that matters - re-forwarding the new papers re-snaps all 81 lines onto their **original** mapped catalog rows and mints nothing new.
+
+```bash
+# 0. Take a backup first. This deletes confirmed invoices.
+pg_dump "$DATABASE_URL" > ~/faida-before-reprice-$(date +%F).sql
+
+# 1. Clear rehearsal residue first (idempotent; scoped to the props' numbers).
+#    Order matters: baselines below are recomputed from surviving history, so a
+#    KAS-5 left confirmed would be re-armed as though it were preparation evidence.
+psql "$DATABASE_URL" -f supabase/demo_reset_loop.sql
+
+# 2. Clear the old preparation purchases.
+psql "$DATABASE_URL" -f supabase/apply_kas_reprice.sql
+```
+
+Between step 2 and step 3, `/menu` will honestly read every item as *incomplete* - the materials have no costed purchase behind them yet. That is the correct intermediate state, not a fault.
+
+```
+# 3. From the demo phone, forward and confirm the four NEW papers, in order:
+#      KAS-1.png  KAS-2.png  KAS-3.png  KAS-4.png
+#    Each reads back and each needs an "OK". KAS-5 stays for the stage.
+```
+
+Re-check before you call it done:
+
+1. `select count(*) from menu_items where tenant_id = 'd0000000-0000-0000-0000-000000000001';` still returns the loaded menu's count - a repricing that changed it is a bug.
+2. `select count(*) from supplier_items where tenant_id = 'd0000000-0000-0000-0000-000000000001' and ingredient_id is null;` returns the same number it did before you started. A jump means a line minted a new catalog row instead of snapping, and that material is now unmapped.
+3. `/menu` shows every item costed again, and the ranking is the researched one: the karak delivery cups sit at the bottom around 17-26%, not 49-58%.
+4. `select last_price from supplier_items where tenant_id = 'd0000000-0000-0000-0000-000000000001' and upper(canonical_name) = 'CHICKEN BONELESS';` returns `180.000`.
+5. Then rehearse the two-act script twice, clean, exactly as the M6 gate required - the gate was passed on the old numbers, and its evidence is stale until it runs on these.
+
+If step 3 shows unmapped materials, the fastest repair is `/materials`: the proposals are still there and each is one keystroke. Nothing is lost.
+
 ## D. Failure playbook
 
 Rule one, from plan.md §7.3 WP-41: every flake found in rehearsal gets fixed, never retried around.
