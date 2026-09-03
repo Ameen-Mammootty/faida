@@ -43,7 +43,7 @@ Run through this list the day before, and again 30 minutes before going on.
       anywhere in our system.
 - [ ] The stage is reset (see section C for which file): `supabase/demo_seed.sql` on a practice database, `supabase/demo_reset_loop.sql` on the real stage. Never `demo_seed.sql` on the real stage - it deletes the loaded menu, and it now refuses to run when it sees one.
 - [ ] The founder phone is mapped to the demo chain: the commented UPDATE at the bottom of `supabase/demo_seed.sql` has been run once, so the sender resolves to Al Qusais Branch of Karak Al Khaleej Cafeterias.
-- [ ] The review screen loads real data with its API token configured, and the invoice list for the demo chain carries no rehearsal leftovers - on the practice stage that means empty; on the real stage it means only the KAS-1..4 preparation purchases and the chain's own real invoices, nothing from a previous run of the props (DEMO-1..3, KAS-5).
+- [ ] Signed in on the demo laptop as the founder's account (Supabase Auth, email and password; sign-ups are off, accounts are created in the dashboard and given a `memberships` row), and the invoice list for the demo chain carries no rehearsal leftovers - on the practice stage that means empty; on the real stage it means only the KAS-1..4 preparation purchases and the chain's own real invoices, nothing from a previous run of the props (DEMO-1..3, KAS-5). The list hides dismissed rows by default, so open `/invoices?status=dismissed` as well: a dismissed leftover passes the eye test and still needs the reset.
 - [ ] The right papers are on the demo phone, first in the gallery: on the practice stage, the 3 curated invoice photos and the meme; on the real stage, **KAS-5** and the meme (KAS-1..4 were confirmed once during preparation and are not forwarded again - a re-forward trips the duplicate hold).
 - [ ] **One warm-up forward before going on.** On the Opus fallback this is load-bearing: the
       first request after a schema change pays a server-side grammar compilation measured in
@@ -177,6 +177,25 @@ Re-check before you call it done:
 5. Then rehearse the two-act script twice, clean, exactly as the M6 gate required - the gate was passed on the old numbers, and its evidence is stale until it runs on these.
 
 If step 3 shows unmapped materials, the fastest repair is `/materials`: the proposals are still there and each is one keystroke. Nothing is lost.
+
+## C3. One-off: the M7 cutover (2026-09-03)
+
+Run this ONCE, outside demo hours. It is the sitting where the old shared token dies: Railway deploys every merge to master, so merging WP-70's branch is the moment the API stops accepting it, and the screen is dark until the web deploy that follows. Everything below it was prepared in advance (plan.md Progress Log, 2026-09-03).
+
+Before the sitting, all already true: migration 0018 live; the project on JWT signing keys with the ES256 key Current and the legacy secret untouched; sign-ups off; the founder's and a QA account created and confirmed, each with a `memberships` row on the demo chain; the two Supabase values set on Vercel Production; a real access token from the live project verified against the local API on the branch.
+
+```bash
+# 1. Backup.
+pg_dump "$DATABASE_URL" --no-owner --no-privileges -f ~/faida-before-cutover-$(date +%F).sql
+# 2. Merge WP-70's branch into master and push. Railway deploys; from this moment the old token is refused.
+#    The WhatsApp path is unaffected throughout.
+# 3. Deploy web from master.
+cd apps/web && vercel --prod --yes
+# 4. On the deployed screen: sign in, forward one paper from the demo phone, walk both acts.
+# 5. Remove NEXT_PUBLIC_API_TOKEN from Vercel and API_TOKEN from Railway; they are dead variables now.
+```
+
+Rollback, independent on each host and one click each: Railway redeploys the previous build; Vercel promotes the previous deployment. Neither touches the database, and 0018 is harmless to the previous code.
 
 ## D. Failure playbook
 

@@ -87,7 +87,7 @@ export type FieldOrigin =
 
 export interface FieldSource {
   origin: FieldOrigin;
-  /** Free text until M7 brings real accounts: "whatsapp:+9715...", "console". */
+  /** `user:<auth user id>` from the console, `whatsapp:+9715...` from chat (M7). */
   actor: string;
   /** ISO datetime. */
   at: string;

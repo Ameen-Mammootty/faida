@@ -6,8 +6,7 @@ The worker fails closed (M7 WP-72, C2 as amended). `process_wa_message` is
 the one resolver: the sender phone maps to a branch and its tenant, and every
 job it enqueues carries both. A phone no branch is registered to gets its
 inbound row stamped, one polite reply a day, and nothing else - no document,
-no job, no model spend, and no fallback to any tenant. Nothing here may call
-`Database.default_tenant_id`; it stays only until WP-70 deletes it."""
+no job, no model spend, and no fallback to any tenant."""
 
 import asyncio
 import datetime

@@ -29,10 +29,10 @@ Returns 201 with the standard detail payload.
 
 Access control is `auth.py`'s `AuthContext` (M7 WP-73): every handler takes
 one, every db call carries its tenant, and every audit row and provenance
-stamp names its actor. In this wave the context's only source is the C6
-shared-secret bearer token resolving to the seeded tenant as `console`;
-WP-70 swaps that source for a verified Supabase token without touching the
-handlers. A row outside the caller's tenant answers 404, never 403.
+stamp names its actor. The context comes from the user's own Supabase access
+token, verified in `auth.py` against the project's signing keys, plus the
+memberships row read on every request (WP-70); the actor is `user:<id>`.
+A row outside the caller's tenant answers 404, never 403.
 
 Money is serialized as strings ("745.76"), never floats: every amount is
 Decimal in Python and numeric in Postgres (C4), and a float round-trip could

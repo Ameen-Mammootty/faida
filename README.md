@@ -65,8 +65,9 @@ then fix up three things:
 | `WORKER_ENABLED` | `true` — locally it is often `false`; in production the worker must run |
 | `DATABASE_URL` | the session-pooler URI with the real password and **no `[ ]` brackets** |
 | `PORT` | do not set it — Railway injects it and the container's CMD already honours it |
-| `API_TOKEN` | the review screen's shared secret (`openssl rand -hex 32`); empty fail-closes every `/api` route. Must equal the web deploy's `NEXT_PUBLIC_API_TOKEN` |
 | `WEB_ORIGIN` | the deployed web origin, scheme+host only, no trailing slash (e.g. `https://faida-web.vercel.app`). CORS allows exactly this one origin; a leftover `http://localhost:3000` from `.env` silently breaks the deployed review screen |
+
+There is no `API_TOKEN` (M7). The review screen sends the signed-in user's own Supabase access token, and the API verifies it against the project's public signing keys at `$SUPABASE_URL/auth/v1/.well-known/jwks.json`, then reads the `memberships` row. Two things that setup needs, both in the Supabase dashboard: the project on **JWT signing keys** with the ES256 key **Current** (Project Settings, JWT Keys; never revoke the legacy secret, it signs the service key the API uses for storage), and **sign-ups off** (Authentication, Sign In / Providers). Accounts are created in Authentication, Users, with Auto Confirm, and each gets one row: `insert into memberships (tenant_id, user_id) values ('<tenant>', '<auth user id>');`.
 
 Everything else (`SUPABASE_*`, `META_*`, `ANTHROPIC_API_KEY`, `STORAGE_BUCKET`) carries over
 from `.env` unchanged.
@@ -113,8 +114,8 @@ Cost is roughly $5/month for an always-on service.
 
 **Deploy the web app (Vercel).**
 Create the Vercel project with **Root Directory** `apps/web` (standalone npm project, stock `next build`, no monorepo config).
-Set four Production environment variables: `NEXT_PUBLIC_MOCK_API=false` (the exact string), `NEXT_PUBLIC_API_BASE` (the Railway host, `https://`, no trailing slash), `NEXT_PUBLIC_API_TOKEN` (same value as Railway's `API_TOKEN`), and `FAIDA_API_URL` (the Railway host again; server-only, powers the waitlist proxy - forgetting it silently 503s every signup).
-The three `NEXT_PUBLIC_*` values are baked into the bundle at build time, so any change to them needs a redeploy; the token is readable in the shipped JS (accepted C6 demo posture until M7).
+Set five Production environment variables: `NEXT_PUBLIC_MOCK_API=false` (the exact string), `NEXT_PUBLIC_API_BASE` (the Railway host, `https://`, no trailing slash), `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` (the project URL and its publishable or anon key, both public by design), and `FAIDA_API_URL` (the Railway host again; server-only, powers the waitlist proxy - forgetting it silently 503s every signup).
+The `NEXT_PUBLIC_*` values are baked into the bundle at build time, so any change to them needs a redeploy. The bundle carries no secret: the Supabase values are public by design and the user's own token is minted at sign-in. Web deploys are manual (`cd apps/web && vercel --prod --yes`); Railway redeploys the API from every merge to master. Rollback is one click on either host: Railway redeploys the previous build, Vercel promotes the previous deployment.
 Then set `WEB_ORIGIN` on Railway to the Vercel production origin - preview deployments will fail CORS by design, demo from the production URL only.
 
 ### 3. Meta WhatsApp Cloud API (free test number)
