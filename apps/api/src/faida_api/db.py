@@ -1996,21 +1996,34 @@ class Database:
 
     # -- Confirm flow (WP-21, C5) --------------------------------------------
 
-    async def awaiting_confirm_invoices_for_phone(self, phone: str) -> list[asyncpg.Record]:
-        """C5: the awaiting_confirm invoices whose document traces back to
-        sender phone, newest first (the flow's default target and the
-        disambiguation list order). Cash invoices are needs_review and never
-        appear here - chat cannot confirm them (M7 owns approvals)."""
+    async def pending_invoices_for_phone(self, phone: str) -> list[asyncpg.Record]:
+        """C5: the invoices a text from sender phone can address, newest first
+        (the flow's default target and the disambiguation list order): every
+        awaiting_confirm invoice whose document traces back to the phone, plus
+        the cash holds (needs_review on cash alone, WP-24) - reachable for
+        corrections since WP-74 amended C5, because a misread cash has to be
+        fixable from the phone that sent it, though never confirmable from
+        chat (the flow answers an "OK" on one with the cash-hold reply). A
+        WP-44 duplicate hold stays out: a copy's exits are the screen's."""
         return await self.pool.fetch(
             """
             select i.id, i.tenant_id::text as tenant_id, i.supplier_name, i.currency, i.total,
-                   i.created_at, b.timezone, t.currency as tenant_currency
+                   i.status, i.payment_kind, i.created_at, b.timezone,
+                   t.currency as tenant_currency
             from invoices i
             join tenants t on t.id = i.tenant_id
             join documents d on d.id = i.document_id
             join wa_messages m on m.message_id = d.wa_message_id and m.direction = 'in'
             left join branches b on b.id = i.branch_id
-            where m.from_phone = $1 and i.status = 'awaiting_confirm'
+            where m.from_phone = $1
+              and (
+                i.status = 'awaiting_confirm'
+                or (
+                  i.status = 'needs_review'
+                  and i.payment_kind = 'cash'
+                  and i.duplicate_of_invoice_id is null
+                )
+              )
             order by i.created_at desc, i.id desc
             """,
             phone,
@@ -2091,31 +2104,77 @@ class Database:
         job re-sending its ack cannot leave a second confirmation in the
         trail."""
         return await self._confirm(
-            invoice_id, tenant_id=tenant_id, from_status="awaiting_confirm", actor=actor
+            invoice_id, tenant_id=tenant_id, from_status="awaiting_confirm", actor=actor, cash=False
         )
 
     async def confirm_reviewed_invoice(
         self, invoice_id: str, *, tenant_id: str, actor: str
     ) -> bool:
         """C1, the review-screen path (WP-30): invoice needs_review ->
-        confirmed, stamping confirmed_at. The review screen is the cash
-        approval path until M7 (plan.md §6 M2). Returns False without touching
-        anything when the invoice was not needs_review - safe to re-run."""
+        confirmed, stamping confirmed_at - for a WP-44 duplicate hold the
+        reviewer has decided is a real paper. Never for cash: since WP-74 a
+        cash hold leaves through `approve_cash_invoice`, with a reason, and
+        the write itself refuses cash so no door written later can widen it.
+        Returns False without touching anything when the guard refuses - safe
+        to re-run."""
         return await self._confirm(
-            invoice_id, tenant_id=tenant_id, from_status="needs_review", actor=actor
+            invoice_id, tenant_id=tenant_id, from_status="needs_review", actor=actor, cash=False
+        )
+
+    async def approve_cash_invoice(
+        self, invoice_id: str, *, tenant_id: str, actor: str, reason: str, detail: dict
+    ) -> bool:
+        """The cash gate (M7 WP-74, PRD §21): a cash paper held needs_review
+        -> confirmed, by the owner, with a reason on the record. The same
+        write as a confirm - same transaction, same price baseline move - and
+        the audit row is what tells the two apart: `invoice.cash_approved`,
+        carrying the actor, the reason, the status it came from and the
+        headline figures in `detail` (the caller's, read from the row it is
+        approving), so the trail answers "who approved what, and why" without a
+        join. Keyed on cash alone (D12): a cash copy that is also a duplicate
+        hold approves here too, and its detail names the paper it duplicates.
+        Returns False without touching anything when the guard refuses."""
+        return await self._confirm(
+            invoice_id,
+            tenant_id=tenant_id,
+            from_status="needs_review",
+            actor=actor,
+            cash=True,
+            action="invoice.cash_approved",
+            detail={"reason": reason, **detail},
         )
 
     async def _confirm(
-        self, invoice_id: str, *, tenant_id: str, from_status: str, actor: str
+        self,
+        invoice_id: str,
+        *,
+        tenant_id: str,
+        from_status: str,
+        actor: str,
+        cash: bool,
+        action: str = "invoice.confirmed",
+        detail: dict | None = None,
     ) -> bool:
-        """The one confirm write, shared by both paths: flip the status if it
-        is still the expected one, record who did it, and move the catalog and
-        price baseline - **all in one transaction** (WP-50). One gate, one
-        trail entry, one set of prices, whichever door it came in.
+        """The one confirm write, shared by every door: flip the status if it
+        is still the expected one, record who did it and why, and move the
+        catalog and price baseline - **all in one transaction** (WP-50). One
+        gate, one trail entry, one set of prices, whichever door it came in.
+
+        `cash` is the WP-74 guard, and it lives here for dismiss's reason -
+        the rule in the one write cannot be widened by a door written later.
+        True is the approve door and requires `payment_kind = 'cash'`; False
+        is every confirm and refuses it. Null payment kinds count as not cash,
+        which is why the comparison is spelled with `is not distinct from`: a
+        plain `=` against null would make an unmarked paper unconfirmable.
+
+        `action` and `detail` are the audit row's: `invoice.confirmed` with the
+        status it came from, or `invoice.cash_approved` with the reason and
+        headline figures on top. Written inside the transaction, so a cash
+        paper reading confirmed with no approval record is unreachable.
 
         `total is not null` sits in the where clause as an invariant, not as
-        the user-facing rule (WP-26): both callers check the total first so
-        they can say *why* they are refusing. It is repeated here because a
+        the user-facing rule (WP-26): every caller checks the total first so
+        it can say *why* it is refusing. It is repeated here because a
         third caller written a year from now would otherwise reopen the hole
         this closed - an invoice recorded with no headline number, which M5
         divides into plate costs no photograph can check.
@@ -2132,11 +2191,13 @@ class Database:
                 """
                 update invoices set status = 'confirmed', confirmed_at = now()
                 where id = $1 and status = $2 and total is not null and tenant_id = $3
+                  and (payment_kind is not distinct from 'cash') = $4
                 returning tenant_id::text
                 """,
                 invoice_id,
                 from_status,
                 tenant_id,
+                cash,
             )
             if row is None:
                 return False
@@ -2144,10 +2205,10 @@ class Database:
                 conn,
                 tenant_id=row["tenant_id"],
                 actor=actor,
-                action="invoice.confirmed",
+                action=action,
                 subject_type="invoice",
                 subject_id=invoice_id,
-                detail={"from_status": from_status},
+                detail={"from_status": from_status, **(detail or {})},
             )
             await self.record_confirmed_prices(invoice_id, tenant_id=tenant_id, conn=conn)
         return True
@@ -2231,16 +2292,27 @@ class Database:
         actor: str,
         corrected_fields: list[str],
         currency: str | None,
+        payment_kind: str | None,
+        from_status: str,
+        status: str,
         tax_treatment: str | None,
         vat_rate: Decimal | None,
         message_id: str | None = None,
-    ) -> None:
-        """Persist a correction (WP-21/WP-25/WP-26/WP-28), one transaction:
-        header fields (invoice number, date and currency included), the C4
-        treatment re-derived from the corrected arithmetic, refreshed
-        confidence and C8 provenance on the invoice, and per line the fields
-        the grammar can change plus the re-derived checks. Status is not
-        touched - corrections keep the invoice awaiting_confirm (C1).
+    ) -> bool:
+        """Persist a correction (WP-21/WP-25/WP-26/WP-28/WP-74), one
+        transaction: header fields (invoice number, date, currency and payment
+        kind included), the C4 treatment re-derived from the corrected
+        arithmetic, refreshed confidence and C8 provenance on the invoice, and
+        per line the fields the grammar can change plus the re-derived checks.
+
+        `status` is the status the correction implies (C1 as amended: only a
+        payment-kind edit ever changes it, through
+        `confirm.status_after_payment_kind`), and `from_status` is the one the
+        caller read. The write is guarded on `from_status` for the reason the
+        confirm write is guarded: a correction that raced a confirm or a
+        dismiss used to land on the recorded paper, and with a status of its
+        own to write it could have un-confirmed one. Now it matches no row,
+        nothing is written, and the caller is told (False) so it can say so.
 
         `tax_treatment`/`vat_rate` travel with every correction because the
         confirm path reads them to record price memory net of VAT: a total
@@ -2250,15 +2322,17 @@ class Database:
 
         `actor` and `corrected_fields` write the audit event in the same
         transaction, so a stored correction and the note of who made it cannot
-        be observed apart."""
+        be observed apart; when the status moved, the row says from what to
+        what."""
         async with self.pool.acquire() as conn, conn.transaction():
             updated = await conn.fetchval(
                 """
                 update invoices
                 set invoice_no = $2, invoice_date = $3, subtotal = $4, tax = $5, total = $6,
                     confidence = $7, provenance = $8,
-                    currency = coalesce($9, currency), tax_treatment = $10, vat_rate = $11
-                where id = $1 and tenant_id = $12
+                    currency = coalesce($9, currency), tax_treatment = $10, vat_rate = $11,
+                    payment_kind = $13, status = $14
+                where id = $1 and tenant_id = $12 and status = $15
                 returning tenant_id::text
                 """,
                 invoice_id,
@@ -2273,9 +2347,12 @@ class Database:
                 tax_treatment,
                 vat_rate,
                 tenant_id,
+                payment_kind,
+                status,
+                from_status,
             )
             if updated is None:
-                return  # not this tenant's invoice: nothing written, no trail entry
+                return False  # not this tenant's invoice, or no longer editable: nothing written
             await conn.executemany(
                 """
                 update invoice_lines
@@ -2300,6 +2377,9 @@ class Database:
                     for line in lines
                 ],
             )
+            detail: dict = {"fields": corrected_fields, "message_id": message_id}
+            if status != from_status:
+                detail |= {"from_status": from_status, "to_status": status}
             await _insert_audit_event(
                 conn,
                 tenant_id=tenant_id,
@@ -2307,8 +2387,9 @@ class Database:
                 action="invoice.corrected",
                 subject_type="invoice",
                 subject_id=invoice_id,
-                detail={"fields": corrected_fields, "message_id": message_id},
+                detail=detail,
             )
+        return True
 
     # -- Audit trail (C8, plan.md §8 M5) -------------------------------------
 
