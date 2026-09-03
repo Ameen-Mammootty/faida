@@ -257,7 +257,8 @@ async def test_a_repair_round_restamps_only_the_cells_it_moved(api, db):
     await drain_jobs(db, app, FakeExtraction(result=invoice_result(misread), repair_patch=patch))
 
     doc = await db.get_document_by_wa_message("wamid.in1")
-    provenance = (await db.get_invoice_by_document(str(doc["id"])))["provenance"]
+    invoice = await db.get_invoice_by_document(str(doc["id"]), tenant_id=DEMO_TENANT_ID)
+    provenance = invoice["provenance"]
 
     assert provenance[line_key(0, "qty")]["origin"] == "repaired"
     assert provenance[line_key(0, "unit_price")]["origin"] == "extracted"
@@ -276,7 +277,7 @@ async def test_a_chat_correction_restamps_only_the_field_it_fixed(api, db):
     await drain_jobs(db, app, None)
 
     doc = await db.get_document_by_wa_message("wamid.in1")
-    invoice = await db.get_invoice_by_document(str(doc["id"]))
+    invoice = await db.get_invoice_by_document(str(doc["id"]), tenant_id=DEMO_TENANT_ID)
     provenance = invoice["provenance"]
 
     assert provenance[line_key(0, "qty")]["origin"] == "corrected_chat"

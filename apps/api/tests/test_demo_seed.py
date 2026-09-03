@@ -320,7 +320,7 @@ async def test_reapply_resets_a_rehearsal_and_spares_other_tenants(db):
     )
 
     # The canary tenant kept every row: the reset cannot reach other tenants.
-    assert await db.get_document(keep_doc) is not None
+    assert await db.get_document(keep_doc, tenant_id=DEMO_TENANT_ID) is not None
     assert await db.get_invoice(str(keep_invoice), tenant_id=DEMO_TENANT_ID) is not None
     assert (await db.get_supplier_item(keep_item, tenant_id=DEMO_TENANT_ID))[
         "last_price"
@@ -814,7 +814,7 @@ async def test_the_loop_reset_spares_a_loaded_menu_and_its_real_evidence(db):
 
     for rehearsal in (demo1, kas5):
         assert await db.get_invoice(rehearsal["invoice"], tenant_id=CHAIN_TENANT_ID) is None
-        assert await db.get_document(rehearsal["document"]) is None
+        assert await db.get_document(rehearsal["document"], tenant_id=CHAIN_TENANT_ID) is None
         assert (
             await db.pool.fetchval(
                 "select count(*) from extraction_runs where document_id = $1",
@@ -915,7 +915,7 @@ async def test_the_loop_reset_spares_a_loaded_menu_and_its_real_evidence(db):
         )
         == DEMO_HANDSET
     )
-    assert await db.get_document(str(keep_doc)) is not None
+    assert await db.get_document(str(keep_doc), tenant_id=DEMO_TENANT_ID) is not None
     assert await db.get_invoice(str(keep_invoice), tenant_id=DEMO_TENANT_ID) is not None
 
 

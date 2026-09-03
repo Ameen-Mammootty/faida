@@ -142,7 +142,7 @@ async def extracted_invoice(api, db, invoice=None, message_id="wamid.in1") -> di
     await post_webhook(client, wa_image_payload(message_id=message_id))
     await drain_jobs(db, app, FakeExtraction(result=invoice_result(invoice or good_invoice())))
     doc = await db.get_document_by_wa_message(message_id)
-    row = await db.get_invoice_by_document(str(doc["id"]))
+    row = await db.get_invoice_by_document(str(doc["id"]), tenant_id=DEMO_TENANT_ID)
     return dict(row)
 
 
@@ -426,7 +426,7 @@ async def test_upload_stores_the_original_and_enqueues_extraction(api, db):
     assert resp.status_code == 201
     document_id = resp.json()["document_id"]
 
-    doc = await db.get_document(document_id)
+    doc = await db.get_document(document_id, tenant_id=DEMO_TENANT_ID)
     assert doc["source"] == "upload"
     assert doc["mime"] == "image/jpeg"
     assert doc["status"] == "received"
@@ -440,13 +440,19 @@ async def test_upload_stores_the_original_and_enqueues_extraction(api, db):
 
     job = await db.pool.fetchrow("select * from jobs order by id desc limit 1")
     assert job["kind"] == "extract_document"
-    assert job["payload"] == {"document_id": document_id}
+    # C2 as amended (WP-72): the job carries the caller's tenant and the
+    # validated branch, so the worker never reads the row to guess whose it is.
+    assert job["payload"] == {
+        "document_id": document_id,
+        "tenant_id": DEMO_TENANT_ID,
+        "branch_id": DEMO_BRANCH_ID,
+    }
 
     # The enqueued job really extracts: same pipeline as the WhatsApp path.
     await drain_jobs(db, app, FakeExtraction(result=invoice_result(good_invoice())))
-    invoice = await db.get_invoice_by_document(document_id)
+    invoice = await db.get_invoice_by_document(document_id, tenant_id=DEMO_TENANT_ID)
     assert invoice["status"] == "awaiting_confirm"
-    assert (await db.get_document(document_id))["status"] == "extracted"
+    assert (await db.get_document(document_id, tenant_id=DEMO_TENANT_ID))["status"] == "extracted"
 
 
 @requires_db
@@ -456,7 +462,7 @@ async def test_upload_without_branch_is_fine_and_unknown_branch_is_not(api, db):
         "/api/documents", headers=AUTH, files={"file": ("a.png", b"png-bytes", "image/png")}
     )
     assert resp.status_code == 201
-    doc = await db.get_document(resp.json()["document_id"])
+    doc = await db.get_document(resp.json()["document_id"], tenant_id=DEMO_TENANT_ID)
     assert doc["branch_id"] is None
 
     resp = await client.post(
@@ -558,7 +564,7 @@ async def test_manual_entry_creates_a_checked_invoice(api, db):
     assert detail["document"]["status"] == "extracted"
     assert detail["document"]["classification"] is None
     assert detail["image_url"] is None
-    doc = await db.get_document(detail["document"]["id"])
+    doc = await db.get_document(detail["document"]["id"], tenant_id=DEMO_TENANT_ID)
     assert doc["storage_path"] is None
     assert doc["wa_message_id"] is None
     assert doc["mime"] is None and doc["sha256"] is None
@@ -720,8 +726,8 @@ async def test_revoked_key_drill_manual_path_survives(api, db):
     assert job["status"] == "failed"
     assert job["attempts"] == 3
     assert "no extraction provider configured" in job["last_error"]
-    assert (await db.get_document(document_id))["status"] == "failed"
-    assert await db.get_invoice_by_document(document_id) is None
+    assert (await db.get_document(document_id, tenant_id=DEMO_TENANT_ID))["status"] == "failed"
+    assert await db.get_invoice_by_document(document_id, tenant_id=DEMO_TENANT_ID) is None
     assert fake_storage.objects[path] == data
 
     # 3. Manual entry still works - the fallback the failed upload points to.
@@ -980,7 +986,7 @@ async def test_the_record_survives_and_is_reachable_by_name(api, db):
         )
         > 0
     )
-    document = await db.get_document(str(copy["document_id"]))
+    document = await db.get_document(str(copy["document_id"]), tenant_id=DEMO_TENANT_ID)
     assert document is not None and document["status"] == "extracted"
     assert document["storage_path"]  # originals are immutable evidence
 

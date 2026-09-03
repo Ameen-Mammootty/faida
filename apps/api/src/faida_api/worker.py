@@ -1,27 +1,43 @@
 """Background worker: claims jobs from the Postgres queue and processes them.
-Runs as an asyncio task inside the API process — a broker is banned until
-volume proves the need (plan §3)."""
+Runs as an asyncio task inside the API process - a broker is banned until
+volume proves the need (plan §3).
+
+The worker fails closed (M7 WP-72, C2 as amended). `process_wa_message` is
+the one resolver: the sender phone maps to a branch and its tenant, and every
+job it enqueues carries both. A phone no branch is registered to gets its
+inbound row stamped, one polite reply a day, and nothing else - no document,
+no job, no model spend, and no fallback to any tenant. Nothing here may call
+`Database.default_tenant_id`; it stays only until WP-70 deletes it."""
 
 import asyncio
+import datetime
 import hashlib
 import logging
 import time
 
 from .confirm import handle_inbound_text
-from .contracts import MEDIA_TYPES, JobKind
+from .contracts import MEDIA_TYPES, WA_STATUS_IGNORED_UNKNOWN_SENDER, JobKind
 from .db import Database
 from .extraction.pipeline import extract_document
 from .extraction.provider import ExtractionProvider
-from .replies import REPLY_MEDIA_RECEIVED, REPLY_UNSUPPORTED_TYPE
+from .replies import REPLY_MEDIA_RECEIVED, REPLY_UNKNOWN_SENDER, REPLY_UNSUPPORTED_TYPE
 from .storage import Storage
 from .wa import WhatsAppClient
 
 logger = logging.getLogger(__name__)
 
+# An unknown phone is answered once inside this window, then left alone: a
+# phone that keeps forwarding is not helped by hearing the same sentence back
+# each time, and the silence is derived from the stamped rows, not remembered.
+UNKNOWN_SENDER_SILENCE = datetime.timedelta(hours=24)
+
 
 async def process_wa_message(
     db: Database, wa: WhatsAppClient, storage: Storage, payload: dict
 ) -> None:
+    """C2's first job and its one resolver: phone to branch and tenant, then
+    ingest, then the immediate ack. Everything it enqueues carries the scope
+    it resolved here."""
     msg_row = await db.get_inbound_message(payload["message_id"])
     if msg_row is None:
         logger.warning("job for unknown message %s", payload["message_id"])
@@ -31,19 +47,28 @@ async def process_wa_message(
     from_phone = msg_row["from_phone"]
     msg_type = msg_row["msg_type"]
 
-    # Branch is resolved from the sender phone number, never from document text.
+    # Branch is resolved from the sender phone number, never from document
+    # text - and never from a default. No branch means no tenant, and no
+    # tenant means nothing is created.
     branch = await db.branch_for_phone(from_phone) if from_phone else None
-    tenant_id = str(branch["tenant_id"]) if branch else await db.default_tenant_id()
-    branch_id = str(branch["id"]) if branch else None
-    if tenant_id is None:
-        raise RuntimeError("no tenant seeded; run supabase/seed.sql")
+    if branch is None:
+        await _ignore_unknown_sender(db, wa, msg_row)
+        return
+    tenant_id = str(branch["tenant_id"])
+    branch_id = str(branch["id"])
 
     if msg_type in MEDIA_TYPES:
         document_id = await _ingest_media(
             db, wa, storage, raw, msg_row["message_id"], tenant_id, branch_id
         )
-        # C2: the pipeline runs as a second job; the ack below stays immediate.
-        await db.enqueue(JobKind.EXTRACT_DOCUMENT, {"document_id": document_id})
+        # C2: the pipeline runs as a second job carrying the scope resolved
+        # above; the ack below stays immediate. Once per document, ever: a
+        # retry of this job after a failed ack lands here again, after the
+        # first extraction has already finished, and enqueues nothing.
+        await db.enqueue_once(
+            JobKind.EXTRACT_DOCUMENT,
+            {"document_id": document_id, "tenant_id": tenant_id, "branch_id": branch_id},
+        )
         reply = REPLY_MEDIA_RECEIVED
     elif msg_type == "text":
         # WP-21 (C5): the text may confirm or correct an awaiting invoice;
@@ -55,9 +80,38 @@ async def process_wa_message(
     else:
         reply = REPLY_UNSUPPORTED_TYPE
 
-    if from_phone:
-        out_id = await wa.send_text(from_phone, reply)
-        await db.record_outbound_message(out_id, from_phone, reply)
+    out_id = await wa.send_text(from_phone, reply)
+    await db.record_outbound_message(out_id, from_phone, reply)
+
+
+async def _ignore_unknown_sender(db: Database, wa: WhatsAppClient, msg_row) -> None:
+    """A phone no branch is registered to (C2 as amended, D9). The stamp goes
+    on the inbound row first, so the decision is recorded before anything
+    leaves the building and a retry finds it already made. Then one reply,
+    unless another message from the same phone was already stamped inside
+    the window - the current message is excluded from that lookup, or the
+    first message would silence its own reply. The reply is best-effort: a
+    send failure is logged and the job still succeeds, because there is
+    nothing to retry for a phone we do not know."""
+    message_id = msg_row["message_id"]
+    from_phone = msg_row["from_phone"]
+    await db.set_inbound_message_status(message_id, WA_STATUS_IGNORED_UNKNOWN_SENDER)
+    logger.warning("ignored message %s from unknown sender %s", message_id, from_phone)
+    if not from_phone:
+        return  # nowhere to send a reply
+    already_told = await db.inbound_status_seen_from_phone(
+        from_phone,
+        WA_STATUS_IGNORED_UNKNOWN_SENDER,
+        within=UNKNOWN_SENDER_SILENCE,
+        exclude_message_id=message_id,
+    )
+    if already_told:
+        return
+    try:
+        out_id = await wa.send_text(from_phone, REPLY_UNKNOWN_SENDER)
+        await db.record_outbound_message(out_id, from_phone, REPLY_UNKNOWN_SENDER)
+    except Exception:
+        logger.exception("unknown-sender reply to %s failed; not retried", from_phone)
 
 
 async def _ingest_media(
@@ -67,9 +121,9 @@ async def _ingest_media(
     raw_msg: dict,
     wa_message_id: str,
     tenant_id: str,
-    branch_id: str | None,
+    branch_id: str,
 ) -> str:
-    """Download media (URLs expire — do it promptly), hash it, store the immutable
+    """Download media (URLs expire - do it promptly), hash it, store the immutable
     original, record the document. Idempotent so job retries are safe. Returns
     the document id."""
     existing = await db.get_document_by_wa_message(wa_message_id)
@@ -96,7 +150,7 @@ async def _ingest_media(
     started = time.monotonic()
     path = f"{tenant_id}/documents/{document_id}/original"
     await storage.put(path, data, mime)
-    await db.set_document_storage_path(document_id, path)
+    await db.set_document_storage_path(document_id, path, tenant_id=tenant_id)
     logger.info(
         "latency stage=store document=%s elapsed_ms=%d",
         document_id,

@@ -12,7 +12,8 @@ import json
 import httpx
 import pytest
 
-from faida_api.replies import REPLY_MEDIA_RECEIVED, REPLY_TEXT_ONBOARDING
+from faida_api.contracts import WA_STATUS_IGNORED_UNKNOWN_SENDER
+from faida_api.replies import REPLY_MEDIA_RECEIVED, REPLY_TEXT_ONBOARDING, REPLY_UNKNOWN_SENDER
 from faida_api.storage import Storage
 from faida_api.wa import WhatsAppClient
 from faida_api.webhook import router as webhook_router
@@ -143,13 +144,19 @@ async def test_text_message_gets_onboarding_reply(api, db):
     assert await db.pool.fetchval("select count(*) from documents") == 0
 
 
-async def test_unknown_sender_still_ingests_with_default_tenant(api, db):
-    app, client, fake_meta, _ = api
+async def test_unknown_sender_is_stamped_and_creates_nothing(api, db):
+    """Inverted by WP-72: until M7 an unknown phone fell back to the oldest
+    tenant and could feed its books. Now the inbound row is stamped, the phone
+    is told once to ask the owner, and no document or job exists for it."""
+    app, client, fake_meta, fake_storage = api
     await post_webhook(client, wa_image_payload(message_id="wamid.unk", from_phone="971559999999"))
     assert await run_one_job(db, app.state.wa, app.state.storage) is True
-    doc = await db.get_document_by_wa_message("wamid.unk")
-    assert doc is not None and doc["branch_id"] is None
-    assert str(doc["tenant_id"]) == "00000000-0000-0000-0000-000000000001"
+    assert (await db.get_inbound_message("wamid.unk"))["status"] == WA_STATUS_IGNORED_UNKNOWN_SENDER
+    assert await db.get_document_by_wa_message("wamid.unk") is None
+    assert await db.pool.fetchval("select count(*) from documents") == 0
+    assert await db.pool.fetchval("select count(*) from jobs where kind = 'extract_document'") == 0
+    assert fake_storage.objects == {}
+    assert [m["text"]["body"] for m in fake_meta.sent] == [REPLY_UNKNOWN_SENDER]
 
 
 async def test_failed_job_requeues_then_fails(api, db):

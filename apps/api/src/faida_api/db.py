@@ -11,7 +11,7 @@ from typing import Any
 import asyncpg
 
 from . import costing
-from .contracts import InvoiceStatus
+from .contracts import InvoiceStatus, JobKind
 from .extraction.currency import currency_differs
 from .matching import clean_name, snap_item, strip_delivery_note
 from .provenance import asserted_fields
@@ -284,6 +284,45 @@ class Database:
             "select * from wa_messages where message_id = $1 and direction = 'in'", message_id
         )
 
+    async def set_inbound_message_status(self, message_id: str, status: str) -> None:
+        """Stamp an inbound row (WP-72: `ignored_unknown_sender`, written
+        before any reply, so the decision is on record whether or not the
+        reply ever leaves)."""
+        await self.pool.execute(
+            "update wa_messages set status = $2 where message_id = $1 and direction = 'in'",
+            message_id,
+            status,
+        )
+
+    async def inbound_status_seen_from_phone(
+        self,
+        phone: str,
+        status: str,
+        *,
+        within: datetime.timedelta,
+        exclude_message_id: str,
+    ) -> bool:
+        """Whether another inbound message from this phone was stamped with
+        `status` inside the window. The current message is excluded by id,
+        because it is stamped first and would otherwise silence its own
+        reply (the self-silencing lookup the M7 review caught)."""
+        return await self.pool.fetchval(
+            """
+            select exists (
+                select 1 from wa_messages
+                where direction = 'in'
+                  and from_phone = $1
+                  and status = $2
+                  and message_id <> $3
+                  and created_at >= now() - $4::interval
+            )
+            """,
+            phone,
+            status,
+            exclude_message_id,
+            within,
+        )
+
     # -- Tenancy -------------------------------------------------------------
 
     async def branch_for_phone(self, phone: str) -> asyncpg.Record | None:
@@ -398,37 +437,54 @@ class Database:
             branch_id,
         )
 
-    async def set_document_storage_path(self, document_id: str, storage_path: str) -> None:
+    async def set_document_storage_path(
+        self, document_id: str, storage_path: str, *, tenant_id: str
+    ) -> None:
         await self.pool.execute(
-            "update documents set storage_path = $2 where id = $1", document_id, storage_path
+            "update documents set storage_path = $2 where id = $1 and tenant_id = $3",
+            document_id,
+            storage_path,
+            tenant_id,
         )
 
-    async def get_document(self, document_id: str) -> asyncpg.Record | None:
-        """The worker's read. The extract job carries only a document id
-        until WP-72 makes every job carry its tenant and fail closed without
-        it, so the pipeline reads the row to learn whose it is. The console
-        never calls this: its detail path reads the document through the
-        tenant-scoped `get_invoice` (WP-73)."""
-        return await self.pool.fetchrow("select * from documents where id = $1", document_id)
+    async def get_document(self, document_id: str, *, tenant_id: str) -> asyncpg.Record | None:
+        """The worker's read, scoped like every other (WP-72): the extract job
+        carries its tenant, and a document outside it is None - the pipeline
+        then refuses the job rather than reading the row to learn whose it
+        is. The console never calls this: its detail path reads the document
+        through the tenant-scoped `get_invoice` (WP-73)."""
+        return await self.pool.fetchrow(
+            "select * from documents where id = $1 and tenant_id = $2", document_id, tenant_id
+        )
 
     async def set_document_status(
-        self, document_id: str, status: str, classification: str | None = None
+        self,
+        document_id: str,
+        status: str,
+        classification: str | None = None,
+        *,
+        tenant_id: str,
     ) -> None:
         """C1 transition, worker-owned. A classification (invoice/z_report/other)
         sticks once recorded; passing None leaves it untouched."""
         await self.pool.execute(
             "update documents set status = $2, classification = coalesce($3, classification) "
-            "where id = $1",
+            "where id = $1 and tenant_id = $4",
             document_id,
             status,
             classification,
+            tenant_id,
         )
 
     # -- Invoices (WP-13) ----------------------------------------------------
 
-    async def get_invoice_by_document(self, document_id: str) -> asyncpg.Record | None:
+    async def get_invoice_by_document(
+        self, document_id: str, *, tenant_id: str
+    ) -> asyncpg.Record | None:
         return await self.pool.fetchrow(
-            "select * from invoices where document_id = $1", document_id
+            "select * from invoices where document_id = $1 and tenant_id = $2",
+            document_id,
+            tenant_id,
         )
 
     async def insert_draft_invoice(
@@ -2339,6 +2395,27 @@ class Database:
     async def enqueue(self, kind: str, payload: dict[str, Any]) -> int:
         return await self.pool.fetchval(
             "insert into jobs (kind, payload) values ($1, $2) returning id", kind, payload
+        )
+
+    async def enqueue_once(self, kind: str, payload: dict[str, Any]) -> int | None:
+        """One extract job per document, ever (WP-72, D22). Inserts against
+        0018's `jobs_extract_document_uidx` and tolerates the conflict:
+        returns the new job id, or None when a job for this document already
+        exists in any status. No status filter, on purpose: the ingest job's
+        retry after a failed ack lands 30 s later, after the first extraction
+        has finished, and "live jobs only" would let it mint a second read of
+        the same paper. Not a fresh flag in Python - the index is the guard."""
+        if kind != JobKind.EXTRACT_DOCUMENT:
+            raise ValueError(f"enqueue_once is for {JobKind.EXTRACT_DOCUMENT} jobs, not {kind!r}")
+        return await self.pool.fetchval(
+            """
+            insert into jobs (kind, payload) values ($1, $2)
+            on conflict (kind, (payload->>'document_id')) where kind = 'extract_document'
+            do nothing
+            returning id
+            """,
+            kind,
+            payload,
         )
 
     async def claim_job(self) -> asyncpg.Record | None:
