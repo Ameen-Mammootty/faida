@@ -279,6 +279,152 @@ codes are part of the first version, not a follow-up.
 **Priority:** P3
 **Depends on:** M7 shipped. Trigger: a second real tenant, or an owner asking.
 
+## Sales (deferred by the M8 decomposition, 2026-09-03)
+
+M8 was decomposed in `Docs/M8_DECOMPOSITION.md` and reviewed with two outside voices on 2026-09-03
+(`/plan-eng-review`, `/plan-design-review`); its rows wait on the founder's decisions on its §5. The
+entries below are what the decomposition and its reviews consciously left out, each with the trigger
+that brings it back.
+
+### Z-report photos through WhatsApp
+
+**What:** A summary extraction schema for a till's end-of-day report (branch-summary or item-summary),
+the `summary` day written through `POST /api/sales/days`'s door with `source = 'z_report'`, the reply
+that reads the day back, and the rule that a summary is never turned into fake receipts (PRD §10).
+
+**Why:** PRD §10's third tier and the M8 checklist's second item. With CSV as the source the photo path
+would sit half-built and untested; a branch that cannot export needs it and nobody else does.
+
+**Context:** The classification (`extraction/schema.py:37`), the polite decline (`REPLY_Z_REPORT`,
+`replies.py:47`) and the `extraction_runs.outcome` value already exist, so the door is open. Start at
+`extraction/pipeline.py:135-140` (today the document is marked failed) and the C3 schema probe (the
+grammar budget is at its ceiling - a second schema, not fields on the invoice's).
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** M8 shipped. Trigger: a pilot branch whose till cannot export.
+
+### The business-day cutoff and timezone arithmetic
+
+**What:** A per-branch cutoff (PRD §14) and the arithmetic that turns a timestamped transaction into a
+business date in the branch's timezone; `branches.timezone` finally read.
+
+**Why:** A daily export already carries its business date as the till defines it, so M8 stores calendar
+dates and applies no cutoff. The first transaction-level source (a POS API) needs the rule.
+
+**Context:** `branches.timezone` exists (`0001_init.sql:16`) and nothing reads it. C11 says a purchase's
+business day is its printed date and a sale's is the till's; changing the cutoff must never rewrite
+history (PRD §14).
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** M8 shipped. Trigger: the first transaction-level sales source.
+
+### Excel parsing in the loaders
+
+**What:** Read `.xlsx` in the browser (one library, the first sheet, the same header rules) so a till
+that exports only Excel loads without a Save As.
+
+**Why:** `csv.ts` sniffs a spreadsheet binary and answers "Save As CSV" in one sentence (`csv.ts:102-109`);
+that is enough until a till gives nothing else.
+
+**Context:** The loaders parse in the browser by decision (2026-08-31); an Excel reader would join
+`useCsvFile` behind the same `parseCsv` result shape.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** WP-83. Trigger: a till that exports only `.xlsx`.
+
+### A bulk "map every exact name" on the till queue
+
+**What:** One action that maps every unmapped till name whose normalised name equals a live menu item's,
+with one audit row per mapping.
+
+**Why:** M5's rule - nothing merges without a keystroke - holds for till names too, and a 45-name till is
+two minutes of keystrokes once. A chain with hundreds of names is where the rule starts to cost.
+
+**Context:** The proposer never auto-maps even an exact name (C11.7). Start at the coverage read's queue
+and `db.map_till_item`; the action must still refuse size variants that only differ by a pack word.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** WP-82. Trigger: a chain with more than a hundred till names.
+
+### A reject for till-name proposals
+
+**What:** `POST /api/till-items/{id}/menu-item/reject`, the WP-52 shape, so a wrong top proposal stops
+being offered.
+
+**Why:** Approve, pick-from-menu and exclude cover the queue; a wrong top proposal is one keystroke
+further down. The reject door exists for supplier items because a material can be created from a
+proposal; a menu item cannot.
+
+**Context:** The M5 reject is derived from `audit_events` with latest-event-wins (`db.py:913`); the same
+read would serve.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** WP-82. Trigger: a consultant asks.
+
+### A branch correction door on an invoice
+
+**What:** Set or change `invoices.branch_id` from the review screen with one `invoice.branch_set` audit
+row, refusing a foreign branch the way upload does.
+
+**Why:** Upload and manual entry accept no branch (`api.py:913`, `:729`), so a confirmed paper with no
+branch is a real state; M8 shows it in a "No branch" row rather than losing it, but nothing moves it.
+
+**Context:** `GET /api/branches` (WP-80) lets the upload form offer every branch instead of deriving
+choices from the invoice list (`UploadInvoice.tsx:51-52`), which is the prevention. The correction is
+one field on the correction door with the composite FK doing the refusing.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** WP-80. Trigger: the first confirmed paper with no branch on a pilot.
+
+### Branch calendars
+
+**What:** Closure days per branch, so a missing sales day inside a window is not always a gap.
+
+**Why:** C9's amendment reads a gap strictly inside a branch's loaded range as incomplete; a branch closed
+every Friday would read incomplete every week. M8's answer is a loaded zero day (a takings-0 row, or a
+file's interior gap loaded as one).
+
+**Context:** Start at `ratio.py`'s missing-day rule and a `branch_closures` table under the composite-FK
+pattern.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** WP-81. Trigger: a pilot branch that closes a day a week.
+
+### A second sales stream per branch-day
+
+**What:** The day identity gains the stream (a second till, a delivery aggregator's report), and net sales
+per branch-day becomes the sum over streams.
+
+**Why:** C11 identifies a day by (tenant, branch, business date): one consolidated report per branch-day.
+Two sources for one day would overwrite each other. Raised by the Codex outside voice (finding 5).
+
+**Context:** `sales_daily` already carries its `layout_id`, so the backfill is one update naming the
+existing days' stream; the loader's layout step already names the till.
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** WP-80. Trigger: a branch with two sales sources.
+
+### A custom date range on the sales screen
+
+**What:** Free `from` and `to` inputs beside the picker.
+
+**Why:** The API takes any range up to 92 days; the picker exposes 28 days, 7 days and the months that
+have sales, because a free range is two inputs nobody asked for.
+
+**Context:** `GET /api/sales/branches?from&to` needs nothing; the change is the picker.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** WP-84. Trigger: a pilot asks for a range the picker lacks.
+
 ## Extraction & matching
 
 ### A handwritten margin note gets folded into an item name and splits the catalog
