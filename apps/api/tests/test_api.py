@@ -20,6 +20,7 @@ from faida_api.api import UPLOAD_MAX_BYTES
 from faida_api.api import router as api_router
 from faida_api.config import Settings
 from faida_api.confirm import handle_inbound_text
+from faida_api.replies import compose_cash_approved_notice
 from faida_api.storage import Storage
 from faida_api.wa import WhatsAppClient
 from faida_api.webhook import router as webhook_router
@@ -470,6 +471,95 @@ async def test_approve_records_a_cash_hold_with_a_reason_and_moves_the_baseline(
         f"/api/invoices/{uuid.uuid4()}/approve", headers=AUTH, json={"reason": "x"}
     )
     assert missing.status_code == 404
+
+
+@requires_db
+async def test_approve_tells_the_phone_that_forwarded_the_paper_once_it_is_recorded(api, db):
+    """The cash hold promised the sender they would hear back once the owner
+    recorded it. The approval keeps that promise: one message, the exact
+    sentence, sent after the audit row exists."""
+    app, client, fake_meta, _ = api
+    cash = good_invoice()
+    cash.payment_kind = "cash"
+    invoice = await extracted_invoice(api, db, cash)
+    sent_before = len(fake_meta.sent)
+
+    resp = await client.post(
+        f"/api/invoices/{invoice['id']}/approve", headers=AUTH, json={"reason": "Petty cash"}
+    )
+    assert resp.status_code == 200, resp.text
+
+    new_messages = fake_meta.sent[sent_before:]
+    assert len(new_messages) == 1
+    assert new_messages[0]["to"] == DEMO_PHONE
+    assert new_messages[0]["text"]["body"] == (
+        "Recorded: Gulf Foods Trading LLC INV-1041, approved by the owner."
+    )
+    assert new_messages[0]["text"]["body"] == compose_cash_approved_notice(
+        "Gulf Foods Trading LLC", "INV-1041"
+    )
+    # The notice is on the record as an outbound message, after the audit row.
+    outbound = await db.pool.fetchrow(
+        "select payload, created_at from wa_messages where direction = 'out' "
+        "order by id desc limit 1"
+    )
+    assert outbound["payload"]["text"] == new_messages[0]["text"]["body"]
+    events = await db.audit_events_for_subject(
+        "invoice", str(invoice["id"]), tenant_id=DEMO_TENANT_ID
+    )
+    assert [e["action"] for e in events] == ["invoice.cash_approved"]
+    assert events[0]["created_at"] <= outbound["created_at"]
+
+
+@requires_db
+async def test_approving_a_manual_cash_paper_sends_nothing(api, db):
+    app, client, fake_meta, _ = api
+    resp = await client.post(
+        "/api/invoices/manual", headers=AUTH, json=manual_body(payment_kind="cash")
+    )
+    assert resp.status_code == 201
+    resp = await client.post(
+        f"/api/invoices/{resp.json()['id']}/approve", headers=AUTH, json={"reason": "till slip"}
+    )
+    assert resp.status_code == 200 and resp.json()["status"] == "confirmed"
+    assert fake_meta.sent == []
+    assert await db.pool.fetchval("select count(*) from wa_messages where direction = 'out'") == 0
+
+
+@requires_db
+async def test_a_failed_approval_notice_leaves_the_approval_standing(api, db):
+    """Meta only accepts free text inside 24 h of the sender's last message,
+    and an approval recorded a day later is still an approval: the send fails,
+    is logged, and nothing about the approval changes."""
+    app, client, fake_meta, _ = api
+    cash = good_invoice()
+    cash.payment_kind = "cash"
+    invoice = await extracted_invoice(api, db, cash)
+    sent_before = len(fake_meta.sent)
+    fake_meta.fail_sends = True
+
+    resp = await client.post(
+        f"/api/invoices/{invoice['id']}/approve", headers=AUTH, json={"reason": "Petty cash"}
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["status"] == "confirmed"
+    assert fake_meta.sent[sent_before:] == []
+
+    row = await db.get_invoice(str(invoice["id"]), tenant_id=DEMO_TENANT_ID)
+    assert row["status"] == "confirmed" and row["confirmed_at"] is not None
+    events = await db.audit_events_for_subject(
+        "invoice", str(invoice["id"]), tenant_id=DEMO_TENANT_ID
+    )
+    assert [(e["action"], e["actor"]) for e in events] == [("invoice.cash_approved", TEST_ACTOR)]
+    assert events[0]["detail"]["reason"] == "Petty cash"
+    assert await db.pool.fetchval("select count(*) from supplier_item_prices") == 2
+    # No retry, no second attempt: a later approve is refused as already confirmed.
+    fake_meta.fail_sends = False
+    again = await client.post(
+        f"/api/invoices/{invoice['id']}/approve", headers=AUTH, json={"reason": "again"}
+    )
+    assert again.status_code == 409
+    assert fake_meta.sent[sent_before:] == []
 
 
 @requires_db
