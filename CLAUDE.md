@@ -77,7 +77,8 @@ One door for everyone: a correction from the review screen and a "line 4 qty 16"
 
 Tenancy: every tenant-owned row carries `tenant_id` from day one.
 Branch is resolved from the sender phone (`branches.wa_phone_e164`), never from document text.
-RLS enforcement is deferred to M7; the demo runs single-tenant seeded.
+Every API read and write is scoped by `auth.py`'s `AuthContext` (M7 WP-73): handlers take it as a dependency, every console-reachable `db.py` method takes `tenant_id` as a required keyword-only argument, and a row outside the tenant is None, so the API answers 404, never 403.
+Its only source until WP-70 is the legacy shared token resolving to the seeded tenant as actor `console`; the worker path still reads by id and is WP-72's lane. RLS policies are WP-70's.
 
 Extraction (M1+): Gemini 3 Flash (`gemini-3-flash-preview`) via the google-genai SDK with structured JSON output - the shipped default since 2026-08-29 (measured bake-off, Decision Log) - behind one thin provider interface so the provider swaps in one place; Claude Opus 5 stays wired as the fallback (`EXTRACTION_PROVIDER=anthropic`, no deploy needed).
 Accuracy is a pipeline property, not a prompt property: deterministic arithmetic reconciliation, one scoped repair pass, supplier-memory snapping, and derived (never self-reported) confidence.

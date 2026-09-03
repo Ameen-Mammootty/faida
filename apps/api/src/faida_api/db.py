@@ -300,9 +300,13 @@ class Database:
         memory."""
         return await self.pool.fetchval("select currency from tenants where id = $1", tenant_id)
 
-    async def get_branch(self, branch_id: str) -> asyncpg.Record | None:
+    async def get_branch(self, branch_id: str, *, tenant_id: str) -> asyncpg.Record | None:
+        """One of this tenant's branches, or None - another tenant's branch
+        does not exist for the caller (WP-73)."""
         return await self.pool.fetchrow(
-            "select id, tenant_id, name from branches where id = $1", branch_id
+            "select id, tenant_id, name from branches where id = $1 and tenant_id = $2",
+            branch_id,
+            tenant_id,
         )
 
     # -- Public waitlist -----------------------------------------------------
@@ -349,7 +353,7 @@ class Database:
         )
 
     async def insert_uploaded_document(
-        self, tenant_id: str, branch_id: str | None, mime: str, sha256: str
+        self, *, tenant_id: str, branch_id: str | None, mime: str, sha256: str
     ) -> str:
         """A manually uploaded original (C6 POST /api/documents): same document
         row as the WhatsApp path minus the message, source 'upload'."""
@@ -365,7 +369,7 @@ class Database:
             sha256,
         )
 
-    async def insert_manual_document(self, tenant_id: str, branch_id: str | None) -> str:
+    async def insert_manual_document(self, *, tenant_id: str, branch_id: str | None) -> str:
         """A typed-in invoice's anchor row (C6 extension POST /api/invoices/manual,
         WP-34): source 'manual', no stored original, no message, no mime/sha256 -
         the evidence is the operator's keyboard, not a photo."""
@@ -385,6 +389,11 @@ class Database:
         )
 
     async def get_document(self, document_id: str) -> asyncpg.Record | None:
+        """The worker's read. The extract job carries only a document id
+        until WP-72 makes every job carry its tenant and fail closed without
+        it, so the pipeline reads the row to learn whose it is. The console
+        never calls this: its detail path reads the document through the
+        tenant-scoped `get_invoice` (WP-73)."""
         return await self.pool.fetchrow("select * from documents where id = $1", document_id)
 
     async def set_document_status(
@@ -535,14 +544,18 @@ class Database:
     async def list_invoices(
         self,
         *,
+        tenant_id: str,
         branch_id: str | None = None,
         supplier_id: str | None = None,
         status: str | None = None,
     ) -> list[asyncpg.Record]:
-        """C6 invoice list, newest first; every filter optional. Carries the
-        branch name (WP-32: the list shows names, not UUIDs) and, for a held
-        duplicate, the number of the invoice it copies - joined rather than
-        fetched per row, so the list stays one query.
+        """C6 invoice list for one tenant, newest first; every filter
+        optional. Carries the branch name (WP-32: the list shows names, not
+        UUIDs) and, for a held duplicate, the number of the invoice it copies
+        - joined rather than fetched per row, so the list stays one query.
+
+        The tenant filter arrived with WP-73: until then this list had none,
+        which was fine only while the API had one tenant to show.
 
         **A dismissed invoice is not in the working list.** Asking for no status
         means every status a reviewer still has work on, which is what the
@@ -558,7 +571,8 @@ class Database:
             from invoices i
             left join branches b on b.id = i.branch_id
             left join invoices dup on dup.id = i.duplicate_of_invoice_id
-            where ($1::uuid is null or i.branch_id = $1)
+            where i.tenant_id = $4
+              and ($1::uuid is null or i.branch_id = $1)
               and ($2::uuid is null or i.supplier_id = $2)
               and ($3::text is null or i.status = $3)
               and ($3::text is not null or i.status <> 'dismissed')
@@ -567,6 +581,7 @@ class Database:
             branch_id,
             supplier_id,
             status,
+            tenant_id,
         )
 
     async def list_invoice_headers_for_tenant(self, tenant_id: str) -> list[asyncpg.Record]:
@@ -591,26 +606,28 @@ class Database:
             tenant_id,
         )
 
-    async def get_supplier_item(self, item_id: str) -> asyncpg.Record | None:
+    async def get_supplier_item(self, item_id: str, *, tenant_id: str) -> asyncpg.Record | None:
         return await self.pool.fetchrow(
             """
             select id, canonical_name, unit, pack_size, last_price, prev_price, last_price_at
-            from supplier_items where id = $1
+            from supplier_items where id = $1 and tenant_id = $2
             """,
             item_id,
+            tenant_id,
         )
 
-    async def list_item_prices(self, item_id: str) -> list[asyncpg.Record]:
+    async def list_item_prices(self, item_id: str, *, tenant_id: str) -> list[asyncpg.Record]:
         """One item's confirmed price history, oldest first (the C6 sparkline
         draws left to right)."""
         return await self.pool.fetch(
             """
             select price, observed_at, invoice_id
             from supplier_item_prices
-            where supplier_item_id = $1
+            where supplier_item_id = $1 and tenant_id = $2
             order by observed_at, id
             """,
             item_id,
+            tenant_id,
         )
 
     # -- Supplier memory (WP-22, plan.md §5 layer 4) -------------------------
@@ -631,7 +648,7 @@ class Database:
 
     # -- Raw materials (M5 WP-52) --------------------------------------------
 
-    async def list_ingredients(self, tenant_id: str) -> list[asyncpg.Record]:
+    async def list_ingredients(self, *, tenant_id: str) -> list[asyncpg.Record]:
         """Every raw material this tenant cooks with, and how many purchasable
         packs have been mapped onto each."""
         return await self.pool.fetch(
@@ -647,7 +664,7 @@ class Database:
             tenant_id,
         )
 
-    async def list_mapped_packs(self, tenant_id: str) -> list[asyncpg.Record]:
+    async def list_mapped_packs(self, *, tenant_id: str) -> list[asyncpg.Record]:
         """Every pack that has a material, with who sells it.
 
         One query for the whole tenant rather than one per material: the
@@ -666,7 +683,7 @@ class Database:
             tenant_id,
         )
 
-    async def list_mapped_pack_costs(self, tenant_id: str) -> list[asyncpg.Record]:
+    async def list_mapped_pack_costs(self, *, tenant_id: str) -> list[asyncpg.Record]:
         """The newest costed invoice line behind every mapped pack, grouped by
         material with **that material's current price first** (M5 WP-54).
 
@@ -737,7 +754,7 @@ class Database:
             tenant_id,
         )
 
-    async def list_unmapped_supplier_items(self, tenant_id: str) -> list[asyncpg.Record]:
+    async def list_unmapped_supplier_items(self, *, tenant_id: str) -> list[asyncpg.Record]:
         """Packs with no material yet, **most money first**.
 
         Ranked by what was actually spent on them, over *confirmed* invoices
@@ -767,7 +784,9 @@ class Database:
             tenant_id,
         )
 
-    async def get_supplier_item_for_mapping(self, supplier_item_id: str) -> asyncpg.Record | None:
+    async def get_supplier_item_for_mapping(
+        self, supplier_item_id: str, *, tenant_id: str
+    ) -> asyncpg.Record | None:
         """The pack plus the material it currently points at, if any."""
         return await self.pool.fetchrow(
             """
@@ -777,44 +796,38 @@ class Database:
                    i.name as ingredient_name, i.base_unit as ingredient_base_unit
             from supplier_items s
             left join ingredients i on i.id = s.ingredient_id
-            where s.id = $1
+            where s.id = $1 and s.tenant_id = $2
             """,
             supplier_item_id,
+            tenant_id,
         )
 
-    async def get_ingredient(self, ingredient_id: str) -> asyncpg.Record | None:
+    async def get_ingredient(self, ingredient_id: str, *, tenant_id: str) -> asyncpg.Record | None:
         return await self.pool.fetchrow(
             """
             select id::text as id, tenant_id::text as tenant_id, name, base_unit, created_at
-            from ingredients where id = $1
+            from ingredients where id = $1 and tenant_id = $2
             """,
             ingredient_id,
+            tenant_id,
         )
 
-    async def rejected_ingredient_ids(self, supplier_item_id: str) -> set[str]:
-        """Materials a person already said this pack is **not**.
+    async def rejected_ingredients_by_item(
+        self, *, tenant_id: str, item_id: str | None = None
+    ) -> dict[str, set[str]]:
+        """Materials a person already said each pack is **not**, keyed by
+        pack, for a whole tenant at once (or one pack of it).
 
         Derived from the audit trail rather than kept in a second table: a
         rejection is a human decision, and that is exactly what `audit_events`
         records (C8). A parallel table would hold the same fact twice, which is
         the drift migration 0010 was written to delete.
 
-        Latest event per pair wins, so rejecting a material and later approving
-        it reads correctly, and so does approving and later unmapping. Served
-        by the 0011 subject index."""
-        return (await self.rejected_ingredients_by_item(None, item_id=supplier_item_id)).get(
-            supplier_item_id, set()
-        )
-
-    async def rejected_ingredients_by_item(
-        self, tenant_id: str | None, *, item_id: str | None = None
-    ) -> dict[str, set[str]]:
-        """The same read for a whole tenant at once, keyed by pack.
-
         The queue asks this for every row it renders, so it is one query rather
         than one per pack. `distinct on` keeps only the newest event per
-        (pack, material) pair, which is what makes reject-then-approve and
-        approve-then-unmap read correctly."""
+        (pack, material) pair, so rejecting a material and later approving it
+        reads correctly, and so does approving and later unmapping. Served by
+        the 0011 subject index."""
         rows = await self.pool.fetch(
             """
             select distinct on (subject_id, detail->>'ingredient_id')
@@ -822,7 +835,7 @@ class Database:
                    detail->>'ingredient_id' as ingredient_id, action
             from audit_events
             where subject_type = 'supplier_item'
-              and ($1::uuid is null or tenant_id = $1)
+              and tenant_id = $1
               and ($2::uuid is null or subject_id = $2)
               and action in ('supplier_item.mapped', 'supplier_item.mapping_rejected')
               and detail->>'ingredient_id' is not null
@@ -901,7 +914,12 @@ class Database:
 
         Creating from a name is not a convenience: the matcher can only
         propose materials that already exist, so on a fresh tenant every queue
-        would be unapprovable without it."""
+        would be unapprovable without it.
+
+        The link is written `where tenant_id = ...` as well as by id, and a
+        pack outside the tenant raises rather than writing an audit row about
+        nothing (WP-73); the 0012 composite key refuses the material half of
+        a cross-tenant merge regardless."""
         async with self.pool.acquire() as conn, conn.transaction():
             if ingredient_id is None:
                 ingredient_id = await conn.fetchval(
@@ -915,11 +933,14 @@ class Database:
                     name,
                     base_unit,
                 )
-            await conn.execute(
-                "update supplier_items set ingredient_id = $2 where id = $1",
+            updated = await conn.execute(
+                "update supplier_items set ingredient_id = $2 where id = $1 and tenant_id = $3",
                 supplier_item_id,
                 ingredient_id,
+                tenant_id,
             )
+            if updated != "UPDATE 1":
+                raise LookupError(f"supplier item {supplier_item_id} is not in tenant {tenant_id}")
             ingredient = await conn.fetchrow(
                 "select id::text as id, name, base_unit from ingredients where id = $1",
                 ingredient_id,
@@ -948,9 +969,13 @@ class Database:
         from whichever packs are mapped right now, unmapping corrects every
         figure above it immediately - there is no stored total to rebuild."""
         async with self.pool.acquire() as conn, conn.transaction():
-            await conn.execute(
-                "update supplier_items set ingredient_id = null where id = $1", supplier_item_id
+            updated = await conn.execute(
+                "update supplier_items set ingredient_id = null where id = $1 and tenant_id = $2",
+                supplier_item_id,
+                tenant_id,
             )
+            if updated != "UPDATE 1":
+                raise LookupError(f"supplier item {supplier_item_id} is not in tenant {tenant_id}")
             await _insert_audit_event(
                 conn,
                 tenant_id=tenant_id,
@@ -993,9 +1018,15 @@ class Database:
               and l.line_kind = 'stock_item' and l.cost_per_base_unit is null
             """
         async with self.pool.acquire() as conn, conn.transaction():
-            previous = await conn.fetchval(
-                "select pack_size_override from supplier_items where id = $1", supplier_item_id
+            item = await conn.fetchrow(
+                "select pack_size_override from supplier_items "
+                "where id = $1 and tenant_id = $2 for update",
+                supplier_item_id,
+                tenant_id,
             )
+            if item is None:
+                raise LookupError(f"supplier item {supplier_item_id} is not in tenant {tenant_id}")
+            previous = item["pack_size_override"]
             await conn.execute(
                 "update supplier_items set pack_size_override = $2 where id = $1",
                 supplier_item_id,
@@ -1033,7 +1064,7 @@ class Database:
             )
         return costed
 
-    async def list_blocked_costs(self, tenant_id: str) -> list[asyncpg.Record]:
+    async def list_blocked_costs(self, *, tenant_id: str) -> list[asyncpg.Record]:
         """Every confirmed stock line this layer could not turn into a cost.
 
         **Derived, not a table.** PRD §24's first-class issue records - severity,
@@ -1096,7 +1127,7 @@ class Database:
     # are the backstop, so a caller the API never met still cannot write the
     # shapes that divide by zero or cost an empty set as pure margin.
 
-    async def list_menu_items(self, tenant_id: str) -> list[asyncpg.Record]:
+    async def list_menu_items(self, *, tenant_id: str) -> list[asyncpg.Record]:
         """Every menu item - archived ones included, flagged - with its current
         recipe version, in one query regardless of item count (the bounded-
         queries rule, eng review D10). The current recipe is the newest
@@ -1118,17 +1149,18 @@ class Database:
             tenant_id,
         )
 
-    async def get_menu_item(self, menu_item_id: str) -> asyncpg.Record | None:
+    async def get_menu_item(self, menu_item_id: str, *, tenant_id: str) -> asyncpg.Record | None:
         return await self.pool.fetchrow(
             """
             select id::text as id, tenant_id::text as tenant_id, name, category,
                    selling_price, archived_at, created_at
-            from menu_items where id = $1
+            from menu_items where id = $1 and tenant_id = $2
             """,
             menu_item_id,
+            tenant_id,
         )
 
-    async def live_menu_item_by_name(self, tenant_id: str, name: str) -> asyncpg.Record | None:
+    async def live_menu_item_by_name(self, *, tenant_id: str, name: str) -> asyncpg.Record | None:
         """The item the loader is about to write into, found the way the menu
         itself identifies one: by name, among the live rows (WP-64).
 
@@ -1149,19 +1181,24 @@ class Database:
             name,
         )
 
-    async def get_current_recipe(self, menu_item_id: str) -> asyncpg.Record | None:
+    async def get_current_recipe(
+        self, menu_item_id: str, *, tenant_id: str
+    ) -> asyncpg.Record | None:
         """The newest version - which is what 'current' means here, by schema
         rather than by a pointer that could drift."""
         return await self.pool.fetchrow(
             """
             select id::text as id, version, yield_portions, yield_label, created_at
-            from recipes where menu_item_id = $1
+            from recipes where menu_item_id = $1 and tenant_id = $2
             order by version desc limit 1
             """,
             menu_item_id,
+            tenant_id,
         )
 
-    async def get_recipe_components(self, recipe_id: str) -> list[asyncpg.Record]:
+    async def get_recipe_components(
+        self, recipe_id: str, *, tenant_id: str
+    ) -> list[asyncpg.Record]:
         """One version's components. `has_packs` says whether any supplier
         product is mapped onto the ingredient yet - the difference between
         "map a product to it" and "confirm a purchase of it", which are two
@@ -1174,13 +1211,14 @@ class Database:
                      as has_packs
             from recipe_components c
             join ingredients ing on ing.id = c.ingredient_id
-            where c.recipe_id = $1
+            where c.recipe_id = $1 and c.tenant_id = $2
             order by c.position
             """,
             recipe_id,
+            tenant_id,
         )
 
-    async def list_current_recipe_components(self, tenant_id: str) -> list[asyncpg.Record]:
+    async def list_current_recipe_components(self, *, tenant_id: str) -> list[asyncpg.Record]:
         """Every item's *current* recipe version with its components, one query
         however long the menu grows (WP-61, the bounded-queries rule D10). The
         menu screen joins this against the material prices in Python - the
@@ -1206,7 +1244,7 @@ class Database:
             tenant_id,
         )
 
-    async def list_newest_purchases(self, tenant_id: str) -> list[asyncpg.Record]:
+    async def list_newest_purchases(self, *, tenant_id: str) -> list[asyncpg.Record]:
         """The newest confirmed stock line per material - costed **or not**
         (WP-61 amendment 3, D11).
 
@@ -1250,7 +1288,7 @@ class Database:
             tenant_id,
         )
 
-    async def list_price_move_pairs(self, tenant_id: str) -> list[asyncpg.Record]:
+    async def list_price_move_pairs(self, *, tenant_id: str) -> list[asyncpg.Record]:
         """Per material, its two newest costed lines across **all** its mapped
         packs - the raw material of WP-63's money moment.
 
@@ -1368,7 +1406,9 @@ class Database:
         selling_price = selling_price.quantize(PRICE_QUANTUM)
         async with self._txn(conn) as conn:
             previous = await conn.fetchval(
-                "select selling_price from menu_items where id = $1 for update", menu_item_id
+                "select selling_price from menu_items where id = $1 and tenant_id = $2 for update",
+                menu_item_id,
+                tenant_id,
             )
             if previous is None or previous == selling_price:
                 return False
@@ -1408,7 +1448,9 @@ class Database:
         reads that way, so a re-upload writes no history of nothing changing."""
         async with self._txn(conn) as conn:
             row = await conn.fetchrow(
-                "select category from menu_items where id = $1 for update", menu_item_id
+                "select category from menu_items where id = $1 and tenant_id = $2 for update",
+                menu_item_id,
+                tenant_id,
             )
             if row is None or row["category"] == category:
                 return False
@@ -1434,10 +1476,11 @@ class Database:
             row = await conn.fetchval(
                 """
                 update menu_items set archived_at = now()
-                where id = $1 and archived_at is null
+                where id = $1 and tenant_id = $2 and archived_at is null
                 returning id
                 """,
                 menu_item_id,
+                tenant_id,
             )
             if row is None:
                 return False
@@ -1459,10 +1502,11 @@ class Database:
             row = await conn.fetchval(
                 """
                 update menu_items set archived_at = null
-                where id = $1 and archived_at is not null
+                where id = $1 and tenant_id = $2 and archived_at is not null
                 returning id
                 """,
                 menu_item_id,
+                tenant_id,
             )
             if row is None:
                 return False
@@ -1687,7 +1731,7 @@ class Database:
             }
 
     async def record_confirmed_prices(
-        self, invoice_id: str, *, conn: asyncpg.Connection | None = None
+        self, invoice_id: str, *, tenant_id: str, conn: asyncpg.Connection | None = None
     ) -> None:
         """The catalog self-builds and the price baseline moves - never before
         confirm, so an unconfirmed invoice can't pollute it (plan.md §5 layer
@@ -1718,9 +1762,10 @@ class Database:
                        i.total, i.discount_total, i.currency, i.provenance,
                        t.currency as tenant_currency
                 from invoices i join tenants t on t.id = i.tenant_id
-                where i.id = $1
+                where i.id = $1 and i.tenant_id = $2
                 """,
                 invoice_id,
+                tenant_id,
             )
             if invoice is None:
                 raise ValueError(f"invoice {invoice_id} not found")
@@ -1887,8 +1932,8 @@ class Database:
         appear here - chat cannot confirm them (M7 owns approvals)."""
         return await self.pool.fetch(
             """
-            select i.id, i.supplier_name, i.currency, i.total, i.created_at, b.timezone,
-                   t.currency as tenant_currency
+            select i.id, i.tenant_id::text as tenant_id, i.supplier_name, i.currency, i.total,
+                   i.created_at, b.timezone, t.currency as tenant_currency
             from invoices i
             join tenants t on t.id = i.tenant_id
             join documents d on d.id = i.document_id
@@ -1910,8 +1955,8 @@ class Database:
         and its duplicate-OK re-ack."""
         return await self.pool.fetchrow(
             """
-            select i.id, i.supplier_name, i.currency, i.total, i.confirmed_at,
-                   t.currency as tenant_currency
+            select i.id, i.tenant_id::text as tenant_id, i.supplier_name, i.currency, i.total,
+                   i.confirmed_at, t.currency as tenant_currency
             from invoices i
             join tenants t on t.id = i.tenant_id
             join documents d on d.id = i.document_id
@@ -1926,27 +1971,43 @@ class Database:
             confirmed_after,
         )
 
-    async def get_invoice(self, invoice_id: str) -> asyncpg.Record | None:
-        """One invoice row plus its branch name (C6 detail shows names) and the
-        tenant's own currency (WP-28: the reply, the ack and price memory all
-        have to know whether this invoice is billed in the tenant's money)."""
+    async def get_invoice(self, invoice_id: str, *, tenant_id: str) -> asyncpg.Record | None:
+        """One of this tenant's invoices, plus its branch name (C6 detail
+        shows names), the tenant's own currency (WP-28: the reply, the ack
+        and price memory all have to know whether this invoice is billed in
+        the tenant's money), and its document's header columns.
+
+        The document rides along on purpose (WP-73): the detail screen used
+        to read it by id afterwards, and the storage path it carries is what
+        gets signed into a URL. Reading it through the tenant-scoped invoice
+        means a paper the caller cannot see is never fetched, so its URL is
+        never signed - the sign call happens after this returns a row, or
+        not at all."""
         return await self.pool.fetchrow(
             """
-            select i.*, b.name as branch_name, t.currency as tenant_currency
+            select i.*, b.name as branch_name, t.currency as tenant_currency,
+                   d.status as document_status, d.classification as document_classification,
+                   d.source as document_source, d.created_at as document_created_at,
+                   d.storage_path as document_storage_path
             from invoices i
             join tenants t on t.id = i.tenant_id
+            join documents d on d.id = i.document_id
             left join branches b on b.id = i.branch_id
-            where i.id = $1
+            where i.id = $1 and i.tenant_id = $2
             """,
             invoice_id,
+            tenant_id,
         )
 
-    async def get_invoice_lines(self, invoice_id: str) -> list[asyncpg.Record]:
+    async def get_invoice_lines(self, invoice_id: str, *, tenant_id: str) -> list[asyncpg.Record]:
         return await self.pool.fetch(
-            "select * from invoice_lines where invoice_id = $1 order by position", invoice_id
+            "select * from invoice_lines where invoice_id = $1 and tenant_id = $2 "
+            "order by position",
+            invoice_id,
+            tenant_id,
         )
 
-    async def confirm_invoice(self, invoice_id: str, *, actor: str) -> bool:
+    async def confirm_invoice(self, invoice_id: str, *, tenant_id: str, actor: str) -> bool:
         """C1: invoice awaiting_confirm -> confirmed, stamping confirmed_at.
         The document is left at 'extracted' - its status tracks ingest only,
         and confirmation is read back through invoices.document_id. Returns
@@ -1958,16 +2019,24 @@ class Database:
         transaction and only when the status actually flipped, so a retried
         job re-sending its ack cannot leave a second confirmation in the
         trail."""
-        return await self._confirm(invoice_id, from_status="awaiting_confirm", actor=actor)
+        return await self._confirm(
+            invoice_id, tenant_id=tenant_id, from_status="awaiting_confirm", actor=actor
+        )
 
-    async def confirm_reviewed_invoice(self, invoice_id: str, *, actor: str) -> bool:
+    async def confirm_reviewed_invoice(
+        self, invoice_id: str, *, tenant_id: str, actor: str
+    ) -> bool:
         """C1, the review-screen path (WP-30): invoice needs_review ->
         confirmed, stamping confirmed_at. The review screen is the cash
         approval path until M7 (plan.md §6 M2). Returns False without touching
         anything when the invoice was not needs_review - safe to re-run."""
-        return await self._confirm(invoice_id, from_status="needs_review", actor=actor)
+        return await self._confirm(
+            invoice_id, tenant_id=tenant_id, from_status="needs_review", actor=actor
+        )
 
-    async def _confirm(self, invoice_id: str, *, from_status: str, actor: str) -> bool:
+    async def _confirm(
+        self, invoice_id: str, *, tenant_id: str, from_status: str, actor: str
+    ) -> bool:
         """The one confirm write, shared by both paths: flip the status if it
         is still the expected one, record who did it, and move the catalog and
         price baseline - **all in one transaction** (WP-50). One gate, one
@@ -1991,11 +2060,12 @@ class Database:
             row = await conn.fetchrow(
                 """
                 update invoices set status = 'confirmed', confirmed_at = now()
-                where id = $1 and status = $2 and total is not null
+                where id = $1 and status = $2 and total is not null and tenant_id = $3
                 returning tenant_id::text
                 """,
                 invoice_id,
                 from_status,
+                tenant_id,
             )
             if row is None:
                 return False
@@ -2008,10 +2078,10 @@ class Database:
                 subject_id=invoice_id,
                 detail={"from_status": from_status},
             )
-            await self.record_confirmed_prices(invoice_id, conn=conn)
+            await self.record_confirmed_prices(invoice_id, tenant_id=tenant_id, conn=conn)
         return True
 
-    async def dismiss_invoice(self, invoice_id: str, *, actor: str) -> bool:
+    async def dismiss_invoice(self, invoice_id: str, *, tenant_id: str, actor: str) -> bool:
         """The review screen's way out of a WP-44 duplicate hold: the held copy
         leaves the working list without being recorded and without being
         deleted. The founder, the day before the M6 gate: "the duplicate invoice
@@ -2042,17 +2112,21 @@ class Database:
         safe to re-run."""
         async with self.pool.acquire() as conn, conn.transaction():
             from_status = await conn.fetchval(
-                "select status from invoices where id = $1 for update", invoice_id
+                "select status from invoices where id = $1 and tenant_id = $2 for update",
+                invoice_id,
+                tenant_id,
             )
             row = await conn.fetchrow(
                 """
                 update invoices set status = 'dismissed'
                  where id = $1
+                   and tenant_id = $2
                    and status not in ('confirmed', 'dismissed')
                    and duplicate_of_invoice_id is not null
                 returning tenant_id::text, duplicate_of_invoice_id::text
                 """,
                 invoice_id,
+                tenant_id,
             )
             if row is None:
                 return False
@@ -2074,6 +2148,7 @@ class Database:
         self,
         invoice_id: str,
         *,
+        tenant_id: str,
         invoice_no: str | None,
         invoice_date: datetime.date | None,
         subtotal: Decimal | None,
@@ -2106,13 +2181,13 @@ class Database:
         transaction, so a stored correction and the note of who made it cannot
         be observed apart."""
         async with self.pool.acquire() as conn, conn.transaction():
-            tenant_id = await conn.fetchval(
+            updated = await conn.fetchval(
                 """
                 update invoices
                 set invoice_no = $2, invoice_date = $3, subtotal = $4, tax = $5, total = $6,
                     confidence = $7, provenance = $8,
                     currency = coalesce($9, currency), tax_treatment = $10, vat_rate = $11
-                where id = $1
+                where id = $1 and tenant_id = $12
                 returning tenant_id::text
                 """,
                 invoice_id,
@@ -2126,13 +2201,16 @@ class Database:
                 currency,
                 tax_treatment,
                 vat_rate,
+                tenant_id,
             )
+            if updated is None:
+                return  # not this tenant's invoice: nothing written, no trail entry
             await conn.executemany(
                 """
                 update invoice_lines
                 set raw_name = $3, supplier_item_id = $4, qty = $5, unit_price = $6,
                     line_total = $7, checks = $8, unit = $9, pack_size = $10
-                where invoice_id = $1 and position = $2
+                where invoice_id = $1 and position = $2 and tenant_id = $11
                 """,
                 [
                     (
@@ -2146,20 +2224,20 @@ class Database:
                         line["checks"],
                         line["unit"],
                         line["pack_size"],
+                        tenant_id,
                     )
                     for line in lines
                 ],
             )
-            if tenant_id is not None:
-                await _insert_audit_event(
-                    conn,
-                    tenant_id=tenant_id,
-                    actor=actor,
-                    action="invoice.corrected",
-                    subject_type="invoice",
-                    subject_id=invoice_id,
-                    detail={"fields": corrected_fields, "message_id": message_id},
-                )
+            await _insert_audit_event(
+                conn,
+                tenant_id=tenant_id,
+                actor=actor,
+                action="invoice.corrected",
+                subject_type="invoice",
+                subject_id=invoice_id,
+                detail={"fields": corrected_fields, "message_id": message_id},
+            )
 
     # -- Audit trail (C8, plan.md §8 M5) -------------------------------------
 
@@ -2190,18 +2268,19 @@ class Database:
             )
 
     async def audit_events_for_subject(
-        self, subject_type: str, subject_id: str
+        self, subject_type: str, subject_id: str, *, tenant_id: str
     ) -> list[asyncpg.Record]:
         """The history of one invoice or one raw material, newest first."""
         return list(
             await self.pool.fetch(
                 """
                 select * from audit_events
-                where subject_type = $1 and subject_id = $2
+                where subject_type = $1 and subject_id = $2 and tenant_id = $3
                 order by created_at desc, id desc
                 """,
                 subject_type,
                 subject_id,
+                tenant_id,
             )
         )
 

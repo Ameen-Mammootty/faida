@@ -348,7 +348,9 @@ async def test_a_failed_price_write_rolls_the_confirmation_back(db, monkeypatch)
 
     monkeypatch.setattr(db, "record_confirmed_prices", explode)
     with pytest.raises(RuntimeError):
-        await db.confirm_invoice(invoice_id, actor="whatsapp:+971500000000")
+        await db.confirm_invoice(
+            invoice_id, tenant_id=DEMO_TENANT_ID, actor="whatsapp:+971500000000"
+        )
 
     # Nothing happened: not the status, not the timestamp, not the trail entry,
     # not the catalog. The invoice is exactly where the sender left it.
@@ -372,7 +374,12 @@ async def test_a_failed_price_write_rolls_the_confirmation_back(db, monkeypatch)
 
     # And the retry succeeds, which is what "recoverable" means here.
     monkeypatch.setattr(db, "record_confirmed_prices", original)
-    assert await db.confirm_invoice(invoice_id, actor="whatsapp:+971500000000") is True
+    assert (
+        await db.confirm_invoice(
+            invoice_id, tenant_id=DEMO_TENANT_ID, actor="whatsapp:+971500000000"
+        )
+        is True
+    )
     assert (
         await db.pool.fetchval("select status from invoices where id = $1", invoice_id)
         == "confirmed"
@@ -404,7 +411,7 @@ async def test_confirm_self_builds_catalog_from_unknown_supplier(db):
         ],
     )
 
-    await db.record_confirmed_prices(invoice_id)
+    await db.record_confirmed_prices(invoice_id, tenant_id=DEMO_TENANT_ID)
 
     # The supplier self-built from the cleaned raw name and got attached.
     supplier = await db.pool.fetchrow(
@@ -467,7 +474,7 @@ async def test_confirm_price_change_shifts_prev_and_last(db):
         ],
     )
 
-    await db.record_confirmed_prices(invoice_id)
+    await db.record_confirmed_prices(invoice_id, tenant_id=DEMO_TENANT_ID)
 
     item = await _item_row(db, item_id)
     assert item["last_price"] == Decimal("58.50")
@@ -492,13 +499,13 @@ async def test_confirm_rerun_is_a_noop(db):
             {"raw_name": "KARAK TEA DUST", "qty": Decimal("3"), "unit_price": Decimal("18.75")},
         ],
     )
-    await db.record_confirmed_prices(invoice_id)
+    await db.record_confirmed_prices(invoice_id, tenant_id=DEMO_TENANT_ID)
     items_before = await db.pool.fetch("select * from supplier_items order by canonical_name")
     history_before = await _history(db)
 
     # WP-21 may re-run confirm (retries, repeated "OK"): prev_price must not
     # shuffle and the history must not grow.
-    await db.record_confirmed_prices(invoice_id)
+    await db.record_confirmed_prices(invoice_id, tenant_id=DEMO_TENANT_ID)
 
     assert await db.pool.fetch("select * from supplier_items order by canonical_name") == (
         items_before
@@ -531,7 +538,7 @@ async def test_confirm_same_price_keeps_baseline_but_appends_history(db):
         ],
     )
 
-    await db.record_confirmed_prices(invoice_id)
+    await db.record_confirmed_prices(invoice_id, tenant_id=DEMO_TENANT_ID)
 
     # A same-price invoice is a new observation but not a baseline move:
     # prev_price keeps the last *different* price for the alert math.
@@ -555,7 +562,7 @@ async def test_confirm_without_supplier_or_name_does_nothing(db):
         ],
     )
 
-    await db.record_confirmed_prices(invoice_id)
+    await db.record_confirmed_prices(invoice_id, tenant_id=DEMO_TENANT_ID)
 
     assert await db.pool.fetchval("select count(*) from suppliers") == 0
     assert await db.pool.fetchval("select count(*) from supplier_items") == 0
@@ -579,7 +586,7 @@ async def test_inclusive_invoice_records_price_net_of_vat(db):
         total=Decimal("706.65"),
     )
 
-    await db.record_confirmed_prices(invoice_id)
+    await db.record_confirmed_prices(invoice_id, tenant_id=DEMO_TENANT_ID)
 
     items = await db.pool.fetch("select * from supplier_items")
     assert len(items) == 1
@@ -619,7 +626,7 @@ async def test_supplier_switching_vat_format_fires_no_price_alert(db):
         tax=Decimal("5.00"),
         total=Decimal("105.00"),
     )
-    await db.record_confirmed_prices(first)
+    await db.record_confirmed_prices(first, tenant_id=DEMO_TENANT_ID)
 
     # Week 2: same real price, now invoiced inclusive - 105.00 on the page.
     second = await _seed_invoice(
@@ -637,7 +644,7 @@ async def test_supplier_switching_vat_format_fires_no_price_alert(db):
         tax=Decimal("5.00"),
         total=Decimal("105.00"),
     )
-    await db.record_confirmed_prices(second)
+    await db.record_confirmed_prices(second, tenant_id=DEMO_TENANT_ID)
 
     item = await _item_row(db, item_id)
     assert item["last_price"] == Decimal("100.000")
@@ -675,7 +682,7 @@ async def test_charge_lines_never_enter_the_catalog(db):
         ],
     )
 
-    await db.record_confirmed_prices(invoice_id)
+    await db.record_confirmed_prices(invoice_id, tenant_id=DEMO_TENANT_ID)
 
     items = await db.pool.fetch("select canonical_name from supplier_items")
     assert [row["canonical_name"] for row in items] == ["Avocado"]
@@ -710,7 +717,7 @@ async def test_trade_discount_reaches_the_recorded_price(db):
         discount_total=Decimal("23.00"),  # 5% of the 460.00 of goods
     )
 
-    await db.record_confirmed_prices(invoice_id)
+    await db.record_confirmed_prices(invoice_id, tenant_id=DEMO_TENANT_ID)
 
     # 92.00 less its pro-rata share of the discount, not the 92.00 on the page.
     # The charge is outside the discount base, so it cannot dilute the rate.

@@ -89,9 +89,9 @@ async def test_staged_state_snaps_and_fires_the_demo_alerts(db):
     )
 
     # Staged baselines, exact (the alert math depends on them).
-    milk = await db.get_supplier_item(MILK_POWDER_ID)
+    milk = await db.get_supplier_item(MILK_POWDER_ID, tenant_id=CHAIN_TENANT_ID)
     assert (milk["last_price"], milk["prev_price"]) == (Decimal("50.50"), Decimal("49.75"))
-    karak = await db.get_supplier_item(KARAK_TEA_ID)
+    karak = await db.get_supplier_item(KARAK_TEA_ID, tenant_id=CHAIN_TENANT_ID)
     assert (karak["last_price"], karak["prev_price"]) == (Decimal("22.00"), Decimal("21.50"))
 
     # The curated raw names snap to the staged catalog rows.
@@ -147,7 +147,9 @@ async def test_staged_state_snaps_and_fires_the_demo_alerts(db):
     assert now - 8 * DAY <= milk["last_price_at"] <= now - 6 * DAY
 
     # The history ends at the staged last_price (the sparkline's story).
-    history = [p["price"] for p in await db.list_item_prices(MILK_POWDER_ID)]
+    history = [
+        p["price"] for p in await db.list_item_prices(MILK_POWDER_ID, tenant_id=CHAIN_TENANT_ID)
+    ]
     assert history == [Decimal("49.25"), Decimal("49.75"), Decimal("50.50")]
 
 
@@ -279,7 +281,7 @@ async def test_reapply_resets_a_rehearsal_and_spares_other_tenants(db):
 
     # The rehearsal is gone and the staged state is back, byte for byte.
     assert await chain_counts(db) == baseline
-    milk = await db.get_supplier_item(MILK_POWDER_ID)
+    milk = await db.get_supplier_item(MILK_POWDER_ID, tenant_id=CHAIN_TENANT_ID)
     assert (milk["last_price"], milk["prev_price"]) == (Decimal("50.50"), Decimal("49.75"))
     assert (
         await db.pool.fetchval(
@@ -319,9 +321,11 @@ async def test_reapply_resets_a_rehearsal_and_spares_other_tenants(db):
 
     # The canary tenant kept every row: the reset cannot reach other tenants.
     assert await db.get_document(keep_doc) is not None
-    assert await db.get_invoice(str(keep_invoice)) is not None
-    assert (await db.get_supplier_item(keep_item))["last_price"] == Decimal("9.99")
-    assert len(await db.list_item_prices(str(keep_item))) == 1
+    assert await db.get_invoice(str(keep_invoice), tenant_id=DEMO_TENANT_ID) is not None
+    assert (await db.get_supplier_item(keep_item, tenant_id=DEMO_TENANT_ID))[
+        "last_price"
+    ] == Decimal("9.99")
+    assert len(await db.list_item_prices(str(keep_item), tenant_id=DEMO_TENANT_ID)) == 1
     assert await db.pool.fetchval("select count(*) from jobs where id = $1", keep_job) == 1
     assert await db.get_inbound_message("wamid.keep1") is not None
 
@@ -342,10 +346,10 @@ async def _plate(db, name: str) -> plates.Plate:
         CHAIN_TENANT_ID,
         name,
     )
-    recipe = await db.get_current_recipe(item["id"])
-    components = await db.get_recipe_components(recipe["id"])
+    recipe = await db.get_current_recipe(item["id"], tenant_id=CHAIN_TENANT_ID)
+    components = await db.get_recipe_components(recipe["id"], tenant_id=CHAIN_TENANT_ID)
     prices = {}
-    for row in await db.list_mapped_pack_costs(CHAIN_TENANT_ID):
+    for row in await db.list_mapped_pack_costs(tenant_id=CHAIN_TENANT_ID):
         prices.setdefault(row["ingredient_id"], row)
     costed = [
         plates.cost_component(
@@ -796,16 +800,20 @@ async def test_the_loop_reset_spares_a_loaded_menu_and_its_real_evidence(db):
 
     # Both props are gone and both alerts are re-armed: the staged pack back
     # to its staged baselines, the KAS pack back to its preparation purchase.
-    milk = await db.get_supplier_item(MILK_POWDER_ID)
+    milk = await db.get_supplier_item(MILK_POWDER_ID, tenant_id=CHAIN_TENANT_ID)
     assert (milk["last_price"], milk["prev_price"]) == (Decimal("50.50"), Decimal("49.75"))
-    history = [p["price"] for p in await db.list_item_prices(MILK_POWDER_ID)]
+    history = [
+        p["price"] for p in await db.list_item_prices(MILK_POWDER_ID, tenant_id=CHAIN_TENANT_ID)
+    ]
     assert history == [Decimal("49.25"), Decimal("49.75"), Decimal("50.50")]
-    kas_pack = await db.get_supplier_item(real["kas_pack"])
+    kas_pack = await db.get_supplier_item(real["kas_pack"], tenant_id=CHAIN_TENANT_ID)
     assert (kas_pack["last_price"], kas_pack["prev_price"]) == (Decimal("395.00"), None)
-    assert [p["price"] for p in await db.list_item_prices(real["kas_pack"])] == [Decimal("395.00")]
+    assert [
+        p["price"] for p in await db.list_item_prices(real["kas_pack"], tenant_id=CHAIN_TENANT_ID)
+    ] == [Decimal("395.00")]
 
     for rehearsal in (demo1, kas5):
-        assert await db.get_invoice(rehearsal["invoice"]) is None
+        assert await db.get_invoice(rehearsal["invoice"], tenant_id=CHAIN_TENANT_ID) is None
         assert await db.get_document(rehearsal["document"]) is None
         assert (
             await db.pool.fetchval(
@@ -884,15 +892,15 @@ async def test_the_loop_reset_spares_a_loaded_menu_and_its_real_evidence(db):
         )
         == ATTA_FLOUR_ID
     )
-    assert await db.get_invoice(real["kas_invoice"]) is not None
-    assert await db.get_invoice(real["invoice"]) is not None
+    assert await db.get_invoice(real["kas_invoice"], tenant_id=CHAIN_TENANT_ID) is not None
+    assert await db.get_invoice(real["invoice"], tenant_id=CHAIN_TENANT_ID) is not None
     assert (
         await db.pool.fetchval(
             "select count(*) from invoice_lines where invoice_id = $1", real["invoice"]
         )
         == 1
     )
-    assert len(await db.list_item_prices(real["pack"])) == 1
+    assert len(await db.list_item_prices(real["pack"], tenant_id=CHAIN_TENANT_ID)) == 1
     assert (
         await db.pool.fetchval(
             "select count(*) from suppliers where tenant_id = $1", CHAIN_TENANT_ID
@@ -908,7 +916,7 @@ async def test_the_loop_reset_spares_a_loaded_menu_and_its_real_evidence(db):
         == DEMO_HANDSET
     )
     assert await db.get_document(str(keep_doc)) is not None
-    assert await db.get_invoice(str(keep_invoice)) is not None
+    assert await db.get_invoice(str(keep_invoice), tenant_id=DEMO_TENANT_ID) is not None
 
 
 async def test_the_loop_reset_is_idempotent(db):

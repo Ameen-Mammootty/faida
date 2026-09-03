@@ -84,6 +84,9 @@ class FakeStorage:
 
     def __init__(self):
         self.objects: dict[str, bytes] = {}
+        # Every key a sign call was made for, in order - the tenancy tests
+        # prove no URL is ever signed for a paper the caller cannot see.
+        self.signed: list[str] = []
 
     def transport(self) -> httpx.MockTransport:
         def handle(request: httpx.Request) -> httpx.Response:
@@ -93,6 +96,7 @@ class FakeStorage:
                 bucket, _, key = request.url.path.removeprefix(
                     "/storage/v1/object/sign/"
                 ).partition("/")
+                self.signed.append(key)
                 if key not in self.objects:
                     return httpx.Response(404, json={"error": "Object not found"})
                 return httpx.Response(

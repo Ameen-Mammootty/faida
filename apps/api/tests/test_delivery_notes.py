@@ -175,7 +175,7 @@ async def test_confirm_mints_no_second_row_for_the_annotated_line(db):
             },
         ],
     )
-    await db.record_confirmed_prices(invoice_id)
+    await db.record_confirmed_prices(invoice_id, tenant_id=DEMO_TENANT_ID)
 
     rows = await db.pool.fetch(
         "select canonical_name from supplier_items where tenant_id = $1 order by canonical_name",
@@ -200,7 +200,7 @@ async def test_the_very_first_invoice_for_a_supplier_still_makes_one_row(db):
             {"raw_name": EDGE_01_READ, "qty": -1, "unit_price": 92, "pack_size": "4 kg"},
         ],
     )
-    await db.record_confirmed_prices(invoice_id)
+    await db.record_confirmed_prices(invoice_id, tenant_id=DEMO_TENANT_ID)
 
     rows = await db.pool.fetch(
         "select canonical_name from supplier_items where tenant_id = $1 order by canonical_name",
@@ -233,7 +233,7 @@ async def test_an_ordinary_unsnapped_line_is_untouched_by_this(db):
             {"raw_name": "Chicken Breast Fillet", "qty": 2, "unit_price": 34, "pack_size": "1 kg"},
         ],
     )
-    await db.record_confirmed_prices(invoice_id)
+    await db.record_confirmed_prices(invoice_id, tenant_id=DEMO_TENANT_ID)
     rows = await db.pool.fetch(
         "select canonical_name from supplier_items where tenant_id = $1 order by canonical_name",
         DEMO_TENANT_ID,
