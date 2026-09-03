@@ -901,7 +901,7 @@ async def test_a_wrong_pack_size_can_be_corrected_and_cleared_from_the_screen(ap
     )
     assert row["pack_size"] is None
     # C8: the human's correction is recorded against the field it moved.
-    stored = await db.get_invoice(str(invoice["id"]))
+    stored = await db.get_invoice(str(invoice["id"]), tenant_id=DEMO_TENANT_ID)
     assert stored["provenance"]["lines.0.pack_size"]["origin"] == "corrected_screen"
 
 
@@ -944,14 +944,14 @@ async def test_dismissing_a_copy_clears_the_list_and_leaves_the_original_alone(a
     listed = (await client.get("/api/invoices", headers=AUTH)).json()["invoices"]
     assert [inv["id"] for inv in listed] == [str(original["id"])]
 
-    events = await db.audit_events_for_subject("invoice", str(copy["id"]))
+    events = await db.audit_events_for_subject("invoice", str(copy["id"]), tenant_id=DEMO_TENANT_ID)
     assert [(e["action"], e["actor"]) for e in events] == [("invoice.dismissed", "console")]
     assert events[0]["detail"] == {
         "from_status": "needs_review",
         "duplicate_of_invoice_id": str(original["id"]),
     }
 
-    after = await db.get_invoice(str(original["id"]))
+    after = await db.get_invoice(str(original["id"]), tenant_id=DEMO_TENANT_ID)
     assert after["status"] == "confirmed"
     assert after["total"] == original["total"]
     assert await db.pool.fetch("select * from supplier_item_prices order by id") == prices_before
@@ -989,7 +989,9 @@ async def test_the_original_cannot_be_dismissed(api, db):
     resp = await client.post(f"/api/invoices/{original['id']}/dismiss", headers=AUTH)
     assert resp.status_code == 409
     assert "not a held duplicate" in resp.json()["detail"]
-    assert (await db.get_invoice(str(original["id"])))["status"] == "awaiting_confirm"
+    assert (await db.get_invoice(str(original["id"]), tenant_id=DEMO_TENANT_ID))[
+        "status"
+    ] == "awaiting_confirm"
 
 
 @requires_db
@@ -1016,7 +1018,9 @@ async def test_a_confirmed_copy_cannot_be_dismissed(api, db):
     resp = await client.post(f"/api/invoices/{copy['id']}/dismiss", headers=AUTH)
     assert resp.status_code == 409
     assert resp.json()["detail"] == "invoice is confirmed; a recorded invoice cannot be dismissed"
-    assert (await db.get_invoice(str(copy["id"])))["status"] == "confirmed"
+    assert (await db.get_invoice(str(copy["id"]), tenant_id=DEMO_TENANT_ID))[
+        "status"
+    ] == "confirmed"
 
 
 @requires_db
@@ -1029,7 +1033,7 @@ async def test_dismissing_twice_is_refused_and_writes_one_audit_row(api, db):
     resp = await client.post(f"/api/invoices/{copy['id']}/dismiss", headers=AUTH)
     assert resp.status_code == 409
     assert resp.json()["detail"] == "invoice is already dismissed"
-    events = await db.audit_events_for_subject("invoice", str(copy["id"]))
+    events = await db.audit_events_for_subject("invoice", str(copy["id"]), tenant_id=DEMO_TENANT_ID)
     assert len(events) == 1
 
 

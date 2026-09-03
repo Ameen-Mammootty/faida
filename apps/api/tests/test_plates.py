@@ -204,7 +204,7 @@ async def _delivery(
         pack_size,
         unit_price,
     )
-    assert await db.confirm_invoice(invoice_id, actor="console") is True
+    assert await db.confirm_invoice(invoice_id, tenant_id=DEMO_TENANT_ID, actor="console") is True
     return invoice_id
 
 

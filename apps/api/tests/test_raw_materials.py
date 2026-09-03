@@ -188,7 +188,9 @@ async def _delivery(
         unit_price,
     )
     if confirm:
-        assert await db.confirm_invoice(invoice_id, actor="console") is True
+        assert (
+            await db.confirm_invoice(invoice_id, tenant_id=DEMO_TENANT_ID, actor="console") is True
+        )
     return invoice_id
 
 
@@ -632,7 +634,7 @@ async def _confirmed_two_line_invoice(
             unit_price,
             qty * unit_price,
         )
-    assert await db.confirm_invoice(invoice_id, actor="console") is True
+    assert await db.confirm_invoice(invoice_id, tenant_id=DEMO_TENANT_ID, actor="console") is True
     return invoice_id
 
 
@@ -894,7 +896,7 @@ async def test_each_way_a_line_can_refuse_shows_its_own_reason_and_its_own_answe
         confirm=False,
     )
     await db.pool.execute("update invoice_lines set qty = null where invoice_id = $1", invoice_id)
-    await db.confirm_invoice(invoice_id, actor="console")
+    await db.confirm_invoice(invoice_id, tenant_id=DEMO_TENANT_ID, actor="console")
 
     reasons = {
         row["product_name"]: (row["blocked"], row["can_override"]) for row in await _blocked(api)
@@ -1172,7 +1174,7 @@ async def test_answering_one_question_does_not_move_the_answer_to_another(api, d
             item_id,
             Decimal(price),
         )
-    await db.confirm_invoice(invoice_id, actor="console")
+    await db.confirm_invoice(invoice_id, tenant_id=DEMO_TENANT_ID, actor="console")
 
     await api.post(
         f"/api/supplier-items/{chicken}/pack-size", json={"pack_size": "10 kg"}, headers=AUTH
@@ -1249,7 +1251,7 @@ async def test_a_foreign_currency_invoice_says_so_rather_than_going_quiet(api, d
         invoice_id,
         sack,
     )
-    await db.confirm_invoice(invoice_id, actor="console")
+    await db.confirm_invoice(invoice_id, tenant_id=DEMO_TENANT_ID, actor="console")
 
     rows = await _blocked(api)
     assert [row["blocked"] for row in rows] == ["foreign_currency"]

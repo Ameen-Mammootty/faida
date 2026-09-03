@@ -367,10 +367,15 @@ async def test_reextract_of_extracted_document_is_a_noop(api, db):
     doc = await db.get_document_by_wa_message("wamid.in1")
     assert doc["status"] == "extracted"
 
-    await db.enqueue(JobKind.EXTRACT_DOCUMENT, {"document_id": str(doc["id"])})
+    # The retry shape the worker actually produces: the same job row queued
+    # again (a second row per document is refused by the 0018 index).
+    await db.pool.execute(
+        "update jobs set status = 'queued', run_after = now() where kind = $1",
+        JobKind.EXTRACT_DOCUMENT,
+    )
     await drain_jobs(db, app, provider)
 
-    assert len(provider.extract_calls) == 1  # the second job never hit the provider
+    assert len(provider.extract_calls) == 1  # the second run never hit the provider
     assert await db.pool.fetchval("select count(*) from invoices") == 1
     assert await db.pool.fetchval("select count(*) from extraction_runs") == 1
     assert len(await outbound_bodies(db)) == 2  # ack + summary, no duplicate reply

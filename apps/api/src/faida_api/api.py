@@ -25,9 +25,12 @@ pipeline runs, and persists through the same helper - no AI anywhere, so
 this path survives a revoked Anthropic key (plan.md §6 M3 done-when).
 Returns 201 with the standard detail payload.
 
-Access control is the C6 demo scheme: one shared-secret bearer token
-(settings.api_token) compared in constant time. An empty setting refuses every
-request - fail closed, exactly like the webhook app secret. Real auth is M7.
+Access control is `auth.py`'s `AuthContext` (M7 WP-73): every handler takes
+one, every db call carries its tenant, and every audit row and provenance
+stamp names its actor. In this wave the context's only source is the C6
+shared-secret bearer token resolving to the seeded tenant as `console`;
+WP-70 swaps that source for a verified Supabase token without touching the
+handlers. A row outside the caller's tenant answers 404, never 403.
 
 Money is serialized as strings ("745.76"), never floats: every amount is
 Decimal in Python and numeric in Postgres (C4), and a float round-trip could
@@ -41,7 +44,6 @@ one implementation of "fix a field", whether it arrives by chat or by screen.
 
 import datetime
 import hashlib
-import hmac
 import logging
 import uuid
 from decimal import Decimal
@@ -52,6 +54,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 
 from . import costing
+from .auth import AuthContext, require_context
 from .confirm import (
     Edit,
     LineFieldEdit,
@@ -85,29 +88,12 @@ _HEADER_FIELDS = {"subtotal", "tax", "total"}
 # cash approval path until M7, plan.md §6 M2).
 _EDITABLE_STATUSES = {InvoiceStatus.AWAITING_CONFIRM, InvoiceStatus.NEEDS_REVIEW}
 
-
-#: C8 actor for the review screen. The demo API is one shared bearer token, so
-#: there is no person to name yet - "console" is the honest answer, and it
-#: becomes a real user id when M7 brings Supabase Auth. Deliberately not taken
-#: from a client-supplied header: a name anyone holding the token can choose
-#: looks like identity without being it, which is worse than admitting we do
-#: not know yet.
-CONSOLE_ACTOR = "console"
-
-
-def require_api_token(request: Request) -> None:
-    """C6 demo auth: one shared-secret bearer token. No configured token means
-    no access at all - misconfiguration must fail loudly, never open."""
-    expected = request.app.state.settings.api_token
-    header = request.headers.get("Authorization") or ""
-    provided = header.removeprefix("Bearer ") if header.startswith("Bearer ") else ""
-    if not expected or not provided:
-        raise HTTPException(status_code=401, detail="unauthorized")
-    if not hmac.compare_digest(provided.encode(), expected.encode()):
-        raise HTTPException(status_code=401, detail="unauthorized")
-
-
-router = APIRouter(prefix="/api", dependencies=[Depends(require_api_token)])
+#: The router-level dependency refuses a missing or wrong token before any
+#: handler runs; the handler-level `Context` parameter is the same dependency
+#: (FastAPI runs it once per request) handing the resolved tenant and actor
+#: down. Both are declared so a route cannot exist without a context.
+router = APIRouter(prefix="/api", dependencies=[Depends(require_context)])
+Context = Annotated[AuthContext, Depends(require_context)]
 
 
 # --- request bodies ---------------------------------------------------------
@@ -250,21 +236,25 @@ def _line_cost(line: asyncpg.Record, *, costed: bool, foreign_currency: bool) ->
     }
 
 
-async def _invoice_detail(request: Request, invoice_id: str) -> dict:
+async def _invoice_detail(request: Request, invoice_id: str, ctx: AuthContext) -> dict:
     """The C6 detail payload: header fields, per-line fields, checks,
     confidence, the document, and a short-lived signed image URL (null when
-    the document has no stored original)."""
+    the document has no stored original).
+
+    The tenant check is the first read and the sign call comes after it: an
+    invoice outside `ctx.tenant_id` is 404 here, and its stored original is
+    never signed into a URL - the document columns arrive on the invoice row
+    itself, so there is no second read that could fetch a foreign paper."""
     db: Database = request.app.state.db
-    invoice = await db.get_invoice(invoice_id)
+    invoice = await db.get_invoice(invoice_id, tenant_id=ctx.tenant_id)
     if invoice is None:
         raise HTTPException(status_code=404, detail="invoice not found")
-    lines = await db.get_invoice_lines(invoice_id)
-    document = await db.get_document(str(invoice["document_id"]))
+    lines = await db.get_invoice_lines(invoice_id, tenant_id=ctx.tenant_id)
 
     image_url = None
-    if document is not None and document["storage_path"]:
+    if invoice["document_storage_path"]:
         try:
-            image_url = await request.app.state.storage.sign_url(document["storage_path"])
+            image_url = await request.app.state.storage.sign_url(invoice["document_storage_path"])
         except Exception:
             # A broken sign call must not sink the whole detail: the screen
             # still shows every field, just without the photo.
@@ -282,7 +272,9 @@ async def _invoice_detail(request: Request, invoice_id: str) -> dict:
     # ordinary invoice.
     duplicate_of = None
     if invoice["duplicate_of_invoice_id"] is not None:
-        original = await db.get_invoice(str(invoice["duplicate_of_invoice_id"]))
+        original = await db.get_invoice(
+            str(invoice["duplicate_of_invoice_id"]), tenant_id=ctx.tenant_id
+        )
         if original is not None:  # the composite FK makes a dangling pointer unreachable
             duplicate_of = {
                 "id": str(original["id"]),
@@ -320,14 +312,12 @@ async def _invoice_detail(request: Request, invoice_id: str) -> dict:
             }
             for line in lines
         ],
-        "document": None
-        if document is None
-        else {
-            "id": str(document["id"]),
-            "status": document["status"],
-            "classification": document["classification"],
-            "source": document["source"],
-            "created_at": _iso(document["created_at"]),
+        "document": {
+            "id": str(invoice["document_id"]),
+            "status": invoice["document_status"],
+            "classification": invoice["document_classification"],
+            "source": invoice["document_source"],
+            "created_at": _iso(invoice["document_created_at"]),
         },
         "image_url": image_url,
     }
@@ -339,12 +329,14 @@ async def _invoice_detail(request: Request, invoice_id: str) -> dict:
 @router.get("/invoices")
 async def list_invoices(
     request: Request,
+    ctx: Context,
     branch_id: uuid.UUID | None = None,
     supplier_id: uuid.UUID | None = None,
     status: InvoiceStatus | None = None,
 ) -> dict:
     db: Database = request.app.state.db
     rows = await db.list_invoices(
+        tenant_id=ctx.tenant_id,
         branch_id=_maybe_str(branch_id),
         supplier_id=_maybe_str(supplier_id),
         status=None if status is None else status.value,
@@ -353,19 +345,19 @@ async def list_invoices(
 
 
 @router.get("/invoices/{invoice_id}")
-async def get_invoice(invoice_id: uuid.UUID, request: Request) -> dict:
-    return await _invoice_detail(request, str(invoice_id))
+async def get_invoice(invoice_id: uuid.UUID, request: Request, ctx: Context) -> dict:
+    return await _invoice_detail(request, str(invoice_id), ctx)
 
 
 @router.patch("/invoices/{invoice_id}/fields")
 async def patch_invoice_fields(
-    invoice_id: uuid.UUID, body: FieldCorrections, request: Request
+    invoice_id: uuid.UUID, body: FieldCorrections, request: Request, ctx: Context
 ) -> dict:
     """Apply field corrections through the WP-21 machinery: re-validate,
     re-snap, persist. Status never changes here - confirming is its own
     endpoint, exactly as in chat."""
     db: Database = request.app.state.db
-    invoice = await db.get_invoice(str(invoice_id))
+    invoice = await db.get_invoice(str(invoice_id), tenant_id=ctx.tenant_id)
     if invoice is None:
         raise HTTPException(status_code=404, detail="invoice not found")
     if invoice["status"] not in _EDITABLE_STATUSES:
@@ -376,7 +368,7 @@ async def patch_invoice_fields(
         )
 
     edits = [_to_edit(correction) for correction in body.corrections]
-    line_count = len(await db.get_invoice_lines(str(invoice_id)))
+    line_count = len(await db.get_invoice_lines(str(invoice_id), tenant_id=ctx.tenant_id))
     for edit in edits:
         if (
             isinstance(edit, LineFieldEdit | LineNameEdit | LinePackSizeEdit)
@@ -394,10 +386,11 @@ async def patch_invoice_fields(
         db,
         str(invoice_id),
         edits,
-        actor=CONSOLE_ACTOR,
+        tenant_id=ctx.tenant_id,
+        actor=ctx.actor,
         origin=Origin.CORRECTED_SCREEN,
     )
-    return await _invoice_detail(request, str(invoice_id))
+    return await _invoice_detail(request, str(invoice_id), ctx)
 
 
 def _to_edit(correction: Correction) -> Edit:
@@ -445,13 +438,13 @@ def _number(correction: Correction) -> Decimal:
 
 
 @router.post("/invoices/{invoice_id}/confirm")
-async def confirm_invoice(invoice_id: uuid.UUID, request: Request) -> dict:
+async def confirm_invoice(invoice_id: uuid.UUID, request: Request, ctx: Context) -> dict:
     """The chat "OK", from the screen: flip to confirmed (stamping
     confirmed_at) and move the price baseline. Allowed from awaiting_confirm
     and - unlike chat - from needs_review: the review screen is the cash
     approval path until M7 (plan.md §6 M2)."""
     db: Database = request.app.state.db
-    invoice = await db.get_invoice(str(invoice_id))
+    invoice = await db.get_invoice(str(invoice_id), tenant_id=ctx.tenant_id)
     if invoice is None:
         raise HTTPException(status_code=404, detail="invoice not found")
     if invoice["total"] is None:
@@ -464,9 +457,13 @@ async def confirm_invoice(invoice_id: uuid.UUID, request: Request) -> dict:
         )
 
     if invoice["status"] == InvoiceStatus.AWAITING_CONFIRM:
-        confirmed = await db.confirm_invoice(str(invoice_id), actor=CONSOLE_ACTOR)
+        confirmed = await db.confirm_invoice(
+            str(invoice_id), tenant_id=ctx.tenant_id, actor=ctx.actor
+        )
     elif invoice["status"] == InvoiceStatus.NEEDS_REVIEW:
-        confirmed = await db.confirm_reviewed_invoice(str(invoice_id), actor=CONSOLE_ACTOR)
+        confirmed = await db.confirm_reviewed_invoice(
+            str(invoice_id), tenant_id=ctx.tenant_id, actor=ctx.actor
+        )
     else:
         confirmed = False
     if not confirmed:
@@ -474,17 +471,17 @@ async def confirm_invoice(invoice_id: uuid.UUID, request: Request) -> dict:
         # Re-read: see _fresh_status.
         raise HTTPException(
             status_code=409,
-            detail=f"invoice is {await _fresh_status(db, str(invoice_id))}; cannot confirm",
+            detail=f"invoice is {await _fresh_status(db, str(invoice_id), ctx)}; cannot confirm",
         )
 
     # The price baseline moved inside the same transaction as the status flip
     # (WP-50), so there is nothing to do here but render the result. Two
     # transactions used to leave a confirmed invoice with no prices and this
     # endpoint answering 409 for ever.
-    return await _invoice_detail(request, str(invoice_id))
+    return await _invoice_detail(request, str(invoice_id), ctx)
 
 
-async def _fresh_status(db: Database, invoice_id: str) -> str | None:
+async def _fresh_status(db: Database, invoice_id: str, ctx: AuthContext) -> str | None:
     """The invoice's status *now*, for a refusal sentence.
 
     Both write endpoints read the invoice, run a guarded update, and answer 409
@@ -494,12 +491,12 @@ async def _fresh_status(db: Database, invoice_id: str) -> str | None:
     moment dismiss gave the same row a second door. Two tabs, one dismisses,
     the other confirms, and the screen said "invoice is needs_review; cannot
     confirm" about a row that was nothing of the sort."""
-    row = await db.get_invoice(invoice_id)
+    row = await db.get_invoice(invoice_id, tenant_id=ctx.tenant_id)
     return None if row is None else row["status"]
 
 
 @router.post("/invoices/{invoice_id}/dismiss")
-async def dismiss_invoice(invoice_id: uuid.UUID, request: Request) -> dict:
+async def dismiss_invoice(invoice_id: uuid.UUID, request: Request, ctx: Context) -> dict:
     """The way out of a WP-44 duplicate hold, from the review screen.
 
     Held duplicates only, never a confirmed invoice, and never the original -
@@ -508,10 +505,10 @@ async def dismiss_invoice(invoice_id: uuid.UUID, request: Request) -> dict:
     the single write (db.dismiss_invoice); this endpoint checks first so it can
     say which rule refused.
 
-    The actor is `console`, never taken from the client (C8): a name anyone
-    holding the shared token can choose looks like identity without being it."""
+    The actor is the context's, never taken from the client (C8): a name
+    anyone holding a token can choose looks like identity without being it."""
     db: Database = request.app.state.db
-    invoice = await db.get_invoice(str(invoice_id))
+    invoice = await db.get_invoice(str(invoice_id), tenant_id=ctx.tenant_id)
     if invoice is None:
         raise HTTPException(status_code=404, detail="invoice not found")
     if invoice["duplicate_of_invoice_id"] is None:
@@ -520,8 +517,8 @@ async def dismiss_invoice(invoice_id: uuid.UUID, request: Request) -> dict:
             detail="invoice is not a held duplicate; only a duplicate copy can be dismissed",
         )
 
-    if not await db.dismiss_invoice(str(invoice_id), actor=CONSOLE_ACTOR):
-        status = await _fresh_status(db, str(invoice_id))
+    if not await db.dismiss_invoice(str(invoice_id), tenant_id=ctx.tenant_id, actor=ctx.actor):
+        status = await _fresh_status(db, str(invoice_id), ctx)
         if status == InvoiceStatus.CONFIRMED:
             detail = "invoice is confirmed; a recorded invoice cannot be dismissed"
         elif status == InvoiceStatus.DISMISSED:
@@ -530,7 +527,7 @@ async def dismiss_invoice(invoice_id: uuid.UUID, request: Request) -> dict:
             detail = f"invoice is {status}; cannot dismiss"
         raise HTTPException(status_code=409, detail=detail)
 
-    return await _invoice_detail(request, str(invoice_id))
+    return await _invoice_detail(request, str(invoice_id), ctx)
 
 
 # --- manual entry (WP-34, sanctioned C6 extension) --------------------------
@@ -628,19 +625,18 @@ def _to_extracted_invoice(body: ManualInvoice) -> ExtractedInvoice:
 
 
 @router.post("/invoices/manual", status_code=201)
-async def create_manual_invoice(body: ManualInvoice, request: Request) -> dict:
+async def create_manual_invoice(body: ManualInvoice, request: Request, ctx: Context) -> dict:
     """WP-34's typed fallback: validate + snap + persist a typed invoice
     through the exact machinery the pipeline uses - plan.md §5 layers 2 and 4
     with layer 1 (the AI) absent, so this path survives a revoked Anthropic
     key. The document row is a stub anchor: source 'manual', no stored
     original, and no classification (no model looked at anything)."""
     db: Database = request.app.state.db
-    tenant_id = await db.default_tenant_id()
-    if tenant_id is None:
-        raise HTTPException(status_code=500, detail="no tenant seeded; run supabase/seed.sql")
+    tenant_id = ctx.tenant_id
     if body.branch_id is not None:
-        branch = await _get_branch(db, body.branch_id)
-        if branch is None or str(branch["tenant_id"]) != tenant_id:
+        # Another tenant's branch does not exist here: the scoped read says
+        # so, and the 0018 composite key would refuse the row regardless.
+        if await _get_branch(db, body.branch_id, tenant_id) is None:
             raise HTTPException(status_code=422, detail=f"unknown branch_id '{body.branch_id}'")
 
     invoice = _to_extracted_invoice(body)
@@ -699,7 +695,7 @@ async def create_manual_invoice(body: ManualInvoice, request: Request) -> dict:
         else InvoiceStatus.AWAITING_CONFIRM
     )
 
-    document_id = await db.insert_manual_document(tenant_id, body.branch_id)
+    document_id = await db.insert_manual_document(tenant_id=tenant_id, branch_id=body.branch_id)
     invoice_id = await db.insert_draft_invoice(
         tenant_id=tenant_id,
         branch_id=body.branch_id,
@@ -724,14 +720,14 @@ async def create_manual_invoice(body: ManualInvoice, request: Request) -> dict:
         provenance=initial(
             invoice,
             origin=Origin.MANUAL,
-            actor=CONSOLE_ACTOR,
+            actor=ctx.actor,
             at=datetime.datetime.now(datetime.UTC),
         ),
         lines=lines,
         document_classification=None,
-        created_by=CONSOLE_ACTOR,
+        created_by=ctx.actor,
     )
-    return await _invoice_detail(request, invoice_id)
+    return await _invoice_detail(request, invoice_id, ctx)
 
 
 # --- documents (manual upload) ----------------------------------------------
@@ -740,12 +736,13 @@ async def create_manual_invoice(body: ManualInvoice, request: Request) -> dict:
 @router.post("/documents", status_code=201)
 async def upload_document(
     request: Request,
+    ctx: Context,
     file: UploadFile,
     branch_id: Annotated[str | None, Form()] = None,
 ) -> dict:
     """C6 manual upload - the vision-outage fallback's entry point (WP-34):
     store the immutable original exactly like the WhatsApp path and enqueue
-    the same extract job. Tenant is the seeded default until M7 auth."""
+    the same extract job, under the caller's tenant."""
     mime = (file.content_type or "").split(";")[0].strip().lower()
     if mime not in ALLOWED_UPLOAD_MIMES:
         raise HTTPException(
@@ -762,16 +759,14 @@ async def upload_document(
         raise HTTPException(status_code=422, detail="empty file")
 
     db: Database = request.app.state.db
-    tenant_id = await db.default_tenant_id()
-    if tenant_id is None:
-        raise HTTPException(status_code=500, detail="no tenant seeded; run supabase/seed.sql")
-    if branch_id is not None:
-        branch = await _get_branch(db, branch_id)
-        if branch is None or str(branch["tenant_id"]) != tenant_id:
-            raise HTTPException(status_code=422, detail=f"unknown branch_id '{branch_id}'")
+    tenant_id = ctx.tenant_id
+    if branch_id is not None and await _get_branch(db, branch_id, tenant_id) is None:
+        raise HTTPException(status_code=422, detail=f"unknown branch_id '{branch_id}'")
 
     sha256 = hashlib.sha256(data).hexdigest()
-    document_id = await db.insert_uploaded_document(tenant_id, branch_id, mime, sha256)
+    document_id = await db.insert_uploaded_document(
+        tenant_id=tenant_id, branch_id=branch_id, mime=mime, sha256=sha256
+    )
     # The immutable path convention, shared with the WhatsApp ingest
     # (worker._ingest_media): never overwritten, never upserted.
     path = f"{tenant_id}/documents/{document_id}/original"
@@ -781,26 +776,26 @@ async def upload_document(
     return {"document_id": document_id}
 
 
-async def _get_branch(db: Database, branch_id: str) -> asyncpg.Record | None:
+async def _get_branch(db: Database, branch_id: str, tenant_id: str) -> asyncpg.Record | None:
     try:
         uuid.UUID(branch_id)
     except ValueError:
         return None
-    return await db.get_branch(branch_id)
+    return await db.get_branch(branch_id, tenant_id=tenant_id)
 
 
 # --- supplier item price history --------------------------------------------
 
 
 @router.get("/supplier-items/{item_id}/prices")
-async def supplier_item_prices(item_id: uuid.UUID, request: Request) -> dict:
+async def supplier_item_prices(item_id: uuid.UUID, request: Request, ctx: Context) -> dict:
     """The sparkline's data (WP-33): confirmed price observations oldest
     first, plus the item header."""
     db: Database = request.app.state.db
-    item = await db.get_supplier_item(str(item_id))
+    item = await db.get_supplier_item(str(item_id), tenant_id=ctx.tenant_id)
     if item is None:
         raise HTTPException(status_code=404, detail="supplier item not found")
-    rows = await db.list_item_prices(str(item_id))
+    rows = await db.list_item_prices(str(item_id), tenant_id=ctx.tenant_id)
     return {
         "id": str(item["id"]),
         "canonical_name": item["canonical_name"],
@@ -956,13 +951,6 @@ def _material_price(row: asyncpg.Record, stale_line: asyncpg.Record | None = Non
     return payload
 
 
-async def _tenant(db: Database) -> str:
-    tenant_id = await db.default_tenant_id()
-    if tenant_id is None:
-        raise HTTPException(status_code=409, detail="no tenant configured")
-    return tenant_id
-
-
 #: Plain English for a base unit. These strings reach the screen inside refusal
 #: messages, and the no-jargon display rule (plan.md §3) applies there too - a
 #: consultant reading "measured in ml" has to translate; "by volume" they do not.
@@ -986,7 +974,7 @@ def _item_base_unit(item: asyncpg.Record) -> str | None:
 
 
 @router.get("/ingredients")
-async def list_ingredients(request: Request) -> dict:
+async def list_ingredients(request: Request, ctx: Context) -> dict:
     """Every raw material, its one price per kilo, and the packs behind it.
 
     The price is **derived on every read** (WP-54) - the newest costed line
@@ -995,14 +983,14 @@ async def list_ingredients(request: Request) -> dict:
     figure immediately and why there is no refresh anywhere to forget.
     """
     db: Database = request.app.state.db
-    tenant_id = await _tenant(db)
-    rows = await db.list_ingredients(tenant_id)
+    tenant_id = ctx.tenant_id
+    rows = await db.list_ingredients(tenant_id=tenant_id)
 
     # One query for the whole page. The rows arrive grouped by material with
     # that material's current price first, so the winner is `[0]` rather than a
     # second pass sorting in Python.
     costs: dict[str, list[asyncpg.Record]] = {}
-    for cost in await db.list_mapped_pack_costs(tenant_id):
+    for cost in await db.list_mapped_pack_costs(tenant_id=tenant_id):
         costs.setdefault(cost["ingredient_id"], []).append(cost)
     by_pack = {cost["supplier_item_id"]: cost for rows_ in costs.values() for cost in rows_}
 
@@ -1011,12 +999,12 @@ async def list_ingredients(request: Request) -> dict:
     # with the blocked line named - never an old number wearing a good label.
     stale: dict[str, asyncpg.Record] = {
         line["ingredient_id"]: line
-        for line in await db.list_newest_purchases(tenant_id)
+        for line in await db.list_newest_purchases(tenant_id=tenant_id)
         if not line["costed"]
     }
 
     packs: dict[str, list[dict]] = {}
-    for pack in await db.list_mapped_packs(tenant_id):
+    for pack in await db.list_mapped_packs(tenant_id=tenant_id):
         packs.setdefault(pack["ingredient_id"], []).append(
             _pack_summary(pack, by_pack.get(pack["id"]))
         )
@@ -1038,7 +1026,7 @@ async def list_ingredients(request: Request) -> dict:
 
 
 @router.post("/ingredients", status_code=201)
-async def create_ingredient(body: IngredientCreate, request: Request) -> dict:
+async def create_ingredient(body: IngredientCreate, request: Request, ctx: Context) -> dict:
     """Create a raw material with no pack mapped to it yet (M6 WP-64).
 
     Until M6, a material could only be born through a merge - there was no
@@ -1052,7 +1040,6 @@ async def create_ingredient(body: IngredientCreate, request: Request) -> dict:
     side door (row 64). The screen enforces the click; this endpoint creates
     exactly one and names its actor."""
     db: Database = request.app.state.db
-    tenant_id = await _tenant(db)
     name = _clean(body.name)
     if not name:
         raise HTTPException(status_code=422, detail="a raw material needs a name")
@@ -1067,7 +1054,7 @@ async def create_ingredient(body: IngredientCreate, request: Request) -> dict:
         )
     try:
         ingredient = await db.create_ingredient(
-            tenant_id=tenant_id, name=name, base_unit=base_unit, actor=CONSOLE_ACTOR
+            tenant_id=ctx.tenant_id, name=name, base_unit=base_unit, actor=ctx.actor
         )
     except asyncpg.UniqueViolationError:
         raise HTTPException(
@@ -1081,7 +1068,7 @@ async def create_ingredient(body: IngredientCreate, request: Request) -> dict:
 
 
 @router.get("/supplier-items/unmapped")
-async def list_unmapped_supplier_items(request: Request) -> dict:
+async def list_unmapped_supplier_items(request: Request, ctx: Context) -> dict:
     """The consultant's queue: packs with no material yet, **most money
     first**, each carrying what the matcher proposes for it.
 
@@ -1089,10 +1076,10 @@ async def list_unmapped_supplier_items(request: Request) -> dict:
     Proposals are ranked suggestions and nothing more - approving is a
     keystroke a person makes, never a threshold the code crosses."""
     db: Database = request.app.state.db
-    tenant_id = await _tenant(db)
-    items = await db.list_unmapped_supplier_items(tenant_id)
-    ingredients = await db.list_ingredients(tenant_id)
-    rejected = await db.rejected_ingredients_by_item(tenant_id)
+    tenant_id = ctx.tenant_id
+    items = await db.list_unmapped_supplier_items(tenant_id=tenant_id)
+    ingredients = await db.list_ingredients(tenant_id=tenant_id)
+    rejected = await db.rejected_ingredients_by_item(tenant_id=tenant_id)
     return {
         "items": [
             {
@@ -1120,10 +1107,12 @@ async def list_unmapped_supplier_items(request: Request) -> dict:
 
 
 @router.post("/supplier-items/{item_id}/ingredient")
-async def map_supplier_item(item_id: uuid.UUID, body: IngredientMapping, request: Request) -> dict:
+async def map_supplier_item(
+    item_id: uuid.UUID, body: IngredientMapping, request: Request, ctx: Context
+) -> dict:
     """Approve the merge (or remap a pack already mapped elsewhere)."""
     db: Database = request.app.state.db
-    item = await db.get_supplier_item_for_mapping(str(item_id))
+    item = await db.get_supplier_item_for_mapping(str(item_id), tenant_id=ctx.tenant_id)
     if item is None:
         raise HTTPException(status_code=404, detail="supplier item not found")
 
@@ -1131,12 +1120,11 @@ async def map_supplier_item(item_id: uuid.UUID, body: IngredientMapping, request
     if body.ingredient_id is not None:
         if body.name is not None or body.base_unit is not None:
             raise HTTPException(status_code=422, detail="give an ingredient_id or a name, not both")
-        ingredient = await db.get_ingredient(str(body.ingredient_id))
+        # Another tenant's material does not exist here - the scoped read says
+        # so with the same 404 a missing one gets, and the composite foreign
+        # key (0012) would refuse the write regardless.
+        ingredient = await db.get_ingredient(str(body.ingredient_id), tenant_id=ctx.tenant_id)
         if ingredient is None:
-            raise HTTPException(status_code=404, detail="ingredient not found")
-        # Tenancy is enforced by the composite foreign key too (0012); this is
-        # the answer with a reason in it, rather than an integrity error.
-        if ingredient["tenant_id"] != item["tenant_id"]:
             raise HTTPException(status_code=404, detail="ingredient not found")
         base_unit = ingredient["base_unit"]
         material_name = ingredient["name"]
@@ -1172,11 +1160,11 @@ async def map_supplier_item(item_id: uuid.UUID, body: IngredientMapping, request
 
     ingredient = await db.map_supplier_item(
         str(item_id),
-        tenant_id=item["tenant_id"],
+        tenant_id=ctx.tenant_id,
         ingredient_id=None if body.ingredient_id is None else str(body.ingredient_id),
         name=None if body.ingredient_id is not None else _clean(body.name),
         base_unit=base_unit,
-        actor=CONSOLE_ACTOR,
+        actor=ctx.actor,
         previous_ingredient_id=item["ingredient_id"],
     )
     return {
@@ -1190,26 +1178,26 @@ async def map_supplier_item(item_id: uuid.UUID, body: IngredientMapping, request
 
 
 @router.delete("/supplier-items/{item_id}/ingredient")
-async def unmap_supplier_item(item_id: uuid.UUID, request: Request) -> dict:
+async def unmap_supplier_item(item_id: uuid.UUID, request: Request, ctx: Context) -> dict:
     """The reverse gear (WP-52). A wrong merge is this milestone's worst case,
     and an approval gate with no undo leaves a consultant asking an engineer."""
     db: Database = request.app.state.db
-    item = await db.get_supplier_item_for_mapping(str(item_id))
+    item = await db.get_supplier_item_for_mapping(str(item_id), tenant_id=ctx.tenant_id)
     if item is None:
         raise HTTPException(status_code=404, detail="supplier item not found")
     if item["ingredient_id"] is None:
         raise HTTPException(status_code=409, detail="supplier item is not mapped")
     await db.unmap_supplier_item(
         str(item_id),
-        tenant_id=item["tenant_id"],
-        actor=CONSOLE_ACTOR,
+        tenant_id=ctx.tenant_id,
+        actor=ctx.actor,
         ingredient_id=item["ingredient_id"],
     )
     return {"supplier_item_id": str(item_id), "ingredient": None}
 
 
 @router.get("/blocked-costs")
-async def list_blocked_costs(request: Request) -> dict:
+async def list_blocked_costs(request: Request, ctx: Context) -> dict:
     """The lines this layer could not turn into a cost, each with its own
     reason and what to do about it (M5 WP-55).
 
@@ -1224,9 +1212,8 @@ async def list_blocked_costs(request: Request) -> dict:
     reading the list. Most money first, like the mapping queue.
     """
     db: Database = request.app.state.db
-    tenant_id = await _tenant(db)
     groups: dict[str, dict] = {}
-    for line in await db.list_blocked_costs(tenant_id):
+    for line in await db.list_blocked_costs(tenant_id=ctx.tenant_id):
         blocked = costing.blocked_reason_for(
             qty=line["qty"],
             unit_price=line["unit_price"],
@@ -1294,7 +1281,7 @@ class PackSizeOverride(BaseModel):
 
 @router.post("/supplier-items/{item_id}/pack-size")
 async def set_pack_size_override(
-    item_id: uuid.UUID, body: PackSizeOverride, request: Request
+    item_id: uuid.UUID, body: PackSizeOverride, request: Request, ctx: Context
 ) -> dict:
     """Clear a blocked cost by saying what the invoice never did.
 
@@ -1303,7 +1290,7 @@ async def set_pack_size_override(
     that is wrong in a way no later arithmetic could notice - and no photograph
     shows a cost per gram."""
     db: Database = request.app.state.db
-    item = await db.get_supplier_item_for_mapping(str(item_id))
+    item = await db.get_supplier_item_for_mapping(str(item_id), tenant_id=ctx.tenant_id)
     if item is None:
         raise HTTPException(status_code=404, detail="supplier item not found")
 
@@ -1333,30 +1320,30 @@ async def set_pack_size_override(
 
     costed = await db.set_pack_size_override(
         str(item_id),
-        tenant_id=item["tenant_id"],
+        tenant_id=ctx.tenant_id,
         pack_size=printed,
-        actor=CONSOLE_ACTOR,
+        actor=ctx.actor,
     )
     return {"supplier_item_id": str(item_id), "pack_size": printed, "lines_costed": costed}
 
 
 @router.post("/supplier-items/{item_id}/ingredient/reject")
 async def reject_ingredient(
-    item_id: uuid.UUID, body: IngredientRejection, request: Request
+    item_id: uuid.UUID, body: IngredientRejection, request: Request, ctx: Context
 ) -> dict:
     """Not that material. Nothing else changes: the rejection is the record,
     and the queue stops offering an answer a person already refused."""
     db: Database = request.app.state.db
-    item = await db.get_supplier_item_for_mapping(str(item_id))
+    item = await db.get_supplier_item_for_mapping(str(item_id), tenant_id=ctx.tenant_id)
     if item is None:
         raise HTTPException(status_code=404, detail="supplier item not found")
-    ingredient = await db.get_ingredient(str(body.ingredient_id))
-    if ingredient is None or ingredient["tenant_id"] != item["tenant_id"]:
+    ingredient = await db.get_ingredient(str(body.ingredient_id), tenant_id=ctx.tenant_id)
+    if ingredient is None:
         raise HTTPException(status_code=404, detail="ingredient not found")
     await db.reject_ingredient_for_item(
         str(item_id),
-        tenant_id=item["tenant_id"],
+        tenant_id=ctx.tenant_id,
         ingredient_id=str(body.ingredient_id),
-        actor=CONSOLE_ACTOR,
+        actor=ctx.actor,
     )
     return {"supplier_item_id": str(item_id), "rejected_ingredient_id": str(body.ingredient_id)}
