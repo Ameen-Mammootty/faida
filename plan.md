@@ -527,6 +527,24 @@ Log; a sub-agent never changes one unilaterally.
   first derived number exists, because the alternative is discovering it when a margin screen shows
   a confident figure built on a guess - the old platform's dominant failure, in a new place.
 
+- **C10 - Auth context** (added 2026-09-03, M7 eng review - `Docs/M7_DECOMPOSITION.md` §3). Every
+  `/api/*` handler receives `AuthContext(user_id, tenant_id, actor)`, derived server-side and never
+  from a client-supplied value. Its source is swapped once: in M7's Wave 1 the legacy token resolves
+  to the existing tenant helper (the strangler step); from WP-70 it is a Supabase access token
+  verified against the project's JWKS - asymmetric algorithms only, keys fetched with async httpx
+  through an injected transport and cached by key id - plus the `memberships` row. **Every
+  tenant-owned `db.py` method takes `tenant_id` as a required keyword-only argument and puts it in
+  the `WHERE`, by-id reads included**, so a forgotten scope is a TypeError at the call site, never a
+  silent cross-tenant read. `default_tenant_id()` is deleted at WP-70.
+  **Amendments the same review made to older contracts:** C2 - `process_wa_message` is the one named
+  resolver (phone to branch and tenant); every job it enqueues carries `tenant_id` and `branch_id`;
+  a handler refuses a payload/row tenant mismatch; one `extract_document` job per document, ever,
+  enforced by a unique index without a status filter. C5 - `payment_kind` is correctable (`payment
+  cash` / `payment credit`), and cash to credit returns a held invoice to `awaiting_confirm`. C6 - the
+  bearer is the user's Supabase access token, sent by the browser straight to the API; `API_TOKEN`
+  and `NEXT_PUBLIC_API_TOKEN` cease to exist at WP-76. C8 - the screen's actor becomes
+  `user:<auth user id>`; WhatsApp actors stay `whatsapp:<phone>`.
+
 ### 7.3 Work packages
 
 Sizes: S ≤ half an agent-day, M ≈ one, L = multi-day or iterative. Acceptance must be
@@ -682,6 +700,21 @@ F7's menu prints one; no inventory ledger or theoretical consumption (post-MVP);
 The three decisions this decomposition put to the founder were decided 2026-08-30 (Decision Log):
 the per-branch template cut stands (WP-64), margin is computed net of VAT (WP-61), and EDGE-01 is
 pulled into the milestone (WP-65).
+
+**M7 (auth, tenancy enforcement, approvals)** - decomposed and eng-reviewed 2026-09-03 at reduced
+scope (Decision Log); the full record, with contracts, failure modes and the cutover order, is
+`Docs/M7_DECOMPOSITION.md`. Waves: WP-73 alone first, then WP-70 / WP-71 / WP-72 in parallel, then
+WP-74, then WP-76 live with the founder. WP-75 (users screen), WP-77 (RLS as a second lock) and WP-78
+(branch role) are deferred with named triggers in `TODOS.md`.
+
+| WP | What | Size | Depends | Acceptance |
+|---|---|---|---|---|
+| 70 | **The API knows who is asking, and never asks the client.** `require_context`'s real source: verify the Supabase access token against the project's JWKS with PyJWT, **asymmetric algorithms only** (the founder migrates the project to JWT signing keys first, and the legacy JWT secret is never revoked because `storage.py`'s service_role key is signed by it - WP-70 verifies both before it starts), issuer and `authenticated` audience checked, then the membership row, then the context; no membership is 403, no token or a bad one is 401. Keys are fetched with **async httpx through an injected transport**, cached in-process by key id; a miss triggers one refetch rate-limited to once a minute; on fetch failure cached keys are served; 503 "sign-in service unreachable" only when nothing is cached. `default_tenant_id()` and `API_TOKEN` are deleted. New dependency `PyJWT` | M | 73, C10 | `tests/test_auth.py` with a local key pair and a mocked JWKS transport: no header, malformed, expired, wrong issuer, wrong audience and HS256 are 401; unknown kid refetches once then 401; fetch failure with a warm cache verifies; fetch failure with an empty cache is 503; valid token with no membership is 403; valid plus membership yields the right tenant and actor `user:<id>`; the refetch rate limit holds under a burst |
+| 71 | **Login on the web app, and a session that rides on every API call.** `@supabase/ssr`: a `/login` page (email + password; accounts are created by the founder, sign-ups disabled), `src/proxy.ts` (Next 16's request interceptor; a leftover `middleware.ts` is silently ignored, so none may exist) refreshing the session and sending unauthenticated visitors to `/login` for `/invoices`, `/materials`, `/menu` and `/menu/load` while `/` and the waitlist stay public, a sign-out control, and `api.ts` attaching the session's access token **per request** so the 45-post loader survives a refresh mid-run, with a 401 sending the visitor to `/login` and back. The Supabase client is never constructed at module scope, so `next build` succeeds with no env. Mock mode fakes a signed-in owner and constructs no client. vitest is added with `npm test` wired into CI's web job | M | C6 | vitest: the gate's path decisions for every listed and public path, the mock bypass, the token attach and the 401 path; real browser at 1280 and 390: signed out lands on `/login`, a wrong password is refused with a plain sentence, a right one lands on `/invoices` with real rows, an expired session re-logs in and returns to the page it left, the landing page and waitlist need no login, no horizontal overflow at 390; the built bundle contains no bearer token |
+| 72 | **The worker fails closed.** An unknown sender's inbound `wa_messages` row is stamped `status = 'ignored_unknown_sender'` **before** any reply; the 24 h silence is derived from inbound rows with that status from the same phone, excluding the current message id; the reply is best-effort and a send failure is logged, never raised; no document, no job, no model spend. Every enqueue carries `tenant_id` and `branch_id`; `extract_document` refuses a document whose tenant differs from its payload; manual upload and manual entry take the tenant from the context. `enqueue_once` inserts with `ON CONFLICT DO NOTHING` against the 0018 index, so a retried ack enqueues nothing even though the retry always lands after the first extraction is done | S/M | 73 | `tests/test_worker_tenancy.py`: a job built with tenant A's context against tenant B's row is rejected; an unknown phone gets exactly one reply and creates nothing; a second message inside 24 h gets nothing; a send failure leaves the stamp and a successful job; a retried ack after the extraction is `done` inserts no job; the registered demo phone still lands in its branch. `test_flow.py::test_unknown_sender_still_ingests_with_default_tenant` is inverted |
+| 73 | **Every read and write is scoped by the context, and the schema gets its tenancy keys.** Wave 1, alone. `AuthContext` and `require_context` in a new `auth.py`, sourced in this wave from the legacy token and the existing tenant helper. Every `default_tenant_id()` and `_tenant(db)` caller takes `ctx.tenant_id`; every tenant-owned `db.py` method gains a required keyword-only `tenant_id` in its `WHERE`, `list_invoices` included, by-id reads included; the storage URL is signed only after the tenant check; a row outside the tenant answers 404, never 403. The nineteen `CONSOLE_ACTOR` sites take `ctx.actor`. Migration 0018 lands here in full: `memberships (id, tenant_id, user_id uuid, role check (role in ('tenant')), created_at, unique (tenant_id, user_id))` with the tenancy FK and **no** FK to `auth.users` (CI runs on plain Postgres); `branches unique (tenant_id, id)`; composite `(tenant_id, branch_id)` FKs on `documents` and `invoices`; a unique index on `jobs (kind, (payload->>'document_id'))` for extract jobs with no status filter; RLS deny-all on the new table | M/L | C10 | `tests/test_tenancy.py`: a matrix generated from the router's route table over every `/api/*` route x {tenant A, tenant B, no token} asserting 200 / 404 / 401, with a deliberate public list that a new public route must join on purpose or CI fails; beside it a test that every non-public router declares the auth dependency; the storage transport mock proves no sign call for a foreign document; the 592 existing tests stay green; a cross-tenant `branch_id` is refused by Postgres |
+| 74 | **Cash approval - the one gate PRD §21 makes non-negotiable.** `POST /api/invoices/{id}/approve` with a required non-empty `reason`, running the same `_confirm` write (same transaction, same price write) with an `invoice.cash_approved` audit row carrying actor, reason, `from_status` and the headline figures. Keyed on `payment_kind = 'cash'` alone: a cash paper that is also a held duplicate approves with a reason and the screen shows both banners; `confirm` refuses cash with a 409 naming the approve door; chat already refuses. `payment_kind` becomes correctable so a misread cash is corrected, never laundered through an approval. Screen: the cash banner offers "Approve" with a reason field | M | 70, 71, 73 | e2e: a cash invoice cannot reach `confirmed` without an `invoice.cash_approved` row; an empty reason is 422; a non-cash invoice is refused by approve; confirm on cash is 409; cash-plus-duplicate approves; `payment cash` / `payment credit` correct the field from chat and screen, and cash to credit returns the invoice to `awaiting_confirm`; the price baseline moves only on approval. The two cash-confirm-from-screen tests in `test_api.py` move to the approve door |
+| 76 | **Cutover: the shared token dies and the stage keeps working.** A hard swap with its rollback written down, one sitting outside demo hours: back up; migrate the project to JWT signing keys and confirm the legacy secret is untouched; disable sign-ups; create the founder's account and run the membership script; rehearse by minting a real token from the live project and verifying it against the local API; deploy API (the old token is refused from this moment); deploy web; log in; forward one paper from the demo phone and walk both acts; delete `NEXT_PUBLIC_API_TOKEN` from Vercel and `API_TOKEN` from Railway. Rollback pair named in the runbook: Railway redeploys the previous build, Vercel promotes the previous deployment. Docs: README env tables, `apps/web/README.md`, both `.env.example`s, DEMO_RUNBOOK §A (login precondition, and the leftover-check sentence from TODOS), CLAUDE.md and AGENTS.md in the same commit, TODOS entries closed, this file's boxes ticked | S/M | 70-74 | curl with the old token gets 401 on the live host; sign-up with the anon key is refused; the two-act script runs once clean end to end after cutover as a smoke; the served bundle carries no bearer token |
 
 ### 7.4 Delegation waves
 
@@ -917,27 +950,40 @@ UUID coin flip).
   last clause was proven live twice: confirming KAS-5 at the new prices visibly moved every item
   drawing evaporated milk, milk powder and chicken, and only those.
 
-### M7 — Auth, tenancy enforcement, approvals (Week 8–9)
+### M7 — Auth, tenancy enforcement, approvals (Week 8–9) - **decomposed, eng-reviewed and approved to build 2026-09-03**
 The demo ran seeded and single-tenant; a pilot cannot.
 - [x] **The dismiss door shipped early** (2026-09-01, a `TODOS.md` pull-forward on the founder's
       complaint): a WP-44 duplicate hold can be resolved from the review screen, actor `console`,
       one audit row. M7 still owns the two questions it could not answer - **who** may dismiss, and
       the un-dismiss it deliberately ships without (see `TODOS.md`)
-- [ ] Supabase Auth; three roles: tenant / brand / branch (PRD §4) — memberships + branch access
-- [ ] RLS policies on all tenant-owned tables; the API takes tenant scope from the authenticated
-      context, never from the client
-- [ ] **Worker-side tenant enforcement:** Supabase's service role bypasses RLS, and every invoice
-      flows through the worker — so every job carries tenant_id + branch scope and **fails closed**
-      without them. Acceptance test: a job built with Tenant A's context against Tenant B's row is
-      rejected. This is the one security test that matters most.
-- [ ] Cash-purchase approval: branch raises → tenant approves with reason → audit event
-      (actor, approver, reason, before/after) — the PRD's one non-negotiable approval gate (§21)
-- [ ] `audit_events` **extended**, not created: the table and its confirm/correct/hand-entry and
-      M5 mapping-approval writes have existed since 2026-08-28 (C8). M7 adds the events only it can
-      have — cash approval, price change, role change — swaps the free-text actor for a real user
-      id, and brings the table under the same RLS policies as everything else
+Decomposed 2026-09-03 into WP-70 to WP-76 (§7.3; the full record with contracts, failure modes and
+the cutover order is `Docs/M7_DECOMPOSITION.md`), eng-reviewed the same day with a Claude outside
+voice (Codex timed out) - 13 findings and 12 outside-voice findings, all folded - and **approved to
+build at reduced scope by the founder the same day** (Decision Log): one app role, the branch role
+and the users screen deferred with named triggers in `TODOS.md`, RLS deferred to the first second
+door to the database. Waves: WP-73 alone, then WP-70 / 71 / 72 in parallel, then WP-74, then WP-76.
+- [ ] Supabase Auth with **one role for the pilot** (`tenant`; PRD §4's brand and branch roles wait
+      for a chain that asks - `TODOS.md`); `memberships`; the API takes tenant scope from the
+      verified token and the membership row, never from the client *(WP-70, WP-71, WP-73)*
+- [ ] ~~RLS policies on all tenant-owned tables~~ **amended 2026-09-03:** tenancy is enforced in the
+      application layer - a required keyword-only `tenant_id` on every tenant-owned `db.py` method
+      plus a route matrix in CI - because the API is the only door and connects as the table owner,
+      which RLS exempts; RLS stays deny-all and WP-77 is owed at the first second door to the
+      database (`TODOS.md`) *(WP-73)*
+- [ ] **Worker-side tenant enforcement:** every job the resolver enqueues carries tenant_id + branch
+      scope and a handler **fails closed** on a mismatch; an unknown phone is stamped and answered
+      once, and creates nothing. Acceptance test: a job built with Tenant A's context against
+      Tenant B's row is rejected. This is the one security test that matters most *(WP-72)*
+- [ ] Cash-purchase approval: the branch phone raises, the owner approves with a reason on the
+      screen, one audit event (actor, reason, before/after) - the PRD's one non-negotiable approval
+      gate (§21); `payment_kind` becomes correctable so a misread cash is corrected, never approved.
+      One role does not give §21's two-party gate *by role*: the two parties are the branch's phone
+      and the owner's login, and the deferred branch role restores the role-enforced version *(WP-74)*
+- [ ] `audit_events` **extended**, not created: M7 adds `invoice.cash_approved` and swaps the
+      free-text `console` actor for `user:<id>` at all nineteen call sites *(WP-73, WP-74)*
 - **Done when:** two seeded tenants cannot see each other's data through API, storage URL, or
-  worker path; a cash invoice cannot post without an approval record.
+  worker path; a cash invoice cannot post without an approval record; and the shared bearer token
+  is gone from every environment *(WP-76)*.
 
 ### M8 — Sales ingestion + the first ratio (Week 10–11)
 Cost is now known per item; sales says which items and which branches it matters on.
@@ -1022,6 +1068,13 @@ pilot volume. Meta utility template cost applies only from M10 (verify live UAE 
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-09-03 | **M7 is built at reduced scope: one app role (`tenant`), no branch role, no branch-level scoping, no users screen; six work packages WP-70 to WP-76** (founder's call on the eng review's Step 0, D2; `Docs/M7_DECOMPOSITION.md`) | The done-when - two tenants isolated through API, storage URL and worker, a cash invoice needing an approval record, the shared token gone - is met with one role. PRD §21's "branch raises, owner approves" has its branch side on the WhatsApp phone, which never logs in, so the screen only needs an owner. §2 rule 8: the branch role and the users screen enter with a chain that asks; both sit in `TODOS.md` with their triggers |
+| 2026-09-03 | **Tenancy is enforced in the application layer; RLS stays deny-all, and RLS-as-a-second-lock (WP-77) is owed at the first second door to the database** (D16, amends the M7 checklist) | The API is the only reader of the database and connects as the table owner, which RLS exempts, so policies today guard nothing reachable. The enforcement is structural instead: every tenant-owned `db.py` method takes `tenant_id` as a required keyword-only argument (a forgotten scope is a TypeError, not a leak) and a route-table matrix in CI proves 200 / 404 / 401 per identity, with a router-dependency assertion beside it |
+| 2026-09-03 | **The scoping edit (WP-73) lands first under today's token; the auth swap changes only the context's source; no dual-accept path; the cutover is a hard swap with its rollback pair written and a real-token rehearsal** (D3, D20, D21 - the last two from the outside voice) | The widest diff of the milestone soaks alone before any login exists. A second auth path mapped to "the oldest tenant" is the rule that bit on 2026-08-31. Railway and Vercel both roll back in one click, and a token minted from the live project can be verified against the local API before the sitting |
+| 2026-09-03 | **The verifier accepts asymmetric signing keys only, fetched with async httpx and cached by key id; the project migrates to JWT signing keys first, and the legacy JWT secret is never revoked** (D4, D11, D15; the never-revoke clause from the outside voice) | Railway then holds nothing that can forge a session. The API and the worker share one event loop, so a blocking key fetch would stall the ack. `storage.py`'s service_role key is signed by the legacy secret, so revoking it would kill ingest and every invoice photo |
+| 2026-09-03 | **One `extract_document` job per document, ever: a unique index on `jobs (kind, payload->>'document_id')` with no status filter and an insert that tolerates the conflict; a future retry button re-queues the row** (D13 amended by D22, from the outside voice) | `RETRY_BACKOFF_SECONDS = 30` and extraction finishes in about 18 s, so a retried ack always arrives after the first extraction is done - a "live jobs only" filter never fires. The retry path the fix exists for is the one it would have missed |
+| 2026-09-03 | **`payment_kind` becomes correctable (C5), and the approve door keys on cash alone** (D12, D23 - the second from the outside voice) | A misread "cash" otherwise has only one exit, approve-with-a-reason, which would record a fabricated owner approval in the one audit trail §21 exists to keep honest. A cash paper that is also a held duplicate must still have a recording door; dismissing is the copy's exit, not cash's |
+| 2026-09-03 | **C2 reworded: `process_wa_message` is the named resolver; an unknown sender's inbound row is stamped before any reply, the 24 h silence is derived from inbound rows excluding the message itself, and the reply is best-effort** (D6, D9, amended by outside voice finding 4) | The webhook stays dumb and fast; the first job cannot carry a tenant it has not resolved. The decision to ignore a phone is ours and is recorded before anything leaves the building, so retries are no-ops whether or not Meta delivered the reply |
 | 2026-09-01 | **The live stage adopts the repriced papers BEFORE the performance, and the adoption is a scoped clear-and-re-forward that keeps the menu and every mapping** (founder's call; `supabase/apply_kas_reprice.sql`) | The alternative was performing on the old prices and repricing afterwards, which keeps a passed gate intact but ends the demo on a chicken curry earning 89% - the exact objection the repricing exists to remove. The founder chose the better closing image and accepted the cost: the M6 gate was passed on the old numbers, so **its evidence is stale until the two-act script runs clean twice more on these**. Adoption cannot be a re-forward on top: KAS-1..4 print the same dates as before and costing ranks by printed date, so the old purchases have to go first. The script is scoped by the four preparation invoice numbers exactly as `demo_reset_loop.sql` is scoped by the props', and it deliberately does **not** delete `supplier_items` - those rows carry the 79 `ingredient_id` mappings a human approved one keystroke at a time, and deleting them would be the easy way to write the file and would throw that work away. It clears their price history instead, so the re-forwarded papers snap straight back. Two things a re-forward cannot do for itself are done here, because `record_confirmed_prices` writes `pack_size` and `canonical_name` only when it *creates* a row: five packs corrected to the shapes the new papers print, and `HABBAT AL HAMRA BLEND` renamed to `SEEDS`. Proven on a local replica before it was written down (`prove_reprice.py`, 16 checks): the menu, ingredients and all 81 mappings survive, the four invoices and their history go, running it twice is a no-op, and re-confirming the new papers mints **no** new catalog rows and re-snaps all 81 lines onto their original mapped rows. Order matters and the runbook says so: `demo_reset_loop.sql` runs first, because baselines are recomputed from surviving history and a KAS-5 left confirmed would be re-armed as preparation evidence |
 | 2026-09-01 | **The demo papers are repriced to researched UAE wholesale prices, and the pricing basis is published foodservice list prices ex-VAT, with produce on multi-day market averages rather than a spot day** (branch `research/uae-wholesale-prices`, not adopted live) | Founder's call: the closing image has to show margins a cafeteria owner recognises. The old numbers were built to make the arithmetic work - boneless chicken at AED 3.45/kg is about a fifth of the real price, and the menu screen answered with chicken curries at 89% margin, which reads as a toy to anyone who has run a kitchen. Five parallel researchers priced all 81 materials against Tradeling, Horeca Market, Falcon Pack, Al Aweer, Barakat, NRTC, Sidco, Femco and retail-as-ceiling, under three rules: only prices actually seen on a page actually loaded, VAT basis stated per row and never assumed, and no invented wholesale discount - a retail-only row stays at retail and is labelled an estimate. The sheet turned out not to be uniformly cheap but uniformly **arbitrary**: chicken 5.2x low, salt 3.0x low, evaporated milk 2.5x low, while cumin, corn starch, cardamom and white pepper were all roughly double. Basis choices worth naming: **published list prices, not negotiated ones**, so real invoices will sit below several of these; **produce on averages**, because capsicum's single-day Al Aweer quote sat 46% below its own 56-day average and six lines shared that method; and **mid-market brand tier** where a range exists (evaporated milk spans AED 7.12-13.72/L), because the tier is a choice rather than a fact. Two rows are honest proxies - the disposable karak flasks have no findable UAE bulk price and are priced off a Falcon Pack PET bottle at the same volumes, labelled in place. Evidence per row in `Docs/demo-invoices/koukh-al-shay/price-research-2026-09.md`, with the working files beside it. **Adoption on the live stage is a separate founder decision** and is not done: the confirmed KAS papers there still carry the old prices |
 | 2026-09-01 | **The brand typeface was never on screen, and the fix waits for the founder before it deploys** (`/menu` design review) | `globals.css` resolves `--font-sans` through `var(--font-inter)` inside `@theme`, which Tailwind emits on `:root`, while `next/font` declared `--font-inter` and `--font-manrope` on `<body>`. A custom property that points at one declared further down the tree is invalid at computed-value time, so `--font-sans` computed to nothing, inherited down as nothing, and `body { font-family: var(--font-sans) }` fell all the way through to the operating system's stack - measured empty at `:root` locally and identical in the deployed CSS, so every screen this app has ever served has rendered in the system font while Manrope and Inter were downloaded on every page load and used on none. The fix is the two class names moved one element up, to `<html>`. It is one line and it is not optional - `Docs/brand` pins those two faces - but it restyles every screen in a demo that has already been rehearsed twice, so the deploy is the founder's call, not the branch's. |
@@ -1091,6 +1144,7 @@ pilot volume. Meta utility template cost applies only from M10 (verify live UAE 
 
 *(newest first — one line per session: date, what shipped, what's next)*
 
+- 2026-09-03 - **M7 decomposed, eng-reviewed and approved to build at reduced scope.** The draft (`Docs/M7_DECOMPOSITION.md`) went through `/plan-eng-review` before a line of code: the Step 0 complexity check cut the branch role, branch scoping and the users screen (the branch side of §21's gate is the WhatsApp phone, so the screen needs only an owner), then six architecture, five code-quality, one test and one performance finding, each decided with the founder. Codex timed out at five minutes; a Claude subagent filed twelve findings as the outside voice, five of them real tensions - two reversed a review decision (the scoping edit lands before the auth swap; the extract-job index carries no status filter because the 30 s retry always lands after extraction is done), two were kept with additions (no dual-accept, but the rollback pair and a real-token rehearsal are written; the route matrix stays, with a router-dependency assertion beside it), one added a contract amendment (`payment_kind` is correctable, so a misread cash is never laundered through an approval) - and seven amendments landed as corrections, one of them a cutover safety item nobody had written down: the legacy JWT secret signs the service_role key and must never be revoked. Two critical gaps in the draft closed: a self-silencing unknown-sender lookup and a retry guard that expired before the retry. Seven decision rows above, six work packages in §7.3, C10 pinned in §7.2, four TODOS entries with triggers (branch role, users screen, RLS second lock, MFA) and one bundled into WP-76. Founder's call: **ready to implement**; the login page and the approve control get a `/design-review` on the shipped screen, as the menu did. Next: Wave 1, WP-73 alone, in a fresh lane.
 - 2026-09-03 - **A whole-codebase read before M7, and the record caught up with the live project.** The shipped path was audited end to end: 592 API tests green with zero skips, ruff, `tsc`, eslint and the eval smoke clean, live `/health` ok. Two findings, both known demo posture whose stated expiry was M7 - and M7 is now next: the review screen's shared bearer token ships inside the public JS bundle (README's accepted C6 posture; pulled from the served chunks with two curl calls, so treat it as public and retire it when M7's auth lands), and an unknown WhatsApp sender lands in the default tenant and can confirm invoices there (pinned by `test_unknown_sender_still_ingests_with_default_tenant`). Founder's call: **no interim gate - M7 closes both**, and the worker's ack-failure re-enqueue (every retry of `process_wa_message` enqueues another `extract_document`; guarded for invoices, but a not-an-invoice photo is re-read and declined once per retry) is folded into M7's worker rewrite rather than fixed twice. **Two record corrections:** the live schema has been at **0017** since the dismiss-door merge (ed07eb7 says so; the column verified live 2026-09-03) and this file's header said 0016; and the repriced papers were **adopted on the live stage on 2026-09-02** - the four preparation invoices are confirmed at the researched prices (chicken boneless 180.000), 45 menu items, zero catalog rows minted by the re-forward, zero unsnapped confirmed lines; the four unmapped `supplier_items` are the practice-stage props from `demo_seed.sql`, not real materials. **Production web deployed from f6837dd** (`vercel --prod`): the dismiss door and the typeface fix had been repo-only since 2026-09-01; verified on the served bundle (the `/dismiss` route present, the font variables on `<html>`), and the live API answers the route. **Still owed, founder track:** DEMO_RUNBOOK §C2 re-check 5 - the two-act script twice, clean, on the new prices - is recorded nowhere, and the gate's evidence is stale until it is. Next: the M7 decomposition, drafted for an eng review before any code, the way M6's was.
 - 2026-09-01 - **The founder chose to adopt the repriced papers before the performance, so the adoption is now a runnable, proven procedure rather than a plan.** `supabase/apply_kas_reprice.sql` clears the four preparation purchases the live project holds at the old prices - scoped by their printed invoice numbers, the same discipline `demo_reset_loop.sql` uses for the props - and `DEMO_RUNBOOK.md` §C2 is the ordered one-off procedure around it: back up, run the loop reset first, run the adoption script, re-forward and confirm KAS-1..4 from the phone, then five named re-checks. **The thing that had to be got right is what the script does *not* delete.** `supplier_items` carries the 79 mappings a human approved one keystroke each; deleting those rows was the easy way to write the file and would have thrown that work away, so only their price history goes. Two corrections ride along that a re-forward cannot make for itself, because `record_confirmed_prices` writes `pack_size` and `canonical_name` only when it creates a row and a snapped line leaves both alone: five packs corrected to the shapes the new papers print, and the Habbat Al Hamra row renamed from BLEND to SEEDS. A worry that turned out to be unfounded is worth recording, because it was checked rather than assumed - five pack sizes changed, and `snap_item`'s pack veto only fires when **both** sides name a pack, so a paper printing the bare commodity word with the pack in its own column carries no pack token on the line and the veto never applies. Measured, not reasoned: 81 of 81 lines re-snap. `prove_reprice.py` is the proof and lives in the repo - it builds a local replica of the live stage from the OLD papers through the real confirm door, maps every catalog row, runs the script, and asserts 16 things including that re-confirming the NEW papers mints no new rows, leaves nothing unmapped, and lands chicken at 180.00. All 16 pass; running the script twice is a no-op. 579 API tests still green with zero skips, ruff clean. **This lane still has not touched the live database** - every live step is a command for the founder to run, and the intermediate state between the script and the re-forward is `/menu` honestly reading every item incomplete, which is correct rather than a fault. **Next, and it is not optional: the two-act script rehearses clean twice on the new numbers before the performance** - the M6 gate passed on the old prices and its evidence is stale until it does
 - 2026-09-01 - **The demo's raw-material costs are real now, and the closing image changed character.** Branch `research/uae-wholesale-prices`, repo-only: nothing was forwarded, reset, deployed or merged, and this lane never held the live `DATABASE_URL`. All 81 materials were priced against UAE foodservice and wholesale sources, then the four preparation papers and the on-stage paper were rewritten from `build_prompts.py`, re-rendered, re-rasterised and re-read on the shipped engine: **85 of 85 lines, zero mismatches**, all five reconciling exclusive-5% with VAT on the fils, 3.5-10.2 s each. The matcher still proposes 79 of 81 with `Garlic` and `Oil` deliberately silent, all 45 items still cost, none incomplete. **What the founder is being asked to look at is the margin table.** Chicken curries fell from 89% to about 71-78%, karak flasks from 80% to 65%, and the three delivery-karak cups - the AED 1.50/3/5 ladder - went from a comfortable 49-58% to **16.6%, 20.0% and 25.5%**, which is the honest version of that ladder and a real conversation to have on stage. Nothing is loss-making. The money moment survives on realistic week-over-week moves (evaporated milk +7.2%, milk powder +7.9%, chicken **-6.9%**, fresh milk exactly unchanged and silent) and it got *better*: the top per-plate impact went from 0.366 to **0.650** on the 2 L karak flask, and evaporated milk now takes the top six places in the second callout while milk powder - joint headline on the WhatsApp alert - costs a plate just over one fil. That gap is the argument for the layer, and the README now says so: a price alert is not a margin alert. Three findings beyond the prices: "Habbat Al Hamra" was **misdescribed** as a tea blend when every UAE source sells it as a seed (fixed in the description, not just the number); three pack sizes were shapes nobody sells (curry leaves 500 g, garlic 5 kg, toor dal 25 kg - all corrected); and the papers must keep an **ml-labelled** evaporated-milk pack even though the real Gulf carton is labelled in grams, because the recipe measures volume and a mass pack would read every karak as *incomplete*. New tool: `plate_costs.py` costs the whole 45-recipe menu off the papers by importing the shipped `costing.cost_line` and `plates.plate` rather than reimplementing them, so a price can be judged by what it does to a plate before anything is printed. Also corrected three stale README counts left over from the Water removal (86 lines to 85, 82 materials to 81, 80 proposable to 79 - the last measured, not asserted). 579 API tests green with zero skips, ruff clean. **Next: a founder decision on whether the live stage adopts these, and when relative to the performance** - adopting means redoing the KAS preparation there, because the confirmed papers on the live project still carry the old prices
@@ -1692,57 +1746,33 @@ pilot volume. Meta utility template cost applies only from M10 (verify live UAE 
 
 | Review | Trigger | Why | Runs | Status | Findings |
 |--------|---------|-----|------|--------|----------|
-| CEO Review | `/plan-ceo-review` | Scope & strategy | 0 | — | — |
-| Codex Review | `/codex review` | Independent 2nd opinion | 0 | — | — |
-| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 2 | CLEAR (PLAN) | 21 issues, 0 critical gaps open |
-| Design Review | `/plan-design-review` | UI/UX gaps | 1 | CLEAR (FULL) | score 6/10 → 9/10, 9 decisions, 25 outside-voice findings resolved |
-| DX Review | `/plan-devex-review` | Developer experience gaps | 0 | — | — |
-| Outside Voice | `/plan-eng-review` (codex) | Cross-model plan challenge | 2 | ISSUES_FOUND | 13 findings, all resolved |
+| CEO Review | `/plan-ceo-review` | Scope & strategy | 0 | - | - |
+| Codex Review | `/codex review` | Independent 2nd opinion | 0 | - | - |
+| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 3 | CLEAR (PLAN) | 13 issues, 35 test gaps named into acceptance, 0 critical gaps open |
+| Design Review | `/plan-design-review` | UI/UX gaps | 1 | CLEAR (FULL), 38 commits old | score 6/10 to 9/10, 9 decisions (M6 menu screen, not M7) |
+| DX Review | `/plan-devex-review` | Developer experience gaps | 0 | - | - |
 
-Scope: M6 recipes and menu costing (WP-60 to WP-66), reviewed 2026-08-29 at commit `844bb90`,
-before any feature code. Mode: FULL_REVIEW — the Step 0 complexity challenge upheld all seven
-work packages (the decomposition had already cut per-branch templates, calculation runs,
-variants and stored plate costs before the review ran). The eng review's eight findings: the
-money moment's "previous price" defined same-pack with a basis-changed note, the empty-recipe
-100%-margin hole closed at both doors, the VAT rate given a real source (a currency→rate map -
-`GCC_VAT_RATES` is a bare tuple over a `tenants` table that only knows its currency), the
-write door's refusal set stated, re-upload equality made semantic, migration 0015 given a
-paste-safe apply file, nine test gaps named into acceptance rows, and the menu screen pinned
-to a bounded query count.
+Scope: M7 auth, tenancy enforcement and cash approval (WP-70 to WP-76), reviewed 2026-09-03 at commit
+`25d81d3`, before any feature code; the reviewed document is `Docs/M7_DECOMPOSITION.md`. Mode:
+SCOPE_REDUCED - the Step 0 complexity challenge cut the branch role, branch scoping and the users
+screen, leaving five work packages plus the cutover. The eng review's thirteen findings: dual-accept
+cut, asymmetric-only verifier, direct browser calls, C2 reworded around one named resolver, no FK to
+`auth.users`, sign-ups disabled, stamp-first unknown sender, keyword-only tenant scope, JWKS cache
+and outage rule, approve keyed on cash alone, one extract job per document, vitest for the gate,
+async key fetch; two scope proposals decided (RLS deferred to a named trigger, email and password).
 
-**CODEX:** 13 findings from an independent read of the repository. Two were latent M5 gaps
-verified in `db.py` and missed by the eng review: a material whose newest purchase cannot be
-costed silently keeps showing its older price as current (`list_mapped_pack_costs` filters
-uncostable lines before picking the newest), and a costed credit line can win "newest
-purchase" on a random-uuid tie-break (EDGE-01's shape). The second was fixed in shipped code
-the same day — qty filter plus position tie-breaks in both orderings, with a test that fails
-six of six runs against the old query, 485 tests green against a real Postgres — and the
-first is WP-61's derivation amendment, with a `TODOS.md` entry covering the window. Codex
-also hardened the demo gate (≥90% of the real menu costed, AED ranking chosen), added the
-archive path, `source_text`, `yield_portions` + label, and the version-race constraint.
+**CROSS-MODEL:** Codex timed out at five minutes with no output; the outside voice ran as a Claude
+subagent and filed twelve findings. Five were tensions put to the founder individually: sequencing
+(accepted - scoping lands before the auth swap), the cutover story (kept, with the rollback pair and
+a real-token rehearsal written in), the enqueue guard (accepted - the live-status filter provably
+expired before the 30 s retry), `payment_kind` as a correctable field (accepted), the matrix design
+(kept, with a router-dependency assertion added). Seven were applied as amendments: composite
+`branch_id` keys in 0018, the self-excluded silence lookup, an impossible acceptance clause dropped,
+the legacy JWT secret never revoked, actor threading priced into WP-73, `npm test` in CI and no
+module-scope Supabase client, and the plan saying plainly that one role does not give PRD §21's
+two-party gate by role. One outside-voice claim was corrected against the code: the API already
+refuses a foreign `branch_id` at `api.py:643` and `:770`; the composite FK is the database-level belt.
 
-**CROSS-MODEL:** Eight tension points, each put to the user individually; all eight resolved
-on the recommended option. Two Codex positions declined with reasons: F7 blocking WP-60/64
-(founder timing must not own the critical path — the M5 lesson; the CSV template ships as
-the consultant's conversation worksheet instead, and the grid's columns are confirmed against
-the real menu when it lands) and Postgres immutability triggers (the first SQL-resident logic
-in the codebase, against §2 — the unique constraint and the byte-identical test carry the
-promise). Three wording fixes absorbed: the screen says *margin*, never *profit*; "why did
-this change?" scoped honestly to the current number's forensics; the loader's actor is
-`console` until M7.
-
-**DESIGN (2026-08-30):** `/plan-design-review` over the M6 screens before WP-62 is built:
-initial 6/10, closing 9/10. Approved direction: variant C ("push this, fix that") with the
-amendments recorded in the WP rows and the Approved Mockups table. The outside voice
-(Claude subagent, single-model — Codex timed out) filed 25 findings; the four demo-critical
-ones: the money moment was still worded as a screen, the wireframe's top callout used a metric
-the table rejects, a money-losing plate had no rendering, and the layout was drawn for six
-items against a 45-item real menu. One §3 amendment (fils-precise per-plate money) is mirrored
-in CLAUDE.md/AGENTS.md, and WP-60 gained `menu_items.category` for the grouped ranking —
-flagged to the in-flight build lane before migration 0015 is applied anywhere.
-
-**VERDICT:** ENG + DESIGN CLEARED — ready to implement, pending founder go-ahead on the
-decomposition and its three named scope proposals (the per-branch template cut, margin net of
-VAT, the EDGE-01 pull-in).
+**VERDICT:** ENG CLEARED - approved to build by the founder 2026-09-03. Next: Wave 1, WP-73 alone.
 
 NO UNRESOLVED DECISIONS

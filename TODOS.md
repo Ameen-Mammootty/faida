@@ -136,9 +136,13 @@ and the typed status set both live.
 
 **Effort:** S
 **Priority:** P3
-**Depends on:** M7's roles, which decide who is allowed.
+**Depends on:** M7's roles, which decide who is allowed. *Answered by the 2026-09-03 M7 review (D2): one
+role for the pilot, so any member of the tenant may dismiss; un-dismiss itself stays unbuilt until asked.*
 
 ### The runbook's leftover check got weaker when the invoice list started hiding rows
+
+**Bundled into M7 WP-76 by the 2026-09-03 eng review (D19):** the sentence lands in the same
+DEMO_RUNBOOK §A edit that adds the login precondition. Strike this entry when WP-76 ships.
 
 **What:** One sentence in `Docs/DEMO_RUNBOOK.md` §A, so its "no rehearsal leftovers in the invoice
 list" check accounts for the rows the list now hides.
@@ -187,6 +191,94 @@ query; a `costed = false` winner caps its material and every plate above it at *
 the older price visible with its date, and names the blocked line with its WP-55 reason - on the
 materials screen and in every plate answer. Tested end to end in
 `tests/test_plates.py::test_a_newer_uncosted_purchase_caps_the_material_and_its_plates`.
+
+## Auth & tenancy (deferred by the M7 eng review, 2026-09-03)
+
+M7 was decomposed in `Docs/M7_DECOMPOSITION.md` and reduced to one app role (`tenant`) on
+2026-09-03 (`/plan-eng-review`, D2). The four entries below are what that reduction and the
+review's other decisions consciously left out, each with the trigger that brings it back.
+
+### A branch role on the screen (WP-78)
+
+**What:** A `branch` membership role, a `membership_branches` table under the 0012 composite-FK
+pattern, branch-level scoping on the invoice routes (list, detail, correct, confirm, dismiss,
+approve refused), read-only materials and menu for branch users, and the matching rows in
+`tests/test_tenancy.py`'s matrix.
+
+**Why:** PRD §4.3 gives branch managers a login for reviewing their own branch's invoices, and
+PRD §21's cash gate is "branch raises, owner approves". M7 ships one role, so on the screen the two
+parties are the branch's WhatsApp phone (which never logs in) and the owner's login - a real
+separation for a pilot chain, but not a role-enforced one. `Docs/M7_DECOMPOSITION.md` §9 says so
+rather than ticking §21 closed.
+
+**Context:** Cut in the review's Step 0 (D2): no chain has asked for branch managers on the screen,
+and the done-when (two tenants isolated, cash needs an approval record, the shared token gone) is
+met with one role. `memberships.role` already exists with `check (role in ('tenant'))`, so widening
+it is one migration. Start at `auth.py`'s `AuthContext` (add `branch_ids`), the matrix test, and the
+invoice routes in `api.py`.
+
+**Effort:** M (about a day and a half)
+**Priority:** P2
+**Depends on:** M7 shipped. Trigger: a pilot chain asks for a branch manager on the screen.
+
+### A users screen with invites (WP-75)
+
+**What:** `/settings/users` for the owner: the tenant's members, invite by email (backend calls
+Supabase's admin invite with the service key, then writes the membership; a failed membership
+write deletes the just-created account so the two never drift), remove a member, `member.invited`
+and `member.removed` audit rows.
+
+**Why:** PRD §4.1 lists "manage users" for the tenant role. For a one-chain pilot the founder
+creates accounts in the Supabase dashboard and adds the membership row by script, so the screen
+buys nothing until a second owner-side user exists.
+
+**Context:** Deferred by D2. Public sign-ups are disabled (D8), so the invite path is the only way a
+non-founder account can come to exist; re-enabling sign-ups is not the answer. Supabase's default
+mailer is rate-limited to a handful of messages per hour, which also argues for dashboard
+provisioning at pilot scale.
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** M7 shipped. Trigger: a second owner-side user on any tenant.
+
+### Row-level security as the second lock (WP-77)
+
+**What:** A dedicated `faida_api` database role without `bypassrls`; every request's transaction
+does `set local app.tenant_id`; policies `using (tenant_id = current_setting('app.tenant_id')::uuid)`
+on every tenant-owned table; the worker sets it from the job payload. Acceptance: with the
+application-layer filter deliberately removed from one query in a test, Postgres still returns
+nothing foreign.
+
+**Why:** Defence in depth. M7 enforces tenancy in the application layer - a required keyword-only
+`tenant_id` on every tenant-owned `db.py` method (D10) plus the route matrix - because the API is
+the only thing that reads the database and it connects as the table owner, which RLS exempts.
+Policies written today would guard nothing reachable (D16).
+
+**Context:** `plan.md` §8 M7's checkbox says "RLS policies on all tenant-owned tables"; the review
+amended it to this entry. Roughly 120 call sites in `db.py` need wrapping in a transaction that sets
+the tenant, and the live pooler needs a second role - a multi-day change on the shipped path, owed
+the day something other than the API reads the database.
+
+**Effort:** L
+**Priority:** P2
+**Depends on:** M7 shipped. Trigger: the first second door to the database - a direct Supabase read
+from a browser, a second service, or a data export.
+
+### MFA for the owner role
+
+**What:** A second factor (authenticator-app TOTP, which Supabase Auth ships) on the owner's login,
+with enrolment and recovery codes on the web app.
+
+**Why:** The owner account can approve cash, load menus and remap materials, so a phished password
+is the whole tenant. PRD §26 lists MFA "where feasible".
+
+**Context:** Deferred by the 2026-09-03 review (D18): one owner account exists for the pilot and it is
+hand-provisioned. The risk to weigh when building it is a lockout on the demo laptop, so recovery
+codes are part of the first version, not a follow-up.
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** M7 shipped. Trigger: a second real tenant, or an owner asking.
 
 ## Extraction & matching
 
