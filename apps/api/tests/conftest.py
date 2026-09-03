@@ -150,6 +150,9 @@ class FakeMeta:
     def __init__(self):
         self.sent: list[dict] = []
         self.media_bytes = b"\xff\xd8fake-jpeg-bytes"
+        # Meta answering 500 to every send: what a best-effort reply has to
+        # survive. Nothing is recorded in `sent` while it is on.
+        self.fail_sends = False
 
     def transport(self) -> httpx.MockTransport:
         def handle(request: httpx.Request) -> httpx.Response:
@@ -157,6 +160,8 @@ class FakeMeta:
             if path.endswith("/messages"):
                 import json
 
+                if self.fail_sends:
+                    return httpx.Response(500, json={"error": {"message": "meta down"}})
                 self.sent.append(json.loads(request.content))
                 return httpx.Response(
                     200, json={"messages": [{"id": f"wamid.out{len(self.sent)}"}]}

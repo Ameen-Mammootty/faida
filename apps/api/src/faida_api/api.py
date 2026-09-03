@@ -88,7 +88,7 @@ from .extraction.schema import ExtractedInvoice, ExtractedLine
 from .extraction.validate import validate_invoice
 from .matching import Row, match_supplier, propose_ingredients, snap_item
 from .provenance import Origin, initial
-from .replies import DEFAULT_CURRENCY
+from .replies import DEFAULT_CURRENCY, compose_cash_approved_notice
 
 logger = logging.getLogger(__name__)
 
@@ -617,7 +617,40 @@ async def approve_invoice(
         else:
             detail = f"invoice is {status}; only a cash invoice held for review can be approved"
         raise HTTPException(status_code=409, detail=detail)
+    await _tell_the_phone_it_is_recorded(request, invoice, ctx)
     return await _invoice_detail(request, str(invoice_id), ctx)
+
+
+async def _tell_the_phone_it_is_recorded(request: Request, invoice, ctx: AuthContext) -> None:
+    """Close the branch phone's loop: the cash hold told the sender they would
+    hear back once the owner recorded the paper, so the approval tells them.
+    Only a paper that arrived by WhatsApp has a phone - found the way the
+    pipeline finds it, through the document's inbound message row; a manual
+    or uploaded paper gets nothing.
+
+    Runs AFTER the approval has committed and never inside its transaction,
+    and is best-effort in the WP-72 sense: a send failure is logged and never
+    raised, because Meta accepts free text only inside 24 h of the sender's
+    last message, and an approval recorded a day later must still be an
+    approval. No template, no retry: outside the window the branch learns
+    nothing until M10's utility template."""
+    db: Database = request.app.state.db
+    try:
+        document = await db.get_document(str(invoice["document_id"]), tenant_id=ctx.tenant_id)
+        if document is None or not document["wa_message_id"]:
+            return
+        inbound = await db.get_inbound_message(document["wa_message_id"])
+        to_phone = inbound["from_phone"] if inbound is not None else None
+        if not to_phone:
+            return
+        body = compose_cash_approved_notice(invoice["supplier_name"], invoice["invoice_no"])
+        out_id = await request.app.state.wa.send_text(to_phone, body)
+        await db.record_outbound_message(out_id, to_phone, body)
+    except Exception:
+        logger.exception(
+            "approval notice for invoice %s failed; the approval stands and is not retried",
+            invoice["id"],
+        )
 
 
 async def _fresh_status(db: Database, invoice_id: str, ctx: AuthContext) -> str | None:
