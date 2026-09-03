@@ -3,10 +3,10 @@
 The rule under test: a row outside the caller's tenant does not exist for
 them. Not forbidden - absent. So the API answers 404, never 403, and a
 storage URL is never signed for a paper the caller cannot see. The auth
-context's only source in this wave is the legacy shared token resolving to
-the seeded tenant (the strangler step; WP-70 swaps in a verified Supabase
-token plus the memberships row), so tenant B here is a context handed to the
-app through the dependency override - the same door WP-70 will use.
+context's source is a verified Supabase access token plus the memberships
+row (WP-70): tenant A is the test user's membership, and tenant B here is a
+context handed to the app through the dependency override, which is what a
+second person's token would resolve to.
 
 The matrix is driven by the app's own route table: every route is either on
 the public list below, on purpose, or in the matrix with a request that
@@ -32,14 +32,12 @@ from faida_api.storage import Storage
 from faida_api.waitlist import router as waitlist_router
 from faida_api.webhook import router as webhook_router
 
-from .conftest import DEMO_TENANT_ID, FakeStorage, requires_db
+from .conftest import AUTH, DEMO_TENANT_ID, TEST_ACTOR, FakeStorage, requires_db, wire_auth
 
 pytestmark = requires_db
 
-API_TOKEN = "test-api-token"
-AUTH = {"Authorization": f"Bearer {API_TOKEN}"}
 
-TENANT_A = DEMO_TENANT_ID  # seed.sql's tenant: what the legacy token resolves to
+TENANT_A = DEMO_TENANT_ID  # seed.sql's tenant: where the test user's membership is
 BRANCH_A = "00000000-0000-0000-0000-000000000011"
 TENANT_B = "b0000000-0000-0000-0000-000000000001"
 BRANCH_B = "b0000000-0000-0000-0000-000000000011"
@@ -136,8 +134,8 @@ def test_the_matrix_covers_every_non_public_route():
 @pytest.fixture
 async def rig(settings, db):
     """Both tenants seeded, the app with every router, storage mocked at the
-    transport, and the legacy token configured (it resolves to tenant A)."""
-    api_settings = settings.model_copy(update={"api_token": API_TOKEN})
+    transport, and the verifier over the fake JWKS (the test user's token
+    resolves to tenant A through the membership the db fixture planted)."""
     fake_storage = FakeStorage()
 
     app = FastAPI()
@@ -145,9 +143,10 @@ async def rig(settings, db):
     app.include_router(api_router)
     app.include_router(menu_router)
     app.include_router(waitlist_router)
-    app.state.settings = api_settings
+    app.state.settings = settings
+    wire_auth(app)
     app.state.db = db
-    app.state.storage = Storage(api_settings, transport=fake_storage.transport())
+    app.state.storage = Storage(settings, transport=fake_storage.transport())
 
     await db.pool.execute(
         "insert into tenants (id, name, currency) values ($1, 'Other Chain', 'AED')", TENANT_B
@@ -456,7 +455,7 @@ async def test_every_route_answers_its_own_tenant_and_nobody_else(rig, db):
         leaked = [value for value in a_ids if value in response.text]
         assert not leaked, (method, url, leaked)
 
-        # Tenant A, through the legacy token: the row is theirs.
+        # Tenant A, through the test user's verified token: the row is theirs.
         response = await client.request(method, url, headers=AUTH, **kwargs)
         assert response.status_code == expect_a, (method, url, response.text)
         if method == "GET" and "{" in case["path"]:
@@ -468,9 +467,9 @@ async def test_every_route_answers_its_own_tenant_and_nobody_else(rig, db):
     assert b_counts["ingredients"] == 1 and b_counts["menu_items"] == 1
 
 
-async def test_the_legacy_token_resolves_to_the_seeded_tenant_as_console(rig, db):
-    """The strangler step's one source: the shared token is tenant A's
-    console, and every audit row it writes says so."""
+async def test_the_verified_token_resolves_to_its_membership_as_the_user(rig, db):
+    """The one source: a verified token is its membership's tenant, and every
+    audit row it writes carries the person's id, not a shared name."""
     app, client, _ = rig
     response = await client.post(
         "/api/ingredients", json={"name": "Cardamom", "unit": "g"}, headers=AUTH
@@ -480,7 +479,7 @@ async def test_the_legacy_token_resolves_to_the_seeded_tenant_as_console(rig, db
         "select tenant_id::text as tenant_id, actor from audit_events "
         "where action = 'ingredient.created'"
     )
-    assert event["tenant_id"] == TENANT_A and event["actor"] == "console"
+    assert event["tenant_id"] == TENANT_A and event["actor"] == TEST_ACTOR
 
 
 async def test_no_storage_url_is_signed_for_a_foreign_document(rig, db):

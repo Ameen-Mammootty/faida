@@ -25,13 +25,17 @@ from faida_api.wa import WhatsAppClient
 from faida_api.webhook import router as webhook_router
 
 from .conftest import (
+    AUTH,
     DEMO_PHONE,
     DEMO_TENANT_ID,
+    TEST_ACTOR,
     FakeExtraction,
+    FakeJwks,
     FakeMeta,
     FakeStorage,
     requires_db,
     wa_image_payload,
+    wire_auth,
 )
 from .test_extraction_flow import (
     drain_jobs,
@@ -41,8 +45,6 @@ from .test_extraction_flow import (
     seed_supplier_with_items,
 )
 
-API_TOKEN = "test-api-token"
-AUTH = {"Authorization": f"Bearer {API_TOKEN}"}
 DEMO_BRANCH_ID = "00000000-0000-0000-0000-000000000011"  # matches seed.sql
 
 
@@ -53,28 +55,34 @@ def client_for(app: FastAPI) -> httpx.AsyncClient:
 # --- auth: fail closed (no DB needed) ---------------------------------------
 
 
-def bare_app(api_token: str) -> FastAPI:
-    """An app with only the API router and settings: auth rejects before any
-    handler (or the DB) is ever touched."""
+def bare_app() -> FastAPI:
+    """An app with only the API router, settings and the verifier over the
+    fake JWKS: auth rejects before any handler (or the DB) is ever touched."""
     app = FastAPI()
     app.include_router(api_router)
-    app.state.settings = Settings(api_token=api_token)
+    app.state.settings = Settings(supabase_url="http://supabase.test")
+    wire_auth(app)
     return app
 
 
-async def test_empty_token_config_refuses_every_request():
-    # Fail closed like the webhook secret: no configured token means no
-    # access, even when the caller's header happens to match the empty value.
-    client = client_for(bare_app(""))
+async def test_no_or_malformed_token_is_refused_on_every_request():
+    # Fail closed: nothing gets past the door without a token it can verify.
+    client = client_for(bare_app())
     assert (await client.get("/api/invoices")).status_code == 401
-    assert (await client.get("/api/invoices", headers=AUTH)).status_code == 401
     assert (
         await client.get("/api/invoices", headers={"Authorization": "Bearer "})
     ).status_code == 401
+    assert (
+        await client.get("/api/invoices", headers={"Authorization": "Bearer not-a-jwt"})
+    ).status_code == 401
 
 
-async def test_wrong_or_missing_token_is_rejected_on_every_route():
-    client = client_for(bare_app(API_TOKEN))
+async def test_a_token_signed_elsewhere_is_rejected_on_every_route():
+    """A token from another key pair - another project, or an attacker with
+    the old shared secret - is refused on every route, with no tenant
+    resolved and no query run."""
+    client = client_for(bare_app())
+    elsewhere = {"Authorization": f"Bearer {FakeJwks().mint()}"}
     some_id = str(uuid.uuid4())
     requests = [
         ("GET", "/api/invoices", {}),
@@ -86,19 +94,18 @@ async def test_wrong_or_missing_token_is_rejected_on_every_route():
     ]
     for method, url, kwargs in requests:
         assert (await client.request(method, url, **kwargs)).status_code == 401, url
-        wrong = {"Authorization": "Bearer not-the-token"}
-        assert (await client.request(method, url, headers=wrong, **kwargs)).status_code == 401, url
+        response = await client.request(method, url, headers=elsewhere, **kwargs)
+        assert response.status_code == 401, url
     # Not a bearer header at all.
-    assert (
-        await client.get("/api/invoices", headers={"Authorization": API_TOKEN})
-    ).status_code == 401
+    token = AUTH["Authorization"].removeprefix("Bearer ")
+    assert (await client.get("/api/invoices", headers={"Authorization": token})).status_code == 401
 
 
-async def test_correct_token_is_accepted():
-    # No DB is wired, so getting past auth means reaching the handler and
-    # dying on the missing pool - proof the token was accepted. (The happy
-    # paths below cover the full authorized flow against a real DB.)
-    app = bare_app(API_TOKEN)
+async def test_a_verified_token_reaches_the_membership_lookup():
+    # No DB is wired, so getting past the signature check means reaching the
+    # membership read and dying on the missing pool - proof the token was
+    # verified. (The happy paths below cover the full flow against a real DB.)
+    app = bare_app()
     app.state.db = None
     client = client_for(app)
     with pytest.raises(AttributeError):
@@ -111,18 +118,18 @@ async def test_correct_token_is_accepted():
 @pytest.fixture
 def api(settings, db):
     """A FastAPI app with both routers, the test DB, mock transports, and the
-    API token configured; mirrors the flow-test fixture."""
-    api_settings = settings.model_copy(update={"api_token": API_TOKEN})
+    verifier over the fake JWKS; mirrors the flow-test fixture."""
     fake_meta = FakeMeta()
     fake_storage = FakeStorage()
 
     app = FastAPI()
     app.include_router(webhook_router)
     app.include_router(api_router)
-    app.state.settings = api_settings
+    app.state.settings = settings
+    wire_auth(app)
     app.state.db = db
-    app.state.wa = WhatsAppClient(api_settings, transport=fake_meta.transport())
-    app.state.storage = Storage(api_settings, transport=fake_storage.transport())
+    app.state.wa = WhatsAppClient(settings, transport=fake_meta.transport())
+    app.state.storage = Storage(settings, transport=fake_storage.transport())
 
     client = client_for(app)
     return app, client, fake_meta, fake_storage
@@ -824,7 +831,7 @@ async def test_wp26_screen_cannot_confirm_a_null_total_and_the_patch_unblocks_it
     # a figure read off the paper from one worked out, and neither claim is
     # made. Only the chat reconstruction grammar says `reconstructed`.
     assert detail["provenance"]["total"]["origin"] == "corrected_screen"
-    assert detail["provenance"]["total"]["actor"] == "console"
+    assert detail["provenance"]["total"]["actor"] == TEST_ACTOR
 
     resp = await client.post(f"/api/invoices/{invoice['id']}/confirm", headers=AUTH)
     assert resp.status_code == 200
@@ -945,7 +952,7 @@ async def test_dismissing_a_copy_clears_the_list_and_leaves_the_original_alone(a
     assert [inv["id"] for inv in listed] == [str(original["id"])]
 
     events = await db.audit_events_for_subject("invoice", str(copy["id"]), tenant_id=DEMO_TENANT_ID)
-    assert [(e["action"], e["actor"]) for e in events] == [("invoice.dismissed", "console")]
+    assert [(e["action"], e["actor"]) for e in events] == [("invoice.dismissed", TEST_ACTOR)]
     assert events[0]["detail"] == {
         "from_status": "needs_review",
         "duplicate_of_invoice_id": str(original["id"]),

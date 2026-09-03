@@ -24,21 +24,18 @@ from fastapi import FastAPI
 from faida_api.api import router as api_router
 from faida_api.menu import router as menu_router
 
-from .conftest import DEMO_TENANT_ID, requires_db
-
-API_TOKEN = "test-api-token"
-AUTH = {"Authorization": f"Bearer {API_TOKEN}"}
+from .conftest import AUTH, DEMO_TENANT_ID, TEST_ACTOR, requires_db, wire_auth
 
 
 @pytest.fixture
 def api(settings, db):
     """Both routers: the loader writes recipes through menu.py and creates the
     materials they name through the M5 surface in api.py."""
-    api_settings = settings.model_copy(update={"api_token": API_TOKEN})
     app = FastAPI()
     app.include_router(menu_router)
     app.include_router(api_router)
-    app.state.settings = api_settings
+    app.state.settings = settings
+    wire_auth(app)
     app.state.db = db
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
 
@@ -108,7 +105,7 @@ async def test_a_material_can_exist_before_any_invoice_names_it(api, db):
     audit = await db.pool.fetchrow(
         "select actor, action, detail from audit_events where subject_type = 'ingredient'"
     )
-    assert audit["actor"] == "console"
+    assert audit["actor"] == TEST_ACTOR
     assert audit["action"] == "ingredient.created"
 
 

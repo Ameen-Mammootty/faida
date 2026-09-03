@@ -1,7 +1,7 @@
 """WP-30: the C6 web API surface (plan.md §6 M3, §7.2) - the JSON backend the
 review screen (WP-31) consumes.
 
-Routes, all under /api and all requiring `Authorization: Bearer <api_token>`:
+Routes, all under /api and all requiring `Authorization: Bearer <Supabase access token>`:
 
     GET   /api/invoices                       list, newest first, optional filters
     GET   /api/invoices/{id}                  full detail + signed image URL

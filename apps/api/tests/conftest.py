@@ -1,10 +1,16 @@
 import os
 import pathlib
+import time
 
 import asyncpg
 import httpx
+import jwt
 import pytest
+from cryptography.hazmat.primitives.asymmetric import ec
+from fastapi import FastAPI
+from jwt.algorithms import ECAlgorithm
 
+from faida_api.auth import TokenVerifier
 from faida_api.config import Settings
 from faida_api.db import Database
 from faida_api.extraction.provider import ProviderUsage
@@ -20,6 +26,14 @@ requires_db = pytest.mark.skipif(TEST_DATABASE_URL is None, reason="TEST_DATABAS
 TEST_APP_SECRET = "test-app-secret"
 DEMO_PHONE = "971500000000"  # matches seed.sql
 DEMO_TENANT_ID = "00000000-0000-0000-0000-000000000001"  # matches seed.sql
+
+#: The signed-in owner every API test acts as (M7 WP-70): a fixed auth user
+#: id whose membership row in the seeded tenant the `db` fixture plants right
+#: after the seed. So every module's API fixture is one person signed in to
+#: the demo tenant - the same single identity the shared token used to
+#: stand for, now with a name on it.
+TEST_USER_ID = "00000000-0000-4000-8000-0000000000aa"
+TEST_ACTOR = f"user:{TEST_USER_ID}"
 
 
 @pytest.fixture
@@ -44,12 +58,90 @@ async def db(settings):
     for migration in sorted(MIGRATIONS_DIR.glob("*.sql")):
         await conn.execute(migration.read_text())
     await conn.execute(SEED_FILE.read_text())
+    await conn.execute(
+        "insert into memberships (tenant_id, user_id) values ($1, $2)", DEMO_TENANT_ID, TEST_USER_ID
+    )
     await conn.close()
 
     database = Database(TEST_DATABASE_URL)
     await database.connect()
     yield database
     await database.close()
+
+
+class FakeJwks:
+    """A local signing key pair and the JWKS endpoint that publishes its
+    public half, mocked at the transport layer like Meta and storage: the
+    verifier never learns it is talking to a fake. `mint` signs access tokens
+    the way Supabase Auth does (ES256 with a key id; issuer, audience, expiry
+    and subject claims), and every keyword is overridable so a test can forge
+    exactly one thing wrong. `fetches` counts JWKS reads and `down` makes the
+    endpoint unreachable, for the cache and outage cases."""
+
+    def __init__(self, issuer: str = "http://supabase.test/auth/v1", kid: str = "faida-test-key"):
+        self.issuer = issuer
+        self.kid = kid
+        self.private_key = ec.generate_private_key(ec.SECP256R1())
+        self.keys: list[dict] = [self.public_jwk(self.private_key, kid)]
+        self.fetches = 0
+        self.down = False
+
+    @staticmethod
+    def public_jwk(private_key, kid: str) -> dict:
+        jwk = ECAlgorithm.to_jwk(private_key.public_key(), as_dict=True)
+        return {**jwk, "kid": kid, "alg": "ES256", "use": "sig"}
+
+    def transport(self) -> httpx.MockTransport:
+        def handle(request: httpx.Request) -> httpx.Response:
+            assert request.url.path.endswith("/auth/v1/.well-known/jwks.json"), request.url
+            self.fetches += 1
+            if self.down:
+                raise httpx.ConnectError("sign-in service down", request=request)
+            return httpx.Response(200, json={"keys": self.keys})
+
+        return httpx.MockTransport(handle)
+
+    def mint(
+        self,
+        sub: str = TEST_USER_ID,
+        *,
+        kid: str | None = None,
+        alg: str = "ES256",
+        key=None,
+        issuer: str | None = None,
+        audience: str | None = "authenticated",
+        expires_in: int = 3600,
+        **claims,
+    ) -> str:
+        now = int(time.time())
+        payload = {
+            "iss": issuer or self.issuer,
+            "sub": sub,
+            "iat": now,
+            "exp": now + expires_in,
+            "role": "authenticated",
+            **claims,
+        }
+        if audience is not None:
+            payload["aud"] = audience
+        return jwt.encode(
+            payload, key or self.private_key, algorithm=alg, headers={"kid": kid or self.kid}
+        )
+
+
+#: One key pair for the whole suite, and the headers every API test sends:
+#: an access token for TEST_USER_ID signed by it. Fixture apps are wired to
+#: the same fake JWKS by `wire_auth`, so the token verifies there and nowhere
+#: else.
+JWKS = FakeJwks()
+AUTH = {"Authorization": f"Bearer {JWKS.mint()}"}
+
+
+def wire_auth(app: FastAPI) -> None:
+    """The one door for a test app: the real verifier over the fake JWKS.
+    Call it after `app.state.settings` is set; the issuer and key URL derive
+    from that settings' `supabase_url`."""
+    app.state.auth = TokenVerifier(app.state.settings, transport=JWKS.transport())
 
 
 class FakeMeta:

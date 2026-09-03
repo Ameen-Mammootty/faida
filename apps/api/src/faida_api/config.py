@@ -32,10 +32,10 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     gemini_api_key: str = ""
 
-    # C6 web API (M3). One shared-secret bearer token for the review screen;
-    # empty refuses every /api request (fail closed, like the webhook secret).
-    # Real auth arrives in M7.
-    api_token: str = ""
+    # C6 web API. The bearer on every /api request is the user's own Supabase
+    # access token, verified in auth.py against the project's public signing
+    # keys at `<SUPABASE_URL>/auth/v1/.well-known/jwks.json` (M7 WP-70) - so
+    # there is no API secret to configure, and nothing here can forge a login.
     # The review screen's origin (apps/web), allowed through CORS.
     web_origin: str = "http://localhost:3000"
 

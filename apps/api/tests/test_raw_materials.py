@@ -20,10 +20,7 @@ from fastapi import FastAPI
 from faida_api.api import router as api_router
 from faida_api.matching import propose_ingredients
 
-from .conftest import DEMO_TENANT_ID, requires_db
-
-API_TOKEN = "test-api-token"
-AUTH = {"Authorization": f"Bearer {API_TOKEN}"}
+from .conftest import AUTH, DEMO_TENANT_ID, TEST_ACTOR, requires_db, wire_auth
 
 # -- propose_ingredients (no DB) ----------------------------------------------
 
@@ -71,10 +68,10 @@ def test_a_rejected_material_is_dropped_rather_than_ranked_last():
 
 @pytest.fixture
 def api(settings, db):
-    api_settings = settings.model_copy(update={"api_token": API_TOKEN})
     app = FastAPI()
     app.include_router(api_router)
-    app.state.settings = api_settings
+    app.state.settings = settings
+    wire_auth(app)
     app.state.db = db
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
 
@@ -242,7 +239,7 @@ async def test_approving_creates_the_material_and_names_who_did_it(api, db):
 
     events = await _audit(db, item_id)
     assert len(events) == 1
-    assert events[0]["actor"] == "console"
+    assert events[0]["actor"] == TEST_ACTOR
     assert events[0]["action"] == "supplier_item.mapped"
     assert events[0]["detail"]["ingredient_id"] == ingredient["id"]
     # And it has left the queue.
@@ -393,7 +390,7 @@ async def test_a_rejected_material_stops_being_proposed_but_can_still_be_approve
     assert proposals((await api.get("/api/supplier-items/unmapped", headers=AUTH)).json()) == []
     events = await _audit(db, candidate)
     assert [e["action"] for e in events] == ["supplier_item.mapping_rejected"]
-    assert events[0]["actor"] == "console"
+    assert events[0]["actor"] == TEST_ACTOR
 
     # A rejection suppresses the suggestion, it does not forbid the answer.
     assert (
@@ -1079,7 +1076,7 @@ async def test_the_audit_trail_is_the_conversion_s_version_history(api, db):
         "supplier_item.pack_size_set",
         "supplier_item.pack_size_set",
     ]
-    assert all(event["actor"] == "console" for event in events)
+    assert all(event["actor"] == TEST_ACTOR for event in events)
     assert events[0]["detail"] == {"pack_size": "10 kg", "previous_pack_size": None}
     assert events[1]["detail"] == {"pack_size": "12 kg", "previous_pack_size": "10 kg"}
 

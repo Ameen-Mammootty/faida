@@ -292,7 +292,22 @@ class Database:
         )
 
     async def default_tenant_id(self) -> str | None:
+        """The oldest tenant. **Dead for the API since WP-70** (the context
+        comes from the verified token and the memberships row); its last
+        caller is the worker's unknown-sender fallback, which WP-72 removes,
+        and this method goes with it."""
         return await self.pool.fetchval("select id::text from tenants order by created_at limit 1")
+
+    async def membership_tenant_id(self, user_id: str) -> str | None:
+        """The tenant a signed-in person belongs to, or None (M7 WP-70; the
+        memberships table from 0018). Read on every request, so removing a
+        row is an immediate revocation. One membership per person for the
+        pilot; were there several, the oldest wins, deterministically."""
+        return await self.pool.fetchval(
+            "select tenant_id::text from memberships where user_id = $1 "
+            "order by created_at, id limit 1",
+            user_id,
+        )
 
     async def tenant_currency(self, tenant_id: str) -> str | None:
         """The money this tenant keeps its books in (plan.md §4). WP-28 asks

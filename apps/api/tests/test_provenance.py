@@ -37,19 +37,21 @@ from faida_api.wa import WhatsAppClient
 from faida_api.webhook import router as webhook_router
 
 from .conftest import (
+    AUTH,
     DEMO_PHONE,
     DEMO_TENANT_ID,
+    TEST_ACTOR,
     FakeExtraction,
     FakeMeta,
     FakeStorage,
     requires_db,
     wa_image_payload,
+    wire_auth,
 )
-from .test_api import API_TOKEN, client_for, extracted_invoice
+from .test_api import client_for, extracted_invoice
 from .test_confirm_flow import wa_text_payload
 from .test_extraction_flow import drain_jobs, good_invoice, invoice_result, post_webhook
 
-AUTH = {"Authorization": f"Bearer {API_TOKEN}"}
 AT = datetime.datetime(2026, 8, 28, 9, 0, tzinfo=datetime.UTC)
 
 
@@ -58,14 +60,14 @@ def api(settings, db):
     """Webhook + API on the test DB with Meta and storage mocked at the
     transport - the same shape as the other flow modules' fixtures, so both
     doors into a correction can be exercised in one test module."""
-    api_settings = settings.model_copy(update={"api_token": API_TOKEN})
     app = FastAPI()
     app.include_router(webhook_router)
     app.include_router(api_router)
-    app.state.settings = api_settings
+    app.state.settings = settings
+    wire_auth(app)
     app.state.db = db
-    app.state.wa = WhatsAppClient(api_settings, transport=FakeMeta().transport())
-    app.state.storage = Storage(api_settings, transport=FakeStorage().transport())
+    app.state.wa = WhatsAppClient(settings, transport=FakeMeta().transport())
+    app.state.storage = Storage(settings, transport=FakeStorage().transport())
     return app, client_for(app)
 
 
@@ -312,14 +314,14 @@ async def test_the_screen_records_the_other_door(api, db):
 
     provenance = resp.json()["provenance"]  # C6 detail carries it for the screen
     assert provenance[line_key(0, "qty")]["origin"] == "corrected_screen"
-    assert provenance[line_key(0, "qty")]["actor"] == "console"
+    assert provenance[line_key(0, "qty")]["actor"] == TEST_ACTOR
     assert provenance["total"]["origin"] == "extracted"
 
     events = await db.audit_events_for_subject(
         "invoice", str(invoice["id"]), tenant_id=DEMO_TENANT_ID
     )
     assert [(event["action"], event["actor"]) for event in events] == [
-        ("invoice.corrected", "console")
+        ("invoice.corrected", TEST_ACTOR)
     ]
     # No WhatsApp message behind a screen edit; the key is present and null.
     assert events[0]["detail"] == {"fields": [line_key(0, "qty")], "message_id": None}
@@ -366,7 +368,7 @@ async def test_confirming_a_cash_hold_from_the_screen_is_recorded(api, db):
         "invoice", str(invoice["id"]), tenant_id=DEMO_TENANT_ID
     )
     assert [(event["action"], event["actor"]) for event in events] == [
-        ("invoice.confirmed", "console")
+        ("invoice.confirmed", TEST_ACTOR)
     ]
     assert events[0]["detail"] == {"from_status": "needs_review"}
 
@@ -394,11 +396,11 @@ async def test_manual_entry_marks_the_whole_document_as_typed(api, db):
 
     detail = resp.json()
     assert {record["origin"] for record in detail["provenance"].values()} == {"manual"}
-    assert {record["actor"] for record in detail["provenance"].values()} == {"console"}
+    assert {record["actor"] for record in detail["provenance"].values()} == {TEST_ACTOR}
 
     events = await db.audit_events_for_subject("invoice", detail["id"], tenant_id=DEMO_TENANT_ID)
     assert [(event["action"], event["actor"]) for event in events] == [
-        ("invoice.created_by_hand", "console")
+        ("invoice.created_by_hand", TEST_ACTOR)
     ]
 
 

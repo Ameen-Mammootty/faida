@@ -23,10 +23,7 @@ from faida_api.api import router as api_router
 from faida_api.costing import Quality
 from faida_api.menu import router as menu_router
 
-from .conftest import DEMO_TENANT_ID, requires_db
-
-API_TOKEN = "test-api-token"
-AUTH = {"Authorization": f"Bearer {API_TOKEN}"}
+from .conftest import AUTH, DEMO_TENANT_ID, requires_db, wire_auth
 
 # -- the pure module (no DB) ---------------------------------------------------
 
@@ -126,11 +123,11 @@ def test_an_empty_version_is_incomplete_never_pure_margin():
 
 @pytest.fixture
 def api(settings, db):
-    api_settings = settings.model_copy(update={"api_token": API_TOKEN})
     app = FastAPI()
     app.include_router(api_router)
     app.include_router(menu_router)
-    app.state.settings = api_settings
+    app.state.settings = settings
+    wire_auth(app)
     app.state.db = db
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
 

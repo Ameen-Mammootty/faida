@@ -16,6 +16,10 @@ dependencies = [
     "pydantic-settings>=2.3",
     "python-multipart>=0.0.9",
     "pillow>=10.4",
+    # Supabase access tokens verified against the project's JWKS (M7 WP-70).
+    # The crypto extra pins cryptography explicitly: no other dependency
+    # here requires it, so a fresh build must not rely on finding one.
+    "PyJWT[crypto]>=2.10",
 ]
 
 [project.optional-dependencies]

@@ -22,10 +22,7 @@ from faida_api import costing
 from faida_api.api import router as api_router
 from faida_api.costing import Blocked, PackSource, Quality
 
-from .conftest import DEMO_TENANT_ID, requires_db
-
-API_TOKEN = "test-api-token"
-AUTH = {"Authorization": f"Bearer {API_TOKEN}"}
+from .conftest import AUTH, DEMO_TENANT_ID, requires_db, wire_auth
 
 
 def cost_of(**kwargs) -> costing.LineCost:
@@ -305,10 +302,10 @@ def test_the_basis_records_what_the_price_was_divided_by():
 
 @pytest.fixture
 def api(settings, db):
-    api_settings = settings.model_copy(update={"api_token": API_TOKEN})
     app = FastAPI()
     app.include_router(api_router)
-    app.state.settings = api_settings
+    app.state.settings = settings
+    wire_auth(app)
     app.state.db = db
     app.state.storage = _NoStorage()
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
