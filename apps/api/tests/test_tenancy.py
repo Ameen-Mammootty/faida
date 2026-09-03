@@ -207,7 +207,7 @@ async def seed_tenant_a(db, fake_storage: FakeStorage) -> Rows:
     )
     path = f"{TENANT_A}/documents/{document_id}/original"
     fake_storage.objects[path] = b"\xff\xd8fake"
-    await db.set_document_storage_path(document_id, path)
+    await db.set_document_storage_path(document_id, path, tenant_id=TENANT_A)
     rows.ids["document"] = document_id
     rows.ids["storage_path"] = path
     rows.ids["invoice"] = await db.insert_draft_invoice(

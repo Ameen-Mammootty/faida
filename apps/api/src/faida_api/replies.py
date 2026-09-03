@@ -48,6 +48,13 @@ REPLY_Z_REPORT = "I read supplier invoices for now - sales reports are coming so
 # Extraction failure (plan.md §5 layer 6: one message, never a dead end).
 REPLY_EXTRACTION_FAILED = "Couldn't read this one - try a straighter photo, or type the total."
 
+# WP-72 (C2 as amended): a phone no branch is registered to. Sent once a day
+# at most, and it says what to do without saying who else is on the system.
+REPLY_UNKNOWN_SENDER = (
+    "This number isn't set up yet, so I can't read invoices from it. "
+    "Ask the owner to add this number, then forward the invoice again."
+)
+
 # --- closing lines --------------------------------------------------------
 
 CLOSING_ALL_GREEN = "Reply OK to confirm."
