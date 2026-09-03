@@ -180,7 +180,7 @@ async def test_happy_path_photo_to_draft_invoice(api, db):
 
     # Draft invoice: header fields, Decimal money, derived confidence. The
     # reply asks for an OK, so the invoice awaits it (C1, WP-21 confirms it).
-    invoice = await db.get_invoice_by_document(str(doc["id"]))
+    invoice = await db.get_invoice_by_document(str(doc["id"]), tenant_id=DEMO_TENANT_ID)
     assert invoice["status"] == "awaiting_confirm"
     assert invoice["invoice_no"] == "INV-1041"
     assert invoice["invoice_date"] == datetime.date(2026, 8, 20)
@@ -253,7 +253,7 @@ async def test_repair_path_fixes_wrong_line_with_one_call(api, db):
 
     doc = await db.get_document_by_wa_message("wamid.in1")
     assert doc["status"] == "extracted"
-    invoice = await db.get_invoice_by_document(str(doc["id"]))
+    invoice = await db.get_invoice_by_document(str(doc["id"]), tenant_id=DEMO_TENANT_ID)
     line = await db.pool.fetchrow(
         "select * from invoice_lines where invoice_id = $1 and position = 1", invoice["id"]
     )
@@ -408,7 +408,7 @@ async def test_seeded_supplier_invoice_snaps_lines(api, db):
 
     doc = await db.get_document_by_wa_message("wamid.in1")
     assert doc["status"] == "extracted"
-    invoice = await db.get_invoice_by_document(str(doc["id"]))
+    invoice = await db.get_invoice_by_document(str(doc["id"]), tenant_id=DEMO_TENANT_ID)
     assert invoice["supplier_id"] == supplier_id
     assert invoice["supplier_name"] == "Gulf Foods Trading LLC"  # raw, not the catalog spelling
 
@@ -463,7 +463,7 @@ async def test_price_alert_fires_in_the_extraction_reply(api, db):
 
     doc = await db.get_document_by_wa_message("wamid.in1")
     assert doc["status"] == "extracted"
-    invoice = await db.get_invoice_by_document(str(doc["id"]))
+    invoice = await db.get_invoice_by_document(str(doc["id"]), tenant_id=DEMO_TENANT_ID)
     assert invoice["status"] == "awaiting_confirm"
 
     # Alerts ordered by absolute delta descending: karak's 3.25 (a falling
@@ -524,7 +524,7 @@ async def test_no_alert_when_either_threshold_is_unmet(api, db):
     await drain_jobs(db, app, provider)
 
     doc = await db.get_document_by_wa_message("wamid.in1")
-    row = await db.get_invoice_by_document(str(doc["id"]))
+    row = await db.get_invoice_by_document(str(doc["id"]), tenant_id=DEMO_TENANT_ID)
     lines = await db.pool.fetch(
         "select * from invoice_lines where invoice_id = $1 order by position", row["id"]
     )
@@ -552,7 +552,7 @@ async def test_cash_invoice_is_held_for_review(api, db):
     doc = await db.get_document_by_wa_message("wamid.in1")
     assert doc["status"] == "extracted"
     assert doc["classification"] == "invoice"
-    row = await db.get_invoice_by_document(str(doc["id"]))
+    row = await db.get_invoice_by_document(str(doc["id"]), tenant_id=DEMO_TENANT_ID)
     assert row["status"] == "needs_review"
     assert row["payment_kind"] == "cash"
 
@@ -580,7 +580,7 @@ async def test_unrepaired_failure_asks_the_amber_question(api, db):
 
     doc = await db.get_document_by_wa_message("wamid.in1")
     assert doc["status"] == "extracted"
-    invoice = await db.get_invoice_by_document(str(doc["id"]))
+    invoice = await db.get_invoice_by_document(str(doc["id"]), tenant_id=DEMO_TENANT_ID)
     assert invoice["status"] == "awaiting_confirm"
     assert invoice["confidence"]["lines"] == ["green", "amber"]
 
@@ -604,7 +604,7 @@ async def test_printed_currency_is_stored_and_replied_as_iso_code(api, db):
     await drain_jobs(db, app, provider)
 
     doc = await db.get_document_by_wa_message("wamid.in1")
-    invoice = await db.get_invoice_by_document(str(doc["id"]))
+    invoice = await db.get_invoice_by_document(str(doc["id"]), tenant_id=DEMO_TENANT_ID)
     assert invoice["currency"] == "AED"
     reply = (await outbound_bodies(db))[-1]
     assert "total AED 745.76" in reply

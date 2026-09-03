@@ -31,6 +31,7 @@ from faida_api.replies import (
     REPLY_MEDIA_RECEIVED,
     REPLY_NOT_INVOICE,
     REPLY_TEXT_ONBOARDING,
+    REPLY_UNKNOWN_SENDER,
     REPLY_UNSUPPORTED_TYPE,
     REPLY_Z_REPORT,
     PendingInvoice,
@@ -110,6 +111,12 @@ def test_fixed_messages_exact():
         "invoice photo and I'll read it."
     )
     assert REPLY_Z_REPORT == "I read supplier invoices for now - sales reports are coming soon."
+    # WP-72: a phone no branch is registered to. Plain words, one ask, no
+    # hint about who else is on the system.
+    assert REPLY_UNKNOWN_SENDER == (
+        "This number isn't set up yet, so I can't read invoices from it. "
+        "Ask the owner to add this number, then forward the invoice again."
+    )
     # Plan.md §5 layer 6 wording: one message, never a dead end.
     assert REPLY_EXTRACTION_FAILED == (
         "Couldn't read this one - try a straighter photo, or type the total."
@@ -124,6 +131,7 @@ def test_no_em_or_en_dashes_in_any_message():
         REPLY_NOT_INVOICE,
         REPLY_Z_REPORT,
         REPLY_EXTRACTION_FAILED,
+        REPLY_UNKNOWN_SENDER,
         CLOSING_ALL_GREEN,
         CLOSING_WITH_AMBERS,
         CASH_HOLD_NOTE,

@@ -51,6 +51,7 @@ from faida_api.worker import run_one_job
 
 from .conftest import (
     DEMO_PHONE,
+    DEMO_TENANT_ID,
     TEST_APP_SECRET,
     FakeExtraction,
     FakeMeta,
@@ -364,7 +365,7 @@ async def test_full_confirm_flow_records_prices_and_acks(api, db):
     # C1: the invoice is confirmed; the document stays at its ingest terminal.
     doc = await db.get_document_by_wa_message("wamid.in1")
     assert doc["status"] == "extracted"
-    invoice = await db.get_invoice_by_document(str(doc["id"]))
+    invoice = await db.get_invoice_by_document(str(doc["id"]), tenant_id=DEMO_TENANT_ID)
     assert invoice["status"] == "confirmed"
     assert invoice["confirmed_at"] is not None
 
@@ -404,7 +405,7 @@ async def test_correction_rereplies_then_ok_confirms_the_corrected_values(api, d
         "Reply OK to confirm."
     )
     doc = await db.get_document_by_wa_message("wamid.in1")
-    invoice = await db.get_invoice_by_document(str(doc["id"]))
+    invoice = await db.get_invoice_by_document(str(doc["id"]), tenant_id=DEMO_TENANT_ID)
     assert invoice["status"] == "awaiting_confirm"  # corrections never confirm
     assert invoice["confidence"]["lines"] == ["green", "green"]
     assert invoice["confidence"]["document"]["status"] == "green"
@@ -418,7 +419,7 @@ async def test_correction_rereplies_then_ok_confirms_the_corrected_values(api, d
     await post_webhook(client, wa_text_payload("ok", message_id="wamid.ok1"))
     await drain_jobs(db, app, None)
 
-    invoice = await db.get_invoice_by_document(str(doc["id"]))
+    invoice = await db.get_invoice_by_document(str(doc["id"]), tenant_id=DEMO_TENANT_ID)
     assert invoice["status"] == "confirmed"
     assert (await outbound_bodies(db))[-1] == ACK_GULF
     # The corrected values are what entered the price history.
@@ -439,7 +440,7 @@ async def test_ok_with_open_ambers_confirms_anyway(api, db):
     await drain_jobs(db, app, None)
 
     doc = await db.get_document_by_wa_message("wamid.in1")
-    invoice = await db.get_invoice_by_document(str(doc["id"]))
+    invoice = await db.get_invoice_by_document(str(doc["id"]), tenant_id=DEMO_TENANT_ID)
     assert invoice["status"] == "confirmed"
     assert doc["status"] == "extracted"
     assert (await outbound_bodies(db))[-1] == ACK_GULF
@@ -468,7 +469,7 @@ async def test_cash_invoice_is_not_addressable_from_chat(api, db):
 
     assert (await outbound_bodies(db))[-1] == REPLY_TEXT_ONBOARDING
     doc = await db.get_document_by_wa_message("wamid.in1")
-    invoice = await db.get_invoice_by_document(str(doc["id"]))
+    invoice = await db.get_invoice_by_document(str(doc["id"]), tenant_id=DEMO_TENANT_ID)
     assert invoice["status"] == "needs_review"
     assert doc["status"] == "extracted"
     assert await db.pool.fetchval("select count(*) from supplier_item_prices") == 0
@@ -485,7 +486,7 @@ async def test_unparseable_text_with_a_pending_invoice_gets_the_clarify(api, db)
 
     assert (await outbound_bodies(db))[-1] == REPLY_CLARIFY
     doc = await db.get_document_by_wa_message("wamid.in1")
-    invoice = await db.get_invoice_by_document(str(doc["id"]))
+    invoice = await db.get_invoice_by_document(str(doc["id"]), tenant_id=DEMO_TENANT_ID)
     assert invoice["status"] == "awaiting_confirm"  # a clarify never confirms
 
 

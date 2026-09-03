@@ -4,6 +4,7 @@ Status: **eng-reviewed 2026-09-03** (`/plan-eng-review`, scope reduced, outside 
 Approved to build by the founder the same day: the rows in §4 are in `plan.md` §7.3 as WP-70 to WP-76, C10 and the amendments in §7.2, the decisions in §5 in the Decision Log, and the TODOS in §9 in `TODOS.md`.
 This file stays as the milestone's record: contracts, failure modes, the cutover order and the review report.
 WP-73 and WP-71 shipped on 2026-09-03 from their briefs, before this record reached master; both match their rows, and WP-73's one boundary (the worker's by-id reads wait for WP-72) is in the Decision Log.
+WP-72 shipped the same day and closed that boundary: the worker's reads are scoped by the tenant the job carries, and an unknown phone creates nothing.
 M6 was decomposed, reviewed with an outside voice, and only then approved to build; M7 follows the same path.
 
 Plan reference: `plan.md` §8 M7 (the checklist and the done-when), §7.2 C2, C6 and C8 (the contracts M7 amends), PRD §4 (roles), §21 (cash approval), §26 (tenancy isolation).

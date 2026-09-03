@@ -771,8 +771,13 @@ async def upload_document(
     # (worker._ingest_media): never overwritten, never upserted.
     path = f"{tenant_id}/documents/{document_id}/original"
     await request.app.state.storage.put(path, data, mime)
-    await db.set_document_storage_path(document_id, path)
-    await db.enqueue(JobKind.EXTRACT_DOCUMENT, {"document_id": document_id})
+    await db.set_document_storage_path(document_id, path, tenant_id=tenant_id)
+    # C2 as amended (WP-72): the job carries the caller's tenant and the
+    # branch validated above, and there is one extract job per document.
+    await db.enqueue_once(
+        JobKind.EXTRACT_DOCUMENT,
+        {"document_id": document_id, "tenant_id": tenant_id, "branch_id": branch_id},
+    )
     return {"document_id": document_id}
 
 

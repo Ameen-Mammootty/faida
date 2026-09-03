@@ -15,7 +15,7 @@ import time
 
 import asyncpg
 
-from ..contracts import DocumentStatus, InvoiceStatus
+from ..contracts import DocumentStatus, InvoiceStatus, JobKind, JobRefused, job_tenant_id
 from ..db import RETRY_LIMIT, Database
 from ..matching import Row, match_supplier, normalize, normalize_invoice_no, snap_item
 from ..provenance import Origin, changed_fields, initial, mark
@@ -85,13 +85,21 @@ async def extract_document(
     draft invoice with checks, under the C1 status machine. `attempts` is the
     current attempt number; provider/transport errors re-raise into the queue
     retry machinery, and on the final attempt the failure path runs first so
-    the user is never left hanging (plan.md §5 layer 6)."""
+    the user is never left hanging (plan.md §5 layer 6).
+
+    The job carries its tenant (C2 as amended, WP-72) and every read here is
+    scoped by it. A job with no tenant, or a document that is not in that
+    tenant, is refused before anything is touched: no status change, no model
+    call, no reply - the job fails with the reason on it, and never guesses."""
     document_id = payload["document_id"]
-    doc = await db.get_document(document_id)
+    tenant_id = job_tenant_id(JobKind.EXTRACT_DOCUMENT, payload)
+    doc = await db.get_document(document_id, tenant_id=tenant_id)
     if doc is None:
-        logger.warning("extract job for unknown document %s", document_id)
-        return
-    if await db.get_invoice_by_document(document_id) is not None:
+        raise JobRefused(
+            f"extract job names document {document_id} under tenant {tenant_id}, "
+            "which has no such document; refusing rather than guessing"
+        )
+    if await db.get_invoice_by_document(document_id, tenant_id=tenant_id) is not None:
         return  # a previous attempt completed; invoices_document_uidx is the hard guard
 
     # WhatsApp documents reply to their sender; upload/manual (M3) have none.
@@ -99,7 +107,7 @@ async def extract_document(
     # summary line measures from.
     msg = await db.get_inbound_message(doc["wa_message_id"]) if doc["wa_message_id"] else None
     from_phone = msg["from_phone"] if msg else None
-    await db.set_document_status(document_id, DocumentStatus.PROCESSING)
+    await db.set_document_status(document_id, DocumentStatus.PROCESSING, tenant_id=tenant_id)
 
     # WP-41: per-stage elapsed ms, provider stages taken from the usage the
     # provider already timed (never re-timed here).
@@ -126,17 +134,19 @@ async def extract_document(
             )
         elif result.classification is Classification.Z_REPORT:
             await db.set_document_status(
-                document_id, DocumentStatus.FAILED, Classification.Z_REPORT
+                document_id, DocumentStatus.FAILED, Classification.Z_REPORT, tenant_id=tenant_id
             )
             await _record_run(db, document_id, usage, None, applied=False, outcome="z_report")
             reply = REPLY_Z_REPORT
         else:
-            await db.set_document_status(document_id, DocumentStatus.FAILED, Classification.OTHER)
+            await db.set_document_status(
+                document_id, DocumentStatus.FAILED, Classification.OTHER, tenant_id=tenant_id
+            )
             await _record_run(db, document_id, usage, None, applied=False, outcome="not_invoice")
             reply = REPLY_NOT_INVOICE
     except Exception:
         if attempts >= RETRY_LIMIT:
-            await db.set_document_status(document_id, DocumentStatus.FAILED)
+            await db.set_document_status(document_id, DocumentStatus.FAILED, tenant_id=tenant_id)
             if from_phone:
                 await _reply(db, wa, from_phone, REPLY_EXTRACTION_FAILED)
         raise
