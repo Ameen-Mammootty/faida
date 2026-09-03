@@ -24,6 +24,7 @@ The table has row-level security enabled with no public policy, making the endpo
 
 With no invoice environment variables set, the invoice review experience runs in **mock mode**: an in-memory dataset of three invoices (all green, amber fields, cash hold) served through the same typed client the real API uses.
 Edits and confirms persist for the browser session and reset on reload.
+Mock mode also skips the login gate and shows a sample signed-in owner, so every console screen renders offline for QA and design reviews.
 
 ## Talking to the real API
 
@@ -31,16 +32,20 @@ The client implements the C6 contract (plan.md section 7.2).
 To point it at the real backend, set:
 
 ```bash
-NEXT_PUBLIC_MOCK_API=false                   # mock unless this is the exact string "false"
-NEXT_PUBLIC_API_BASE=http://localhost:8000   # the FastAPI service, no trailing slash
-NEXT_PUBLIC_API_TOKEN=<shared-secret>        # demo bearer token (API_TOKEN on the API side); real auth is M7
-FAIDA_API_URL=http://localhost:8000          # server-only: the waitlist proxy target (easy to miss - not NEXT_PUBLIC_)
+NEXT_PUBLIC_MOCK_API=false                          # mock unless this is the exact string "false"
+NEXT_PUBLIC_API_BASE=http://localhost:8000          # the FastAPI service, no trailing slash
+NEXT_PUBLIC_SUPABASE_URL=https://<ref>.supabase.co  # the Supabase project the users live in
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon-key>            # its anon (publishable) key; public by design, never the service role
+FAIDA_API_URL=http://localhost:8000                 # server-only: the waitlist proxy target (easy to miss - not NEXT_PUBLIC_)
 ```
 
-All three `NEXT_PUBLIC_*` values are inlined into the JS bundle at build time: changing one requires a rebuild, and the token is readable by anyone who loads the deployed site (accepted C6 demo posture, closed in M7).
+All four `NEXT_PUBLIC_*` values are inlined into the JS bundle at build time: changing one requires a rebuild.
+There is no shared secret in the bundle any more: the browser signs in with Supabase Auth (email and password; accounts are created in the Supabase dashboard, sign-ups are off) and `src/lib/api.ts` sends the user's access token to the API on every call, reading it fresh each time so a refresh mid-run is picked up.
+A 401 from the API sends the visitor to `/login` with the current screen remembered.
+The gate itself is `src/proxy.ts` (Next's request interceptor): `/invoices`, `/materials` and `/menu` need a session, everything else is open, and the decisions are pure functions in `src/lib/gate.ts` with tests beside them.
 Mock mode is the default whenever the env vars are absent.
 The switch lives in `src/lib/api.ts`; nothing else in the app knows which mode it is in.
-Deploying to Vercel: root directory `apps/web`, the four variables above set for Production, and the API's `WEB_ORIGIN` must equal the deployed origin exactly (see the root README).
+Deploying to Vercel: root directory `apps/web`, the five variables above set for Production, and the API's `WEB_ORIGIN` must equal the deployed origin exactly (see the root README).
 
 ## Rules this app holds
 
@@ -53,6 +58,7 @@ Deploying to Vercel: root directory `apps/web`, the four variables above set for
 
 ```bash
 npm run lint
+npm test           # vitest: the login gate's decisions, the token attach, the 401 path
 npx tsc --noEmit
 npm run build
 ```
