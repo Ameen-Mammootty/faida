@@ -31,6 +31,18 @@ export function isMockMode(value: string | undefined): boolean {
   return value !== "false";
 }
 
+/**
+ * Whether the interceptor needs to know who is signed in for this path at
+ * all: the gated screens, and /login itself (a signed-in visitor there goes
+ * to the console). Every other path - the landing page, the waitlist post,
+ * a 404 - is served without building a Supabase client, so a missing or
+ * wrong Supabase env can never take the public site down, and a marketing
+ * page view costs no auth call.
+ */
+export function needsSession(pathname: string): boolean {
+  return pathname === LOGIN_PATH || isGatedPath(pathname);
+}
+
 export function isGatedPath(pathname: string): boolean {
   return GATED_PREFIXES.some(
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),

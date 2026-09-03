@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { gateDecision, isMockMode } from "@/lib/gate";
+import { gateDecision, isMockMode, needsSession } from "@/lib/gate";
 import { supabaseForRequest } from "@/lib/supabase/server";
 
 /**
@@ -22,6 +22,10 @@ import { supabaseForRequest } from "@/lib/supabase/server";
  *    asked. The rule itself is `gateDecision` in `lib/gate.ts`, pure and
  *    tested; this file only wires it to the request.
  *
+ * Public paths (the landing page, the waitlist post, anything not gated and
+ * not /login) return before any client exists, so the marketing site never
+ * depends on Supabase env or spends an auth call per view.
+ *
  * In mock mode the whole thing steps aside: no Supabase client is built (no
  * env is needed) and every screen renders with the sample data and a fake
  * signed-in owner, for offline QA and design reviews.
@@ -29,6 +33,10 @@ import { supabaseForRequest } from "@/lib/supabase/server";
 export async function proxy(request: NextRequest) {
   const mockMode = isMockMode(process.env.NEXT_PUBLIC_MOCK_API);
   if (mockMode) return NextResponse.next();
+  // Public paths never touch Supabase: no client, no env read, no auth call.
+  // The landing page and the waitlist post must keep working even when the
+  // Supabase values are missing or wrong on the host.
+  if (!needsSession(request.nextUrl.pathname)) return NextResponse.next();
 
   const bound = supabaseForRequest(request);
   const {

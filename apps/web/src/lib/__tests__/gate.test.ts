@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { gateDecision, isGatedPath, isMockMode, loginPath, safeNextPath } from "../gate";
+import { needsSession, gateDecision, isGatedPath, isMockMode, loginPath, safeNextPath } from "../gate";
 
 /**
  * M7 WP-71: the login gate's decisions, one row per path the app actually
@@ -141,5 +141,19 @@ describe("loginPath", () => {
 
   it("encodes the destination otherwise", () => {
     expect(loginPath("/menu/load")).toBe("/login?next=%2Fmenu%2Fload");
+  });
+});
+
+describe("needsSession", () => {
+  it("is true for every gated path and for /login itself", () => {
+    for (const path of ["/login", "/invoices", "/invoices/abc", "/materials", "/menu", "/menu/load"]) {
+      expect(needsSession(path)).toBe(true);
+    }
+  });
+
+  it("is false for the public site, so no Supabase client is ever built there", () => {
+    for (const path of ["/", "/api/waitlist", "/menus", "/nowhere", "/login-help"]) {
+      expect(needsSession(path)).toBe(false);
+    }
   });
 });
