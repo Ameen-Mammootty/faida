@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { isMockMode } from "@/lib/api";
+import SessionMenu from "./SessionMenu";
 
 /**
  * The app shell for the console screens: brand header, content column, quiet
@@ -7,6 +8,8 @@ import { isMockMode } from "@/lib/api";
  *
  * Extracted when M5 added a second screen (WP-52). `current` is passed in
  * rather than read from the router so the layouts stay server components.
+ * The one client island is `SessionMenu` (M7 WP-71): who is signed in, and
+ * the sign-out control.
  */
 export default function AppShell({
   current,
@@ -63,6 +66,18 @@ export default function AppShell({
             >
               Menu
             </Link>
+            <div className="hidden items-center gap-4 sm:flex">
+              <span aria-hidden="true" className="h-4 w-px bg-ink/10" />
+              <SessionMenu />
+            </div>
+          </div>
+        </div>
+        {/* Below sm the header row is full with the nav alone (measured at
+            390 px: Sign out beside Menu pushed the row 64 px past the edge),
+            so who is signed in and the way out get a quiet row of their own. */}
+        <div className="border-t border-ink/5 sm:hidden">
+          <div className="mx-auto flex h-9 w-full max-w-6xl items-center justify-end px-4">
+            <SessionMenu showEmail />
           </div>
         </div>
       </header>

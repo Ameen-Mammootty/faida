@@ -14,15 +14,25 @@
  * directly and never refetch after a write.
  *
  * Mock mode is the default: set NEXT_PUBLIC_MOCK_API=false plus
- * NEXT_PUBLIC_API_BASE and NEXT_PUBLIC_API_TOKEN to talk to the real thing.
- * The bearer token is the demo's shared secret (real auth arrives in M7).
+ * NEXT_PUBLIC_API_BASE and the two Supabase values to talk to the real thing.
  * The mock serves byte-identical shapes, so components cannot tell the modes
  * apart.
+ *
+ * Auth (M7 WP-71, decision D5): the browser calls the API directly and every
+ * request carries the signed-in user's Supabase access token as
+ * `Authorization: Bearer <token>`. The token is read per request, never
+ * cached here, so a refresh in the middle of a long run (the 45-recipe
+ * loader) is picked up by the next call. A 401 means the session is gone:
+ * the visitor is sent to /login with the current path remembered, and comes
+ * back to it after signing in. This module is the single chokepoint - no
+ * component knows there is a token.
  *
  * Money values are strings end to end and pass through this module verbatim.
  */
 
 import { ApiError } from "./errors";
+import { isMockMode as mockModeFrom, loginPath } from "./gate";
+import { getAccessToken } from "./supabase/browser";
 import {
   mockListBlockedCosts,
   mockListIngredients,
@@ -75,28 +85,48 @@ import type {
   UploadResult,
 } from "./types";
 
-const MOCK = process.env.NEXT_PUBLIC_MOCK_API !== "false";
+const MOCK = mockModeFrom(process.env.NEXT_PUBLIC_MOCK_API);
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "";
-const API_TOKEN = process.env.NEXT_PUBLIC_API_TOKEN ?? "";
 
 export function isMockMode(): boolean {
   return MOCK;
+}
+
+const SESSION_ENDED = "Your session has ended. Sign in again to continue.";
+
+/**
+ * Send the visitor to /login, remembering where they were. A full navigation
+ * rather than the router: the interceptor must see the (absent) session on
+ * the way back, and any screen state built on the old session is stale.
+ */
+function sendToLogin(): void {
+  if (typeof window === "undefined") return;
+  window.location.assign(loginPath(`${window.location.pathname}${window.location.search}`));
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (!API_BASE) {
     throw new ApiError(
       0,
-      "NEXT_PUBLIC_API_BASE is not set. Set it (plus NEXT_PUBLIC_API_TOKEN) or run in mock mode.",
+      "NEXT_PUBLIC_API_BASE is not set. Set it (plus the Supabase values) or run in mock mode.",
     );
   }
+  const token = await getAccessToken();
+  if (!token) {
+    sendToLogin();
+    throw new ApiError(401, SESSION_ENDED);
+  }
   const headers = new Headers(init.headers);
-  headers.set("Authorization", `Bearer ${API_TOKEN}`);
+  headers.set("Authorization", `Bearer ${token}`);
   let response: Response;
   try {
     response = await fetch(`${API_BASE}${path}`, { ...init, headers });
   } catch {
     throw new ApiError(0, "Couldn't reach the Faida API. Check that it is running.");
+  }
+  if (response.status === 401) {
+    sendToLogin();
+    throw new ApiError(401, SESSION_ENDED);
   }
   if (!response.ok) {
     let message = `The API returned ${response.status}.`;

@@ -343,7 +343,7 @@ export default function InvoiceList() {
           )}
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-md border border-ink/10 bg-paper">
+        <div className="relative overflow-x-auto rounded-md border border-ink/10 bg-paper">
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr className="border-b border-ink/10 text-left text-[11px] font-medium tracking-wider text-stone uppercase">

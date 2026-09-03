@@ -10,7 +10,7 @@ const eslintConfig = defineConfig([
     // storage URLs; the image optimizer would re-fetch after the signature
     // expires. Plain <img> is the right tool there (brand SVGs included).
     // Elsewhere the default rule stands.
-    files: ["src/components/**", "src/app/invoices/**"],
+    files: ["src/components/**", "src/app/invoices/**", "src/app/login/**"],
     rules: {
       "@next/next/no-img-element": "off",
     },
