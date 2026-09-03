@@ -352,10 +352,11 @@ async def test_confirming_from_chat_records_who_said_ok_exactly_once(api, db):
 
 
 @requires_db
-async def test_confirming_a_cash_hold_from_the_screen_is_recorded(api, db):
-    """The cash gate is the one approval PRD §21 calls non-negotiable, and
-    until M7 the review screen is that gate - so it is the one confirmation
-    that most needs a name against it."""
+async def test_approving_a_cash_hold_from_the_screen_is_recorded_with_its_reason(api, db):
+    """The cash gate is the one approval PRD §21 calls non-negotiable, and from
+    WP-74 the approve door is that gate - so it is the one confirmation that
+    most needs a name and a reason against it, and the plain confirm refuses
+    to record it at all."""
     _, client, *_ = api
     cash = good_invoice()
     cash.payment_kind = "cash"
@@ -363,15 +364,23 @@ async def test_confirming_a_cash_hold_from_the_screen_is_recorded(api, db):
     assert invoice["status"] == "needs_review"
 
     resp = await client.post(f"/api/invoices/{invoice['id']}/confirm", headers=AUTH)
-    assert resp.status_code == 200
+    assert resp.status_code == 409
+    resp = await client.post(
+        f"/api/invoices/{invoice['id']}/approve",
+        headers=AUTH,
+        json={"reason": "Paid from the till, slip attached"},
+    )
+    assert resp.status_code == 200, resp.text
 
     events = await db.audit_events_for_subject(
         "invoice", str(invoice["id"]), tenant_id=DEMO_TENANT_ID
     )
     assert [(event["action"], event["actor"]) for event in events] == [
-        ("invoice.confirmed", TEST_ACTOR)
+        ("invoice.cash_approved", TEST_ACTOR)
     ]
-    assert events[0]["detail"] == {"from_status": "needs_review"}
+    assert events[0]["detail"]["from_status"] == "needs_review"
+    assert events[0]["detail"]["reason"] == "Paid from the till, slip attached"
+    assert events[0]["detail"]["total"] == "745.76"
 
 
 @requires_db

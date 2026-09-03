@@ -25,6 +25,7 @@ import { blankToNone } from "../placeholders";
 import type {
   Correction,
   DocumentSource,
+  PaymentKind,
   DocumentStatus,
   FieldOrigin,
   FieldSource,
@@ -42,6 +43,16 @@ import type {
 } from "../types";
 
 const HEADER_FIELDS = new Set(["subtotal", "tax", "total"]);
+const PAYMENT_KINDS = new Set<string>(["cash", "credit"]);
+
+/** api.py's refusal sentences, word for word: the screen renders whatever
+ * comes back, so a mock that paraphrased would let copy drift out of QA's
+ * sight. */
+const CONFIRM_REFUSES_CASH = "invoice is paid in cash; approve it with a reason instead";
+const APPROVE_REFUSES_CREDIT = "invoice is paid by credit, not cash; confirm it instead";
+const APPROVE_REFUSES_UNMARKED = "invoice is not marked cash; confirm it instead";
+const APPROVE_ALREADY_CONFIRMED = "invoice is already confirmed";
+const APPROVE_REFUSES_DISMISSED = "invoice is dismissed; a dismissed copy cannot be approved";
 
 /** C8 field paths, matching faida_api/provenance.py exactly. */
 const PROVENANCE_HEADER_FIELDS = [
@@ -296,11 +307,22 @@ type Edit =
     }
   | { kind: "line_name"; line_index: number; name: string }
   | { kind: "line_pack_size"; line_index: number; pack_size: string | null }
-  | { kind: "totals"; field: "subtotal" | "tax" | "total"; value: string };
+  | { kind: "totals"; field: "subtotal" | "tax" | "total"; value: string }
+  | { kind: "payment_kind"; value: PaymentKind };
 
 /** api.py _to_edit, message for message. */
 function toEdit(correction: Correction): Edit {
   const { field, line_index: lineIndex, value } = correction;
+  if (field === "payment_kind") {
+    if (lineIndex !== null) {
+      throw new ApiError(422, "field 'payment_kind' is a header field; line_index must be null");
+    }
+    const kind = value.trim().toLowerCase();
+    if (!PAYMENT_KINDS.has(kind)) {
+      throw new ApiError(422, `'${value}' is not a payment kind: send "cash" or "credit"`);
+    }
+    return { kind: "payment_kind", value: kind as PaymentKind };
+  }
   if (HEADER_FIELDS.has(field)) {
     if (lineIndex !== null) {
       throw new ApiError(
@@ -340,6 +362,7 @@ function toEdit(correction: Correction): Edit {
 /** The C8 field path an edit stamps, matching faida_api/provenance.py keys. */
 function editKey(edit: Edit): string {
   if (edit.kind === "totals") return edit.field;
+  if (edit.kind === "payment_kind") return "payment_kind";
   if (edit.kind === "line_name") return lineKey(edit.line_index, "raw_name");
   if (edit.kind === "line_pack_size") return lineKey(edit.line_index, "pack_size");
   return lineKey(edit.line_index, edit.field);
@@ -375,7 +398,7 @@ export async function mockPatchInvoiceFields(
 
   const edits = corrections.map(toEdit);
   for (const edit of edits) {
-    if (edit.kind !== "totals" && edit.line_index >= current.lines.length) {
+    if ("line_index" in edit && edit.line_index >= current.lines.length) {
       throw new ApiError(
         422,
         `line_index ${edit.line_index} out of range: ` +
@@ -388,6 +411,20 @@ export async function mockPatchInvoiceFields(
   for (const edit of edits) {
     if (edit.kind === "totals") {
       next[edit.field] = edit.value;
+    } else if (edit.kind === "payment_kind") {
+      next.payment_kind = edit.value;
+      // C1 as amended (confirm.status_after_payment_kind): the one correction
+      // that moves a status. Credit to cash holds an awaiting paper; cash to
+      // credit lifts a hold that carries no duplicate pointer.
+      if (next.status === "awaiting_confirm" && edit.value === "cash") {
+        next.status = "needs_review";
+      } else if (
+        next.status === "needs_review" &&
+        edit.value !== "cash" &&
+        next.duplicate_of_invoice_id === null
+      ) {
+        next.status = "awaiting_confirm";
+      }
     } else if (edit.kind === "line_name") {
       next.lines[edit.line_index].raw_name = edit.name;
     } else if (edit.kind === "line_pack_size") {
@@ -427,9 +464,46 @@ function recordConfirmedPrices(detail: InvoiceDetail): void {
 
 export async function mockConfirmInvoice(id: string): Promise<InvoiceDetail> {
   const current = getOrThrow(id);
+  if (current.payment_kind === "cash" && current.status === "needs_review") {
+    throw new ApiError(409, CONFIRM_REFUSES_CASH);
+  }
   if (!EDITABLE_STATUSES.has(current.status)) {
     throw new ApiError(409, `invoice is ${current.status}; cannot confirm`);
   }
+  return respond(record(id, current));
+}
+
+/** POST /api/invoices/{id}/approve (M7 WP-74): the cash gate. Keyed on cash
+ * alone - a cash copy that is also a held duplicate approves here too. The
+ * same write as confirm; only the audit row differs, and the mock keeps no
+ * audit trail, so here the difference is the guard and the reason. */
+export async function mockApproveInvoice(id: string, reason: string): Promise<InvoiceDetail> {
+  const current = getOrThrow(id);
+  if (reason.trim() === "") {
+    // Body validation on the server: a 422 whose detail is a list, which the
+    // client renders as its status-based sentence.
+    throw new ApiError(422, "The API returned 422.");
+  }
+  if (current.payment_kind !== "cash") {
+    throw new ApiError(
+      409,
+      current.payment_kind === null ? APPROVE_REFUSES_UNMARKED : APPROVE_REFUSES_CREDIT,
+    );
+  }
+  if (current.status === "confirmed") throw new ApiError(409, APPROVE_ALREADY_CONFIRMED);
+  if (current.status === "dismissed") throw new ApiError(409, APPROVE_REFUSES_DISMISSED);
+  if (current.status !== "needs_review") {
+    throw new ApiError(
+      409,
+      `invoice is ${current.status}; only a cash invoice held for review can be approved`,
+    );
+  }
+  return respond(record(id, current));
+}
+
+/** db._confirm, the one write behind confirm and approve: the status flip,
+ * the frozen costs (WP-53) and the price baseline, together. */
+function record(id: string, current: InvoiceDetail): InvoiceDetail {
   const costs = frozenCosts.get(id);
   const confirmed: InvoiceDetail = {
     ...clone(current),
@@ -444,7 +518,7 @@ export async function mockConfirmInvoice(id: string): Promise<InvoiceDetail> {
   };
   invoices.set(id, confirmed);
   recordConfirmedPrices(confirmed);
-  return respond(confirmed);
+  return confirmed;
 }
 
 const UPLOAD_EXTRACTION_MS = 4000;

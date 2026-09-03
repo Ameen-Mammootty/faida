@@ -2,10 +2,16 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { confirmInvoice, dismissInvoice, getInvoice, patchInvoiceFields } from "@/lib/api";
+import {
+  approveInvoice,
+  confirmInvoice,
+  dismissInvoice,
+  getInvoice,
+  patchInvoiceFields,
+} from "@/lib/api";
 import { ApiError } from "@/lib/errors";
 import { formatDate, money, PAYMENT_LABEL } from "@/lib/format";
-import type { Correction, DocumentSource, InvoiceDetail } from "@/lib/types";
+import type { Correction, DocumentSource, InvoiceDetail, PaymentKind } from "@/lib/types";
 import { AlertIcon } from "./icons";
 import DuplicateChip from "./DuplicateChip";
 import FieldBadge from "./FieldBadge";
@@ -27,6 +33,14 @@ interface LoadResult {
   error?: string;
 }
 
+/** What the one status strip says after a write, success or failure alike. */
+interface Notice {
+  tone: "ok" | "error";
+  text: string;
+}
+
+const PAYMENT_KINDS: PaymentKind[] = ["cash", "credit"];
+
 function HeaderField({ label, value }: { label: string; value: string | null }) {
   return (
     <div>
@@ -43,9 +57,13 @@ export default function InvoiceReview({ id }: { id: string }) {
   const [reloadKey, setReloadKey] = useState(0);
   const [confirming, setConfirming] = useState(false);
   const [dismissing, setDismissing] = useState(false);
-  // One slot for both write actions: only one can be in flight, and whichever
-  // failed is the one the reader needs the sentence for.
-  const [actionError, setActionError] = useState<string | null>(null);
+  const [approving, setApproving] = useState(false);
+  const [savingPayment, setSavingPayment] = useState(false);
+  const [reason, setReason] = useState("");
+  // One strip for every write action, success and failure alike: only one can
+  // be in flight, and whichever finished is the one the reader needs the
+  // sentence for. role="status" below, so it is announced as it changes.
+  const [notice, setNotice] = useState<Notice | null>(null);
   const imageRefreshedAt = useRef(0);
 
   const key = `${id}:${reloadKey}`;
@@ -86,17 +104,53 @@ export default function InvoiceReview({ id }: { id: string }) {
     applyUpdate(await patchInvoiceFields(id, corrections));
   }
 
+  // A refusal names the row as it is now ("invoice is already confirmed"),
+  // which is exactly when what the screen shows has gone stale - another tab
+  // got there first. So a 409 also refetches, and the reader sees the sentence
+  // beside the state it describes rather than beside a form for a state that
+  // no longer exists.
+  async function failed(err: unknown, fallback: string) {
+    setNotice({ tone: "error", text: err instanceof ApiError ? err.message : fallback });
+    if (err instanceof ApiError && err.status === 409) {
+      try {
+        applyUpdate(await getInvoice(id));
+      } catch {
+        // keep the current view; the sentence in the strip still stands
+      }
+    }
+  }
+
   async function confirm() {
     setConfirming(true);
-    setActionError(null);
+    setNotice(null);
     try {
       applyUpdate(await confirmInvoice(id));
+      setNotice({ tone: "ok", text: "Confirmed. This invoice is now recorded." });
     } catch (err) {
-      setActionError(
-        err instanceof ApiError ? err.message : "Couldn't confirm the invoice. Try again.",
-      );
+      await failed(err, "Couldn't confirm the invoice. Try again.");
     } finally {
       setConfirming(false);
+    }
+  }
+
+  // The cash gate (M7 WP-74, PRD §21): the owner lets a cash paper through
+  // with a reason. The button is disabled until there is one, so the server's
+  // 422 for a blank reason is unreachable from here; its 409s (not cash any
+  // more, already recorded, dismissed under another tab) land in the strip.
+  async function approve(event: React.FormEvent) {
+    event.preventDefault();
+    const text = reason.trim();
+    if (!text) return;
+    setApproving(true);
+    setNotice(null);
+    try {
+      applyUpdate(await approveInvoice(id, text));
+      setReason("");
+      setNotice({ tone: "ok", text: "Approved with a reason. This cash invoice is now recorded." });
+    } catch (err) {
+      await failed(err, "Couldn't approve the invoice. Try again.");
+    } finally {
+      setApproving(false);
     }
   }
 
@@ -105,15 +159,44 @@ export default function InvoiceReview({ id }: { id: string }) {
   // being bounced to a list where the only evidence is an absence.
   async function dismiss() {
     setDismissing(true);
-    setActionError(null);
+    setNotice(null);
     try {
       applyUpdate(await dismissInvoice(id));
+      setNotice({ tone: "ok", text: "Dismissed this copy. Nothing was counted twice." });
     } catch (err) {
-      setActionError(
-        err instanceof ApiError ? err.message : "Couldn't dismiss this copy. Try again.",
-      );
+      await failed(err, "Couldn't dismiss this copy. Try again.");
     } finally {
       setDismissing(false);
+    }
+  }
+
+  // "Paid by" goes through the correction door like every other field (one
+  // door for everyone): a misread cash is corrected, never approved. The
+  // server moves the status the way the pipeline would have - cash holds an
+  // awaiting paper, credit lifts a cash hold unless it is also a duplicate -
+  // and the screen re-renders from what comes back.
+  async function setPaymentKind(kind: PaymentKind) {
+    setSavingPayment(true);
+    setNotice(null);
+    try {
+      const updated = await patchInvoiceFields(id, [
+        { line_index: null, field: "payment_kind", value: kind },
+      ]);
+      applyUpdate(updated);
+      const held = updated.status === "needs_review";
+      setNotice({
+        tone: "ok",
+        text:
+          kind === "cash"
+            ? "Paid by set to Cash. Held for the owner's approval."
+            : held
+              ? "Paid by set to Credit. Still held as a duplicate copy."
+              : "Paid by set to Credit. Ready to confirm.",
+      });
+    } catch (err) {
+      await failed(err, "Couldn't change how this was paid. Try again.");
+    } finally {
+      setSavingPayment(false);
     }
   }
 
@@ -170,7 +253,12 @@ export default function InvoiceReview({ id }: { id: string }) {
   // Only these two states can be confirmed (api.py answers 409 for the rest),
   // so the button asks for them by name. Written as a bare else, `dismissed`
   // would land here and offer an action the server is guaranteed to refuse.
-  const confirmable = invoice.status === "awaiting_confirm" || invoice.status === "needs_review";
+  // A cash hold is never confirmable: the owner approves it with a reason
+  // (WP-74), and the server answers 409 to a confirm - so the button is not
+  // offered at all, and the cash banner below carries the approve form.
+  const confirmable =
+    (invoice.status === "awaiting_confirm" || invoice.status === "needs_review") && !cashHold;
+  const busy = confirming || dismissing || approving || savingPayment;
   const watchItemIds = [
     ...new Set(
       invoice.lines
@@ -222,12 +310,14 @@ export default function InvoiceReview({ id }: { id: string }) {
             <div className="flex flex-wrap items-center justify-end gap-2">
               {/* On a copy this is the action that makes sense, so it leads and
                   Confirm steps back to the outline treatment. Confirming is
-                  still one click away - the WhatsApp reply promised it. */}
-              {heldDuplicate ? (
+                  still one click away - the WhatsApp reply promised it. On a
+                  cash copy both actions sit in the cash banner instead, beside
+                  the reason field they belong with. */}
+              {heldDuplicate && !cashHold ? (
                 <button
                   type="button"
                   onClick={() => void dismiss()}
-                  disabled={dismissing || confirming}
+                  disabled={busy}
                   className="min-h-11 rounded-sm bg-palm px-4 py-2 text-sm font-semibold text-white hover:bg-palm-deep disabled:opacity-60"
                 >
                   {dismissing ? "Dismissing" : "Dismiss this copy"}
@@ -237,35 +327,84 @@ export default function InvoiceReview({ id }: { id: string }) {
                 <button
                   type="button"
                   onClick={() => void confirm()}
-                  disabled={confirming || dismissing}
+                  disabled={busy}
                   className={
-                    cashHold || heldDuplicate
+                    heldDuplicate
                       ? "min-h-11 rounded-sm border-2 border-palm bg-paper px-4 py-2 text-sm font-semibold text-palm hover:bg-mist disabled:opacity-60"
                       : "min-h-11 rounded-sm bg-palm px-4 py-2 text-sm font-semibold text-white hover:bg-palm-deep disabled:opacity-60"
                   }
                 >
-                  {confirming
-                    ? cashHold
-                      ? "Approving"
-                      : "Confirming"
-                    : cashHold
-                      ? "Approve cash invoice"
-                      : "Confirm invoice"}
+                  {confirming ? "Confirming" : "Confirm invoice"}
                 </button>
               ) : null}
             </div>
           )}
-          {actionError ? (
-            <p className="max-w-xs text-right text-xs font-medium text-plum">{actionError}</p>
-          ) : null}
         </div>
       </header>
 
+      {/* The one strip every write speaks through - approve, confirm, dismiss
+          and the "Paid by" change, success and failure alike. Always in the
+          tree so a screen reader hears the change, never a layout jump. */}
+      <p
+        role="status"
+        className={
+          notice === null
+            ? "sr-only"
+            : notice.tone === "error"
+              ? "rounded-md border border-plum/30 bg-paper px-3 py-2 text-sm font-medium text-plum"
+              : "rounded-md border border-verified/30 bg-mist px-3 py-2 text-sm font-medium text-ink"
+        }
+      >
+        {notice?.text ?? ""}
+      </p>
+
       {cashHold ? (
-        <p className="flex items-center gap-2 rounded-md border border-caution/20 bg-gold-soft px-3 py-2.5 text-sm text-caution">
-          <AlertIcon />
-          Paid in cash, so it needs the owner&apos;s approval before it counts.
-        </p>
+        <form
+          onSubmit={(event) => void approve(event)}
+          aria-labelledby="cash-hold-heading"
+          className="rounded-md border border-caution/20 bg-gold-soft px-3 py-2.5 text-sm text-caution"
+        >
+          <p id="cash-hold-heading" className="flex items-start gap-2">
+            <span className="mt-0.5 shrink-0">
+              <AlertIcon />
+            </span>
+            <span>
+              Paid in cash, so the owner approves it with a reason before it counts. If it was
+              really paid on credit, change &ldquo;Paid by&rdquo; below instead.
+            </span>
+          </p>
+          <div className="mt-3 flex flex-wrap items-end gap-2">
+            <label className="flex min-w-0 basis-full flex-col gap-1 text-xs font-medium text-ink sm:flex-1 sm:basis-auto">
+              Reason for approving
+              <input
+                type="text"
+                name="reason"
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+                disabled={busy}
+                placeholder="Why this cash purchase is fine"
+                className="w-full rounded-sm border border-ink/20 bg-paper px-2 py-1.5 text-sm text-ink"
+              />
+            </label>
+            <button
+              type="submit"
+              disabled={busy || reason.trim() === ""}
+              className="min-h-11 rounded-sm bg-palm px-4 py-2 text-sm font-semibold text-white hover:bg-palm-deep disabled:opacity-60"
+            >
+              {approving ? "Approving" : "Approve cash invoice"}
+            </button>
+            {heldDuplicate ? (
+              <button
+                type="button"
+                onClick={() => void dismiss()}
+                disabled={busy}
+                className="min-h-11 rounded-sm border-2 border-palm bg-paper px-4 py-2 text-sm font-semibold text-palm hover:bg-mist disabled:opacity-60"
+              >
+                {dismissing ? "Dismissing" : "Dismiss this copy"}
+              </button>
+            ) : null}
+          </div>
+        </form>
       ) : null}
 
       {/* The sentence the sender already read on WhatsApp, minus its last
@@ -316,10 +455,41 @@ export default function InvoiceReview({ id }: { id: string }) {
                 label="Date"
                 value={invoice.invoice_date ? formatDate(invoice.invoice_date) : null}
               />
-              <HeaderField
-                label="Payment"
-                value={invoice.payment_kind ? PAYMENT_LABEL[invoice.payment_kind] : null}
-              />
+              {editable ? (
+                <div>
+                  <dt className="text-[11px] font-medium tracking-wider text-stone uppercase">
+                    <label htmlFor="paid-by">Paid by</label>
+                  </dt>
+                  <dd className="mt-0.5">
+                    <select
+                      id="paid-by"
+                      value={invoice.payment_kind ?? ""}
+                      disabled={busy}
+                      onChange={(event) => {
+                        const kind = event.target.value;
+                        if (kind === "cash" || kind === "credit") void setPaymentKind(kind);
+                      }}
+                      className="w-full max-w-[9rem] rounded-sm border border-ink/20 bg-paper px-2 py-1 text-sm font-medium text-ink"
+                    >
+                      {invoice.payment_kind === null ? (
+                        <option value="" disabled>
+                          Not read
+                        </option>
+                      ) : null}
+                      {PAYMENT_KINDS.map((kind) => (
+                        <option key={kind} value={kind}>
+                          {PAYMENT_LABEL[kind]}
+                        </option>
+                      ))}
+                    </select>
+                  </dd>
+                </div>
+              ) : (
+                <HeaderField
+                  label="Paid by"
+                  value={invoice.payment_kind ? PAYMENT_LABEL[invoice.payment_kind] : null}
+                />
+              )}
             </dl>
             <div className="mt-4 border-t border-ink/10 pt-1">
               <LinesTable

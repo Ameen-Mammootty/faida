@@ -255,7 +255,8 @@ export type CorrectionField =
   | "pack_size"
   | "subtotal"
   | "tax"
-  | "total";
+  | "total"
+  | "payment_kind";
 
 /**
  * One field fix for PATCH /api/invoices/{id}/fields, exactly the chat
@@ -267,7 +268,10 @@ export type CorrectionField =
  * lib/placeholders.ts mirrors the vocabulary) stores null, because "the pack
  * we hold is wrong and I do not know the right one" is a real answer to the
  * one line field no arithmetic can cross-check. Every other field can never
- * be cleared.
+ * be cleared. "payment_kind" (M7 WP-74) is a header field taking exactly
+ * "cash" or "credit", and it is the one correction that moves a status: cash
+ * to credit lifts a cash hold back to awaiting_confirm (unless the paper is
+ * also a held duplicate), credit to cash holds an awaiting paper.
  */
 export interface Correction {
   line_index: number | null;
@@ -278,6 +282,15 @@ export interface Correction {
 /** PATCH body: {"corrections": [...]}, at least one. Returns InvoiceDetail. */
 export interface FieldCorrections {
   corrections: Correction[];
+}
+
+/**
+ * POST /api/invoices/{id}/approve body (M7 WP-74, PRD §21): the owner lets a
+ * cash paper through, with a reason. Required, non-empty after trimming (422
+ * otherwise); the audit row carries it. Returns InvoiceDetail, like confirm.
+ */
+export interface Approval {
+  reason: string;
 }
 
 /**

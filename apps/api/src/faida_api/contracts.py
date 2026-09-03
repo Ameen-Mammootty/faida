@@ -7,6 +7,18 @@ the check constraints in supabase/migrations/ - 0001_init.sql defines both, and
 migration naming a table is the one that owns its vocabulary. The lockstep is
 enforced behaviourally in tests/test_contracts.py, not by this sentence.
 
+C1 as amended 2026-09-03 (M7, Decision Log; WP-74 built it): corrections keep
+an invoice where it is, with one exception - `payment_kind`. A cash paper is
+held as NEEDS_REVIEW for the owner's approval (WP-24, PRD §21), so correcting a
+misread "cash" to credit lifts that hold back to AWAITING_CONFIRM, and marking
+an awaiting paper cash holds it, exactly as the pipeline would have. The lift
+is guarded by the duplicate pointer: a WP-44 copy that is also cash stays held
+when its payment kind changes, because the duplicate hold still applies and
+its exits are confirm or dismiss. No new status: a cash approval is the same
+NEEDS_REVIEW -> CONFIRMED write as a confirm, distinguished by its audit row
+(`invoice.cash_approved`, reason required). The rule itself is
+`confirm.status_after_payment_kind`, beside the correction that applies it.
+
 C2 as amended 2026-09-03 (M7, Decision Log; WP-72 built it): jobs carry their
 scope. `process_wa_message` is the one named resolver - it maps the sender
 phone to a branch and tenant and carries the phone - and every job it enqueues
@@ -93,17 +105,25 @@ DOCUMENT_TRANSITIONS: dict[DocumentStatus, set[DocumentStatus]] = {
     DocumentStatus.FAILED: {DocumentStatus.PROCESSING},
 }
 
-# Corrections keep an invoice in AWAITING_CONFIRM (no transition); NEEDS_REVIEW
-# clears through the review screen (M3) or cash approval (M7), or - when it is a
-# WP-44 duplicate hold - through DISMISSED. Only NEEDS_REVIEW reaches DISMISSED
-# because only a held duplicate carries duplicate_of_invoice_id, and the
-# pipeline sets that in the same branch that sets NEEDS_REVIEW. Both terminal
-# states are terminal: a dismissed invoice is refused by the single confirm
-# write, and a confirmed one is a financial record.
+# Corrections keep an invoice in AWAITING_CONFIRM (no transition), except the
+# payment-kind correction (C1 as amended, above): credit to cash holds an
+# awaiting paper as NEEDS_REVIEW, and cash to credit lifts a hold that carries
+# no duplicate pointer back to AWAITING_CONFIRM. NEEDS_REVIEW otherwise clears
+# through the review screen (a duplicate hold confirms; a cash hold is approved
+# with a reason, M7) or - when it is a WP-44 duplicate hold - through DISMISSED.
+# Only NEEDS_REVIEW reaches DISMISSED because only a held duplicate carries
+# duplicate_of_invoice_id, and the pipeline sets that in the same branch that
+# sets NEEDS_REVIEW. Both terminal states are terminal: a dismissed invoice is
+# refused by the single confirm write, and a confirmed one is a financial
+# record.
 INVOICE_TRANSITIONS: dict[InvoiceStatus, set[InvoiceStatus]] = {
     InvoiceStatus.DRAFT: {InvoiceStatus.AWAITING_CONFIRM, InvoiceStatus.NEEDS_REVIEW},
     InvoiceStatus.AWAITING_CONFIRM: {InvoiceStatus.CONFIRMED, InvoiceStatus.NEEDS_REVIEW},
-    InvoiceStatus.NEEDS_REVIEW: {InvoiceStatus.CONFIRMED, InvoiceStatus.DISMISSED},
+    InvoiceStatus.NEEDS_REVIEW: {
+        InvoiceStatus.CONFIRMED,
+        InvoiceStatus.DISMISSED,
+        InvoiceStatus.AWAITING_CONFIRM,
+    },
     InvoiceStatus.CONFIRMED: set(),
     InvoiceStatus.DISMISSED: set(),
 }

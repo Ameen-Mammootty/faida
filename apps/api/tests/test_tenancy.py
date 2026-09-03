@@ -260,6 +260,27 @@ async def seed_tenant_a(db, fake_storage: FakeStorage) -> Rows:
         document_classification=None,
         duplicate_of_invoice_id=rows["invoice"],
     )
+    # A cash paper held for the owner, for the approve door (WP-74).
+    cash_document = await db.insert_manual_document(tenant_id=TENANT_A, branch_id=BRANCH_A)
+    rows.ids["cash"] = await db.insert_draft_invoice(
+        tenant_id=TENANT_A,
+        branch_id=BRANCH_A,
+        document_id=cash_document,
+        supplier_id=rows["supplier"],
+        supplier_name="Gulf Foods",
+        invoice_no="GF-2",
+        invoice_date=None,
+        currency="AED",
+        subtotal=Decimal("100.00"),
+        tax=Decimal("5.00"),
+        total=Decimal("105.00"),
+        payment_kind="cash",
+        status=InvoiceStatus.NEEDS_REVIEW,
+        confidence={},
+        provenance={},
+        lines=[],
+        document_classification=None,
+    )
     item = await db.create_menu_item(
         tenant_id=TENANT_A, name="Karak", selling_price=Decimal("5.00"), actor="test"
     )
@@ -305,6 +326,12 @@ MATRIX: list[dict] = [
         "method": "POST",
         "path": "/api/invoices/{invoice_id}/dismiss",
         "url": lambda r: f"/api/invoices/{r['duplicate']}/dismiss",
+    },
+    {
+        "method": "POST",
+        "path": "/api/invoices/{invoice_id}/approve",
+        "url": lambda r: f"/api/invoices/{r['cash']}/approve",
+        "json": {"reason": "Paid at the door"},
     },
     {
         "method": "POST",

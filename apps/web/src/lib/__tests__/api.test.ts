@@ -44,6 +44,37 @@ afterEach(() => {
 });
 
 describe("api.ts in live mode", () => {
+  it("posts the approval reason as JSON to the approve door (WP-74)", async () => {
+    getAccessToken.mockResolvedValue("token-1");
+    fetchMock.mockImplementation(async () =>
+      jsonResponse(200, { id: "inv-1", status: "confirmed", payment_kind: "cash" }),
+    );
+    const api = await liveApi();
+
+    const detail = await api.approveInvoice("inv-1", "Paid at the door");
+
+    expect(detail.status).toBe("confirmed");
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("https://api.example.test/api/invoices/inv-1/approve");
+    expect(init?.method).toBe("POST");
+    expect(JSON.parse(String(init?.body))).toEqual({ reason: "Paid at the door" });
+    expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer token-1");
+  });
+
+  it("surfaces the approve door's refusal sentence as the error message", async () => {
+    getAccessToken.mockResolvedValue("token-1");
+    fetchMock.mockImplementation(async () =>
+      jsonResponse(409, { detail: "invoice is paid by credit, not cash; confirm it instead" }),
+    );
+    const api = await liveApi();
+
+    await expect(api.approveInvoice("inv-1", "why")).rejects.toMatchObject({
+      status: 409,
+      message: "invoice is paid by credit, not cash; confirm it instead",
+    });
+    expect(assign).not.toHaveBeenCalled();
+  });
+
   it("attaches the session's access token as a bearer on every request", async () => {
     getAccessToken.mockResolvedValue("token-1");
     fetchMock.mockImplementation(async () => jsonResponse(200, { invoices: [] }));
