@@ -197,6 +197,8 @@ cd apps/web && vercel --prod --yes
 
 Rollback, independent on each host and one click each: Railway redeploys the previous build; Vercel promotes the previous deployment. Neither touches the database, and 0018 is harmless to the previous code.
 
+**Ran 2026-09-03, 19:20 to 21:30 local, no rollback needed.** Backup `~/faida-before-cutover-2026-09-03-1920.sql`; merge `304eeec`; Railway up at 19:24 (old token 401, a fresh token 200); web deployed, sign-in page live; the founder signed in, forwarded KAS-5 and confirmed it in 18 s; the money moment on the reloaded screen; both dead variables removed. §E row 5 is that run.
+
 ## D. Failure playbook
 
 Rule one, from plan.md §7.3 WP-41: every flake found in rehearsal gets fixed, never retried around.
@@ -278,6 +280,7 @@ The target is under about 20 seconds from forward to reply; 18.7 s was measured 
 | 2 | 2026-08-30 | not captured | n/a - act two did not exist yet | none |
 | 3 | 2026-09-01 | 17.7 (message timestamps; extraction 4.1 s, zero repair) | yes - both callouts, the drill, "push this, fix that" | none; the ack ran 8.5 s because no warm-up preceded the day's first forward - the §A warm-up rule, not a pipeline flake |
 | 4 | 2026-09-01 | 17.9 (message timestamps; extraction 5.7 s, zero repair) | yes - both callouts live on the reloaded screen | none; an "OK" typed before the read-out arrived confirmed correctly once persisted, and the second "OK" hit the WP-21 duplicate guard and re-acked without double-recording - the guard proving itself live, exactly as in the §E0 runs |
+| 5 | 2026-09-03 | 18 (message timestamps: photo 17:24:56, read-back 17:25:14 UTC; zero repair) | yes - the money moment on the reloaded screen, signed in through the new front door | none; the M7 cutover's walk-through (§C3), on the repriced papers - the first of the two clean runs §C2 asks for |
 
 Rows 1-2's seconds were not logged. That is a gap in the record, not in the loop; row 3's seconds are derived from the `wa_messages` timestamps (photo in → reply out) - grep the Railway `latency document=` lines for the official per-stage split when convenient.
 
