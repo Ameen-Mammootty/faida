@@ -8,7 +8,8 @@ import asyncpg
 import pytest
 from pydantic import ValidationError
 
-from faida_api.contracts import InvoiceStatus
+from faida_api.confirm import status_after_payment_kind
+from faida_api.contracts import INVOICE_TRANSITIONS, InvoiceStatus
 from faida_api.extraction.schema import (
     Classification,
     ExtractedLine,
@@ -136,3 +137,51 @@ async def test_a_status_outside_the_enum_is_refused_by_postgres(db):
             document_id,
             "archived",
         )
+
+
+# --- C1 as amended 2026-09-03: the one correction that moves a status --------
+
+
+def test_correcting_cash_to_credit_lifts_a_hold_and_credit_to_cash_holds():
+    lifted = status_after_payment_kind(
+        InvoiceStatus.NEEDS_REVIEW, payment_kind="credit", duplicate_of_invoice_id=None
+    )
+    assert lifted is InvoiceStatus.AWAITING_CONFIRM
+    held = status_after_payment_kind(
+        InvoiceStatus.AWAITING_CONFIRM, payment_kind="cash", duplicate_of_invoice_id=None
+    )
+    assert held is InvoiceStatus.NEEDS_REVIEW
+
+
+def test_a_cash_duplicate_corrected_to_credit_stays_held():
+    # The duplicate hold still applies; its exits are confirm or dismiss.
+    assert (
+        status_after_payment_kind(
+            InvoiceStatus.NEEDS_REVIEW, payment_kind="credit", duplicate_of_invoice_id="some-id"
+        )
+        is InvoiceStatus.NEEDS_REVIEW
+    )
+
+
+def test_every_other_payment_kind_correction_leaves_the_status_alone():
+    for status in InvoiceStatus:
+        for kind in ("cash", "credit"):
+            for pointer in (None, "some-id"):
+                result = status_after_payment_kind(
+                    status, payment_kind=kind, duplicate_of_invoice_id=pointer
+                )
+                if result is status:
+                    continue
+                # The only moves: a hold lifting or a hold starting, and both
+                # are transitions C1 declares.
+                assert result in INVOICE_TRANSITIONS[status], (status, kind, pointer, result)
+                assert {status, result} == {
+                    InvoiceStatus.AWAITING_CONFIRM,
+                    InvoiceStatus.NEEDS_REVIEW,
+                }
+
+
+def test_c1_declares_the_lift_and_no_other_way_out_of_a_terminal_state():
+    assert InvoiceStatus.AWAITING_CONFIRM in INVOICE_TRANSITIONS[InvoiceStatus.NEEDS_REVIEW]
+    assert INVOICE_TRANSITIONS[InvoiceStatus.CONFIRMED] == set()
+    assert INVOICE_TRANSITIONS[InvoiceStatus.DISMISSED] == set()

@@ -59,8 +59,34 @@ REPLY_UNKNOWN_SENDER = (
 
 CLOSING_ALL_GREEN = "Reply OK to confirm."
 CLOSING_WITH_AMBERS = "Reply with fixes (like: line 4 qty 16) or OK to confirm the rest."
-# Cash hold (WP-24, PRD §21): the distinction is captured now; approval UI is M7.
-CASH_HOLD_NOTE = "This one is marked cash, so it needs the owner's approval before it's recorded."
+# Cash hold (WP-24, PRD §21): the owner approves cash on the review screen,
+# with a reason (M7 WP-74); the phone can still correct the paper.
+CASH_HOLD_NOTE = (
+    "This one is marked cash, so it needs the owner's approval before it's recorded. "
+    "I'll tell you here once the owner records it."
+)
+# An "OK" on a cash hold: the same fact, plus the one correction that lifts it
+# (WP-74, C5 as amended) - a misread cash must be fixable from the phone that
+# sent it, and this is where the sender learns how.
+REPLY_CASH_HOLD_OK = CASH_HOLD_NOTE + " If it was actually paid on credit, reply: payment credit."
+
+
+def compose_cash_approved_notice(supplier_name: str | None, invoice_no: str | None) -> str:
+    """The branch phone's half of the loop the cash hold opened (WP-74): the
+    owner recorded the paper, so the phone that forwarded it hears back, in
+    one sentence. Sent after the approval has committed and best-effort only:
+    Meta accepts free text inside 24 h of the sender's last message, and an
+    approval recorded a day later is still an approval - outside the window
+    the branch learns nothing until M10's utility template."""
+    supplier = supplier_name or "supplier unknown"
+    number = f" {invoice_no}" if invoice_no else ""
+    return f"Recorded: {supplier}{number}, approved by the owner."
+
+
+# A correction that arrived after the paper stopped being editable (confirmed
+# or dismissed under it, from the screen). Rare, and honest: the fix was not
+# applied, and the sender is told rather than shown a reply that pretends.
+REPLY_CORRECTION_REFUSED = "This one is already {status}, so I can't change it any more."
 # WP-26: with no total there is nothing to confirm. A missing line quantity is
 # a small hole; the total is the invoice's headline number, and M5 divides it
 # into plate costs where no photograph can catch a null. So the closing does

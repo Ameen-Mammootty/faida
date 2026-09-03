@@ -19,10 +19,16 @@ from fastapi import FastAPI
 
 from faida_api.menu import router as menu_router
 
-from .conftest import DEMO_TENANT_ID, MIGRATIONS_DIR, SEED_FILE, TEST_DATABASE_URL, requires_db
-
-API_TOKEN = "test-api-token"
-AUTH = {"Authorization": f"Bearer {API_TOKEN}"}
+from .conftest import (
+    AUTH,
+    DEMO_TENANT_ID,
+    MIGRATIONS_DIR,
+    SEED_FILE,
+    TEST_ACTOR,
+    TEST_DATABASE_URL,
+    requires_db,
+    wire_auth,
+)
 
 DOCS = pathlib.Path(__file__).resolve().parents[3] / "Docs"
 APPLY_FILE = DOCS / "apply_m6_migrations.sql"
@@ -31,10 +37,10 @@ CATEGORY_FILE = DOCS / "apply_m6_category.sql"
 
 @pytest.fixture
 def api(settings, db):
-    api_settings = settings.model_copy(update={"api_token": API_TOKEN})
     app = FastAPI()
     app.include_router(menu_router)
-    app.state.settings = api_settings
+    app.state.settings = settings
+    wire_auth(app)
     app.state.db = db
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
 
@@ -430,7 +436,7 @@ async def test_every_write_lands_one_audit_row_naming_console(api, db):
         "recipe.version_created",
         "menu_item.price_changed",
     ]
-    assert all(row["actor"] == "console" for row in rows)
+    assert all(row["actor"] == TEST_ACTOR for row in rows)
     price_change = rows[-1]["detail"]
     assert price_change["previous_selling_price"] == "5.000"
     assert price_change["selling_price"] == "6.000"

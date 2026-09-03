@@ -6,7 +6,9 @@
  *   GET   /api/invoices/{id}                detail + checks + confidence + signed image URL
  *   POST  /api/invoices/manual              typed-in invoice (WP-34); returns the detail, 201
  *   PATCH /api/invoices/{id}/fields         {"corrections": [...]}; returns the re-validated detail
- *   POST  /api/invoices/{id}/confirm        confirm (or approve a cash hold); returns the detail
+ *   POST  /api/invoices/{id}/confirm        confirm; refuses a cash hold (409); returns the detail
+ *   POST  /api/invoices/{id}/approve        approve a cash hold with a reason (WP-74); the detail
+ *   POST  /api/invoices/{id}/dismiss        a duplicate copy leaves the working list; the detail
  *   POST  /api/documents                    manual upload (multipart file [+ branch_id])
  *   GET   /api/supplier-items/{id}/prices   item header + confirmed prices, oldest first
  *
@@ -52,6 +54,7 @@ import {
   mockUnarchiveMenuItem,
 } from "./mock/menu";
 import {
+  mockApproveInvoice,
   mockConfirmInvoice,
   mockDismissInvoice,
   mockCreateManualInvoice,
@@ -182,6 +185,21 @@ export async function confirmInvoice(id: string): Promise<InvoiceDetail> {
   return request<InvoiceDetail>(`/api/invoices/${encodeURIComponent(id)}/confirm`, {
     method: "POST",
   });
+}
+
+/**
+ * The cash gate (M7 WP-74, PRD §21): the owner approves a held cash paper with
+ * a reason. The server requires the reason non-empty (422 otherwise) and
+ * refuses anything that is not a held cash paper (409 with the sentence
+ * saying why); the screen never sends a blank one. Resolves to the updated
+ * detail, exactly like confirm - the same write, a different audit row.
+ */
+export async function approveInvoice(id: string, reason: string): Promise<InvoiceDetail> {
+  if (MOCK) return mockApproveInvoice(id, reason);
+  return request<InvoiceDetail>(
+    `/api/invoices/${encodeURIComponent(id)}/approve`,
+    jsonInit("POST", { reason }),
+  );
 }
 
 /** Resolve a WP-44 duplicate hold: the copy leaves the working list. Held

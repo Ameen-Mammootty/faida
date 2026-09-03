@@ -37,6 +37,7 @@ from faida_api.replies import (
     PendingInvoice,
     PriceAlert,
     compose_ambiguous_date_reply,
+    compose_cash_approved_notice,
     compose_cash_hold_reply,
     compose_confirmation_ack,
     compose_disambiguation_reply,
@@ -404,9 +405,27 @@ def test_cash_hold_reply_green_exact():
     reply = compose_cash_hold_reply(invoice, validate_invoice(invoice), [])
     assert reply == (
         "Read it: Gulf Foods Trading, 2 lines, total AED 105.00, dated 5 Jul 2026.\n"
-        "This one is marked cash, so it needs the owner's approval before it's recorded."
+        "This one is marked cash, so it needs the owner's approval before it's recorded. "
+        "I'll tell you here once the owner records it."
     )
     assert "Reply OK" not in reply
+
+
+def test_cash_approved_notice_exact():
+    """WP-74: the sentence the branch phone gets once the owner records the
+    paper - the promise the cash-hold closing makes, kept word for word."""
+    assert (
+        compose_cash_approved_notice("Gulf Foods Trading", "INV-1041")
+        == "Recorded: Gulf Foods Trading INV-1041, approved by the owner."
+    )
+    assert (
+        compose_cash_approved_notice(None, None)
+        == "Recorded: supplier unknown, approved by the owner."
+    )
+    assert (
+        compose_cash_approved_notice("Al Madina", None)
+        == "Recorded: Al Madina, approved by the owner."
+    )
 
 
 def test_cash_hold_reply_keeps_alerts_and_questions_but_closes_with_the_hold():

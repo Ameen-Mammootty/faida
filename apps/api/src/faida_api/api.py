@@ -1,13 +1,15 @@
 """WP-30: the C6 web API surface (plan.md §6 M3, §7.2) - the JSON backend the
 review screen (WP-31) consumes.
 
-Routes, all under /api and all requiring `Authorization: Bearer <api_token>`:
+Routes, all under /api and all requiring `Authorization: Bearer <Supabase access token>`:
 
     GET   /api/invoices                       list, newest first, optional filters
     GET   /api/invoices/{id}                  full detail + signed image URL
     POST  /api/invoices/manual                typed-in invoice, no AI (WP-34)
     PATCH /api/invoices/{id}/fields           apply corrections, re-validate
-    POST  /api/invoices/{id}/confirm          confirm (awaiting_confirm or needs_review)
+    POST  /api/invoices/{id}/confirm          confirm (awaiting_confirm, or a duplicate hold)
+    POST  /api/invoices/{id}/approve          approve a cash hold, reason required (WP-74)
+    POST  /api/invoices/{id}/dismiss          a duplicate copy leaves the working list
     POST  /api/documents                      manual upload -> extract job
     GET   /api/supplier-items/{id}/prices     price history for the sparkline
 
@@ -27,10 +29,10 @@ Returns 201 with the standard detail payload.
 
 Access control is `auth.py`'s `AuthContext` (M7 WP-73): every handler takes
 one, every db call carries its tenant, and every audit row and provenance
-stamp names its actor. In this wave the context's only source is the C6
-shared-secret bearer token resolving to the seeded tenant as `console`;
-WP-70 swaps that source for a verified Supabase token without touching the
-handlers. A row outside the caller's tenant answers 404, never 403.
+stamp names its actor. The context comes from the user's own Supabase access
+token, verified in `auth.py` against the project's signing keys, plus the
+memberships row read on every request (WP-70); the actor is `user:<id>`.
+A row outside the caller's tenant answers 404, never 403.
 
 Money is serialized as strings ("745.76"), never floats: every amount is
 Decimal in Python and numeric in Postgres (C4), and a float round-trip could
@@ -40,6 +42,17 @@ quantities ("12.000"). WP-31 must treat them as decimal strings.
 Corrections reuse the WP-21 chat machinery (confirm.py): the same field set,
 the same unsigned-number rule, the same re-validate + re-snap application -
 one implementation of "fix a field", whether it arrives by chat or by screen.
+
+The cash gate (M7 WP-74, PRD §21): a cash paper is held needs_review and
+leaves only through POST .../approve, with a non-empty reason, as the
+signed-in owner. Approve runs the same write as confirm - one transaction,
+the price baseline moving inside it - and differs in its audit row
+(`invoice.cash_approved`: actor, reason, from_status, the headline figures).
+Confirm refuses cash with a 409 that names the approve door; approve refuses
+everything that is not a held cash paper. `payment_kind` is a correctable
+field for the same reason: a misread cash is corrected, never laundered
+through an approval, and correcting it moves the status the way the pipeline
+would have (C1 as amended, confirm.status_after_payment_kind).
 """
 
 import datetime
@@ -51,15 +64,17 @@ from typing import Annotated, Literal
 
 import asyncpg
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from . import costing
 from .auth import AuthContext, require_context
 from .confirm import (
+    CorrectionRefused,
     Edit,
     LineFieldEdit,
     LineNameEdit,
     LinePackSizeEdit,
+    PaymentKindEdit,
     TotalsEdit,
     _apply_correction,
     _parse_number,
@@ -73,7 +88,7 @@ from .extraction.schema import ExtractedInvoice, ExtractedLine
 from .extraction.validate import validate_invoice
 from .matching import Row, match_supplier, propose_ingredients, snap_item
 from .provenance import Origin, initial
-from .replies import DEFAULT_CURRENCY
+from .replies import DEFAULT_CURRENCY, compose_cash_approved_notice
 
 logger = logging.getLogger(__name__)
 
@@ -82,11 +97,20 @@ UPLOAD_MAX_BYTES = 10 * 1024 * 1024
 
 _LINE_FIELDS = {"qty", "unit_price", "line_total", "name", "pack_size"}
 _HEADER_FIELDS = {"subtotal", "tax", "total"}
+_PAYMENT_KINDS = {"cash", "credit"}
 
-# The invoice states the review screen may edit or confirm: awaiting_confirm
-# (the normal path) and needs_review (cash holds - the review screen IS the
-# cash approval path until M7, plan.md §6 M2).
+# The invoice states the review screen may edit: awaiting_confirm (the normal
+# path) and needs_review (a cash hold, which leaves through approve, or a
+# duplicate hold, which leaves through confirm or dismiss).
 _EDITABLE_STATUSES = {InvoiceStatus.AWAITING_CONFIRM, InvoiceStatus.NEEDS_REVIEW}
+
+# The sentences the write doors refuse with. Shared with the web mock word for
+# word (apps/web/src/lib/mock/store.ts), so the screen's copy cannot drift.
+_CONFIRM_REFUSES_CASH = "invoice is paid in cash; approve it with a reason instead"
+_APPROVE_REFUSES_CREDIT = "invoice is paid by credit, not cash; confirm it instead"
+_APPROVE_REFUSES_UNMARKED = "invoice is not marked cash; confirm it instead"
+_APPROVE_ALREADY_CONFIRMED = "invoice is already confirmed"
+_APPROVE_REFUSES_DISMISSED = "invoice is dismissed; a dismissed copy cannot be approved"
 
 #: The router-level dependency refuses a missing or wrong token before any
 #: handler runs; the handler-level `Context` parameter is the same dependency
@@ -108,7 +132,15 @@ class Correction(BaseModel):
 
     line_index: int | None = None
     field: Literal[
-        "qty", "unit_price", "line_total", "name", "pack_size", "subtotal", "tax", "total"
+        "qty",
+        "unit_price",
+        "line_total",
+        "name",
+        "pack_size",
+        "subtotal",
+        "tax",
+        "total",
+        "payment_kind",
     ]
     value: str
 
@@ -117,6 +149,25 @@ class FieldCorrections(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     corrections: list[Correction] = Field(min_length=1)
+
+
+class Approval(BaseModel):
+    """The approve door's body (WP-74): why the owner is letting a cash paper
+    through. Required and non-empty after trimming - an approval with no
+    reason is the status flip PRD §21 exists to forbid, so it is a 422 before
+    any handler runs."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str
+
+    @field_validator("reason")
+    @classmethod
+    def _non_empty(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("a reason is required to approve a cash invoice")
+        return value
 
 
 # --- serialization (money as strings, never floats) -------------------------
@@ -354,8 +405,9 @@ async def patch_invoice_fields(
     invoice_id: uuid.UUID, body: FieldCorrections, request: Request, ctx: Context
 ) -> dict:
     """Apply field corrections through the WP-21 machinery: re-validate,
-    re-snap, persist. Status never changes here - confirming is its own
-    endpoint, exactly as in chat."""
+    re-snap, persist. Confirming is its own endpoint, exactly as in chat; the
+    one correction that moves a status is `payment_kind` (C1 as amended),
+    and the returned detail carries the new one."""
     db: Database = request.app.state.db
     invoice = await db.get_invoice(str(invoice_id), tenant_id=ctx.tenant_id)
     if invoice is None:
@@ -381,21 +433,41 @@ async def patch_invoice_fields(
             )
 
     # The chat reply string is composed but unused: the screen gets the
-    # re-validated detail payload instead.
-    await _apply_correction(
-        db,
-        str(invoice_id),
-        edits,
-        tenant_id=ctx.tenant_id,
-        actor=ctx.actor,
-        origin=Origin.CORRECTED_SCREEN,
-    )
+    # re-validated detail payload instead. A refusal means the paper was
+    # confirmed or dismissed under this request: nothing written, 409.
+    try:
+        await _apply_correction(
+            db,
+            str(invoice_id),
+            edits,
+            tenant_id=ctx.tenant_id,
+            actor=ctx.actor,
+            origin=Origin.CORRECTED_SCREEN,
+        )
+    except CorrectionRefused as refused:
+        raise HTTPException(
+            status_code=409, detail=f"invoice is {refused.status}; it can no longer be edited"
+        ) from None
     return await _invoice_detail(request, str(invoice_id), ctx)
 
 
 def _to_edit(correction: Correction) -> Edit:
     """Map one C6 correction onto the confirm.py edit shapes, enforcing the
-    same rules as the chat grammar (unsigned decimals, non-empty names)."""
+    same rules as the chat grammar (unsigned decimals, non-empty names, cash
+    or credit and nothing else)."""
+    if correction.field == "payment_kind":
+        if correction.line_index is not None:
+            raise HTTPException(
+                status_code=422,
+                detail="field 'payment_kind' is a header field; line_index must be null",
+            )
+        kind = correction.value.strip().casefold()
+        if kind not in _PAYMENT_KINDS:
+            raise HTTPException(
+                status_code=422,
+                detail=f'\'{correction.value}\' is not a payment kind: send "cash" or "credit"',
+            )
+        return PaymentKindEdit(value=kind)
     if correction.field in _HEADER_FIELDS:
         if correction.line_index is not None:
             raise HTTPException(
@@ -441,12 +513,15 @@ def _number(correction: Correction) -> Decimal:
 async def confirm_invoice(invoice_id: uuid.UUID, request: Request, ctx: Context) -> dict:
     """The chat "OK", from the screen: flip to confirmed (stamping
     confirmed_at) and move the price baseline. Allowed from awaiting_confirm
-    and - unlike chat - from needs_review: the review screen is the cash
-    approval path until M7 (plan.md §6 M2)."""
+    and - unlike chat - from a needs_review that is a WP-44 duplicate hold the
+    reviewer has decided is a real paper. Never for cash (WP-74): a cash hold
+    leaves through the approve door with a reason, and the refusal says so."""
     db: Database = request.app.state.db
     invoice = await db.get_invoice(str(invoice_id), tenant_id=ctx.tenant_id)
     if invoice is None:
         raise HTTPException(status_code=404, detail="invoice not found")
+    if invoice["payment_kind"] == "cash" and invoice["status"] == InvoiceStatus.NEEDS_REVIEW:
+        raise HTTPException(status_code=409, detail=_CONFIRM_REFUSES_CASH)
     if invoice["total"] is None:
         # WP-26, the same rule the chat "OK" obeys: an invoice with no total is
         # not recordable from any door. The screen can supply one - PATCH takes
@@ -467,18 +542,115 @@ async def confirm_invoice(invoice_id: uuid.UUID, request: Request, ctx: Context)
     else:
         confirmed = False
     if not confirmed:
-        # Already confirmed, still a draft, or lost a race to another writer.
-        # Re-read: see _fresh_status.
-        raise HTTPException(
-            status_code=409,
-            detail=f"invoice is {await _fresh_status(db, str(invoice_id), ctx)}; cannot confirm",
-        )
+        # Already confirmed, still a draft, marked cash a moment ago, or lost
+        # a race to another writer. Re-read: see _fresh_status.
+        fresh = await db.get_invoice(str(invoice_id), tenant_id=ctx.tenant_id)
+        if (
+            fresh is not None
+            and fresh["payment_kind"] == "cash"
+            and fresh["status"] == InvoiceStatus.NEEDS_REVIEW
+        ):
+            raise HTTPException(status_code=409, detail=_CONFIRM_REFUSES_CASH)
+        status = None if fresh is None else fresh["status"]
+        raise HTTPException(status_code=409, detail=f"invoice is {status}; cannot confirm")
 
     # The price baseline moved inside the same transaction as the status flip
     # (WP-50), so there is nothing to do here but render the result. Two
     # transactions used to leave a confirmed invoice with no prices and this
     # endpoint answering 409 for ever.
     return await _invoice_detail(request, str(invoice_id), ctx)
+
+
+@router.post("/invoices/{invoice_id}/approve")
+async def approve_invoice(
+    invoice_id: uuid.UUID, body: Approval, request: Request, ctx: Context
+) -> dict:
+    """The cash gate (M7 WP-74, PRD §21): the owner lets a cash paper through,
+    with a reason. Keyed on cash alone (D12): a cash paper that is also a held
+    duplicate approves here too, and the record names the paper it duplicates
+    beside the reason. Everything else is refused with a sentence naming why -
+    a credit paper is confirmed, never approved, because a misread cash is
+    corrected (PATCH payment_kind) rather than laundered through an approval.
+
+    The write is `db._confirm` with a different audit row: one transaction,
+    the price baseline moving inside it, and `invoice.cash_approved` carrying
+    the actor (the context's, never the client's), the reason, from_status
+    and the headline figures. A double-click answers with the fresh status
+    and leaves one row in the trail."""
+    db: Database = request.app.state.db
+    invoice = await db.get_invoice(str(invoice_id), tenant_id=ctx.tenant_id)
+    if invoice is None:
+        raise HTTPException(status_code=404, detail="invoice not found")
+    if invoice["payment_kind"] != "cash":
+        detail = (
+            _APPROVE_REFUSES_UNMARKED
+            if invoice["payment_kind"] is None
+            else (_APPROVE_REFUSES_CREDIT)
+        )
+        raise HTTPException(status_code=409, detail=detail)
+    if invoice["total"] is None:
+        raise HTTPException(
+            status_code=409,
+            detail="invoice has no total; set the total before approving",
+        )
+
+    approved = await db.approve_cash_invoice(
+        str(invoice_id),
+        tenant_id=ctx.tenant_id,
+        actor=ctx.actor,
+        reason=body.reason,
+        detail={
+            "supplier_name": invoice["supplier_name"],
+            "invoice_no": invoice["invoice_no"],
+            "currency": invoice["currency"],
+            "total": _dec(invoice["total"]),
+            "payment_kind": invoice["payment_kind"],
+            "duplicate_of_invoice_id": _maybe_str(invoice["duplicate_of_invoice_id"]),
+        },
+    )
+    if not approved:
+        status = await _fresh_status(db, str(invoice_id), ctx)
+        if status == InvoiceStatus.CONFIRMED:
+            detail = _APPROVE_ALREADY_CONFIRMED
+        elif status == InvoiceStatus.DISMISSED:
+            detail = _APPROVE_REFUSES_DISMISSED
+        else:
+            detail = f"invoice is {status}; only a cash invoice held for review can be approved"
+        raise HTTPException(status_code=409, detail=detail)
+    await _tell_the_phone_it_is_recorded(request, invoice, ctx)
+    return await _invoice_detail(request, str(invoice_id), ctx)
+
+
+async def _tell_the_phone_it_is_recorded(request: Request, invoice, ctx: AuthContext) -> None:
+    """Close the branch phone's loop: the cash hold told the sender they would
+    hear back once the owner recorded the paper, so the approval tells them.
+    Only a paper that arrived by WhatsApp has a phone - found the way the
+    pipeline finds it, through the document's inbound message row; a manual
+    or uploaded paper gets nothing.
+
+    Runs AFTER the approval has committed and never inside its transaction,
+    and is best-effort in the WP-72 sense: a send failure is logged and never
+    raised, because Meta accepts free text only inside 24 h of the sender's
+    last message, and an approval recorded a day later must still be an
+    approval. No template, no retry: outside the window the branch learns
+    nothing until M10's utility template."""
+    db: Database = request.app.state.db
+    try:
+        document = await db.get_document(str(invoice["document_id"]), tenant_id=ctx.tenant_id)
+        if document is None or not document["wa_message_id"]:
+            return
+        inbound = await db.get_inbound_message(document["wa_message_id"])
+        to_phone = inbound["from_phone"] if inbound is not None else None
+        if not to_phone:
+            return
+        body = compose_cash_approved_notice(invoice["supplier_name"], invoice["invoice_no"])
+        out_id = await request.app.state.wa.send_text(to_phone, body)
+        await db.record_outbound_message(out_id, to_phone, body)
+    except Exception:
+        logger.exception(
+            "approval notice for invoice %s failed; the approval stands and is not retried",
+            invoice["id"],
+        )
 
 
 async def _fresh_status(db: Database, invoice_id: str, ctx: AuthContext) -> str | None:

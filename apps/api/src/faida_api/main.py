@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .api import router as api_router
+from .auth import TokenVerifier
 from .config import get_settings
 from .db import Database
 from .extraction.pipeline import build_provider
@@ -27,6 +28,11 @@ async def lifespan(app: FastAPI):
     await app.state.db.connect()
     app.state.wa = WhatsAppClient(settings)
     app.state.storage = Storage(settings)
+    # Who is asking (M7 WP-70): the verifier every /api request goes through.
+    # Prefetching the keys is best-effort; a failure here means 503s until
+    # the sign-in service answers, never a dead process.
+    app.state.auth = TokenVerifier(settings)
+    await app.state.auth.warm()
     # None without the selected provider's key: extract jobs then fail into
     # plan.md §5 layer 6 while ingest and (from M3) upload + manual entry keep
     # working. Gemini 3 Flash by default; EXTRACTION_PROVIDER=anthropic swaps
@@ -59,6 +65,7 @@ async def lifespan(app: FastAPI):
             await worker_task
         await app.state.wa.close()
         await app.state.storage.close()
+        await app.state.auth.close()
         await app.state.db.close()
 
 

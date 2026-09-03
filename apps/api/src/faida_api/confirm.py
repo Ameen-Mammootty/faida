@@ -8,8 +8,11 @@ the invoice flips to confirmed (C1 - the document stays 'extracted', its
 status tracking ingest only) and Database.record_confirmed_prices moves the
 price baseline (plan.md §5 layer 4). Corrections apply, re-validate, re-snap,
 re-alert, and re-reply with the WP-20 composer; the invoice stays
-awaiting_confirm. Cash invoices are needs_review and never addressable from
-chat (M7 owns approvals).
+awaiting_confirm. Cash invoices are needs_review: reachable from chat for
+corrections (a misread cash has to be fixable from the phone that sent it,
+C5 as amended 2026-09-03) but never confirmable from it - the owner approves
+cash on the review screen with a reason (M7 WP-74, PRD §21), and an "OK" on a
+cash hold is answered with that fact.
 
 The chat grammar, in full (all keywords case-insensitive):
 
@@ -42,6 +45,15 @@ The chat grammar, in full (all keywords case-insensitive):
                                        "invoice date ..." also accepted
     invoice no <text>                  the invoice number (WP-25); "invoice
                                        number" / "inv no" / "invoice #" too
+    payment cash | payment credit      how the paper was paid (WP-74, C5 as
+                                       amended); "paid cash" / "paid credit"
+                                       and "paid by ..." / "paid on ..." too.
+                                       The one correction that moves a status
+                                       (C1 as amended): cash to credit lifts a
+                                       cash hold back to awaiting_confirm
+                                       unless the paper is also a held
+                                       duplicate; credit to cash holds an
+                                       awaiting paper for the owner
     <edit>[, <edit> | ; <edit> | newline <edit>]...   several in one message
     <K> <any of the above>             pick invoice K from the numbered list
                                        when several are pending ("2 OK")
@@ -69,6 +81,7 @@ from typing import Literal
 import asyncpg
 from pydantic import BaseModel, ConfigDict
 
+from .contracts import InvoiceStatus
 from .db import Database
 from .extraction.currency import normalize_currency
 from .extraction.dates import parse_printed_date
@@ -79,10 +92,13 @@ from .extraction.validate import validate_invoice
 from .matching import Row, snap_item
 from .provenance import Origin, line_key, mark
 from .replies import (
+    REPLY_CASH_HOLD_OK,
     REPLY_CLARIFY,
+    REPLY_CORRECTION_REFUSED,
     REPLY_TEXT_ONBOARDING,
     PendingInvoice,
     compose_ambiguous_date_reply,
+    compose_cash_hold_reply,
     compose_confirmation_ack,
     compose_disambiguation_reply,
     compose_invoice_reply,
@@ -207,6 +223,18 @@ class InvoiceNoEdit(BaseModel):
     value: str
 
 
+class PaymentKindEdit(BaseModel):
+    """ "payment cash" / "payment credit" - how the paper was paid (WP-74, C5
+    as amended 2026-09-03). The field the cash gate keys on, so a misread has
+    to be correctable - the alternative was approving a credit paper with a
+    fabricated reason to get it out of the hold. Applying it may move the
+    status; see `status_after_payment_kind`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    value: Literal["cash", "credit"]
+
+
 class AmbiguousDateEdit(BaseModel):
     """ "date 5/7" - date-shaped but missing its year. Never applied: the flow
     answers with the year question (compose_ambiguous_date_reply) instead of
@@ -236,6 +264,7 @@ Edit = (
     | CurrencyEdit
     | DateEdit
     | InvoiceNoEdit
+    | PaymentKindEdit
     | AmbiguousDateEdit
     | MissingVatRateEdit
 )
@@ -285,6 +314,13 @@ _ISO_CODE_RE = re.compile(r"[A-Za-z]{3}")
 _DATE_EDIT_RE = re.compile(r"(?:invoice\s+)?date\s+(.+)", re.IGNORECASE)
 _INVOICE_NO_EDIT_RE = re.compile(
     r"(?:invoice|inv)\.?\s*(?:no|number|num|#)\.?\s*:?\s*(.+)", re.IGNORECASE
+)
+# WP-74: "payment cash", "paid credit", "paid by cash", "payment: credit",
+# "payment kind cash". Only the two words the field can hold; "payment cheque"
+# clarifies rather than storing a third kind the gate does not know.
+_PAYMENT_EDIT_RE = re.compile(
+    r"(?:payment|paid|pay)(?:\s+(?:by|in|on|kind|type|terms?|method))?\s*:?\s*(cash|credit)",
+    re.IGNORECASE,
 )
 # Unsigned decimals only: no sign, no NaN, no exponent - anything else clarifies.
 _NUMBER_RE = re.compile(r"\d+(?:\.\d+)?")
@@ -372,6 +408,9 @@ def _parse_edit(segment: str) -> Edit | None:
     currency_edit = _CURRENCY_EDIT_RE.fullmatch(segment)
     if currency_edit is not None:
         return _parse_currency(currency_edit.group(1))
+    payment_edit = _PAYMENT_EDIT_RE.fullmatch(segment)
+    if payment_edit is not None:
+        return PaymentKindEdit(value=payment_edit.group(1).casefold())
     # Before the plain totals rule: "total 930 no vat" would otherwise reach
     # _parse_number as "930 no vat" and clarify.
     reconstructed = _RECONSTRUCTED_TOTAL_RE.fullmatch(segment)
@@ -436,6 +475,8 @@ def edited_field_keys(edits: list[Edit]) -> list[str]:
             new_keys = ["invoice_date"]
         elif isinstance(edit, InvoiceNoEdit):
             new_keys = ["invoice_no"]
+        elif isinstance(edit, PaymentKindEdit):
+            new_keys = ["payment_kind"]
         elif isinstance(edit, AmbiguousDateEdit | MissingVatRateEdit):
             raise ValueError("an unanswerable edit is asked about, never applied")
         elif isinstance(edit, LineNameEdit):
@@ -479,6 +520,8 @@ def apply_edits(invoice: ExtractedInvoice, edits: list[Edit]) -> ExtractedInvoic
             header["invoice_date"] = edit.value
         elif isinstance(edit, InvoiceNoEdit):
             header["invoice_no"] = edit.value
+        elif isinstance(edit, PaymentKindEdit):
+            header["payment_kind"] = edit.value
         elif isinstance(edit, AmbiguousDateEdit | MissingVatRateEdit):
             raise ValueError("an unanswerable edit is asked about, never applied")
         elif isinstance(edit, LineNameEdit):
@@ -494,6 +537,41 @@ def apply_edits(invoice: ExtractedInvoice, edits: list[Edit]) -> ExtractedInvoic
                 update={edit.field: edit.value}
             )
     return invoice.model_copy(update={"lines": lines, **header})
+
+
+class CorrectionRefused(Exception):
+    """The paper stopped being editable between the correction's read and its
+    write (confirmed or dismissed from the screen). Nothing was written; the
+    door that caught it tells the person in its own voice - a reply on chat,
+    a 409 on the screen."""
+
+    def __init__(self, status: str | None) -> None:
+        super().__init__(status)
+        self.status = status
+
+
+def status_after_payment_kind(
+    status: str, *, payment_kind: str | None, duplicate_of_invoice_id: object
+) -> InvoiceStatus:
+    """C1 as amended 2026-09-03: the status a payment-kind correction implies.
+
+    Cash on an awaiting paper holds it, the way the pipeline would have
+    (WP-24); credit on a held paper lifts the hold back to awaiting_confirm -
+    unless the paper is also a WP-44 duplicate, whose hold still applies and
+    whose exits are confirm or dismiss. Every other combination leaves the
+    status alone: a confirmed or dismissed paper is not editable to begin with,
+    and a draft has no hold to lift. Pure, so contracts tests can walk the
+    whole table against INVOICE_TRANSITIONS."""
+    current = InvoiceStatus(status)
+    if current is InvoiceStatus.AWAITING_CONFIRM and payment_kind == "cash":
+        return InvoiceStatus.NEEDS_REVIEW
+    if (
+        current is InvoiceStatus.NEEDS_REVIEW
+        and payment_kind != "cash"
+        and duplicate_of_invoice_id is None
+    ):
+        return InvoiceStatus.AWAITING_CONFIRM
+    return current
 
 
 # --- flow (called from the worker's text branch) ----------------------------
@@ -536,7 +614,7 @@ async def handle_inbound_text(
             await db.record_confirmed_prices(str(already["id"]), tenant_id=already["tenant_id"])
             return _ack(already)
 
-    pending = await db.awaiting_confirm_invoices_for_phone(from_phone)
+    pending = await db.pending_invoices_for_phone(from_phone)
     if not pending:
         if isinstance(parsed, Confirm) and parsed.selector is None:
             last = await db.latest_confirmed_invoice_for_phone(from_phone)
@@ -573,6 +651,11 @@ async def handle_inbound_text(
     # down so the db layer never has to guess whose row a write touches.
     tenant_id = target["tenant_id"]
     if isinstance(parsed, Confirm):
+        if target["status"] == InvoiceStatus.NEEDS_REVIEW:
+            # A cash hold (the only needs_review the resolver hands back):
+            # the owner approves it on the screen, with a reason (WP-74). The
+            # phone is told so, and told the one correction that lifts it.
+            return REPLY_CASH_HOLD_OK
         if target["total"] is None:
             # WP-26: open ambers still confirm - the closing promised "OK to
             # confirm the rest" - but a missing total is not one of them. It is
@@ -585,14 +668,17 @@ async def handle_inbound_text(
             str(target["id"]), tenant_id=tenant_id, actor=chat_actor(from_phone)
         )
         return _ack(target)
-    return await _apply_correction(
-        db,
-        str(target["id"]),
-        parsed.edits,
-        tenant_id=tenant_id,
-        actor=chat_actor(from_phone),
-        message_id=message_id,
-    )
+    try:
+        return await _apply_correction(
+            db,
+            str(target["id"]),
+            parsed.edits,
+            tenant_id=tenant_id,
+            actor=chat_actor(from_phone),
+            message_id=message_id,
+        )
+    except CorrectionRefused as refused:
+        return REPLY_CORRECTION_REFUSED.format(status=refused.status or "gone")
 
 
 async def _apply_correction(
@@ -608,7 +694,11 @@ async def _apply_correction(
     """Apply parsed edits: re-validate, re-snap against the supplier catalog
     (the pipeline's convention - snapped flags folded into the checks, never
     recomputing status), recompute price alerts the same way the pipeline
-    does, persist, and re-reply. Status stays awaiting_confirm.
+    does, persist, and re-reply. Status stays where it was, with one
+    exception: a payment-kind edit moves it the way the pipeline would have
+    (`status_after_payment_kind`, C1 as amended), and the reply takes the
+    shape the new state calls for - the cash-hold closing on a cash hold, the
+    ordinary "Reply OK to confirm" otherwise.
 
     `tenant_id`, `actor` and `origin` are the caller's to say: the same
     function serves the chat grammar and the review screen's PATCH (one door
@@ -647,6 +737,14 @@ async def _apply_correction(
         "lines": [check.status.value for check in line_checks],
     }
     corrected = edited_field_keys(edits)
+    from_status = invoice_row["status"]
+    status = InvoiceStatus(from_status)
+    if any(isinstance(edit, PaymentKindEdit) for edit in edits):
+        status = status_after_payment_kind(
+            from_status,
+            payment_kind=invoice.payment_kind,
+            duplicate_of_invoice_id=invoice_row["duplicate_of_invoice_id"],
+        )
     now = datetime.datetime.now(datetime.UTC)
     provenance = mark(
         invoice_row["provenance"] or {},
@@ -681,12 +779,15 @@ async def _apply_correction(
             zip(invoice.lines, line_checks, snapped_items, strict=True)
         )
     ]
-    await db.apply_invoice_correction(
+    applied = await db.apply_invoice_correction(
         invoice_id,
         tenant_id=tenant_id,
         invoice_no=invoice.invoice_no,
         invoice_date=invoice.invoice_date,
         currency=invoice.currency,
+        payment_kind=invoice.payment_kind,
+        from_status=from_status,
+        status=status.value,
         subtotal=invoice.subtotal,
         tax=invoice.tax,
         total=invoice.total,
@@ -704,6 +805,14 @@ async def _apply_correction(
         corrected_fields=corrected,
         message_id=message_id,
     )
+    if not applied:
+        # The paper was confirmed or dismissed under us (from the screen,
+        # between this function's read and its write). Nothing was written,
+        # and the person is told rather than shown a reply that pretends.
+        fresh = await db.get_invoice(invoice_id, tenant_id=tenant_id)
+        raise CorrectionRefused(None if fresh is None else fresh["status"])
+    if status is InvoiceStatus.NEEDS_REVIEW and invoice.payment_kind == "cash":
+        return compose_cash_hold_reply(invoice, validation, alerts, tenant_currency=tenant_currency)
     return compose_invoice_reply(invoice, validation, alerts, tenant_currency=tenant_currency)
 
 

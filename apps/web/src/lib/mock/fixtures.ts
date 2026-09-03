@@ -479,6 +479,63 @@ export const FIXTURES: Fixture[] = [
       },
     ],
   },
+  // WP-74's D12 case: Gulf Fresh's cash paper 2214 forwarded a second time.
+  // Cash *and* a held duplicate - held on two grounds at once, so the screen
+  // shows both banners, and the approve door is still open (with a reason)
+  // because a cash paper that really is a second delivery needs a recording
+  // door; dismissing is the copy's exit, not cash's. Lines are inv-1003's.
+  {
+    id: "inv-1005",
+    document_id: "doc-9005",
+    branch_id: "br-01",
+    branch_name: "Al Quoz",
+    supplier_id: null,
+    supplier_name: "Gulf Fresh Vegetables & Fruits",
+    invoice_no: "2214",
+    invoice_date: "2026-08-22",
+    currency: "AED",
+    subtotal: null,
+    tax: null,
+    total: "101.00",
+    payment_kind: "cash",
+    status: "needs_review",
+    source: "whatsapp",
+    image_url: "/fixtures/inv-1003.svg",
+    created_at: "2026-08-22T17:02:00+00:00",
+    duplicate_of_invoice_id: "inv-1003",
+    lines: [
+      {
+        raw_name: "Tomatoes Box 5kg",
+        qty: "4",
+        unit: "box",
+        pack_size: "5kg",
+        unit_price: "12.50",
+        line_total: "50.00",
+        supplier_item_id: null,
+        snapped: null,
+      },
+      {
+        raw_name: "Onions Bag 10kg",
+        qty: "2",
+        unit: "bag",
+        pack_size: "10kg",
+        unit_price: "18.00",
+        line_total: "36.00",
+        supplier_item_id: null,
+        snapped: null,
+      },
+      {
+        raw_name: "Coriander Bunches",
+        qty: "10",
+        unit: "bunch",
+        pack_size: null,
+        unit_price: "1.50",
+        line_total: "15.00",
+        supplier_item_id: null,
+        snapped: null,
+      },
+    ],
+  },
 ];
 
 /**

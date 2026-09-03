@@ -20,18 +20,23 @@ from faida_api.api import UPLOAD_MAX_BYTES
 from faida_api.api import router as api_router
 from faida_api.config import Settings
 from faida_api.confirm import handle_inbound_text
+from faida_api.replies import compose_cash_approved_notice
 from faida_api.storage import Storage
 from faida_api.wa import WhatsAppClient
 from faida_api.webhook import router as webhook_router
 
 from .conftest import (
+    AUTH,
     DEMO_PHONE,
     DEMO_TENANT_ID,
+    TEST_ACTOR,
     FakeExtraction,
+    FakeJwks,
     FakeMeta,
     FakeStorage,
     requires_db,
     wa_image_payload,
+    wire_auth,
 )
 from .test_extraction_flow import (
     drain_jobs,
@@ -41,8 +46,6 @@ from .test_extraction_flow import (
     seed_supplier_with_items,
 )
 
-API_TOKEN = "test-api-token"
-AUTH = {"Authorization": f"Bearer {API_TOKEN}"}
 DEMO_BRANCH_ID = "00000000-0000-0000-0000-000000000011"  # matches seed.sql
 
 
@@ -53,28 +56,34 @@ def client_for(app: FastAPI) -> httpx.AsyncClient:
 # --- auth: fail closed (no DB needed) ---------------------------------------
 
 
-def bare_app(api_token: str) -> FastAPI:
-    """An app with only the API router and settings: auth rejects before any
-    handler (or the DB) is ever touched."""
+def bare_app() -> FastAPI:
+    """An app with only the API router, settings and the verifier over the
+    fake JWKS: auth rejects before any handler (or the DB) is ever touched."""
     app = FastAPI()
     app.include_router(api_router)
-    app.state.settings = Settings(api_token=api_token)
+    app.state.settings = Settings(supabase_url="http://supabase.test")
+    wire_auth(app)
     return app
 
 
-async def test_empty_token_config_refuses_every_request():
-    # Fail closed like the webhook secret: no configured token means no
-    # access, even when the caller's header happens to match the empty value.
-    client = client_for(bare_app(""))
+async def test_no_or_malformed_token_is_refused_on_every_request():
+    # Fail closed: nothing gets past the door without a token it can verify.
+    client = client_for(bare_app())
     assert (await client.get("/api/invoices")).status_code == 401
-    assert (await client.get("/api/invoices", headers=AUTH)).status_code == 401
     assert (
         await client.get("/api/invoices", headers={"Authorization": "Bearer "})
     ).status_code == 401
+    assert (
+        await client.get("/api/invoices", headers={"Authorization": "Bearer not-a-jwt"})
+    ).status_code == 401
 
 
-async def test_wrong_or_missing_token_is_rejected_on_every_route():
-    client = client_for(bare_app(API_TOKEN))
+async def test_a_token_signed_elsewhere_is_rejected_on_every_route():
+    """A token from another key pair - another project, or an attacker with
+    the old shared secret - is refused on every route, with no tenant
+    resolved and no query run."""
+    client = client_for(bare_app())
+    elsewhere = {"Authorization": f"Bearer {FakeJwks().mint()}"}
     some_id = str(uuid.uuid4())
     requests = [
         ("GET", "/api/invoices", {}),
@@ -86,19 +95,18 @@ async def test_wrong_or_missing_token_is_rejected_on_every_route():
     ]
     for method, url, kwargs in requests:
         assert (await client.request(method, url, **kwargs)).status_code == 401, url
-        wrong = {"Authorization": "Bearer not-the-token"}
-        assert (await client.request(method, url, headers=wrong, **kwargs)).status_code == 401, url
+        response = await client.request(method, url, headers=elsewhere, **kwargs)
+        assert response.status_code == 401, url
     # Not a bearer header at all.
-    assert (
-        await client.get("/api/invoices", headers={"Authorization": API_TOKEN})
-    ).status_code == 401
+    token = AUTH["Authorization"].removeprefix("Bearer ")
+    assert (await client.get("/api/invoices", headers={"Authorization": token})).status_code == 401
 
 
-async def test_correct_token_is_accepted():
-    # No DB is wired, so getting past auth means reaching the handler and
-    # dying on the missing pool - proof the token was accepted. (The happy
-    # paths below cover the full authorized flow against a real DB.)
-    app = bare_app(API_TOKEN)
+async def test_a_verified_token_reaches_the_membership_lookup():
+    # No DB is wired, so getting past the signature check means reaching the
+    # membership read and dying on the missing pool - proof the token was
+    # verified. (The happy paths below cover the full flow against a real DB.)
+    app = bare_app()
     app.state.db = None
     client = client_for(app)
     with pytest.raises(AttributeError):
@@ -111,18 +119,18 @@ async def test_correct_token_is_accepted():
 @pytest.fixture
 def api(settings, db):
     """A FastAPI app with both routers, the test DB, mock transports, and the
-    API token configured; mirrors the flow-test fixture."""
-    api_settings = settings.model_copy(update={"api_token": API_TOKEN})
+    verifier over the fake JWKS; mirrors the flow-test fixture."""
     fake_meta = FakeMeta()
     fake_storage = FakeStorage()
 
     app = FastAPI()
     app.include_router(webhook_router)
     app.include_router(api_router)
-    app.state.settings = api_settings
+    app.state.settings = settings
+    wire_auth(app)
     app.state.db = db
-    app.state.wa = WhatsAppClient(api_settings, transport=fake_meta.transport())
-    app.state.storage = Storage(api_settings, transport=fake_storage.transport())
+    app.state.wa = WhatsAppClient(settings, transport=fake_meta.transport())
+    app.state.storage = Storage(settings, transport=fake_storage.transport())
 
     client = client_for(app)
     return app, client, fake_meta, fake_storage
@@ -378,9 +386,10 @@ async def test_confirm_flips_status_and_records_prices(api, db):
 
 
 @requires_db
-async def test_confirm_from_needs_review_is_the_cash_approval_path(api, db):
-    # Chat cannot confirm a cash hold (M7 owns approvals); the review screen
-    # can - it IS the cash review path until M7 (plan.md §6 M2).
+async def test_confirm_refuses_a_cash_hold_and_names_the_approve_door(api, db):
+    """M7 WP-74 (PRD §21): the screen's Confirm used to be the cash approval
+    path, recording nothing but a status flip. Now it refuses cash outright and
+    the sentence says where to go instead."""
     app, client, *_ = api
     cash = good_invoice()
     cash.payment_kind = "cash"
@@ -388,18 +397,378 @@ async def test_confirm_from_needs_review_is_the_cash_approval_path(api, db):
     assert invoice["status"] == "needs_review"
 
     resp = await client.post(f"/api/invoices/{invoice['id']}/confirm", headers=AUTH)
-    assert resp.status_code == 200
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "invoice is paid in cash; approve it with a reason instead"
+    assert (await db.get_invoice(str(invoice["id"]), tenant_id=DEMO_TENANT_ID))["status"] == (
+        "needs_review"
+    )
+    assert await db.pool.fetchval("select count(*) from supplier_item_prices") == 0
+    assert (
+        await db.audit_events_for_subject("invoice", str(invoice["id"]), tenant_id=DEMO_TENANT_ID)
+        == []
+    )
+
+
+@requires_db
+async def test_approve_records_a_cash_hold_with_a_reason_and_moves_the_baseline(api, db):
+    """The one gate PRD §21 makes non-negotiable: a cash paper reaches
+    `confirmed` only through the approve door, with a reason, and the record
+    names the person, the reason and what was approved."""
+    app, client, *_ = api
+    cash = good_invoice()
+    cash.payment_kind = "cash"
+    invoice = await extracted_invoice(api, db, cash)
+
+    resp = await client.post(
+        f"/api/invoices/{invoice['id']}/approve",
+        headers=AUTH,
+        json={"reason": "  Petty cash, receipt in the drawer  "},
+    )
+    assert resp.status_code == 200, resp.text
     detail = resp.json()
     assert detail["status"] == "confirmed"
     assert detail["confirmed_at"] is not None
+    assert detail["payment_kind"] == "cash"
     assert detail["document"]["status"] == "extracted"
-    assert await db.pool.fetchval("select count(*) from supplier_item_prices") == 2
+    assert detail["supplier_id"] is not None
 
+    # The same write as confirm: the price baseline moved inside it.
+    prices = await db.pool.fetch("select price from supplier_item_prices order by price")
+    assert [row["price"] for row in prices] == [Decimal("18.75"), Decimal("54.50")]
+
+    events = await db.audit_events_for_subject(
+        "invoice", str(invoice["id"]), tenant_id=DEMO_TENANT_ID
+    )
+    assert [(e["action"], e["actor"]) for e in events] == [("invoice.cash_approved", TEST_ACTOR)]
+    assert events[0]["detail"] == {
+        "from_status": "needs_review",
+        "reason": "Petty cash, receipt in the drawer",
+        "supplier_name": "Gulf Foods Trading LLC",
+        "invoice_no": "INV-1041",
+        "currency": "AED",
+        "total": "745.76",
+        "payment_kind": "cash",
+        "duplicate_of_invoice_id": None,
+    }
+
+    # Double-click: the second answers with the fresh status, and the trail
+    # still holds one row.
+    again = await client.post(
+        f"/api/invoices/{invoice['id']}/approve", headers=AUTH, json={"reason": "again"}
+    )
+    assert again.status_code == 409
+    assert again.json()["detail"] == "invoice is already confirmed"
     assert (
-        await client.post(f"/api/invoices/{invoice['id']}/confirm", headers=AUTH)
-    ).status_code == 409
-    missing = await client.post(f"/api/invoices/{uuid.uuid4()}/confirm", headers=AUTH)
+        len(
+            await db.audit_events_for_subject(
+                "invoice", str(invoice["id"]), tenant_id=DEMO_TENANT_ID
+            )
+        )
+        == 1
+    )
+    assert await db.pool.fetchval("select count(*) from supplier_item_prices") == 2
+    missing = await client.post(
+        f"/api/invoices/{uuid.uuid4()}/approve", headers=AUTH, json={"reason": "x"}
+    )
     assert missing.status_code == 404
+
+
+@requires_db
+async def test_approve_tells_the_phone_that_forwarded_the_paper_once_it_is_recorded(api, db):
+    """The cash hold promised the sender they would hear back once the owner
+    recorded it. The approval keeps that promise: one message, the exact
+    sentence, sent after the audit row exists."""
+    app, client, fake_meta, _ = api
+    cash = good_invoice()
+    cash.payment_kind = "cash"
+    invoice = await extracted_invoice(api, db, cash)
+    sent_before = len(fake_meta.sent)
+
+    resp = await client.post(
+        f"/api/invoices/{invoice['id']}/approve", headers=AUTH, json={"reason": "Petty cash"}
+    )
+    assert resp.status_code == 200, resp.text
+
+    new_messages = fake_meta.sent[sent_before:]
+    assert len(new_messages) == 1
+    assert new_messages[0]["to"] == DEMO_PHONE
+    assert new_messages[0]["text"]["body"] == (
+        "Recorded: Gulf Foods Trading LLC INV-1041, approved by the owner."
+    )
+    assert new_messages[0]["text"]["body"] == compose_cash_approved_notice(
+        "Gulf Foods Trading LLC", "INV-1041"
+    )
+    # The notice is on the record as an outbound message, after the audit row.
+    outbound = await db.pool.fetchrow(
+        "select payload, created_at from wa_messages where direction = 'out' "
+        "order by id desc limit 1"
+    )
+    assert outbound["payload"]["text"] == new_messages[0]["text"]["body"]
+    events = await db.audit_events_for_subject(
+        "invoice", str(invoice["id"]), tenant_id=DEMO_TENANT_ID
+    )
+    assert [e["action"] for e in events] == ["invoice.cash_approved"]
+    assert events[0]["created_at"] <= outbound["created_at"]
+
+
+@requires_db
+async def test_approving_a_manual_cash_paper_sends_nothing(api, db):
+    app, client, fake_meta, _ = api
+    resp = await client.post(
+        "/api/invoices/manual", headers=AUTH, json=manual_body(payment_kind="cash")
+    )
+    assert resp.status_code == 201
+    resp = await client.post(
+        f"/api/invoices/{resp.json()['id']}/approve", headers=AUTH, json={"reason": "till slip"}
+    )
+    assert resp.status_code == 200 and resp.json()["status"] == "confirmed"
+    assert fake_meta.sent == []
+    assert await db.pool.fetchval("select count(*) from wa_messages where direction = 'out'") == 0
+
+
+@requires_db
+async def test_a_failed_approval_notice_leaves_the_approval_standing(api, db):
+    """Meta only accepts free text inside 24 h of the sender's last message,
+    and an approval recorded a day later is still an approval: the send fails,
+    is logged, and nothing about the approval changes."""
+    app, client, fake_meta, _ = api
+    cash = good_invoice()
+    cash.payment_kind = "cash"
+    invoice = await extracted_invoice(api, db, cash)
+    sent_before = len(fake_meta.sent)
+    fake_meta.fail_sends = True
+
+    resp = await client.post(
+        f"/api/invoices/{invoice['id']}/approve", headers=AUTH, json={"reason": "Petty cash"}
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["status"] == "confirmed"
+    assert fake_meta.sent[sent_before:] == []
+
+    row = await db.get_invoice(str(invoice["id"]), tenant_id=DEMO_TENANT_ID)
+    assert row["status"] == "confirmed" and row["confirmed_at"] is not None
+    events = await db.audit_events_for_subject(
+        "invoice", str(invoice["id"]), tenant_id=DEMO_TENANT_ID
+    )
+    assert [(e["action"], e["actor"]) for e in events] == [("invoice.cash_approved", TEST_ACTOR)]
+    assert events[0]["detail"]["reason"] == "Petty cash"
+    assert await db.pool.fetchval("select count(*) from supplier_item_prices") == 2
+    # No retry, no second attempt: a later approve is refused as already confirmed.
+    fake_meta.fail_sends = False
+    again = await client.post(
+        f"/api/invoices/{invoice['id']}/approve", headers=AUTH, json={"reason": "again"}
+    )
+    assert again.status_code == 409
+    assert fake_meta.sent[sent_before:] == []
+
+
+@requires_db
+async def test_approve_without_a_reason_is_422_and_writes_nothing(api, db):
+    app, client, *_ = api
+    cash = good_invoice()
+    cash.payment_kind = "cash"
+    invoice = await extracted_invoice(api, db, cash)
+
+    for body in ({"reason": ""}, {"reason": "   \n\t"}, {}, {"reason": None}):
+        resp = await client.post(f"/api/invoices/{invoice['id']}/approve", headers=AUTH, json=body)
+        assert resp.status_code == 422, (body, resp.text)
+
+    row = await db.get_invoice(str(invoice["id"]), tenant_id=DEMO_TENANT_ID)
+    assert row["status"] == "needs_review" and row["confirmed_at"] is None
+    assert await db.pool.fetchval("select count(*) from audit_events") == 0
+    assert await db.pool.fetchval("select count(*) from supplier_item_prices") == 0
+
+
+@requires_db
+async def test_approve_refuses_anything_that_is_not_a_held_cash_paper(api, db):
+    """Keyed on cash alone: a credit paper is confirmed, never approved (a
+    misread cash is corrected, not laundered through an approval); a recorded
+    or dismissed paper is refused with its real status."""
+    app, client, *_ = api
+    credit = await extracted_invoice(api, db)
+    resp = await client.post(
+        f"/api/invoices/{credit['id']}/approve", headers=AUTH, json={"reason": "why not"}
+    )
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "invoice is paid by credit, not cash; confirm it instead"
+
+    await client.post(f"/api/invoices/{credit['id']}/confirm", headers=AUTH)
+    resp = await client.post(
+        f"/api/invoices/{credit['id']}/approve", headers=AUTH, json={"reason": "why not"}
+    )
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "invoice is paid by credit, not cash; confirm it instead"
+
+    cash = good_invoice()
+    cash.payment_kind = "cash"
+    cash.invoice_no = "INV-2000"
+    held = await extracted_invoice(api, db, cash, message_id="wamid.cash")
+    await client.post(f"/api/invoices/{held['id']}/approve", headers=AUTH, json={"reason": "ok"})
+    resp = await client.post(
+        f"/api/invoices/{held['id']}/approve", headers=AUTH, json={"reason": "twice"}
+    )
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "invoice is already confirmed"
+
+    original, copy = await held_duplicate(api, db, payment_kind="cash", invoice_no="INV-3000")
+    await client.post(f"/api/invoices/{copy['id']}/dismiss", headers=AUTH)
+    resp = await client.post(
+        f"/api/invoices/{copy['id']}/approve", headers=AUTH, json={"reason": "late"}
+    )
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "invoice is dismissed; a dismissed copy cannot be approved"
+    events = await db.audit_events_for_subject("invoice", str(copy["id"]), tenant_id=DEMO_TENANT_ID)
+    assert [e["action"] for e in events] == ["invoice.dismissed"]
+
+
+@requires_db
+async def test_a_cash_paper_that_is_also_a_held_duplicate_approves_and_the_record_says_both(
+    api, db
+):
+    """D12: the approve door keys on cash alone. A cash copy that really is a
+    new paper has to have a recording door, and its audit row carries the
+    duplicate pointer beside the reason so the two facts are read together."""
+    app, client, *_ = api
+    original, copy = await held_duplicate(api, db, payment_kind="cash")
+    assert copy["payment_kind"] == "cash"
+
+    resp = await client.post(
+        f"/api/invoices/{copy['id']}/approve",
+        headers=AUTH,
+        json={"reason": "Second delivery the same day, both paid at the door"},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["status"] == "confirmed"
+
+    events = await db.audit_events_for_subject("invoice", str(copy["id"]), tenant_id=DEMO_TENANT_ID)
+    assert [(e["action"], e["actor"]) for e in events] == [("invoice.cash_approved", TEST_ACTOR)]
+    assert events[0]["detail"]["duplicate_of_invoice_id"] == str(original["id"])
+    assert events[0]["detail"]["payment_kind"] == "cash"
+    assert events[0]["detail"]["reason"] == "Second delivery the same day, both paid at the door"
+    # The original is untouched.
+    assert (await db.get_invoice(str(original["id"]), tenant_id=DEMO_TENANT_ID))["status"] == (
+        "awaiting_confirm"
+    )
+
+
+@requires_db
+async def test_a_non_cash_duplicate_hold_still_confirms_through_confirm(api, db):
+    app, client, *_ = api
+    original, copy = await held_duplicate(api, db)
+    resp = await client.post(f"/api/invoices/{copy['id']}/confirm", headers=AUTH)
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "confirmed"
+    events = await db.audit_events_for_subject("invoice", str(copy["id"]), tenant_id=DEMO_TENANT_ID)
+    assert [e["action"] for e in events] == ["invoice.confirmed"]
+
+
+@requires_db
+async def test_the_screen_corrects_a_misread_cash_and_the_hold_lifts(api, db):
+    """D23: payment_kind is correctable. Cash to credit on a held paper with
+    no duplicate pointer returns it to awaiting_confirm - the first correction
+    that moves a status - stamped like every other correction."""
+    app, client, *_ = api
+    cash = good_invoice()
+    cash.payment_kind = "cash"
+    invoice = await extracted_invoice(api, db, cash)
+    assert invoice["status"] == "needs_review"
+
+    resp = await client.patch(
+        f"/api/invoices/{invoice['id']}/fields",
+        headers=AUTH,
+        json={"corrections": [{"line_index": None, "field": "payment_kind", "value": "credit"}]},
+    )
+    assert resp.status_code == 200, resp.text
+    detail = resp.json()
+    assert detail["payment_kind"] == "credit"
+    assert detail["status"] == "awaiting_confirm"
+    assert detail["provenance"]["payment_kind"]["origin"] == "corrected_screen"
+    assert detail["provenance"]["payment_kind"]["actor"] == TEST_ACTOR
+    assert detail["provenance"]["total"]["origin"] == "extracted"
+    assert detail["confidence"]["document"]["status"] == "green"  # re-validation unchanged
+
+    events = await db.audit_events_for_subject(
+        "invoice", str(invoice["id"]), tenant_id=DEMO_TENANT_ID
+    )
+    assert [(e["action"], e["actor"]) for e in events] == [("invoice.corrected", TEST_ACTOR)]
+    assert events[0]["detail"] == {
+        "fields": ["payment_kind"],
+        "message_id": None,
+        "from_status": "needs_review",
+        "to_status": "awaiting_confirm",
+    }
+
+    # Now an ordinary paper: confirm works, approve does not.
+    refused = await client.post(
+        f"/api/invoices/{invoice['id']}/approve", headers=AUTH, json={"reason": "x"}
+    )
+    assert refused.status_code == 409
+    confirmed = await client.post(f"/api/invoices/{invoice['id']}/confirm", headers=AUTH)
+    assert confirmed.status_code == 200 and confirmed.json()["status"] == "confirmed"
+
+
+@requires_db
+async def test_the_screen_marks_a_paper_cash_and_it_is_held(api, db):
+    app, client, *_ = api
+    invoice = await extracted_invoice(api, db)
+    assert invoice["status"] == "awaiting_confirm"
+
+    resp = await client.patch(
+        f"/api/invoices/{invoice['id']}/fields",
+        headers=AUTH,
+        json={"corrections": [{"line_index": None, "field": "payment_kind", "value": "Cash"}]},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["payment_kind"] == "cash"
+    assert resp.json()["status"] == "needs_review"
+
+    # Held now: confirm refuses, approve is the door.
+    resp = await client.post(f"/api/invoices/{invoice['id']}/confirm", headers=AUTH)
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "invoice is paid in cash; approve it with a reason instead"
+    resp = await client.post(
+        f"/api/invoices/{invoice['id']}/approve", headers=AUTH, json={"reason": "paid at the door"}
+    )
+    assert resp.status_code == 200 and resp.json()["status"] == "confirmed"
+
+    # Bad values are 422, and a line_index on a header field too.
+    for correction in (
+        {"line_index": None, "field": "payment_kind", "value": "cheque"},
+        {"line_index": None, "field": "payment_kind", "value": ""},
+        {"line_index": 0, "field": "payment_kind", "value": "cash"},
+    ):
+        other = await extracted_invoice(api, db, message_id=f"wamid.{hash(str(correction))}")
+        resp = await client.patch(
+            f"/api/invoices/{other['id']}/fields", headers=AUTH, json={"corrections": [correction]}
+        )
+        assert resp.status_code == 422, (correction, resp.text)
+
+
+@requires_db
+async def test_a_cash_duplicate_corrected_to_credit_stays_held(api, db):
+    """The duplicate hold still applies once the cash reason is gone, so the
+    paper stays needs_review and its exits are confirm or dismiss."""
+    app, client, *_ = api
+    original, copy = await held_duplicate(api, db, payment_kind="cash")
+
+    resp = await client.patch(
+        f"/api/invoices/{copy['id']}/fields",
+        headers=AUTH,
+        json={"corrections": [{"line_index": None, "field": "payment_kind", "value": "credit"}]},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["payment_kind"] == "credit"
+    assert resp.json()["status"] == "needs_review"
+    events = await db.audit_events_for_subject("invoice", str(copy["id"]), tenant_id=DEMO_TENANT_ID)
+    assert events[0]["detail"] == {"fields": ["payment_kind"], "message_id": None}
+
+    refused = await client.post(
+        f"/api/invoices/{copy['id']}/approve", headers=AUTH, json={"reason": "x"}
+    )
+    assert refused.status_code == 409
+    assert refused.json()["detail"] == "invoice is paid by credit, not cash; confirm it instead"
+    dismissed = await client.post(f"/api/invoices/{copy['id']}/dismiss", headers=AUTH)
+    assert dismissed.status_code == 200 and dismissed.json()["status"] == "dismissed"
 
 
 # --- manual upload ----------------------------------------------------------
@@ -578,9 +947,18 @@ async def test_manual_cash_invoice_is_held_and_approved_from_the_screen(api, db)
     detail = resp.json()
     assert detail["status"] == "needs_review"  # WP-24 holds typed cash too
 
+    # Confirm is not the door for cash any more (WP-74); approve with a reason is.
     resp = await client.post(f"/api/invoices/{detail['id']}/confirm", headers=AUTH)
-    assert resp.status_code == 200
+    assert resp.status_code == 409
+    resp = await client.post(
+        f"/api/invoices/{detail['id']}/approve",
+        headers=AUTH,
+        json={"reason": "Typed in from the till slip, cash paid on delivery"},
+    )
+    assert resp.status_code == 200, resp.text
     assert resp.json()["status"] == "confirmed"
+    events = await db.audit_events_for_subject("invoice", detail["id"], tenant_id=DEMO_TENANT_ID)
+    assert [e["action"] for e in events] == ["invoice.cash_approved", "invoice.created_by_hand"]
 
 
 @requires_db
@@ -830,7 +1208,7 @@ async def test_wp26_screen_cannot_confirm_a_null_total_and_the_patch_unblocks_it
     # a figure read off the paper from one worked out, and neither claim is
     # made. Only the chat reconstruction grammar says `reconstructed`.
     assert detail["provenance"]["total"]["origin"] == "corrected_screen"
-    assert detail["provenance"]["total"]["actor"] == "console"
+    assert detail["provenance"]["total"]["actor"] == TEST_ACTOR
 
     resp = await client.post(f"/api/invoices/{invoice['id']}/confirm", headers=AUTH)
     assert resp.status_code == 200
@@ -914,17 +1292,28 @@ async def test_a_wrong_pack_size_can_be_corrected_and_cleared_from_the_screen(ap
 # --- dismiss a held duplicate (TODOS pull-forward, 2026-09-01) ---------------
 
 
-async def held_duplicate(api, db):
+async def held_duplicate(api, db, *, payment_kind: str = "credit", invoice_no: str | None = None):
     """The same paper sent twice, the way a salesman double-sends it: the first
     is recorded and awaits its OK, the second is held by WP-44. Driven through
     the real webhook path, never hand-inserted - the hold has to be the one the
-    pipeline actually produces, pointer and all."""
+    pipeline actually produces, pointer and all. `payment_kind` is the copy's:
+    a cash copy is the D12 case, held on two grounds at once. `invoice_no`
+    keeps a pair apart from papers a test already recorded."""
     app, client, *_ = api
-    await post_webhook(client, wa_image_payload())
-    await drain_jobs(db, app, FakeExtraction(result=invoice_result(good_invoice())))
-    await post_webhook(client, wa_image_payload(message_id="wamid.copy"))
-    await drain_jobs(db, app, FakeExtraction(result=invoice_result(good_invoice())))
-    rows = await db.pool.fetch("select * from invoices order by created_at, id")
+    first = good_invoice()
+    if invoice_no is not None:
+        first.invoice_no = invoice_no
+    prefix = "wamid" if invoice_no is None else invoice_no
+    await post_webhook(client, wa_image_payload(message_id=f"{prefix}.in1"))
+    await drain_jobs(db, app, FakeExtraction(result=invoice_result(first)))
+    second = good_invoice()
+    second.invoice_no = first.invoice_no
+    second.payment_kind = payment_kind
+    await post_webhook(client, wa_image_payload(message_id=f"{prefix}.copy"))
+    await drain_jobs(db, app, FakeExtraction(result=invoice_result(second)))
+    rows = await db.pool.fetch(
+        "select * from invoices where invoice_no = $1 order by created_at, id", first.invoice_no
+    )
     assert [row["status"] for row in rows] == ["awaiting_confirm", "needs_review"]
     original, copy = rows[0], rows[1]
     assert copy["duplicate_of_invoice_id"] == original["id"]
@@ -951,7 +1340,7 @@ async def test_dismissing_a_copy_clears_the_list_and_leaves_the_original_alone(a
     assert [inv["id"] for inv in listed] == [str(original["id"])]
 
     events = await db.audit_events_for_subject("invoice", str(copy["id"]), tenant_id=DEMO_TENANT_ID)
-    assert [(e["action"], e["actor"]) for e in events] == [("invoice.dismissed", "console")]
+    assert [(e["action"], e["actor"]) for e in events] == [("invoice.dismissed", TEST_ACTOR)]
     assert events[0]["detail"] == {
         "from_status": "needs_review",
         "duplicate_of_invoice_id": str(original["id"]),

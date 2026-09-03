@@ -27,6 +27,7 @@ from faida_api.confirm import (
     LineNameEdit,
     LinePackSizeEdit,
     MissingVatRateEdit,
+    PaymentKindEdit,
     ReconstructedTotalEdit,
     TotalsEdit,
     apply_edits,
@@ -36,8 +37,10 @@ from faida_api.confirm import (
 )
 from faida_api.extraction.schema import ExtractedInvoice, ExtractedLine, LineKind
 from faida_api.replies import (
+    CASH_HOLD_NOTE,
     QUESTION_MISSING_DATE,
     QUESTION_MISSING_INVOICE_NO,
+    REPLY_CASH_HOLD_OK,
     REPLY_CLARIFY,
     REPLY_TEXT_ONBOARDING,
     compose_ambiguous_date_reply,
@@ -284,6 +287,27 @@ def test_apply_edits_merges_and_never_mutates_the_input():
 # --- e2e harness ------------------------------------------------------------
 
 
+def test_parse_payment_kind_spellings():
+    for text in ["payment cash", "Payment: Cash", "paid cash", "paid by cash", "paid in cash"]:
+        assert parse_reply(text) == Corrections(edits=[PaymentKindEdit(value="cash")]), text
+    for text in ["payment credit", "paid credit", "payment kind credit", "paid on credit"]:
+        assert parse_reply(text) == Corrections(edits=[PaymentKindEdit(value="credit")]), text
+    assert parse_reply("2 payment credit") == Corrections(
+        selector=2, edits=[PaymentKindEdit(value="credit")]
+    )
+
+
+def test_parse_payment_kind_refuses_anything_but_cash_or_credit():
+    for text in ["payment cheque", "payment", "paid", "payment cash later", "paid 45"]:
+        assert parse_reply(text) is None, text
+
+
+def test_payment_kind_edit_applies_and_is_attributed_to_its_field():
+    edits = [PaymentKindEdit(value="credit"), TotalsEdit(field="total", value=Decimal("1"))]
+    assert edited_field_keys(edits) == ["payment_kind", "total"]
+    assert reconstructed_field_keys(edits) == []
+
+
 def sign(body: bytes) -> str:
     return "sha256=" + hmac.new(TEST_APP_SECRET.encode(), body, hashlib.sha256).hexdigest()
 
@@ -455,9 +479,11 @@ async def test_ok_with_nothing_pending_gets_onboarding(api, db):
 
 
 @requires_db
-async def test_cash_invoice_is_not_addressable_from_chat(api, db):
-    # WP-24/M7: a needs_review cash invoice never resolves from chat; the
-    # sender falls back to onboarding as if nothing were pending.
+async def test_ok_on_a_cash_hold_never_confirms_and_says_why(api, db):
+    """WP-24, as amended by WP-74: a cash hold is reachable from chat for
+    corrections (a misread cash has to be fixable from the phone that sent it)
+    but "OK" never confirms it - the owner approves cash on the screen, with a
+    reason. The reply says so, and teaches the one correction that lifts it."""
     app, client, *_ = api
     cash = good_invoice()
     cash.payment_kind = "cash"
@@ -467,12 +493,113 @@ async def test_cash_invoice_is_not_addressable_from_chat(api, db):
     await post_webhook(client, wa_text_payload("OK", message_id="wamid.ok1"))
     await drain_jobs(db, app, None)
 
-    assert (await outbound_bodies(db))[-1] == REPLY_TEXT_ONBOARDING
+    assert (await outbound_bodies(db))[-1] == REPLY_CASH_HOLD_OK
+    assert REPLY_CASH_HOLD_OK.startswith(CASH_HOLD_NOTE)
     doc = await db.get_document_by_wa_message("wamid.in1")
     invoice = await db.get_invoice_by_document(str(doc["id"]), tenant_id=DEMO_TENANT_ID)
     assert invoice["status"] == "needs_review"
     assert doc["status"] == "extracted"
     assert await db.pool.fetchval("select count(*) from supplier_item_prices") == 0
+    assert await db.pool.fetchval("select count(*) from audit_events") == 0
+
+
+@requires_db
+async def test_payment_credit_from_chat_lifts_a_cash_hold(api, db):
+    """D23 from the phone: the sender says the paper was on credit, the field
+    is corrected and stamped, and the hold lifts into the ordinary awaiting
+    confirm - with the ordinary "Reply OK to confirm" closing."""
+    app, client, *_ = api
+    cash = good_invoice()
+    cash.payment_kind = "cash"
+    await post_webhook(client, wa_image_payload())
+    await drain_jobs(db, app, FakeExtraction(result=invoice_result(cash)))
+    assert (await outbound_bodies(db))[-1].endswith(CASH_HOLD_NOTE)
+
+    await post_webhook(client, wa_text_payload("payment credit", message_id="wamid.fix1"))
+    await drain_jobs(db, app, None)
+
+    assert (await outbound_bodies(db))[-1] == (
+        "Read it: Gulf Foods Trading LLC, 2 lines, total AED 745.76, dated 20 Aug 2026.\n"
+        "Reply OK to confirm."
+    )
+    doc = await db.get_document_by_wa_message("wamid.in1")
+    invoice = await db.get_invoice_by_document(str(doc["id"]), tenant_id=DEMO_TENANT_ID)
+    assert invoice["status"] == "awaiting_confirm"
+    assert invoice["payment_kind"] == "credit"
+    assert invoice["provenance"]["payment_kind"]["origin"] == "corrected_chat"
+    assert invoice["provenance"]["payment_kind"]["actor"] == f"whatsapp:{DEMO_PHONE}"
+    assert invoice["provenance"]["total"]["origin"] == "extracted"
+    assert invoice["confidence"]["document"]["status"] == "green"
+    events = await db.audit_events_for_subject(
+        "invoice", str(invoice["id"]), tenant_id=DEMO_TENANT_ID
+    )
+    assert [(e["action"], e["actor"]) for e in events] == [
+        ("invoice.corrected", f"whatsapp:{DEMO_PHONE}")
+    ]
+    assert events[0]["detail"] == {
+        "fields": ["payment_kind"],
+        "message_id": "wamid.fix1",
+        "from_status": "needs_review",
+        "to_status": "awaiting_confirm",
+    }
+
+    # And now OK confirms it like any credit paper.
+    await post_webhook(client, wa_text_payload("OK", message_id="wamid.ok1"))
+    await drain_jobs(db, app, None)
+    assert (await outbound_bodies(db))[-1] == ACK_GULF
+    invoice = await db.get_invoice_by_document(str(doc["id"]), tenant_id=DEMO_TENANT_ID)
+    assert invoice["status"] == "confirmed"
+
+
+@requires_db
+async def test_payment_cash_from_chat_holds_an_awaiting_paper(api, db):
+    app, client, *_ = api
+    await post_webhook(client, wa_image_payload())
+    await drain_jobs(db, app, FakeExtraction(result=invoice_result(good_invoice())))
+
+    await post_webhook(client, wa_text_payload("paid cash", message_id="wamid.fix1"))
+    await drain_jobs(db, app, None)
+
+    assert (await outbound_bodies(db))[-1] == (
+        "Read it: Gulf Foods Trading LLC, 2 lines, total AED 745.76, dated 20 Aug 2026.\n"
+        + CASH_HOLD_NOTE
+    )
+    doc = await db.get_document_by_wa_message("wamid.in1")
+    invoice = await db.get_invoice_by_document(str(doc["id"]), tenant_id=DEMO_TENANT_ID)
+    assert invoice["status"] == "needs_review"
+    assert invoice["payment_kind"] == "cash"
+    assert invoice["provenance"]["payment_kind"]["origin"] == "corrected_chat"
+
+    # Held: OK does not confirm it, and nothing reached price memory.
+    await post_webhook(client, wa_text_payload("OK", message_id="wamid.ok1"))
+    await drain_jobs(db, app, None)
+    assert (await outbound_bodies(db))[-1] == REPLY_CASH_HOLD_OK
+    assert await db.pool.fetchval("select count(*) from supplier_item_prices") == 0
+
+
+@requires_db
+async def test_a_line_fix_on_a_cash_hold_applies_and_keeps_the_hold(api, db):
+    """The branch phone can fix the numbers on a cash paper before the owner
+    approves it; the reply keeps the cash-hold closing because nothing about
+    the hold changed."""
+    app, client, *_ = api
+    cash = good_invoice()
+    cash.payment_kind = "cash"
+    cash.lines[0].qty = Decimal("2")
+    await post_webhook(client, wa_image_payload())
+    await drain_jobs(db, app, FakeExtraction(result=invoice_result(cash)))
+
+    await post_webhook(client, wa_text_payload("line 1 qty 12", message_id="wamid.fix1"))
+    await drain_jobs(db, app, None)
+
+    assert (await outbound_bodies(db))[-1] == (
+        "Read it: Gulf Foods Trading LLC, 2 lines, total AED 745.76, dated 20 Aug 2026.\n"
+        + CASH_HOLD_NOTE
+    )
+    doc = await db.get_document_by_wa_message("wamid.in1")
+    invoice = await db.get_invoice_by_document(str(doc["id"]), tenant_id=DEMO_TENANT_ID)
+    assert invoice["status"] == "needs_review"
+    assert invoice["confidence"]["lines"] == ["green", "green"]
 
 
 @requires_db

@@ -139,10 +139,9 @@ and the typed status set both live.
 **Depends on:** M7's roles, which decide who is allowed. *Answered by the 2026-09-03 M7 review (D2): one
 role for the pilot, so any member of the tenant may dismiss; un-dismiss itself stays unbuilt until asked.*
 
-### The runbook's leftover check got weaker when the invoice list started hiding rows
+### ~~The runbook's leftover check got weaker when the invoice list started hiding rows~~ done 2026-09-03
 
-**Bundled into M7 WP-76 by the 2026-09-03 eng review (D19):** the sentence lands in the same
-DEMO_RUNBOOK §A edit that adds the login precondition. Strike this entry when WP-76 ships.
+Closed in the M7 cutover prep: DEMO_RUNBOOK §A's check now names the hidden dismissed rows and the `?status=dismissed` view.
 
 **What:** One sentence in `Docs/DEMO_RUNBOOK.md` §A, so its "no rehearsal leftovers in the invoice
 list" check accounts for the rows the list now hides.
