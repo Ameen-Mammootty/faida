@@ -533,7 +533,7 @@ async def handle_inbound_text(
             # again. The price re-run is idempotent and, since WP-50 made the
             # confirm atomic, has nothing left to heal on a row confirmed by
             # this code - it stays for rows confirmed before that merge.
-            await db.record_confirmed_prices(str(already["id"]))
+            await db.record_confirmed_prices(str(already["id"]), tenant_id=already["tenant_id"])
             return _ack(already)
 
     pending = await db.awaiting_confirm_invoices_for_phone(from_phone)
@@ -568,21 +568,28 @@ async def handle_inbound_text(
     else:
         target = pending[0]
 
+    # The chat path's tenant is the invoice's own, reached through the
+    # sender's phone (branch -> tenant, C5); it is passed explicitly from here
+    # down so the db layer never has to guess whose row a write touches.
+    tenant_id = target["tenant_id"]
     if isinstance(parsed, Confirm):
         if target["total"] is None:
             # WP-26: open ambers still confirm - the closing promised "OK to
             # confirm the rest" - but a missing total is not one of them. It is
             # the invoice's headline number, invisible to everything
             # downstream, and by M5 it is a plate cost nobody can check.
-            return await _total_needed(db, str(target["id"]))
+            return await _total_needed(db, str(target["id"]), tenant_id)
         # One call, one transaction: the status flip, the audit row and the
         # price baseline commit together or not at all (WP-50).
-        await db.confirm_invoice(str(target["id"]), actor=chat_actor(from_phone))
+        await db.confirm_invoice(
+            str(target["id"]), tenant_id=tenant_id, actor=chat_actor(from_phone)
+        )
         return _ack(target)
     return await _apply_correction(
         db,
         str(target["id"]),
         parsed.edits,
+        tenant_id=tenant_id,
         actor=chat_actor(from_phone),
         message_id=message_id,
     )
@@ -593,6 +600,7 @@ async def _apply_correction(
     invoice_id: str,
     edits: list[Edit],
     *,
+    tenant_id: str,
     actor: str,
     origin: Origin = Origin.CORRECTED_CHAT,
     message_id: str | None = None,
@@ -602,13 +610,14 @@ async def _apply_correction(
     recomputing status), recompute price alerts the same way the pipeline
     does, persist, and re-reply. Status stays awaiting_confirm.
 
-    `actor` and `origin` are C8: the same function serves the chat grammar and
-    the review screen's PATCH (one door for both, plan.md §7.2 C8), so the
-    caller says which door this correction came through and who was at it. The
-    edited fields are re-stamped; every field the edits did not touch keeps the
+    `tenant_id`, `actor` and `origin` are the caller's to say: the same
+    function serves the chat grammar and the review screen's PATCH (one door
+    for both, plan.md §7.2 C8), so the caller names whose invoice this is,
+    which door the correction came through and who was at it. The edited
+    fields are re-stamped; every field the edits did not touch keeps the
     origin it already had."""
-    invoice_row = await db.get_invoice(invoice_id)
-    line_rows = await db.get_invoice_lines(invoice_id)
+    invoice_row = await db.get_invoice(invoice_id, tenant_id=tenant_id)
+    line_rows = await db.get_invoice_lines(invoice_id, tenant_id=tenant_id)
     line_count = len(line_rows)
     for edit in edits:
         if (
@@ -674,6 +683,7 @@ async def _apply_correction(
     ]
     await db.apply_invoice_correction(
         invoice_id,
+        tenant_id=tenant_id,
         invoice_no=invoice.invoice_no,
         invoice_date=invoice.invoice_date,
         currency=invoice.currency,
@@ -697,14 +707,14 @@ async def _apply_correction(
     return compose_invoice_reply(invoice, validation, alerts, tenant_currency=tenant_currency)
 
 
-async def _total_needed(db: Database, invoice_id: str) -> str:
+async def _total_needed(db: Database, invoice_id: str, tenant_id: str) -> str:
     """WP-26's answer to an OK on a totals-less invoice: the same question
     again. The line sum comes from re-running the shipped validator over the
     stored rows rather than summing them here - C4's rule for when a line sum
     exists at all (never, if one line total is unreadable) has one
     implementation, and this is not it."""
-    invoice_row = await db.get_invoice(invoice_id)
-    line_rows = await db.get_invoice_lines(invoice_id)
+    invoice_row = await db.get_invoice(invoice_id, tenant_id=tenant_id)
+    line_rows = await db.get_invoice_lines(invoice_id, tenant_id=tenant_id)
     invoice = _to_extracted(invoice_row, line_rows)
     validation = validate_invoice(invoice)
     return compose_total_needed_reply(validation.document.line_sum, invoice.currency)

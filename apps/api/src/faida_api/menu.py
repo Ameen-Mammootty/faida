@@ -1,8 +1,9 @@
 """M6 WP-60: the menu write door (plan.md §7.3).
 
-Routes, all under /api behind the same shared-secret bearer token as the rest
-of C6 (real auth is M7; the API refuses client-asserted identity, so every
-write here names `console` as its actor until then):
+Routes, all under /api behind the same auth context as the rest of the API
+(`auth.py`, M7 WP-73): every read and write carries the caller's tenant, and
+every write names the context's actor - `console` while the context's only
+source is the shared token, a real user id once WP-70 swaps that source:
 
     GET   /api/menu-items                     every item + its current recipe version
     POST  /api/menu-items                     create an item (name + selling price)
@@ -39,6 +40,7 @@ the C6 convention.
 
 import uuid
 from decimal import ROUND_HALF_UP, Decimal
+from typing import Annotated
 
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -46,22 +48,23 @@ from pydantic import BaseModel, ConfigDict
 
 from . import costing, plates
 from .api import (
-    CONSOLE_ACTOR,
     MEASURE_WORDS,
     _clean,
     _dec,
     _iso,
     _material_price,
-    _tenant,
     blocked_line_reason,
-    require_api_token,
 )
+from .auth import AuthContext, require_context
 from .confirm import _parse_number
 from .db import Database
 from .extraction import units
 from .extraction.constants import VAT_RATE_BY_CURRENCY
 
-router = APIRouter(prefix="/api", dependencies=[Depends(require_api_token)])
+# Declared twice like api.py: at the router, so no route here can exist
+# without the token check, and per handler, to receive the tenant and actor.
+router = APIRouter(prefix="/api", dependencies=[Depends(require_context)])
+Context = Annotated[AuthContext, Depends(require_context)]
 
 
 # --- request bodies ---------------------------------------------------------
@@ -202,11 +205,12 @@ async def _validated_components(
         )
     validated: list[dict] = []
     for index, component in enumerate(components):
-        ingredient = await db.get_ingredient(str(component.ingredient_id))
         # 404 with the same wording for missing and cross-tenant alike (the M5
-        # pattern): another tenant's materials do not exist here, and Postgres'
-        # composite key refuses the write regardless of what this check missed.
-        if ingredient is None or ingredient["tenant_id"] != tenant_id:
+        # pattern): another tenant's materials do not exist here - the scoped
+        # read returns nothing - and Postgres' composite key refuses the write
+        # regardless of what this check missed.
+        ingredient = await db.get_ingredient(str(component.ingredient_id), tenant_id=tenant_id)
+        if ingredient is None:
             raise HTTPException(
                 status_code=404, detail=f"component {index + 1}: ingredient not found"
             )
@@ -242,11 +246,11 @@ async def _pricing(
     currency = await db.tenant_currency(tenant_id)
     vat_rate = VAT_RATE_BY_CURRENCY.get(currency or "")
     prices: dict[str, asyncpg.Record] = {}
-    for row in await db.list_mapped_pack_costs(tenant_id):
+    for row in await db.list_mapped_pack_costs(tenant_id=tenant_id):
         prices.setdefault(row["ingredient_id"], row)
     stale = {
         row["ingredient_id"]: row
-        for row in await db.list_newest_purchases(tenant_id)
+        for row in await db.list_newest_purchases(tenant_id=tenant_id)
         if not row["costed"]
     }
     return prices, stale, vat_rate
@@ -303,10 +307,10 @@ async def _menu_context(
     from this same bundle, so they can never disagree on what a plate earns."""
     prices, stale, vat_rate = await _pricing(db, tenant_id)
     components_by_item: dict[str, list[asyncpg.Record]] = {}
-    for row in await db.list_current_recipe_components(tenant_id):
+    for row in await db.list_current_recipe_components(tenant_id=tenant_id):
         components_by_item.setdefault(row["menu_item_id"], []).append(row)
 
-    rows = await db.list_menu_items(tenant_id)
+    rows = await db.list_menu_items(tenant_id=tenant_id)
     plate_by_item: dict[str, plates.Plate] = {}
     for row in rows:
         if row["recipe_id"] is None:
@@ -365,18 +369,20 @@ def _component_cost_payload(
 # --- serialization ----------------------------------------------------------
 
 
-async def _menu_item_detail(db: Database, menu_item_id: str) -> dict:
+async def _menu_item_detail(db: Database, menu_item_id: str, tenant_id: str) -> dict:
     """The full item payload every write returns (C6): the item, its current
     recipe version, that version's components each carrying its cost and the
     invoice line the price came from, and the plate answer on top. The
     forensics of the *current* number - reproducing a past screen is M8's
     calculation-run subsystem, not this milestone."""
-    item = await db.get_menu_item(menu_item_id)
+    item = await db.get_menu_item(menu_item_id, tenant_id=tenant_id)
     if item is None:
         raise HTTPException(status_code=404, detail="menu item not found")
-    recipe = await db.get_current_recipe(menu_item_id)
-    components = [] if recipe is None else await db.get_recipe_components(recipe["id"])
-    prices, stale, vat_rate = await _pricing(db, item["tenant_id"])
+    recipe = await db.get_current_recipe(menu_item_id, tenant_id=tenant_id)
+    components = (
+        [] if recipe is None else await db.get_recipe_components(recipe["id"], tenant_id=tenant_id)
+    )
+    prices, stale, vat_rate = await _pricing(db, tenant_id)
 
     if recipe is None:
         result = plates.no_recipe_plate()
@@ -423,12 +429,12 @@ async def _menu_item_detail(db: Database, menu_item_id: str) -> dict:
     }
 
 
-async def _live_item(db: Database, menu_item_id: uuid.UUID) -> asyncpg.Record:
-    """The item, provided it exists and is not archived - the two answers a
-    write needs before it may touch anything. An archived item is read-only:
-    bring it back first, so its history cannot grow while it is off every
-    screen."""
-    item = await db.get_menu_item(str(menu_item_id))
+async def _live_item(db: Database, menu_item_id: uuid.UUID, tenant_id: str) -> asyncpg.Record:
+    """The item, provided it exists for this tenant and is not archived - the
+    two answers a write needs before it may touch anything. An archived item
+    is read-only: bring it back first, so its history cannot grow while it is
+    off every screen."""
+    item = await db.get_menu_item(str(menu_item_id), tenant_id=tenant_id)
     if item is None:
         raise HTTPException(status_code=404, detail="menu item not found")
     if item["archived_at"] is not None:
@@ -443,7 +449,7 @@ async def _live_item(db: Database, menu_item_id: uuid.UUID) -> asyncpg.Record:
 
 
 @router.get("/menu-items")
-async def list_menu_items(request: Request) -> dict:
+async def list_menu_items(request: Request, ctx: Context) -> dict:
     """Every item with its current recipe version and its plate answer -
     cost, margin in AED and margin %% at its own menu price, or the list of
     what is missing. Archived items are included and flagged, because the
@@ -454,8 +460,7 @@ async def list_menu_items(request: Request) -> dict:
     tenant currency - joined in Python, nothing stored, nothing to
     invalidate."""
     db: Database = request.app.state.db
-    tenant_id = await _tenant(db)
-    rows, _, plate_by_item, _ = await _menu_context(db, tenant_id)
+    rows, _, plate_by_item, _ = await _menu_context(db, ctx.tenant_id)
     return {
         "menu_items": [
             {
@@ -482,77 +487,76 @@ async def list_menu_items(request: Request) -> dict:
 
 
 @router.get("/menu-items/{menu_item_id}")
-async def get_menu_item(menu_item_id: uuid.UUID, request: Request) -> dict:
-    return await _menu_item_detail(request.app.state.db, str(menu_item_id))
+async def get_menu_item(menu_item_id: uuid.UUID, request: Request, ctx: Context) -> dict:
+    return await _menu_item_detail(request.app.state.db, str(menu_item_id), ctx.tenant_id)
 
 
 @router.post("/menu-items", status_code=201)
-async def create_menu_item(body: MenuItemCreate, request: Request) -> dict:
+async def create_menu_item(body: MenuItemCreate, request: Request, ctx: Context) -> dict:
     db: Database = request.app.state.db
-    tenant_id = await _tenant(db)
     name = _clean(body.name)
     if name is None:
         raise HTTPException(status_code=422, detail="a menu item needs a name")
     price = _positive_number(body.selling_price, what="selling price", example="17.00")
     try:
         item = await db.create_menu_item(
-            tenant_id=tenant_id,
+            tenant_id=ctx.tenant_id,
             name=name,
             selling_price=price,
-            actor=CONSOLE_ACTOR,
+            actor=ctx.actor,
             category=_clean(body.category),
         )
     except asyncpg.UniqueViolationError:
         raise HTTPException(
             status_code=409, detail=f"a menu item called '{name}' already exists"
         ) from None
-    return await _menu_item_detail(db, item["id"])
+    return await _menu_item_detail(db, item["id"], ctx.tenant_id)
 
 
 @router.patch("/menu-items/{menu_item_id}/price")
 async def set_menu_item_price(
-    menu_item_id: uuid.UUID, body: MenuItemPrice, request: Request
+    menu_item_id: uuid.UUID, body: MenuItemPrice, request: Request, ctx: Context
 ) -> dict:
     """The owner said a new price. The audit row carries old and new - that
     trail is the selling-price history (§2 rule 8). Sending the same price
     again changes nothing and writes nothing."""
     db: Database = request.app.state.db
-    item = await _live_item(db, menu_item_id)
+    await _live_item(db, menu_item_id, ctx.tenant_id)
     price = _positive_number(body.selling_price, what="selling price", example="17.00")
     await db.set_menu_item_price(
         str(menu_item_id),
-        tenant_id=item["tenant_id"],
+        tenant_id=ctx.tenant_id,
         selling_price=price,
-        actor=CONSOLE_ACTOR,
+        actor=ctx.actor,
     )
-    return await _menu_item_detail(db, str(menu_item_id))
+    return await _menu_item_detail(db, str(menu_item_id), ctx.tenant_id)
 
 
 @router.post("/menu-items/{menu_item_id}/archive")
-async def archive_menu_item(menu_item_id: uuid.UUID, request: Request) -> dict:
+async def archive_menu_item(menu_item_id: uuid.UUID, request: Request, ctx: Context) -> dict:
     """Out of the ranking and the coverage count, never deleted. Always an
     explicit click - the loader never archives on its own (Codex 9)."""
     db: Database = request.app.state.db
-    item = await db.get_menu_item(str(menu_item_id))
+    item = await db.get_menu_item(str(menu_item_id), tenant_id=ctx.tenant_id)
     if item is None:
         raise HTTPException(status_code=404, detail="menu item not found")
     archived = await db.archive_menu_item(
-        str(menu_item_id), tenant_id=item["tenant_id"], actor=CONSOLE_ACTOR
+        str(menu_item_id), tenant_id=ctx.tenant_id, actor=ctx.actor
     )
     if not archived:
         raise HTTPException(status_code=409, detail="menu item is already archived")
-    return await _menu_item_detail(db, str(menu_item_id))
+    return await _menu_item_detail(db, str(menu_item_id), ctx.tenant_id)
 
 
 @router.post("/menu-items/{menu_item_id}/unarchive")
-async def unarchive_menu_item(menu_item_id: uuid.UUID, request: Request) -> dict:
+async def unarchive_menu_item(menu_item_id: uuid.UUID, request: Request, ctx: Context) -> dict:
     db: Database = request.app.state.db
-    item = await db.get_menu_item(str(menu_item_id))
+    item = await db.get_menu_item(str(menu_item_id), tenant_id=ctx.tenant_id)
     if item is None:
         raise HTTPException(status_code=404, detail="menu item not found")
     try:
         unarchived = await db.unarchive_menu_item(
-            str(menu_item_id), tenant_id=item["tenant_id"], actor=CONSOLE_ACTOR
+            str(menu_item_id), tenant_id=ctx.tenant_id, actor=ctx.actor
         )
     except asyncpg.UniqueViolationError:
         raise HTTPException(
@@ -562,30 +566,30 @@ async def unarchive_menu_item(menu_item_id: uuid.UUID, request: Request) -> dict
         ) from None
     if not unarchived:
         raise HTTPException(status_code=409, detail="menu item is not archived")
-    return await _menu_item_detail(db, str(menu_item_id))
+    return await _menu_item_detail(db, str(menu_item_id), ctx.tenant_id)
 
 
 @router.post("/menu-items/{menu_item_id}/recipe", status_code=201)
 async def create_recipe_version(
-    menu_item_id: uuid.UUID, body: RecipeVersion, request: Request
+    menu_item_id: uuid.UUID, body: RecipeVersion, request: Request, ctx: Context
 ) -> dict:
     """Append the next version of this item's recipe. Editing IS appending:
     old versions are never touched, the newest is current, and the history is
     the table itself (WP-60)."""
     db: Database = request.app.state.db
-    item = await _live_item(db, menu_item_id)
+    await _live_item(db, menu_item_id, ctx.tenant_id)
 
     yield_portions = _positive_number(body.yield_portions, what="yield", example="40")
-    components = await _validated_components(db, item["tenant_id"], body.components)
+    components = await _validated_components(db, ctx.tenant_id, body.components)
 
     try:
         await db.create_recipe_version(
             str(menu_item_id),
-            tenant_id=item["tenant_id"],
+            tenant_id=ctx.tenant_id,
             yield_portions=yield_portions,
             yield_label=_clean(body.yield_label),
             components=components,
-            actor=CONSOLE_ACTOR,
+            actor=ctx.actor,
         )
     except asyncpg.UniqueViolationError:
         # Two concurrent saves computed the same max+1; the constraint let
@@ -595,14 +599,14 @@ async def create_recipe_version(
             detail="someone else saved a new version of this recipe at the same "
             "moment; reload it and try again",
         ) from None
-    return await _menu_item_detail(db, str(menu_item_id))
+    return await _menu_item_detail(db, str(menu_item_id), ctx.tenant_id)
 
 
 # --- the batch loader's door (WP-64) ------------------------------------------
 
 
 @router.post("/menu-items/load")
-async def load_menu_item(body: MenuItemLoad, request: Request) -> dict:
+async def load_menu_item(body: MenuItemLoad, request: Request, ctx: Context) -> dict:
     """One CSV recipe, **one transaction** (WP-64): the item, its price, its
     category and its recipe version commit together or not at all.
 
@@ -630,7 +634,7 @@ async def load_menu_item(body: MenuItemLoad, request: Request) -> dict:
     and the same `_positive_number` the by-hand door uses, so a CSV cannot
     reach a shape a person could not type."""
     db: Database = request.app.state.db
-    tenant_id = await _tenant(db)
+    tenant_id = ctx.tenant_id
     name = _clean(body.name)
     if name is None:
         raise HTTPException(status_code=422, detail="a menu item needs a name")
@@ -647,7 +651,7 @@ async def load_menu_item(body: MenuItemLoad, request: Request) -> dict:
             yield_portions=yield_portions,
             yield_label=_clean(body.yield_label),
             components=components,
-            actor=CONSOLE_ACTOR,
+            actor=ctx.actor,
         )
     except asyncpg.UniqueViolationError:
         # Either another loader created this name a moment ago, or another
@@ -673,7 +677,7 @@ async def load_menu_item(body: MenuItemLoad, request: Request) -> dict:
         "outcome": result["outcome"],
         "changed": result["changed"],
         "version": result["version"],
-        "menu_item": await _menu_item_detail(db, result["menu_item_id"]),
+        "menu_item": await _menu_item_detail(db, result["menu_item_id"], tenant_id),
     }
 
 
@@ -705,7 +709,7 @@ def _move_line(line: asyncpg.Record) -> dict:
 
 
 @router.get("/price-moves")
-async def list_price_moves(request: Request) -> dict:
+async def list_price_moves(request: Request, ctx: Context) -> dict:
     """The money moment (WP-63): when a material's price moves, which menu
     items just lost margin and by how much - M2's price alert finally carried
     through to the plate. The alert names cartons; this names cups.
@@ -729,9 +733,9 @@ async def list_price_moves(request: Request) -> dict:
     read - no cache, no recompute job, nothing to invalidate. Margin history
     over time needs sales periods and is deliberately absent (M8/M9)."""
     db: Database = request.app.state.db
-    tenant_id = await _tenant(db)
+    tenant_id = ctx.tenant_id
     pairs: dict[str, list[asyncpg.Record]] = {}
-    for line in await db.list_price_move_pairs(tenant_id):
+    for line in await db.list_price_move_pairs(tenant_id=tenant_id):
         pairs.setdefault(line["ingredient_id"], []).append(line)
     rows, components_by_item, plate_by_item, _ = await _menu_context(db, tenant_id)
 

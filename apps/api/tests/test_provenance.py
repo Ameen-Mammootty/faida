@@ -38,6 +38,7 @@ from faida_api.webhook import router as webhook_router
 
 from .conftest import (
     DEMO_PHONE,
+    DEMO_TENANT_ID,
     FakeExtraction,
     FakeMeta,
     FakeStorage,
@@ -284,7 +285,9 @@ async def test_a_chat_correction_restamps_only_the_field_it_fixed(api, db):
     assert provenance["total"]["origin"] == "extracted"
 
     # And the correction is on the record, with the fields it touched.
-    events = await db.audit_events_for_subject("invoice", str(invoice["id"]))
+    events = await db.audit_events_for_subject(
+        "invoice", str(invoice["id"]), tenant_id=DEMO_TENANT_ID
+    )
     assert [(event["action"], event["actor"]) for event in events] == [
         ("invoice.corrected", f"whatsapp:{DEMO_PHONE}")
     ]
@@ -312,7 +315,9 @@ async def test_the_screen_records_the_other_door(api, db):
     assert provenance[line_key(0, "qty")]["actor"] == "console"
     assert provenance["total"]["origin"] == "extracted"
 
-    events = await db.audit_events_for_subject("invoice", str(invoice["id"]))
+    events = await db.audit_events_for_subject(
+        "invoice", str(invoice["id"]), tenant_id=DEMO_TENANT_ID
+    )
     assert [(event["action"], event["actor"]) for event in events] == [
         ("invoice.corrected", "console")
     ]
@@ -333,7 +338,9 @@ async def test_confirming_from_chat_records_who_said_ok_exactly_once(api, db):
     await post_webhook(client, wa_text_payload("OK", message_id="wamid.ok2"))
     await drain_jobs(db, app, None)
 
-    events = await db.audit_events_for_subject("invoice", str(invoice["id"]))
+    events = await db.audit_events_for_subject(
+        "invoice", str(invoice["id"]), tenant_id=DEMO_TENANT_ID
+    )
     assert [(event["action"], event["actor"]) for event in events] == [
         ("invoice.confirmed", f"whatsapp:{DEMO_PHONE}")
     ]
@@ -355,7 +362,9 @@ async def test_confirming_a_cash_hold_from_the_screen_is_recorded(api, db):
     resp = await client.post(f"/api/invoices/{invoice['id']}/confirm", headers=AUTH)
     assert resp.status_code == 200
 
-    events = await db.audit_events_for_subject("invoice", str(invoice["id"]))
+    events = await db.audit_events_for_subject(
+        "invoice", str(invoice["id"]), tenant_id=DEMO_TENANT_ID
+    )
     assert [(event["action"], event["actor"]) for event in events] == [
         ("invoice.confirmed", "console")
     ]
@@ -387,7 +396,7 @@ async def test_manual_entry_marks_the_whole_document_as_typed(api, db):
     assert {record["origin"] for record in detail["provenance"].values()} == {"manual"}
     assert {record["actor"] for record in detail["provenance"].values()} == {"console"}
 
-    events = await db.audit_events_for_subject("invoice", detail["id"])
+    events = await db.audit_events_for_subject("invoice", detail["id"], tenant_id=DEMO_TENANT_ID)
     assert [(event["action"], event["actor"]) for event in events] == [
         ("invoice.created_by_hand", "console")
     ]

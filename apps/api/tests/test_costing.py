@@ -426,7 +426,12 @@ async def test_confirming_freezes_a_cost_on_every_stock_line(db):
             },
         ],
     )
-    assert await db.confirm_invoice(invoice_id, actor="whatsapp:+971500000000") is True
+    assert (
+        await db.confirm_invoice(
+            invoice_id, tenant_id=DEMO_TENANT_ID, actor="whatsapp:+971500000000"
+        )
+        is True
+    )
 
     rows = await _costs(db, invoice_id)
     assert [row["cost_per_base_unit"] for row in rows] == [
@@ -486,7 +491,12 @@ async def test_a_delivery_charge_in_line_one_does_not_shift_every_cost_onto_the_
             },
         ],
     )
-    assert await db.confirm_invoice(invoice_id, actor="whatsapp:+971500000000") is True
+    assert (
+        await db.confirm_invoice(
+            invoice_id, tenant_id=DEMO_TENANT_ID, actor="whatsapp:+971500000000"
+        )
+        is True
+    )
 
     rows = await _costs(db, invoice_id)
     assert rows[0]["cost_per_base_unit"] is None  # the charge line
@@ -529,7 +539,7 @@ async def test_a_line_with_no_readable_pack_costs_nothing_and_confirms_anyway(db
             },
         ],
     )
-    assert await db.confirm_invoice(invoice_id, actor="console") is True
+    assert await db.confirm_invoice(invoice_id, tenant_id=DEMO_TENANT_ID, actor="console") is True
 
     rows = await _costs(db, invoice_id)
     assert rows[0]["cost_per_base_unit"] is None
@@ -557,7 +567,7 @@ async def test_a_second_price_run_never_wipes_a_cost_it_cannot_recompute(db):
             }
         ],
     )
-    assert await db.confirm_invoice(invoice_id, actor="console") is True
+    assert await db.confirm_invoice(invoice_id, tenant_id=DEMO_TENANT_ID, actor="console") is True
     assert (await _costs(db, invoice_id))[0]["cost_per_base_unit"] is None
 
     # Stand in for WP-55's override: a human's conversion, costed by hand.
@@ -569,7 +579,7 @@ async def test_a_second_price_run_never_wipes_a_cost_it_cannot_recompute(db):
         """,
         invoice_id,
     )
-    await db.record_confirmed_prices(invoice_id)
+    await db.record_confirmed_prices(invoice_id, tenant_id=DEMO_TENANT_ID)
 
     row = (await _costs(db, invoice_id))[0]
     assert row["cost_per_base_unit"] == Decimal("0.00400000")
@@ -594,7 +604,7 @@ async def test_a_foreign_currency_invoice_records_no_cost_at_all(db):
             }
         ],
     )
-    assert await db.confirm_invoice(invoice_id, actor="console") is True
+    assert await db.confirm_invoice(invoice_id, tenant_id=DEMO_TENANT_ID, actor="console") is True
     assert (await _costs(db, invoice_id))[0]["cost_per_base_unit"] is None
 
 
