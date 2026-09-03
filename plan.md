@@ -704,7 +704,9 @@ pulled into the milestone (WP-65).
 **M7 (auth, tenancy enforcement, approvals)** - decomposed and eng-reviewed 2026-09-03 at reduced
 scope (Decision Log); the full record, with contracts, failure modes and the cutover order, is
 `Docs/M7_DECOMPOSITION.md`. Waves: WP-73 alone first, then WP-70 / WP-71 / WP-72 in parallel, then
-WP-74, then WP-76 live with the founder. WP-75 (users screen), WP-77 (RLS as a second lock) and WP-78
+WP-74, then WP-76 live with the founder. **Migration 0018 is applied live after WP-73 merges and
+before any Wave 2 lane merges** - Railway deploys every merge, and WP-72's `enqueue_once` and
+WP-70's membership read both need it (the 0017 lesson). WP-75 (users screen), WP-77 (RLS as a second lock) and WP-78
 (branch role) are deferred with named triggers in `TODOS.md`.
 
 | WP | What | Size | Depends | Acceptance |

@@ -117,6 +117,7 @@ Deferred with a named trigger, not built (§9): WP-75 users screen, WP-77 RLS as
 
 - **Wave 0 (manager, no code):** pin C10 and the amendments in `plan.md` §7.2; move the rows into §7.3; Decision Log rows from §5.
 - **Wave 1: Lane A = WP-73 alone.** It touches `db.py`, `api.py`, `menu.py` and `confirm.py` throughout and owns migration 0018, so nothing runs beside it.
+  0018 is applied to the live project from `Docs/apply_m7_migrations.sql` (pre-flight included) after WP-73 merges and **before any Wave 2 lane merges**: WP-73's code needs nothing from it, but WP-72's `enqueue_once` and WP-70's membership read do, and Railway deploys every merge.
 - **Wave 2, three parallel worktrees:** Lane B = WP-70 (`auth.py`, `config.py`, `main.py`); Lane C = WP-71 (`apps/web`, against the mock); Lane D = WP-72 (`worker.py`, `pipeline.py`, `contracts.py`).
   Conflict flags: B and D both add to `apps/api/tests/`, new files only; D's `enqueue_once` is a small addition to `db.py` after A has merged.
 - **Wave 3: WP-74** after B, C and D merge; it touches `api.py` (after B) and `apps/web` (after C).
@@ -162,7 +163,7 @@ Two of these were critical gaps in the draft as written (a self-silencing unknow
 
 1. Back up the live database.
 2. In the Supabase dashboard: migrate the project to JWT signing keys; **do not revoke the legacy JWT secret** (the service_role key in `storage.py:20` is signed by it); disable email sign-ups.
-3. Apply 0018 from its paste file; its pre-flight must return true.
+3. Confirm 0018 is already live (it is applied from its paste file **before Wave 2 merges**, because Railway deploys every merge and WP-72's `enqueue_once` and WP-70's membership read both need it; the 0017 lesson).
 4. Create the founder's account in the dashboard; run the membership script for the demo chain.
 5. Rehearse: mint a real access token from the live project and verify it against the local API's `require_context`; walk `/login` on the local rig.
 6. Merge and let Railway deploy the API. The old token is refused from this moment; the WhatsApp path is unaffected.
