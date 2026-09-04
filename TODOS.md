@@ -282,8 +282,8 @@ codes are part of the first version, not a follow-up.
 ## Sales (deferred by the M8 decomposition, 2026-09-03)
 
 M8 was decomposed in `Docs/M8_DECOMPOSITION.md` and reviewed with two outside voices on 2026-09-03
-(`/plan-eng-review`, `/plan-design-review`); its rows wait on the founder's decisions on its §5. The
-entries below are what the decomposition and its reviews consciously left out, each with the trigger
+(`/plan-eng-review`, `/plan-design-review`); the founder decided its §5 on 2026-09-04 and M8 is approved
+to build. The entries below are what the decomposition and its reviews consciously left out, each with the trigger
 that brings it back.
 
 ### Z-report photos through WhatsApp
