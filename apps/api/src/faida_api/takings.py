@@ -17,7 +17,10 @@ same rule rather than four copies of it:
                     any order
     duplicate_days  two entries for one branch-day in one body: refused with
                     a sentence, never merged
-    mixed_shapes    a file is one shape throughout (C11.1)
+    mixed_shapes    a file is one shape throughout (C11.1) - item rows or
+                    summary rows, never both; a zero day (a closed day, an
+                    interior gap) is a summary day in any body and is not a
+                    shape
     interior_gaps   the days strictly inside a branch's range in a file that
                     have no rows: loaded as takings-0 days by the loader,
                     because the export range is the till's own statement of
@@ -142,10 +145,18 @@ def duplicate_days(days: Iterable[tuple[str, datetime.date]]) -> list[tuple[str,
     return repeated
 
 
-def mixed_shapes(granularities: Iterable[str]) -> bool:
-    """A file is one shape throughout (C11.1): item days and summary days in
-    one body is two files pasted together, refused with a sentence."""
-    return len(set(granularities)) > 1
+def mixed_shapes(days: Iterable[tuple[str, Decimal | None]]) -> bool:
+    """A file is one shape throughout (C11.1): item days and summary days
+    with money in one body is two files pasted together, refused with a
+    sentence. A summary day whose amount is zero is a closed day or an
+    interior gap - the loader sends those inside an item-wise body, as the
+    §3.1 example shows - and takes no side."""
+    shapes = {
+        granularity
+        for granularity, amount in days
+        if not (granularity == "summary" and (amount is None or amount == 0))
+    }
+    return len(shapes) > 1
 
 
 def interior_gaps(dates: Iterable[datetime.date]) -> list[datetime.date]:

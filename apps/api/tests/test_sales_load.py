@@ -326,6 +326,32 @@ async def test_a_body_mixing_item_and_summary_days_is_refused(api, db):
     )
     assert response.status_code == 422, response.text
     assert "one shape throughout" in response.json()["detail"]
+    assert await db.pool.fetchval("select count(*) from sales_daily") == 0
+
+
+async def test_a_zero_day_rides_inside_an_item_wise_body(api, db):
+    """A closed day or an interior gap is a summary day with amount 0, sent
+    by the loader inside the item-wise file's own body (C11.4, the §3.1
+    example): it is not a second shape."""
+    client, _ = api
+    response = await _post(
+        client,
+        [
+            _item_day(_on(0), [_line(0, "KARAK", "1.05")]),
+            _summary_day(_on(1), "0.00"),
+            _item_day(_on(2), [_line(0, "KARAK", "2.10")]),
+        ],
+    )
+    assert response.status_code == 200, response.text
+    outcomes = response.json()["days"]
+    assert [day["outcome"] for day in outcomes] == ["loaded", "loaded", "loaded"]
+    zero = outcomes[1]["day"]
+    assert (zero["granularity"], zero["takings"], zero["net_sales"], zero["line_count"]) == (
+        "summary",
+        "0.00",
+        "0.00",
+        0,
+    )
 
 
 async def test_a_date_after_tomorrow_or_before_2020_is_refused_with_the_sentence(api, db):

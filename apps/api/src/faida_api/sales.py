@@ -30,7 +30,9 @@ is what this door answered.
 The refusal set, each with its own plain sentence:
 
     more than 31 days                  one branch-month per request
-    item days and summary days mixed   a file is one shape throughout
+    item days and summary days mixed   a file is one shape throughout (a
+                                       zero day is neither: closed days and
+                                       interior gaps ride in any body)
     one branch-day named twice         a file says one thing about a day
     a business date after tomorrow     a swapped day and month
     a business date before 2020        a swapped year
@@ -412,11 +414,6 @@ async def load_sales_days(body: SalesDaysIn, request: Request, ctx: Context) -> 
             detail=f"{len(days)} days in one request: send at most "
             f"{takings.MAX_DAYS_PER_REQUEST}, one branch-month at a time",
         )
-    if takings.mixed_shapes(day.granularity for day in days):
-        raise HTTPException(
-            status_code=422,
-            detail="a file is one shape throughout: this request mixes item days and summary days",
-        )
     repeated = takings.duplicate_days((str(day.branch_id), day.business_date) for day in days)
     if repeated:
         branch_id, business_date = repeated[0]
@@ -514,6 +511,12 @@ async def load_sales_days(body: SalesDaysIn, request: Request, ctx: Context) -> 
                 "amount": amount,
                 "net": net,
             }
+        )
+
+    if takings.mixed_shapes((day["granularity"], day["amount"]) for day in prepared):
+        raise HTTPException(
+            status_code=422,
+            detail="a file is one shape throughout: this request mixes item days and summary days",
         )
 
     outcomes: list[dict] = []
