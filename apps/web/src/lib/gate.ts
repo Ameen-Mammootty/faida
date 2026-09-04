@@ -7,8 +7,9 @@
  *
  * The shape of the rule, pinned by the M7 decomposition:
  *
- * - The console screens - /invoices, /materials, /menu and everything under
- *   them, /menu/load included - need a signed-in user.
+ * - The console screens - /invoices, /materials, /menu, /sales and
+ *   everything under them, /menu/load and /sales/load included - need a
+ *   signed-in user.
  * - The landing page, /login, the waitlist post and Next's own static assets
  *   stay open. The landing page is the marketing site; a redirect there
  *   would hide the product from the people it is for.
@@ -19,7 +20,7 @@
 
 /** The gated prefixes. A prefix matches itself and any path beneath it,
  * never a sibling that merely starts with the same letters (`/menus`). */
-const GATED_PREFIXES = ["/invoices", "/materials", "/menu"] as const;
+const GATED_PREFIXES = ["/invoices", "/materials", "/menu", "/sales"] as const;
 
 export const LOGIN_PATH = "/login";
 

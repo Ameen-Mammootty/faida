@@ -11,7 +11,6 @@ import {
   loadMenuItem,
   unarchiveMenuItem,
 } from "@/lib/api";
-import { parseCsv } from "@/lib/csv";
 import { money, quantity } from "@/lib/format";
 import {
   committable,
@@ -24,6 +23,7 @@ import {
 } from "@/lib/menuLoad";
 import type { Ingredient, MenuItemDetail, MenuItemSummary } from "@/lib/types";
 import { AlertIcon, CheckIcon, PendingIcon } from "./icons";
+import { useCsvFile, type ParsedCsv } from "./useCsvFile";
 
 /**
  * M6 WP-64: the batch loader - a real menu in a morning.
@@ -64,7 +64,9 @@ import { AlertIcon, CheckIcon, PendingIcon } from "./icons";
 
 const TEMPLATE_HREF = "/faida-menu-template.csv";
 
-type Phase = "idle" | "reading" | "ready" | "loading" | "done";
+/** Reading the file itself is `useCsvFile`'s state (M8 WP-83 lifted it out
+ * for the sales loader); these are the phases of what the rows mean. */
+type Phase = "idle" | "ready" | "loading" | "done";
 
 /** The one summary line. `refused` is what the door turned down; `skipped`
  * is what never left this screen, because the spreadsheet still needs a fix
@@ -130,8 +132,6 @@ function fixes(item: LoadItem): string[] {
 
 export default function MenuLoader() {
   const [phase, setPhase] = useState<Phase>("idle");
-  const [fileName, setFileName] = useState<string | null>(null);
-  const [fileError, setFileError] = useState<string | null>(null);
   const [ignored, setIgnored] = useState<string[]>([]);
   const [items, setItems] = useState<LoadItem[] | null>(null);
   const [menuItems, setMenuItems] = useState<MenuItemSummary[]>([]);
@@ -140,7 +140,6 @@ export default function MenuLoader() {
   const [busyMaterial, setBusyMaterial] = useState<string | null>(null);
   const [busyItem, setBusyItem] = useState<string | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
-  const fileInput = useRef<HTMLInputElement>(null);
   /**
    * Re-planning is asynchronous (it reads the current recipes back), so two
    * clicks in quick succession leave two plans in flight and the slower one
@@ -203,39 +202,25 @@ export default function MenuLoader() {
     if (planned !== null) setItems(planned);
   }, []);
 
-  async function onFile(file: File | null) {
-    if (!file) return;
-    setFileName(file.name);
-    setFileError(null);
-    setSummary(null);
-    setItems(null);
-    setOpen(null);
-    setPhase("reading");
-    try {
-      const parsed = parseCsv(await file.text());
-      if (!parsed.ok) {
-        setFileError(parsed.error);
-        setPhase("idle");
-        return;
-      }
+  /** The file phase is the shared hook's; what the rows mean starts here. A
+   * refusal thrown from `onParsed` lands on the file as its one sentence. */
+  const csv = useCsvFile({
+    onPick: () => {
+      setSummary(null);
+      setItems(null);
+      setOpen(null);
+      setPhase("idle");
+    },
+    onParsed: async (_file: File, parsed: ParsedCsv) => {
       const read = readMenuCsv(parsed.header, parsed.rows);
-      if (!read.ok) {
-        setFileError(read.error);
-        setPhase("idle");
-        return;
-      }
+      if (!read.ok) throw new Error(read.error);
       setIgnored(read.ignoredColumns);
       committed.current = false;
       const { materials, menu } = await refreshMenu();
       applyPlan(await planAgainst(read.items, materials, menu));
       setPhase("ready");
-    } catch (error) {
-      setFileError(
-        error instanceof Error ? error.message : "That file could not be read as a CSV.",
-      );
-      setPhase("idle");
-    }
-  }
+    },
+  });
 
   /** One material, one click. The rows waiting on it are re-planned; every
    * other row is untouched. */
@@ -378,21 +363,7 @@ export default function MenuLoader() {
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <label className="inline-flex min-h-11 cursor-pointer items-center rounded-sm bg-palm px-4 py-2 text-sm font-medium text-cream hover:bg-palm-deep">
               Choose a CSV
-              <input
-                ref={fileInput}
-                type="file"
-                accept=".csv,text/csv"
-                className="sr-only"
-                onChange={(event) => {
-                  const file = event.target.files?.[0] ?? null;
-                  // Clear it, or picking the *same* filename again fires no
-                  // change event - and picking the same filename again is
-                  // exactly the loop: fix two cells in the sheet, save over
-                  // it, upload it again.
-                  event.target.value = "";
-                  void onFile(file);
-                }}
-              />
+              <input {...csv.inputProps} />
             </label>
             <a
               href={TEMPLATE_HREF}
@@ -401,19 +372,19 @@ export default function MenuLoader() {
             >
               Download the template
             </a>
-            {fileName ? <span className="text-sm text-stone">{fileName}</span> : null}
+            {csv.fileName ? <span className="text-sm text-stone">{csv.fileName}</span> : null}
           </div>
           <p className="mt-3 text-xs text-stone">
             The template carries one worked example row - it doubles as the worksheet to fill in
             while the owner is talking.
           </p>
-          {fileError ? (
+          {csv.fileError ? (
             <p role="alert" className="mt-4 flex items-start gap-2 text-sm text-plum">
               <AlertIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              {fileError}
+              {csv.fileError}
             </p>
           ) : null}
-          {phase === "reading" ? (
+          {csv.reading ? (
             <p role="status" className="mt-4 text-sm text-stone">
               Reading the file
             </p>

@@ -17,6 +17,8 @@ const GATED = [
   "/menu",
   "/menu/load",
   "/menu/mi-0001",
+  "/sales",
+  "/sales/load",
 ];
 
 const OPEN = [
@@ -29,11 +31,13 @@ const OPEN = [
   "/icon.svg",
   "/brand/faida-mark.svg",
   "/faida-menu-template.csv",
+  "/faida-sales-template.csv",
   "/fixtures/inv-1001.svg",
   // Lookalike prefixes are not the console.
   "/menus",
   "/invoicesx",
   "/materialsheet",
+  "/salesman",
 ];
 
 describe("isGatedPath", () => {
@@ -146,7 +150,16 @@ describe("loginPath", () => {
 
 describe("needsSession", () => {
   it("is true for every gated path and for /login itself", () => {
-    for (const path of ["/login", "/invoices", "/invoices/abc", "/materials", "/menu", "/menu/load"]) {
+    for (const path of [
+      "/login",
+      "/invoices",
+      "/invoices/abc",
+      "/materials",
+      "/menu",
+      "/menu/load",
+      "/sales",
+      "/sales/load",
+    ]) {
       expect(needsSession(path)).toBe(true);
     }
   });

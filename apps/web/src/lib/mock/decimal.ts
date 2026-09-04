@@ -68,6 +68,37 @@ export function maxDec(a: Dec, b: Dec): Dec {
 export const ZERO: Dec = { units: 0n, scale: 0 };
 
 /**
+ * a / b to a fixed scale, rounded half up - Python's ROUND_HALF_UP, which is
+ * what the sales door quantizes a net amount with (M8 C11.2: `amount /
+ * (1 + rate)` to a fil per line). Mock-side only, like everything here: the
+ * browser never divides money before the door answers.
+ */
+export function divTo(a: Dec, b: Dec, scale: number): Dec {
+  if (b.units === 0n) throw new Error("division by zero");
+  // Scale the numerator so the integer quotient carries `scale` decimals
+  // plus one guard digit for the rounding.
+  const shift = BigInt(scale + 1 + b.scale - a.scale);
+  const numerator = shift >= 0n ? a.units * 10n ** shift : a.units / 10n ** -shift;
+  const quotient = numerator / b.units;
+  const negative = quotient < 0n;
+  const magnitude = negative ? -quotient : quotient;
+  const guard = magnitude % 10n;
+  const rounded = magnitude / 10n + (guard >= 5n ? 1n : 0n);
+  return { units: negative ? -rounded : rounded, scale };
+}
+
+/** Sum a list of money strings exactly, rendered at the widest scale seen
+ * (at least two decimals) - the preview's "takings" column. */
+export function sumStrings(values: string[]): string {
+  let total: Dec = { units: 0n, scale: 2 };
+  for (const value of values) {
+    const parsed = dec(value);
+    if (parsed) total = add(total, parsed);
+  }
+  return fmt(total);
+}
+
+/**
  * Render with the scale the arithmetic produced, matching how Python Decimal
  * serializes: 12 x 4.50 renders "54.00", 2.5 x 4.50 renders "11.250".
  */

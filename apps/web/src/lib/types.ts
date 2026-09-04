@@ -759,3 +759,160 @@ export interface PriceMove {
   /** Empty when the basis changed - no impact can honestly be attributed. */
   items: PriceMoveItem[];
 }
+
+/**
+ * M8 WP-80/83: sales from the till's own export, pinned by
+ * Docs/M8_DECOMPOSITION.md §3.1 (C11, C6 extended). Money and percentages
+ * are strings, dates are ISO, and the browser never divides money: the net
+ * figure on a day is the door's answer, never the loader's prediction.
+ */
+
+/** GET /api/branches: the tenant's branches (envelope {"branches": [...]}).
+ * The console needed this since the upload screen, which derived its
+ * choices from the invoice list; the aliases are the till's own labels for
+ * each branch, taught once (C11.1). */
+export interface Branch {
+  id: string;
+  name: string;
+  timezone: string;
+  aliases: string[];
+}
+
+/** POST /api/branches/{id}/aliases -> 201 {"alias": {...}}; 409 when the
+ * alias already names another branch. */
+export interface BranchAlias {
+  id: string;
+  branch_id: string;
+  alias: string;
+  alias_key: string;
+}
+
+/** POST /api/sales/files (multipart): the raw CSV kept immutably under a
+ * server-computed sha256 (C11.1, PRD §12). A second post of the same bytes
+ * answers the same hash. */
+export interface SalesFileResult {
+  sha256: string;
+  filename: string;
+  bytes: number;
+}
+
+/** The logical columns a layout maps, each to a header *name* - never a
+ * position, so a reordered export applies unchanged and a renamed column
+ * stops the file (C11.1). `date` and `amount` are the only two a file cannot
+ * be read without; no `item` column is the summary shape. */
+export type SalesColumn = "branch" | "date" | "item" | "code" | "qty" | "amount";
+
+export type SalesColumnMap = Partial<Record<SalesColumn, string>>;
+
+/** How a layout's amounts are read: as a till prints them (VAT inside) or
+ * net already. Chosen once per layout and shown on every preview after. */
+export type AmountBasis = "inclusive" | "exclusive";
+
+/** Which way a numeric date in this layout's files reads. */
+export type DateOrder = "dmy" | "ymd";
+
+/** GET /api/sales/layouts (envelope {"layouts": [...]}): a till's column
+ * layout, saved once and applied by header name. `header_key` is derived
+ * server-side from the mapped header names (normalised, sorted, joined with
+ * "|" - `amount|date|item|outlet|plu|qty` for the pinned demo header); the
+ * client never sends it. */
+export interface SalesLayout {
+  id: string;
+  name: string;
+  header_key: string;
+  columns: SalesColumnMap;
+  amount_basis: AmountBasis;
+  date_order: DateOrder;
+  updated_at: string;
+}
+
+/** POST /api/sales/layouts: upsert by name -> 201 on the first save, 200 on
+ * an update, {"layout": {...}} either way with the same id. */
+export interface SalesLayoutInput {
+  name: string;
+  columns: SalesColumnMap;
+  amount_basis: AmountBasis;
+  date_order: DateOrder;
+}
+
+/** Item-wise (one row per till item) or a day total with no lines. A closed
+ * day is a summary day with takings 0, never inferred from a gap. */
+export type SalesGranularity = "item" | "summary";
+
+/** One line as the loader posts it: the till's own words. `qty` is optional
+ * (a summary-ish item export may print none); `amount` is signed - a refund
+ * row is legal and reduces the day. */
+export interface SalesLineInput {
+  position: number;
+  name: string;
+  code: string | null;
+  qty: string | null;
+  amount: string;
+}
+
+/** One stored line: the printed name and code stay as the evidence, the
+ * till item is the identity, and `net_amount` is the door's division. */
+export interface SalesLine extends SalesLineInput {
+  net_amount: string;
+  till_item_id: string;
+}
+
+/** One stored branch-day, as GET /api/sales/days returns it (with lines) and
+ * as the door's outcome carries it (without). */
+export interface SalesDay {
+  id: string;
+  branch_id: string;
+  business_date: string;
+  granularity: SalesGranularity;
+  amount_basis: AmountBasis;
+  /** The VAT rate the net was taken out at ("0.05"). */
+  vat_rate: string;
+  /** The printed total, as the till printed it. Money string. */
+  takings: string;
+  /** Ex-VAT, the exact sum of the lines' net amounts. Money string. */
+  net_sales: string;
+  line_count: number;
+  layout_id: string | null;
+  source_sha256: string | null;
+  source_filename: string | null;
+  loaded_by: string;
+  loaded_at: string;
+  lines: SalesLine[];
+}
+
+/** One branch-day as the loader posts it. An item day carries `lines`; a
+ * summary day carries `amount` (0 for a closed day) and no lines. The door
+ * takes `source` and `layout_id` as optional; the console always posts the
+ * file first and sends both, so every day it loads traces to its bytes. */
+export interface SalesDayInput {
+  branch_id: string;
+  business_date: string;
+  granularity: SalesGranularity;
+  amount_basis: AmountBasis;
+  layout_id: string | null;
+  source?: { sha256: string; filename: string } | null;
+  lines?: SalesLineInput[];
+  amount?: string;
+}
+
+/** POST /api/sales/days body: at most 31 days (one branch-month), one
+ * transaction and one outcome each. */
+export interface SalesDaysInput {
+  days: SalesDayInput[];
+}
+
+/** C11.4's three outcomes: a first load, the same day again (nothing
+ * written), or the day replaced with the previous figures named. */
+export type SalesDayOutcome = "loaded" | "unchanged" | "replaced";
+
+export interface SalesDayResult {
+  branch_id: string;
+  business_date: string;
+  outcome: SalesDayOutcome;
+  previous: { net_sales: string; line_count: number } | null;
+  day: Omit<SalesDay, "lines">;
+}
+
+export interface SalesDaysResult {
+  days: SalesDayResult[];
+}
