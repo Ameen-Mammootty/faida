@@ -29,7 +29,12 @@
 --
 -- What this file never touches: menu_items, recipes, recipe_components,
 -- ingredients, supplier_items.ingredient_id (mappings), branches (the founder
--- phone), tenants, suppliers, any invoice that is not one of the props.
+-- phone), tenants, suppliers, any invoice that is not one of the props, and
+-- the five sales tables (sales_layouts, till_items, sales_daily, sales_lines,
+-- branch_aliases - M8, act three): the loaded week, its layout, its aliases
+-- and its till-name mappings are consultant work, not rehearsal residue. Act
+-- three's on-stage move is KAS-5's confirm, and removing that paper below is
+-- what puts Al Qusais's ratio back where it was before the stage.
 -- What it deliberately leaves behind: text messages and outbound replies
 -- (inert log rows); documents with no invoice (a meme decline blocks nothing,
 -- and a failed real paper must keep its retry path); any supplier_item a
