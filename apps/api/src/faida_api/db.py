@@ -1978,6 +1978,87 @@ class Database:
             day_ids,
         )
 
+    # -- The ratio's reads (M8 WP-81): the period's papers and the coverage sums --
+
+    async def newest_sales_dates(self, *, tenant_id: str) -> dict[str, datetime.date]:
+        """Each branch's newest loaded day ever, keyed by branch id, so a row
+        with no sales in the period still says when it last had any and the
+        default period ends on the tenant's newest day (C11.6)."""
+        rows = await self.pool.fetch(
+            """
+            select branch_id::text as branch_id, max(business_date) as newest
+            from sales_daily where tenant_id = $1
+            group by branch_id
+            """,
+            tenant_id,
+        )
+        return {row["branch_id"]: row["newest"] for row in rows}
+
+    async def list_period_invoices(
+        self, *, tenant_id: str, date_from: datetime.date, date_to: datetime.date
+    ) -> list[asyncpg.Record]:
+        """The papers a period's ratio reads (C11.5 and the C9 amendment):
+        confirmed ones by `purchased_on` - the printed date, confirm time as
+        the tie-breaker, the same `coalesce` costing ranks by, so the materials
+        screen and the sales screen agree which week a paper belongs to - and
+        the ones still awaiting confirm or held for review by where they sit:
+        their printed date, or the day they arrived when they printed none (a
+        pending paper has no confirm time, so the costing rule alone would drop
+        it from every period). Dismissed and draft papers are nobody's
+        purchases. `provenance` rides along for C9's asserted-origin read."""
+        return await self.pool.fetch(
+            """
+            select i.id::text as id, i.branch_id::text as branch_id, i.status, i.currency,
+                   i.total, i.tax, i.invoice_date, i.supplier_name, i.invoice_no, i.provenance,
+                   coalesce(i.invoice_date, (i.confirmed_at at time zone 'UTC')::date)
+                     as purchased_on,
+                   coalesce(i.invoice_date, (i.created_at at time zone 'UTC')::date) as placed_on
+            from invoices i
+            where i.tenant_id = $1
+              and i.status in ('confirmed', 'awaiting_confirm', 'needs_review')
+              and coalesce(
+                    i.invoice_date,
+                    ((case when i.status = 'confirmed' then i.confirmed_at else i.created_at end)
+                       at time zone 'UTC')::date
+                  ) between $2 and $3
+            order by 12, i.id
+            """,
+            tenant_id,
+            date_from,
+            date_to,
+        )
+
+    async def list_period_sales_lines(
+        self, *, tenant_id: str, date_from: datetime.date, date_to: datetime.date
+    ) -> list[asyncpg.Record]:
+        """Every till item with its value over the period's item days, summed
+        in SQL and never over lines in Python (C11.8): the positive net value
+        (what coverage is measured on) and the refund value (net sales, not
+        coverage) apart. Every till item is a row, so the mapping queue shows
+        a name the period never sold with a value of 0 rather than hiding it."""
+        return await self.pool.fetch(
+            """
+            select t.id::text as till_item_id, t.name, t.code,
+                   t.menu_item_id::text as menu_item_id, t.excluded_at,
+                   coalesce(sum(l.net_amount) filter (where l.net_amount > 0), 0)
+                     as positive_value,
+                   coalesce(sum(l.net_amount) filter (where l.net_amount < 0), 0)
+                     as refund_value
+            from till_items t
+            left join (
+                sales_lines l
+                join sales_daily d
+                  on d.id = l.sales_day_id and d.business_date between $2 and $3
+            ) on l.till_item_id = t.id and l.tenant_id = t.tenant_id
+            where t.tenant_id = $1
+            group by t.id
+            order by positive_value desc, t.name, t.id
+            """,
+            tenant_id,
+            date_from,
+            date_to,
+        )
+
     async def load_sales_day(
         self,
         *,

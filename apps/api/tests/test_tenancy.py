@@ -506,6 +506,17 @@ MATRIX: list[dict] = [
         },
         "expect_b": 404,
     },
+    # M8 WP-81: the ratio and coverage reads, derived per tenant on every call.
+    {
+        "method": "GET",
+        "path": "/api/sales/branches",
+        "url": lambda r: f"/api/sales/branches?from={SALES_DAY}&to={SALES_DAY}",
+    },
+    {
+        "method": "GET",
+        "path": "/api/sales/coverage",
+        "url": lambda r: f"/api/sales/coverage?from={SALES_DAY}&to={SALES_DAY}",
+    },
 ]
 
 
