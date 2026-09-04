@@ -367,3 +367,116 @@ async def test_another_tenants_rows_do_not_exist_here_and_postgres_refuses_the_l
         TENANT_B,
     )
     assert theirs == 0
+
+
+# --- the coverage read follows the mapping (WP-82 part 2) --------------------------
+
+
+async def _coverage(client) -> dict:
+    response = await client.get("/api/sales/coverage", headers=AUTH)
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def _by_name(items: list[dict]) -> dict[str, dict]:
+    return {item["name"]: item for item in items}
+
+
+async def test_the_queue_proposes_and_approve_makes_every_line_in_every_day_follow(api, db):
+    paratha = await _menu_item(db, "Paratha")
+    day_one = await _load(api, ["Paratha", "KARAK"])
+    day_two = await _load(
+        api,
+        ["Paratha"],
+        date=(datetime.date.fromisoformat(DAY) + datetime.timedelta(days=1)).isoformat(),
+    )
+    assert day_one["Paratha"] == day_two["Paratha"]  # one till item, two days
+
+    before = await _coverage(api)
+    queue = _by_name(before["queue"])
+    assert queue["Paratha"]["value"] == "20.00"  # 10.50 inclusive, twice, to the fil
+    assert queue["Paratha"]["proposals"][0] == {
+        "menu_item_id": paratha,
+        "name": "Paratha",
+        "score": "1.00",
+    }
+    assert before["mapped"] == []
+    assert before["costed_value"] == "0.00"
+
+    response = await api.post(
+        f"/api/till-items/{day_one['Paratha']}/menu-item",
+        json={"menu_item_id": paratha},
+        headers=AUTH,
+    )
+    assert response.status_code == 200, response.text
+
+    after = await _coverage(api)
+    assert "Paratha" not in _by_name(after["queue"])
+    mapped = _by_name(after["mapped"])["Paratha"]
+    assert mapped["value"] == "20.00"  # both days, nothing stored per line
+    assert mapped["menu_item_id"] == paratha and mapped["menu_item_name"] == "Paratha"
+    assert after["sales_value"] == before["sales_value"]
+
+
+async def test_a_remap_moves_the_value_between_menu_items_in_one_read(api, db):
+    cup = await _menu_item(db, "Karak Tea (Cup)")
+    flask = await _menu_item(db, "Karak Tea (Flask 1 L)")
+    till = await _load(api, ["KARAK"])
+    url = f"/api/till-items/{till['KARAK']}/menu-item"
+
+    assert (await api.post(url, json={"menu_item_id": cup}, headers=AUTH)).status_code == 200
+    first = _by_name((await _coverage(api))["mapped"])["KARAK"]
+    assert (first["menu_item_id"], first["value"]) == (cup, "10.00")
+
+    assert (await api.post(url, json={"menu_item_id": flask}, headers=AUTH)).status_code == 200
+    second = _by_name((await _coverage(api))["mapped"])["KARAK"]
+    assert (second["menu_item_id"], second["value"]) == (flask, "10.00")
+
+
+async def test_unmap_returns_the_name_to_the_queue_with_its_value(api, db):
+    cup = await _menu_item(db, "Karak Tea (Cup)")
+    till = await _load(api, ["KARAK TEA CUP"])
+    url = f"/api/till-items/{till['KARAK TEA CUP']}/menu-item"
+    assert (await api.post(url, json={"menu_item_id": cup}, headers=AUTH)).status_code == 200
+    assert "KARAK TEA CUP" not in _by_name((await _coverage(api))["queue"])
+
+    assert (await api.delete(url, headers=AUTH)).status_code == 200
+    coverage = await _coverage(api)
+    assert "KARAK TEA CUP" not in _by_name(coverage["mapped"])
+    back = _by_name(coverage["queue"])["KARAK TEA CUP"]
+    assert back["value"] == "10.00"
+    # The name comes back with its proposals too, the cup at 1.00 - and it is
+    # still a keystroke away, not mapped.
+    assert [(p["menu_item_id"], p["score"]) for p in back["proposals"]] == [(cup, "1.00")]
+
+
+async def test_exclude_drops_the_name_from_the_queue_and_keeps_it_in_net_sales(api, db):
+    till = await _load(api, ["DELIVERY CHARGE", "KARAK"])
+    net_before = await _net_sales(api)
+    before = await _coverage(api)
+    assert before["sales_value"] == "20.00" and before["beside"]["not_menu_items"] == "0.00"
+
+    response = await api.post(f"/api/till-items/{till['DELIVERY CHARGE']}/exclude", headers=AUTH)
+    assert response.status_code == 200, response.text
+
+    after = await _coverage(api)
+    assert "DELIVERY CHARGE" not in _by_name(after["queue"])
+    assert _by_name(after["excluded"])["DELIVERY CHARGE"]["value"] == "10.00"
+    assert after["beside"]["not_menu_items"] == "10.00"
+    assert after["sales_value"] == "10.00"  # menu sales, not takings
+    assert await _net_sales(api) == net_before  # the till took the money
+
+
+async def test_the_queue_is_ranked_by_net_value_in_the_period_most_first(api, db):
+    await _load(api, ["SMALL", "BIG", "MIDDLE"])
+    await _load(
+        api,
+        ["BIG", "BIG", "MIDDLE"],
+        date=(datetime.date.fromisoformat(DAY) + datetime.timedelta(days=1)).isoformat(),
+    )
+    queue = (await _coverage(api))["queue"]
+    assert [(item["name"], item["value"]) for item in queue] == [
+        ("BIG", "30.00"),
+        ("MIDDLE", "20.00"),
+        ("SMALL", "10.00"),
+    ]

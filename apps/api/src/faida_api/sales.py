@@ -61,7 +61,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, UploadFile
 from pydantic import BaseModel, ConfigDict
 
-from . import ratio, takings
+from . import matching, ratio, takings
 from .api import _clean, _dec, _iso
 from .auth import AuthContext, require_context
 from .confirm import _parse_number
@@ -400,10 +400,18 @@ async def save_sales_layout(
 
 
 def _proposals_for(till_item: dict, menu_items: list[dict]) -> list[dict]:
-    """The queue's proposals for one unmapped till name (§3.1 `queue[].proposals`).
-    WP-82 wires `matching.propose_menu_items` here; until it lands the queue
-    carries none, and the screen offers pick-from-menu alone."""
-    return []
+    """The queue's proposals for one unmapped till name (§3.1 `queue[].proposals`):
+    `matching.propose_menu_items` over the tenant's live menu items, best
+    first, at most three, the score beside each as a two-decimal string.
+    Proposes; never decides (C11.7) - the keystroke is the door above."""
+    return [
+        {
+            "menu_item_id": proposal.item["id"],
+            "name": proposal.item["name"],
+            "score": f"{proposal.score:.2f}",
+        }
+        for proposal in matching.propose_menu_items(menu_items, till_item["name"])
+    ]
 
 
 async def _period(
