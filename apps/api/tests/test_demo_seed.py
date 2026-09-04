@@ -8,20 +8,37 @@ untouched. The staged catalog must actually snap the curated invoice's raw
 names and fire the intended alert lines - that is the demo.
 """
 
+import csv
 import datetime
+import importlib.util
+import os
 import pathlib
+import subprocess
+import sys
 from decimal import Decimal
 
 import asyncpg
+import httpx
 import pytest
+from fastapi import FastAPI
 
-from faida_api import costing, plates
+from faida_api import costing, plates, takings
 from faida_api.extraction.pipeline import price_alerts
 from faida_api.extraction.schema import ExtractedInvoice, ExtractedLine
 from faida_api.matching import match_supplier, snap_item
 from faida_api.replies import render_price_alert
+from faida_api.sales import router as sales_router
+from faida_api.storage import Storage
 
-from .conftest import DEMO_TENANT_ID, requires_db
+from .conftest import (
+    AUTH,
+    DEMO_TENANT_ID,
+    JWKS,
+    TEST_DATABASE_URL,
+    FakeStorage,
+    requires_db,
+    wire_auth,
+)
 
 pytestmark = requires_db
 
@@ -1057,3 +1074,285 @@ async def test_the_reset_clears_a_rehearsals_menu_edits(db):
         )
         == 0
     )
+
+
+# -- act three: the sales week (WP-85) ----------------------------------------
+#
+# The demo's sales are invented; its purchases are not. The generator in
+# Docs/demo-invoices/koukh-al-shay/build_sales_week.py writes a till export
+# from the shipped code, and these prove the week loads through the same door
+# a pilot would use, that the screen agrees with the generator to the tenth,
+# and that the two resets treat the week the way the runbook says: the
+# practice reset clears it, the loop reset spares it.
+
+GENERATOR = (
+    pathlib.Path(__file__).resolve().parents[3]
+    / "Docs"
+    / "demo-invoices"
+    / "koukh-al-shay"
+    / "build_sales_week.py"
+)
+REAL_WEEK_CSV = GENERATOR.parent / "sales-week.csv"
+SALES_TABLES = ("sales_daily", "sales_lines", "till_items", "sales_layouts", "branch_aliases")
+
+#: A second console user, a member of the demo chain: the door scopes every day
+#: by the token's tenant, and the demo chain is not seed.sql's tenant.
+CHAIN_USER_ID = "00000000-0000-4000-8000-0000000000cc"
+CHAIN_AUTH = {"Authorization": f"Bearer {JWKS.mint(sub=CHAIN_USER_ID)}"}
+
+#: seed.sql's tenant, with two more branches for the committed week's three outlets.
+FIXTURE_BRANCHES = {
+    "AL QUSAIS": "00000000-0000-0000-0000-000000000011",
+    "AL NAHDA": "00000000-0000-0000-0000-000000000012",
+    "ROLLA": "00000000-0000-0000-0000-000000000013",
+}
+
+
+def _generator():
+    """The generator as a module, imported from its path (it is a demo script, not a
+    package), so the practice week is built in-process against the seed just applied."""
+    spec = importlib.util.spec_from_file_location("build_sales_week", GENERATOR)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module  # dataclasses resolve annotations through sys.modules
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.fixture
+def sales_api(settings, db):
+    app = FastAPI()
+    app.include_router(sales_router)
+    app.state.settings = settings
+    wire_auth(app)
+    app.state.db = db
+    app.state.storage = Storage(settings, transport=FakeStorage().transport())
+    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
+
+
+async def _chain_member(db) -> None:
+    await db.pool.execute(
+        "insert into memberships (tenant_id, user_id) values ($1, $2)",
+        CHAIN_TENANT_ID,
+        CHAIN_USER_ID,
+    )
+
+
+def _days_from_rows(rows: list[list[str]], branch_ids: dict[str, str]) -> list[dict]:
+    """The loader's grouping, mirrored for the pinned header only: one item day per
+    outlet and date, lines in file order, day-first dates, a row with no date (the
+    totals footer) skipped. The outlet's till label resolves to a branch the way the
+    mapping step's taught aliases do."""
+    days: dict[tuple[str, str], dict] = {}
+    for outlet, date_text, code, item, qty, amount in rows:
+        if date_text == "":
+            continue
+        day, month, year = date_text.split("/")
+        iso = f"{year}-{month}-{day}"
+        entry = days.setdefault(
+            (outlet, iso),
+            {
+                "branch_id": branch_ids[outlet],
+                "business_date": iso,
+                "granularity": "item",
+                "amount_basis": "inclusive",
+                "lines": [],
+            },
+        )
+        entry["lines"].append(
+            {
+                "position": len(entry["lines"]),
+                "name": item,
+                "code": code,
+                "qty": qty,
+                "amount": amount,
+            }
+        )
+    return [days[key] for key in sorted(days)]
+
+
+async def _post_week(client, days: list[dict], headers: dict) -> list[str]:
+    """One branch per request, as the loader posts a branch-month; the outcomes in order."""
+    by_branch: dict[str, list[dict]] = {}
+    for day in days:
+        by_branch.setdefault(day["branch_id"], []).append(day)
+    outcomes: list[str] = []
+    for branch_days in by_branch.values():
+        response = await client.post("/api/sales/days", json={"days": branch_days}, headers=headers)
+        assert response.status_code == 200, response.text
+        outcomes.extend(day["outcome"] for day in response.json()["days"])
+    return outcomes
+
+
+async def _sales_counts(db, tenant_id: str = CHAIN_TENANT_ID) -> dict[str, int]:
+    return {
+        table: await db.pool.fetchval(
+            f"select count(*) from {table} where tenant_id = $1", tenant_id
+        )
+        for table in SALES_TABLES
+    }
+
+
+def _read_csv(path: pathlib.Path) -> tuple[list[str], list[list[str]]]:
+    with path.open(newline="") as handle:
+        rows = list(csv.reader(handle))
+    return rows[0], rows[1:]
+
+
+async def test_the_practice_week_loads_through_the_door_and_the_screen_agrees(sales_api, db):
+    """The rehearsal week: generated in-process after the seed runs, on the days the
+    seed staged its purchases (read from the database, never computed from today),
+    loaded through POST /api/sales/days - 21 days, all loaded; the same week again is
+    21 unchanged - and /api/sales/branches shows Al Qusais at the ratio the generator
+    printed, to the tenth, with the two other branches incomplete because they have
+    sales and no papers (the founder's P3)."""
+    await apply_demo_seed(db)
+    await _chain_member(db)
+    gen = _generator()
+
+    stage = await gen.read_practice_stage(TEST_DATABASE_URL)
+    newest = await db.pool.fetchval(
+        "select max(coalesce(invoice_date, (confirmed_at at time zone 'UTC')::date)) "
+        "from invoices where tenant_id = $1 and status = 'confirmed'",
+        CHAIN_TENANT_ID,
+    )
+    assert stage.end == newest
+    week = gen.practice_week(stage.end)
+    branch_ids = {branch.till_label: branch.branch_id for branch in gen.BRANCHES}
+    rows = [row.csv() for row in week.rows] + [["TOTAL", "", "", "", "", str(week.total)]]
+    days = _days_from_rows(rows, branch_ids)
+    assert len(days) == 21
+
+    assert await _post_week(sales_api, days, CHAIN_AUTH) == ["loaded"] * 21
+    assert await _post_week(sales_api, days, CHAIN_AUTH) == ["unchanged"] * 21
+
+    expected = {row.branch_name: row for row in gen.figures(week, stage.invoices)}
+    response = await sales_api.get(
+        "/api/sales/branches",
+        params={"from": week.start.isoformat(), "to": week.end.isoformat()},
+        headers=CHAIN_AUTH,
+    )
+    assert response.status_code == 200, response.text
+    table = {row["branch_name"]: row for row in response.json()["rows"]}
+    flagship = table["Al Qusais Branch"]
+    assert flagship["ratio_pct"] == str(expected["Al Qusais Branch"].ratio_pct)
+    assert flagship["net_sales"] == str(expected["Al Qusais Branch"].net_sales)
+    assert flagship["purchases"] == str(expected["Al Qusais Branch"].purchases)
+    assert flagship["quality"] == "reliable_with_limitations"
+    assert Decimal("30") <= Decimal(flagship["ratio_pct"]) <= Decimal("40")
+    for name in ("Al Nahda Branch", "Rolla Branch"):
+        assert table[name]["quality"] == "incomplete", name
+        assert table[name]["ratio_pct"] is None, name
+        assert any("no confirmed purchases" in note for note in table[name]["notes"]), name
+    # The screen's default period ends on the week's last day - nothing to type on stage.
+    default = await sales_api.get("/api/sales/branches", headers=CHAIN_AUTH)
+    assert default.json()["period"]["to"] == week.end.isoformat()
+
+    # demo_seed.sql clears the week: a complete practice reset.
+    assert (await _sales_counts(db))["sales_daily"] == 21
+    await apply_demo_seed(db)
+    assert all(count == 0 for count in (await _sales_counts(db)).values())
+
+    # demo_reset_loop.sql spares it: the week is consultant work, not rehearsal residue.
+    assert await _post_week(sales_api, days, CHAIN_AUTH) == ["loaded"] * 21
+    before = await _sales_counts(db)
+    await apply_loop_reset(db)
+    assert await _sales_counts(db) == before
+
+
+async def test_the_committed_real_week_loads_on_the_fixture_tenant(sales_api, db):
+    """The file the founder uploads on the real stage, loaded through the door on
+    seed.sql's tenant: 21 days, idempotent, and the stored takings add up to the
+    file's own footer. The footer is what a till prints - takings, VAT inside - so
+    the equality is on takings; the net is the door's division, per line, and the
+    stored net equals the file's rows divided the shipped way."""
+    gen = _generator()
+    header, rows = _read_csv(REAL_WEEK_CSV)
+    assert header == list(gen.HEADER)
+    footer = rows[-1]
+    assert footer[0] == "TOTAL" and footer[1] == ""  # no date: skipped and counted by the loader
+    for branch_id, name in (
+        (FIXTURE_BRANCHES["AL NAHDA"], "Al Nahda Branch"),
+        (FIXTURE_BRANCHES["ROLLA"], "Rolla Branch"),
+    ):
+        await db.pool.execute(
+            "insert into branches (id, tenant_id, name, timezone) "
+            "values ($1, $2, $3, 'Asia/Dubai')",
+            branch_id,
+            DEMO_TENANT_ID,
+            name,
+        )
+    days = _days_from_rows(rows, FIXTURE_BRANCHES)
+    assert len(days) == 21
+    assert days[0]["business_date"] == gen.week_ending(gen.real_week_end())[0].isoformat()
+
+    assert await _post_week(sales_api, days, AUTH) == ["loaded"] * 21
+    assert await _post_week(sales_api, days, AUTH) == ["unchanged"] * 21
+
+    stored = await db.pool.fetchrow(
+        "select sum(takings) as takings, sum(net_sales) as net, sum(line_count) as lines "
+        "from sales_daily where tenant_id = $1",
+        DEMO_TENANT_ID,
+    )
+    assert stored["takings"] == Decimal(footer[5])
+    assert stored["lines"] == len(rows) - 1
+    expected_net = sum(
+        (
+            takings.net_amount(Decimal(row[5]), amount_basis="inclusive", vat_rate=Decimal("0.05"))
+            for row in rows[:-1]
+        ),
+        Decimal(0),
+    )
+    assert stored["net"] == expected_net
+    # One "not a menu item" line a day, minted once as a till item under its code.
+    assert (
+        await db.pool.fetchval(
+            "select count(*) from till_items where tenant_id = $1 and code = $2",
+            DEMO_TENANT_ID,
+            gen.DELIVERY_CODE,
+        )
+        == 1
+    )
+
+
+def test_the_generator_runs_with_no_database_and_no_key_and_is_reproducible(tmp_path):
+    """The real week needs no database and no API key: a menu CSV in the loader's
+    shape in, a till export out, the same bytes every run. The founder's real menu
+    lives outside the repo, so the committed file is compared only where it exists."""
+    menu = tmp_path / "menu.csv"
+    menu.write_text(
+        "category,item_code,item_name,selling_price_aed,yield_portions,yield_label,"
+        "ingredient,qty_as_purchased,unit,source_text\n"
+        "Tea Corner,52a,Karak Tea - Flask 1 L,35.00,1,serving,CTC black tea,27.5,g,\n"
+        "Tea Corner,52a,Karak Tea - Flask 1 L,35.00,1,serving,White sugar,60,g,\n"
+        "Special Gravy,128,Chicken 65 Dry,17.00,4,portions,Chicken boneless,600,g,\n"
+    )
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if key not in {"TEST_DATABASE_URL", "DATABASE_URL", "GEMINI_API_KEY", "ANTHROPIC_API_KEY"}
+    }
+    outputs = []
+    for run in ("first", "second"):
+        out = tmp_path / f"{run}.csv"
+        result = subprocess.run(
+            [sys.executable, str(GENERATOR), "--csv", str(menu), "--out", str(out)],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+        assert "Al Qusais Branch" in result.stdout and "ratio" in result.stdout
+        outputs.append(out.read_bytes())
+    assert outputs[0] == outputs[1]
+    header, rows = _read_csv(tmp_path / "first.csv")
+    assert header == ["Outlet", "Date", "PLU", "Item", "Qty", "Amount"]
+    assert rows[-1][0] == "TOTAL" and rows[-1][1] == ""
+    assert len({(row[0], row[1]) for row in rows[:-1]}) == 21
+
+    gen = _generator()
+    if gen.DEFAULT_CSV.exists():
+        regenerated = tmp_path / "committed.csv"
+        gen.write_csv(gen.real_week(gen.DEFAULT_CSV), regenerated)
+        assert regenerated.read_bytes() == REAL_WEEK_CSV.read_bytes()

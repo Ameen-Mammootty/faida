@@ -155,6 +155,53 @@ each honest about its own question, is the argument for the layer. Confirm KAS-5
 | -0.583 | 54b Habbat Al Hamra - Flask 2 L |
 | -0.325 | 52a Karak Tea - Flask 1 L |
 
+## The sales week (act three, WP-85, added 2026-09-04)
+
+Act three closes on a ranked branch table - **purchases ÷ net sales (cash basis)** per branch,
+every purchase one click from its invoice photo. The purchases are these papers. No till has ever
+exported a week for this chain, so `build_sales_week.py` invents one, and it says so wherever it
+can: **the demo's sales are invented; its purchases are not; and the screen's honesty claim is
+about the second.**
+
+    apps/api/.venv/bin/python Docs/demo-invoices/koukh-al-shay/build_sales_week.py
+    apps/api/.venv/bin/python Docs/demo-invoices/koukh-al-shay/build_sales_week.py --practice
+
+`sales-week.csv` is the committed real week: the seven days ending on **KAS-5's printed date,
+read from `build_prompts.SUPPLIERS` and never typed** (25/08 to 31/08/2026 today - a reprinted
+prop moves the week with it), for the three demo branches, in the header the loader pins
+(`Outlet,Date,PLU,Item,Qty,Amount`, day-first dates, amounts with the VAT inside them), 966 rows
+and a totals footer with no date that the loader skips and counts. Item names are the till's own
+shorthand with the code beside - most clear the proposer's bar (`CHKN 65 DRY`, `GOBI MSL`), three
+are abbreviated enough to need the pick-from-menu path on purpose (`B/CHKN`, `MTR MSHRM`,
+`PNR BTR MSL`), and one `DELIVERY CHARGE` line a day gives the coverage panel a "not a menu item".
+A fixed seed makes it reproducible, and a test pins that the committed bytes are what the script
+prints. The outlets print as `AL QUSAIS`, `AL NAHDA` and `ROLLA`, not as Faida's branch names, so
+the first upload teaches three aliases once and every upload after that needs nothing.
+
+`sales-week-practice.csv` is the rehearsal week for the practice stage: the five staged items, the
+seven days ending on the demo tenant's newest staged purchase day **read from the database**
+(`TEST_DATABASE_URL` or `DATABASE_URL`), because `demo_seed.sql` stages its purchases relative to
+the moment it runs and a week computed from "today" drifts off them within days. **Regenerate it
+before a practice rehearsal**; the committed copy exists so the path is real, not so its dates are.
+
+The script does not re-implement anything: `takings.net_amount` divides the VAT out per line the
+way the door does, and `ratio.period_row` computes the row the screen will show. It prints those
+rows, and the volume constant is chosen so Al Qusais sits in a plausible band:
+
+| | net sales | purchases | ratio |
+|---|---|---|---|
+| before the stage (KAS-3 and KAS-4 printed 25/08; KAS-1 and KAS-2 print the day before the week) | 30,267.43 | 9,162.65 | **30.3%** |
+| after the on-stage forward (KAS-5, printed 31/08) | 30,267.43 | 11,899.15 | **39.3%** |
+
+Al Nahda and Rolla have sales and no papers, so they read *incomplete - no confirmed purchases*:
+two honest rows are the label doing its job on stage (the founder's call, P3). The practice week
+reads 30.5% for Al Qusais against the seed's two four-week-old papers.
+
+Two resets, two behaviours: `demo_seed.sql` deletes the week with everything else (re-upload the
+regenerated practice file afterwards); `demo_reset_loop.sql` never touches the five sales tables,
+and removing KAS-5 is what puts the ratio back to 30.3% by itself. Act three's script is
+`Docs/DEMO_RUNBOOK.md` §G.
+
 ## House rules these papers keep
 
 - Distinct invoice number on every paper (since WP-44 a reused supplier + number + total is held

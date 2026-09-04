@@ -1,4 +1,4 @@
-# Faida Demo Runbook (both acts; M4 loop gate, M6 demo gate)
+# Faida Demo Runbook (three acts; M4 loop gate, M6 demo gate, M8 act three)
 
 This is the operating manual for the demo (plan.md §6) and for the rehearsals before its two gates.
 Since 2026-08-28 the full demo is two acts and gates at M6 (§1: the loop, then materials and menu margins).
@@ -45,6 +45,16 @@ Run through this list the day before, and again 30 minutes before going on.
 - [ ] The founder phone is mapped to the demo chain: the commented UPDATE at the bottom of `supabase/demo_seed.sql` has been run once, so the sender resolves to Al Qusais Branch of Karak Al Khaleej Cafeterias.
 - [ ] Signed in on the demo laptop as the founder's account (Supabase Auth, email and password; sign-ups are off, accounts are created in the dashboard and given a `memberships` row), and the invoice list for the demo chain carries no rehearsal leftovers - on the practice stage that means empty; on the real stage it means only the KAS-1..4 preparation purchases and the chain's own real invoices, nothing from a previous run of the props (DEMO-1..3, KAS-5). The list hides dismissed rows by default, so open `/invoices?status=dismissed` as well: a dismissed leftover passes the eye test and still needs the reset.
 - [ ] The right papers are on the demo phone, first in the gallery: on the practice stage, the 3 curated invoice photos and the meme; on the real stage, **KAS-5** and the meme (KAS-1..4 were confirmed once during preparation and are not forwarded again - a re-forward trips the duplicate hold).
+- [ ] **Act three's week is loaded and its layout saved** (added 2026-09-04, WP-85; the screen
+      lands with WP-84). On the real stage, `Docs/demo-invoices/koukh-al-shay/sales-week.csv`
+      was uploaded once at `/sales/load`: the mapping walked, the three till labels
+      (`AL QUSAIS`, `AL NAHDA`, `ROLLA`) taught as aliases, the layout saved as "Main till" -
+      and `/sales` shows Al Qusais at **30.3%** against KAS-3 and KAS-4 with the other two
+      branches reading *incomplete - no confirmed purchases 25-31 Aug*. On the practice stage,
+      regenerate `sales-week-practice.csv` (`build_sales_week.py --practice`; it reads the
+      seed's own purchase dates) and upload it after every `demo_seed.sql` run, because that
+      reset clears the week; the loop reset spares it. **The demo's sales are invented; its
+      purchases are not; the screen's honesty claim is about the second.**
 - [ ] **One warm-up forward before going on.** On the Opus fallback this is load-bearing: the
       first request after a schema change pays a server-side grammar compilation measured in
       minutes (155 s observed 2026-08-28) - run `apps/api/.venv/bin/python -m eval.schema_probe`
@@ -114,7 +124,7 @@ Two stages, two reset files - and running the wrong one on the real stage destro
 psql "$DATABASE_URL" -f supabase/demo_seed.sql
 ```
 
-This restores the complete staged state, however messy the last run was: it deletes every rehearsal trace for the demo chain (documents, invoices, lines, messages, jobs, runs, confirm-created catalog rows, appended price history, menu edits) and re-stages everything; it cannot touch any other tenant, and it preserves the branch phone mapping.
+This restores the complete staged state, however messy the last run was: it deletes every rehearsal trace for the demo chain (documents, invoices, lines, messages, jobs, runs, confirm-created catalog rows, appended price history, menu edits, **and the loaded sales week with its layout, aliases and till-name mappings**) and re-stages everything; it cannot touch any other tenant, and it preserves the branch phone mapping. The week goes back in through `/sales/load` from a regenerated `sales-week-practice.csv` (§A).
 
 **Real stage** (F7's menu loaded through `/menu/load` - the live demo project):
 
@@ -124,6 +134,7 @@ psql "$DATABASE_URL" -f supabase/demo_reset_loop.sql
 
 This removes only what a rehearsal creates - the props' documents, invoices, lines, runs, messages and jobs, and the price observations their confirms appended - then recomputes every pack's baseline from the purchases that survive, so the alerts re-arm.
 It works by scope: rehearsal residue is any demo-chain invoice printing one of the props' fixed numbers (DEMO-1 `GFT-2026-0834`, DEMO-2 `AMT-26-1187`, DEMO-3 `GFT-2026-0871`, KAS-5 `AMT-26-1274`), so the loaded menu, its materials, every mapping, and the KAS-1..4 preparation purchases - which share suppliers with the props on purpose - are out of reach by construction.
+It never touches the five sales tables: the loaded week, its layout, its aliases and its till-name mappings are consultant work, and removing KAS-5's invoice is exactly what puts Al Qusais's ratio back to its before-the-stage figure (act three step 4 in reverse).
 Regenerating a prop with a new number means updating the list in that file in the same commit.
 `demo_seed.sql` must NEVER run against the live project once the real menu is loaded - its reset would delete the menu, its 82 materials and every mapping.
 
@@ -138,6 +149,7 @@ Re-check after the reset:
 3. `curl https://<host>/health` returns `{"ok":true,"db":true}`.
 4. The review screen's invoice list for the demo chain carries no rehearsal leftovers (§A's wording: empty on the practice stage; only preparation purchases and real invoices on the real one).
 5. Practice stage only: `select count(*) from menu_items where tenant_id = 'd0000000-0000-0000-0000-000000000001';` returns `5`, and `/menu` shows four costed items with Paratha in the "can't be costed yet" section (act two's staged state, section F). On the real stage, `/menu` shows the loaded menu unchanged - a loop reset that altered any menu number is a bug.
+6. `select count(*) from sales_daily where tenant_id = 'd0000000-0000-0000-0000-000000000001';` returns `21` on the real stage after the loop reset (it never touches the week) and `0` on the practice stage after `demo_seed.sql` (re-upload the practice week, §A). `/sales` shows Al Qusais back at its before-the-stage ratio once KAS-5's invoice is gone.
 
 ## C2. One-off: adopting the repriced papers (founder's call 2026-09-01)
 
@@ -350,3 +362,48 @@ If it names white sugar instead of milk powder, the seed was re-applied after th
 - [ ] The browser has `/materials` and `/menu` in two tabs, already loaded, before going on.
 - [ ] Zoom the browser to about 125% so the back row can read the margin column.
 - [ ] Run act two once immediately after act one in every rehearsal - the price-move callout only exists once an invoice has been confirmed in that same reset cycle.
+
+## G. Act three: the branches (added 2026-09-04, WP-85; the screen lands with WP-84)
+
+Act two ends on a plate. Act three answers the owner's next question: *which branch is this happening in?*
+One screen, `/sales`, and one number per branch: **purchases ÷ net sales (cash basis)** - what the branch's suppliers billed it, against what its till took net of VAT, over the same days.
+Never "food cost": purchases are what arrived, not what was consumed, and nothing here pretends otherwise.
+
+Run it straight after act two, in the same browser. Steps marked **[WP-84]** describe the screen the design review pinned (variant B, "answer first"); until WP-84 merges, the same figures are on `GET /api/sales/branches`.
+
+**1. The ranked table (about 40 seconds).** Open `/sales`. **[WP-84]** The sentence above the table names the row to look at first:
+
+```
+Al Qusais: of every AED 100 taken this week, about 30 went to suppliers.
+```
+
+(The tab was opened before act one, so it still shows the week before KAS-5 - that is what step 4 moves.)
+Then the table: Al Qusais on top with its ratio, and Al Nahda and Rolla below it with their net sales, no ratio, and the words *incomplete - no confirmed purchases 25-31 Aug*.
+Say: "Two branches have sales and no papers yet. It does not guess a number for them. Register their phones and their invoices flow in exactly the way you just saw."
+Every row says how many deliveries its window holds ("3 deliveries in this window"), and the period line says how fresh the sales are ("sales to Mon 31 Aug").
+
+**2. The drill (about 30 seconds).** Click Al Qusais. **[WP-84]** The row opens in place: seven days, each with its net sales and the papers dated that day.
+Click KAS-3 (Al Madina Trading Co., AMT-26-1203, 25 Aug): the invoice opens with the photo beside the figures, "AED 5,081.70 = 5,335.79 less VAT 254.09".
+Say: "Every purchase number on this screen is a photograph of a piece of paper, two clicks away."
+
+**3. The coverage panel (about 30 seconds).** Below the table **[WP-84]**: "Costed: N% of sales value" - the share of what was sold that the menu can already cost - and the queue of till names not yet mapped, ranked by money.
+Map one with a keystroke: `CHKN 65 DRY` proposes Chicken 65 Dry at the top; `B/CHKN` proposes nothing and needs the pick-from-menu path - show it needing you.
+Mark `DELIVERY CHARGE` as "not a menu item": it stays in takings and leaves the queue.
+Say: "It never maps a name on its own. One keystroke each, once, and every day that name was ever sold follows."
+
+**4. The move (about 20 seconds).** KAS-5 was confirmed in act one. **Reload `/sales`.** Al Qusais moves from **30.3% to 39.3%**: AED 2,736.50 of net purchases landing on 31 Aug, the week's last day, and the row's deliveries going from 2 to 3.
+Say: "That is one delivery, confirmed from a phone, changing the branch's week. The number is not a report someone typed. It is the papers."
+
+> **The reload is a real step** (act two's rule, one layer up): the ratio derives on every read from the papers and the loaded days; nothing is stored, nothing recomputes in the background, and nothing needs invalidating.
+
+The figures the generator prints are the figures the screen shows - `build_sales_week.py` computes them through the shipped `ratio.period_row`, not a copy of it - so for the committed week they are 30.3% before the stage and 39.3% after, to the tenth.
+If the screen disagrees: the week on the stage is not the committed file (re-upload it - the same file changes nothing, a different file replaces exactly the days it carries), or KAS-5 is not confirmed on Al Qusais, or the page was not reloaded.
+
+**If asked where the sales came from, say it plainly: the demo's sales are invented; its purchases are not; the screen's honesty claim is about the second.** The week is a till export in the shape a pilot's till prints, generated from the real menu so the ratio sits where a cafeteria's does.
+
+### Act three preconditions
+
+- [ ] §A's week check: loaded, the layout saved, the three aliases taught, `/sales` at 30.3% for Al Qusais before act one.
+- [ ] `/sales` open in a third tab before going on, signed in.
+- [ ] Act one's KAS-5 confirm has happened in this reset cycle, or step 4 has nothing to move.
+- [ ] Run act three once immediately after act two in every rehearsal: the loop reset takes KAS-5 with it and the ratio goes back to 30.3% by itself.
