@@ -425,6 +425,149 @@ have sales, because a free range is two inputs nobody asked for.
 **Priority:** P3
 **Depends on:** WP-84. Trigger: a pilot asks for a range the picker lacks.
 
+## The correction loop (deferred 2026-09-04)
+
+The AI-native review of 2026-09-04 found that Faida collects the two things a learning loop needs -
+proof the model was wrong, and the right answer - and keeps neither. `Docs/CORRECTION_LOOP_DECOMPOSITION.md`
+is the full decomposition; it was taken into `/plan-eng-review` the same day and **stopped at the Step 0
+scope gate by the founder's call: capture the work here and defer it.** The review's four sections never
+ran, so nothing below is eng-cleared - the Step 0 findings are recorded with each entry because they are
+the part worth keeping, and they change the shape of the fix.
+
+The order matters. The first entry is a one-way door and the other two are not: every day without it
+destroys signal that cannot be recovered later, while the rest can be built any time once the data exists.
+
+### The model's own reading is destroyed the moment a person corrects it
+
+**What:** Keep what the model actually read, so a correction can be compared against it. Two jsonb
+columns on `extraction_runs` - the first-pass reading and the post-repair one - written from the values
+already in hand at `extraction/pipeline.py:260-270`; and `detail.changes` as `{field_path: {"from", "to"}}`
+on the `invoice.corrected` audit row, from the pre-edit invoice already built at `confirm.py:719`.
+
+**Why:** Nothing anywhere in the system can answer "what did the model say?" after a person fixes it.
+`extraction_runs` (`0002_extraction.sql:6-18`) records the model id, prompt version, tokens, latency and
+outcome, and no column of any JSON type. The reading itself lives in memory as `extracted` in
+`_persist_extracted`, is used once to attribute the repair round (`pipeline.py:268`), and is discarded
+when the function returns. The `update invoices ... set` at `db.py:2790` overwrites in place. The audit
+row records only *which* field paths were corrected (`detail = {"fields": ..., "message_id": ...}`,
+`db.py:2841`), never the value replaced. So a correction proves the model was wrong and simultaneously
+erases the evidence of how.
+
+**Context:** Both halves are additive and invisible - no route, no screen, no reply changes. The Step 0
+finding that shrinks it: **use `extraction_runs`, not a new table.** The decomposition proposed a new
+`extraction_snapshots` table on three arguments, and two of them do not survive contact with the code -
+`extraction_runs` already carries `tenant_id` (`0009:17`), is already in `TENANT_TABLES`
+(`tests/test_tenancy.py:68`) so the tenancy matrix needs no new wiring, and has **no reader at all today**,
+so the "queries would drag the payload" argument is about a query nobody has written. What is left is one
+real point - a run row exists for `failed`, `not_invoice` and `z_report` outcomes with no invoice to
+snapshot - and a nullable column answers it. That turns a new table plus its tenancy surface into two
+`alter table` lines.
+
+Second Step 0 finding, and it decides whether the metric is worth anything: `corrected_fields` is
+`edited_field_keys(edits)` (`confirm.py:739`), the keys the edit *mentioned*, not the keys whose value
+*moved*. Someone replying "line 2 qty 16" when line 2 already reads 16 currently writes an
+`invoice.corrected` row naming `lines.1.qty`. `changed_fields(before, after)` (`provenance.py:132`) is
+exactly the "what actually moved" function and is used only by the pipeline's repair attribution. The
+`changes` payload must use `changed_fields` or the error rate counts keystrokes; the provenance stamp
+must keep using `edited_field_keys`, because a person asserting a value they read off the page is a real
+change of origin even when the digits match. Two halves that disagree on purpose, each owed its own test.
+
+The write belongs inside the same `try` posture as supplier matching (`pipeline.py:221-228`): evidence,
+never a gate. A failed capture must not cost an invoice.
+
+**Effort:** S/M
+**Priority:** P2 - the highest here, and the only one that gets worse with delay. Every correction made
+since M1 is already unrecoverable, and every day adds to that.
+**Depends on:** None. Independent of M8's sales lanes, which touch neither the persist seam nor the
+confirm door. Trigger: none needed - it is a one-way door, so the trigger is simply the next time the
+plan has room.
+
+### Nothing measures how often a field we marked green turns out to be wrong
+
+**What:** `python -m faida_api.quality --since <date>`, printing per week and per supplier: the share of
+fields green at persist time that a human later changed; the share of invoices confirmed with zero
+changes; volume, token cost per invoice from `extraction_runs`, and the top corrected field paths.
+
+**Why:** Accuracy today is a number from ten invoices a prompt invented (`plan.md` §5, phase 1), and in
+production it is measured by nothing. If extraction regressed fifteen percent next Tuesday, the first
+report would come from a customer. The join needed for the real number is one query - once the entry
+above exists.
+
+**Context:** A CLI and not an endpoint, deliberately: §2 rule 1 bans an endpoint without the screen that
+consumes it, this reader is internal, and the ritual that would actually run it already exists in M11's
+weekly review of every `failed` document (`plan.md` §8 M11). A dashboard nobody opens is worse than a
+number inside a habit somebody already has.
+
+**The labels are the hard part, not the SQL.** A correction is gold and per-field: the model was
+definitively wrong there and we hold the right answer. A confirm with no edits is **not** a positive - the
+person tapped OK and may never have read line 9. So the headline is a *floor* on the error rate, counting
+only the mistakes somebody noticed, and the no-edit share is reported as *unverified*, never as accuracy.
+Getting this wrong produces a number that means "nobody complained" and reads like "99% accurate", which
+is the one failure mode that would make this entry worse than not doing it. The metric needs its own
+answer key - a hand-counted expected value over a seeded fixture set - or it is just a number.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** The capture entry above. Trigger: the first pilot branch sending invoices unprompted
+(`plan.md` §8 M11), which is the first week the number means anything.
+
+### The extraction layer never learns from a correction
+
+**What:** Turn captured corrections into something the pipeline reads: corrections promoted into eval
+cases so the corpus grows from real use, and per-supplier priors so the two-hundredth invoice from a
+supplier is not read as ignorantly as the first.
+
+**Why:** Layer 4 already has a memory - the catalog self-builds on confirm, `supplier_items` accumulate,
+`name_aliases` exist (`db.py:710`), price baselines are maintained. Layer 1 has none. `provenance` is
+written in four places and read in exactly one, a `select` that returns it for display (`db.py:128`).
+Nothing aggregates it.
+
+**Context:** Three findings from the Step 0 pass, in the order they bite.
+
+*A prompt rule is probably the wrong layer.* This file already records that judgement, on the EDGE-01
+margin-note entry above: "A prompt rule is the wrong layer - plan.md §5, 'accuracy is a pipeline property,
+not a prompt property'." The same objection lands on per-supplier prompt priors, and it is the repo's own
+precedent, not an outside opinion. The deterministic reading of the same idea is to feed corrections into
+machinery that already exists and already has tests - a `raw_name` corrected the same way three times is a
+`name_aliases` row; a supplier whose papers are always VAT-inclusive is a C4 tie-breaker prior; a
+repeatedly corrected pack size is a catalog fix. Reserve the prompt for what no rule can express (layout
+quirks: "the qty column on this supplier's paper sits third"), and only once the measurement entry above
+says which those actually are. If prompt priors are built anyway, the repair round is the place - the
+supplier is already identifiable from layer 1's `supplier_name` (`pipeline.py:217`), the first pass stays
+byte-identical so the corpus stays comparable and a prior can never contaminate a clean read, and repair
+only fires when something already failed, so the tokens land on the invoices in trouble. That is a C3
+amendment to `repair` alone, `extract` untouched.
+
+*The label ladder already exists; do not invent a second one.* The decomposition proposed a new contract
+C12 naming three rungs. `eval/fixtures/generated/SIGNOFF.json` and `eval/tests/test_signoff.py` already
+encode exactly that idea - a per-case `verdict` of `ok` or `unverifiable`, a named reviewer, a commit, and
+a sha256 of the truth file that fails the moment verified truth changes underneath it. A promoted
+correction is a third verdict on that existing ladder, not a parallel vocabulary.
+
+*Partial truth is where a scorer bug would hide.* A promoted case can only assert truth for the fields a
+human actually corrected - claiming the other forty were right is exactly the weak-positive error the
+measurement entry warns about. So `score_case` (`eval/score.py:207`) needs *field absent from truth* to
+mean "not scored", which must stay distinct from *field present and null*, which still asserts "this
+should be null". Note that `test_every_case_in_the_corpus_is_accounted_for` (`test_signoff.py:29`) scans
+`fixtures/generated/` for directories holding a `truth.json` and asserts the set matches SIGNOFF exactly,
+so promoted cases must live elsewhere and under a different filename or they trip a test that is doing its
+job. Do **not** bundle this with the deferred eval-tolerance fix in "The eval marks TH-01's subtotal wrong"
+below: two semantics changes in one scorer, landing together, is how a scorer starts flattering us.
+
+*And it is blocked on something no engineer can decide.* Promoting a real pilot invoice into an answer key
+means keeping a customer's supplier prices in a form we score against. No pilot agreement covers that. One
+plain sentence granting the right to use their documents to improve extraction accuracy is a founder task -
+**F10**, the next free identifier (F9 was proposed and overridden by the M8 decision, so it is spent). It is
+deliberately *not* on §7.1's founder track yet: it joins when this entry does, and until then it gates the
+corpus half entirely. The capture and measurement entries above store nothing
+that is not already in the database and are not affected.
+
+**Effort:** L
+**Priority:** P3
+**Depends on:** Both entries above, F10 for the corpus half, and real volume to learn from. Trigger: the
+measurement entry reporting a silent-wrong floor high enough to be worth attacking, on real pilot invoices
+rather than the generated corpus.
+
 ## Extraction & matching
 
 ### A handwritten margin note gets folded into an item name and splits the catalog
