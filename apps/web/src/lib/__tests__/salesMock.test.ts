@@ -90,6 +90,12 @@ describe("the sales door in mock mode", () => {
       days: [{ branch_id: "br-02", business_date: "2026-08-29", granularity: "summary", amount_basis: "inclusive", layout_id: null, source: SOURCE, amount: "0.00" }],
     });
     expect(closed.days[0].day).toMatchObject({ granularity: "summary", takings: "0.00", net_sales: "0.00", line_count: 0 });
+    // A day total with money is the door's refusal since 2026-09-04: item-wise only.
+    await expect(
+      door.mockPostSalesDays({
+        days: [{ branch_id: "br-02", business_date: "2026-08-30", granularity: "summary", amount_basis: "inclusive", layout_id: null, source: SOURCE, amount: "4525.50" }],
+      }),
+    ).rejects.toMatchObject({ status: 422, message: expect.stringContaining("item-wise exports for now") });
 
     const many = Array.from({ length: 32 }, (_, index) =>
       itemDay(`2026-07-${String(index + 1).padStart(2, "0")}`.slice(0, 10), [{ name: "TEA", amount: "1.00" }]),

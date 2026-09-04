@@ -286,6 +286,22 @@ M8 was decomposed in `Docs/M8_DECOMPOSITION.md` and reviewed with two outside vo
 to build. The entries below are what the decomposition and its reviews consciously left out, each with the trigger
 that brings it back.
 
+### A day-totals (summary) sales export
+
+**What:** A till that exports only day totals (branch, date, amount): the loader's item column becomes
+optional again, a file with no item column groups into `summary` days with money, the door accepts a
+summary day with a non-zero amount, a summary day carries net sales and no coverage, and the coverage
+figure names such days beside it.
+
+**Why:** The founder amended P1 on 2026-09-04, after Wave 1: item-wise only for the MVP, because the
+summary shape doubled the loader's cases and the door's refusal set for a till nobody has met yet, and
+the one integration conflict Wave 1 produced came from carrying both shapes in one body. Wave 1 shipped
+both; the summary half was retired the same day and lives in history at `f1c76a4` (web) and `6ec6375`
+(API), so this is an adaptation, not a build.
+
+**Depends on:** M8 shipped. Trigger: M11's pilot chain, or any target chain, whose till exports day
+totals only.
+
 ### Z-report photos through WhatsApp
 
 **What:** A summary extraction schema for a till's end-of-day report (branch-summary or item-summary),

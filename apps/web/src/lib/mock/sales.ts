@@ -224,7 +224,15 @@ export async function mockPostSalesDays(body: SalesDaysInput): Promise<SalesDays
         throw new ApiError(422, `${day.business_date}: a summary day carries no lines`);
       }
       if (day.amount === undefined || !MONEY.test(day.amount.trim())) {
-        throw new ApiError(422, `${day.business_date}: a summary day needs an amount`);
+        throw new ApiError(422, `${day.business_date}: a closed day needs an amount of 0`);
+      }
+      if (!/^-?0+(\.0+)?$/.test(day.amount.trim())) {
+        // The door's rule since the founder's 2026-09-04 call: item-wise only.
+        throw new ApiError(
+          422,
+          `${day.business_date}: Faida loads item-wise exports for now, so a day without item ` +
+            "rows can only be a closed day (amount 0); a day-totals export comes with the pilot (M11)",
+        );
       }
     } else {
       if (!day.lines || day.lines.length === 0) {

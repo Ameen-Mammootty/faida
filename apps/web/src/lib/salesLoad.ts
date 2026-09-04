@@ -56,9 +56,16 @@ export const SALES_COLUMNS: readonly SalesColumn[] = [
   "amount",
 ];
 
-/** The two a file cannot be read without. No item column is the summary
- * shape; no branch column means one branch for the whole file. */
-export const REQUIRED_COLUMNS: readonly SalesColumn[] = ["date", "amount"];
+/** The three a file cannot be read without. Item-wise exports only (the
+ * founder's call, 2026-09-04): a day-totals file, which would leave the item
+ * column unmapped, comes with the pilot (M11, TODOS.md). No branch column
+ * means one branch for the whole file. */
+export const REQUIRED_COLUMNS: readonly SalesColumn[] = ["date", "item", "amount"];
+
+/** The sentence a file with no item column is stopped with. */
+export const ITEM_WISE_ONLY =
+  "Faida loads item-wise exports for now - one row per item sold - so say which column is the " +
+  "item. A day-totals export comes with the pilot.";
 
 export const COLUMN_WORDS: Record<SalesColumn, string> = {
   branch: "branch",
@@ -73,7 +80,7 @@ export const COLUMN_WORDS: Record<SalesColumn, string> = {
 export const COLUMN_HELP: Record<SalesColumn, string> = {
   branch: "which outlet the row belongs to; leave unmapped if the file is one branch",
   date: "the business date the till printed on the row",
-  item: "the till's own name for what was sold; leave unmapped for a file of day totals",
+  item: "the till's own name for what was sold",
   code: "the till's item code (PLU) - it survives a rename",
   qty: "how many were sold",
   amount: "the row's takings, as the till printed them",
@@ -393,8 +400,8 @@ export interface ReadDay {
   date: string;
   granularity: SalesGranularity;
   lines: ReadLine[];
-  /** A summary day's amount ("0.00" for a closed or gap day); null on an
-   * item day. */
+  /** A closed day's amount, "0.00" (a closed-day row, or an interior gap);
+   * null on an item day. */
   amount: string | null;
   /** The exact sum of the file's amounts for the day. Money string. */
   takings: string;
@@ -438,12 +445,12 @@ const EARLIEST = "2020-01-01";
  * Group a parsed CSV into branch-days, with each row's problems on the day it
  * belongs to.
  *
- * Item-wise (an item column is mapped): one row per till item, the day is the
- * sum. Summary (no item column): one row per branch-day, and a second row
- * for the same day stops it with a sentence rather than picking one. A file
- * is one shape throughout (C11.1). In an item-wise file, a row with no item
- * name and a zero amount is the closed-day row the template shows; any other
- * row with an amount and no name is a mistake, named by line.
+ * Item-wise only: one row per till item, the day is the sum. A row with no
+ * item name and a zero amount is the closed-day row the template shows, and a
+ * day inside the file's own range with no rows is a closed day too (the
+ * founder's call, 2026-09-04); any other row with an amount and no name is a
+ * mistake, named by line. A day-totals file (no item column) is stopped at
+ * the mapping step until the pilot (M11).
  */
 export function readSalesCsv(
   header: string[],
@@ -471,7 +478,10 @@ export function readSalesCsv(
     if (!position.has(column)) {
       return {
         ok: false,
-        error: `Say which column is the ${COLUMN_WORDS[column]} - a file cannot be read without one.`,
+        error:
+          column === "item"
+            ? ITEM_WISE_ONLY
+            : `Say which column is the ${COLUMN_WORDS[column]} - a file cannot be read without one.`,
       };
     }
   }
@@ -500,7 +510,7 @@ export function readSalesCsv(
     const index = position.get(column);
     return index === undefined ? "" : (row[index] ?? "").trim();
   };
-  const granularity: SalesGranularity = position.has("item") ? "item" : "summary";
+  const granularity: SalesGranularity = "item";
   const tomorrow = isoAddDays(today, 1);
 
   const days = new Map<string, ReadDay>();
@@ -599,25 +609,6 @@ export function readSalesCsv(
     const amountBad = amountProblem(amountText, "amount");
     const qtyText = position.has("qty") ? cell(row, "qty") : "";
     const qtyBad = qtyText === "" ? null : amountProblem(qtyText, "quantity");
-
-    if (granularity === "summary") {
-      if (day.amount !== null) {
-        day.problems.push(
-          `line ${line} is a second row for ${date.iso} at ${
-            branchName ?? branchLabel ?? "this branch"
-          } - a summary file has one row per branch per day`,
-        );
-        return;
-      }
-      if (amountBad) {
-        day.problems.push(`line ${line}: ${amountBad}`);
-        day.amount = "0";
-        return;
-      }
-      day.amount = amountText;
-      day.takings = sumStrings([amountText]);
-      return;
-    }
 
     const name = cell(row, "item");
     const codeText = position.has("code") ? cell(row, "code") : "";

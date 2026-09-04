@@ -191,17 +191,18 @@ describe("readSalesCsv", () => {
     expect(unknown?.problems[0]).toContain('"MUWAILAH"');
   });
 
-  it("stops a summary file with two rows for one branch-day, with the sentence", () => {
+  it("stops a file with no item column at the mapping step, with the sentence", () => {
+    // Item-wise only (the founder's call, 2026-09-04): a day-totals export
+    // waits for the pilot, and the loader says so rather than guessing.
     const text =
       "Outlet,Date,Amount\n" +
       "Al Qusais Branch,25/08/2026,4525.50\n" +
-      "Al Qusais Branch,25/08/2026,100.00\n";
+      "Al Qusais Branch,26/08/2026,4100.00\n";
     const result = read(text, { columns: { branch: "Outlet", date: "Date", amount: "Amount" } });
-    if (!result.ok) throw new Error(result.error);
-    expect(result.granularity).toBe("summary");
-    const day = result.days[0];
-    expect(day.problems[0]).toContain("second row");
-    expect(day.problems[0]).toContain("one row per branch per day");
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("a file with no item column read as sales");
+    expect(result.error).toContain("item-wise exports for now");
+    expect(result.error).toContain("comes with the pilot");
   });
 
   it("reads a closed-day row as a summary zero day, and a whole-file branch when there is no branch column", () => {

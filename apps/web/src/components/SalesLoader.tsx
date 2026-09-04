@@ -488,8 +488,8 @@ export default function SalesLoader() {
           <h2 className="font-display text-lg font-semibold text-ink">The till&apos;s export</h2>
           <p className="mt-1 max-w-2xl text-sm text-stone">
             One row per item sold, with the outlet, the date, the item&apos;s code and name, how
-            many, and the amount as the till printed it. A file of day totals loads too - leave
-            the item column unmapped. Excel: File - Save As - CSV.
+            many, and the amount as the till printed it. A day with no rows inside the
+            file&apos;s own dates loads as a closed day. Excel: File - Save As - CSV.
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <label className="inline-flex min-h-11 cursor-pointer items-center rounded-sm bg-palm px-4 py-2 text-sm font-medium text-cream hover:bg-palm-deep">
@@ -611,9 +611,6 @@ export default function SalesLoader() {
                     {mapping.amountBasis === "inclusive"
                       ? " - the VAT comes out at the door, and each day's net figure appears once it has."
                       : " - the door stores them as the net figure."}
-                    {info?.granularity === "summary"
-                      ? " Day totals only: these days carry no items, so they count in sales and not in recipe coverage."
-                      : ""}
                   </p>
                 </div>
                 {summary ? (
@@ -1052,14 +1049,7 @@ function DayRow({
   const status = dayStatus(day);
   const sentences = day.result?.message ? [day.result.message] : day.problems;
   const isoDate = /^\d{4}-\d{2}-\d{2}$/.test(day.date);
-  const rows =
-    day.granularity === "summary"
-      ? day.gap
-        ? "gap"
-        : day.amount !== null && /^-?0+(\.0+)?$/.test(day.amount.trim())
-          ? "closed"
-          : "day total"
-      : String(day.lines.length);
+  const rows = day.granularity === "summary" ? (day.gap ? "gap" : "closed") : String(day.lines.length);
 
   return (
     <>
