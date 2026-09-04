@@ -47,7 +47,7 @@ import re
 from collections.abc import Mapping, Sequence
 from decimal import Decimal
 from difflib import SequenceMatcher
-from typing import Any
+from typing import Any, NamedTuple
 
 from .extraction import units
 
@@ -295,6 +295,84 @@ def propose_ingredients(
             scored.append((score, ingredient))
     scored.sort(key=lambda pair: pair[0], reverse=True)
     return [ingredient for _, ingredient in scored[:MAX_INGREDIENT_PROPOSALS]]
+
+
+# MENU_ITEM_PROPOSAL_THRESHOLD 0.72, measured over normalized names with the
+# pack sizes KEPT on both sides (see propose_menu_items) against the staged
+# five-item menu and the real 45-item one, spelt the way a till prints them.
+# Real matches clear it - "CHKN 65 DRY" vs "Chicken 65 Dry" 0.88, "KARAK
+# FLASK 1L" vs "Karak Tea (Flask 1 L)" 0.848, "GOBI MSL" vs "Gobi Masala"
+# 0.842, "HONEY CAKE" vs "Honey Cake - slice" 0.769, "NIDO TEA" vs "Nido Milk
+# Tea" 0.762, "CAPPUCCINO SML" vs "Cappuccino - Small 150 ml" 0.757 (its
+# large sibling 0.703, below), "CHAI FLASK 2L" vs "Cardamom Chai (Flask 2 L)"
+# 0.722 - while a bare word stays out: "MASALA" vs "Gobi Masala" 0.706,
+# "CHICKEN" vs "Chicken Wings" and "Chicken Kadai" 0.700 (a tie, and a tie
+# between two dishes is exactly the choice a proposal must not make), "FLASK
+# 1 L" vs "Karak Tea - Flask 1 L" 0.643, "DELIVERY CHARGE" vs "Karak
+# Delivery - Large 400 ml" 0.619.
+#
+# It sits at 0.72 and not at the ingredient bar of 0.70 because of "MASALA"
+# at 0.706: one word of a dish's name is not the dish, and the two-point
+# margin is what keeps it out. A size word alone ("LARGE 250ML" scores 0.759
+# against every large drink) clears any bar a real abbreviation clears, so
+# that case is not a threshold at all: a name with nothing but size and pack
+# words in it proposes nothing (see _dish_words).
+MENU_ITEM_PROPOSAL_THRESHOLD = 0.72
+MAX_MENU_ITEM_PROPOSALS = 3
+
+# Words that say how big or how served, never what. A till name made only of
+# these ("LARGE 250ML", "FLASK 1 L", "SLICE") names no dish and gets no
+# proposal, whatever a size-heavy menu scores it.
+_SIZE_WORDS = frozenset(
+    "small medium large sml sm med md lrg lg xl xs regular reg mini jumbo "
+    "cup flask slice piece pc pcs half full pot glass mug bottle can".split()
+)
+
+
+class MenuProposal(NamedTuple):
+    """One ranked answer from `propose_menu_items`: the menu item and the
+    score that put it there, so the queue can show both."""
+
+    item: Row
+    score: float
+
+
+def _dish_words(name: str) -> list[str]:
+    """The normalized name with pack sizes and size words taken out - what is
+    left must name a dish for a proposal to be worth making."""
+    return [word for word in units.strip_packs(normalize(name)).split() if word not in _SIZE_WORDS]
+
+
+def propose_menu_items(
+    menu_items: Sequence[Row], till_name: str, *, limit: int = MAX_MENU_ITEM_PROPOSALS
+) -> list[MenuProposal]:
+    """The menu items a till name might be, best first. Proposes; never
+    decides (C11.7 - an exact name still needs its keystroke).
+
+    **Pack-aware on purpose**, the one way this must differ from
+    `propose_ingredients`. A supplier's 2.5 kg and 500 g of milk powder are one
+    material, so that proposer strips the sizes. A menu's "Karak Tea - Flask
+    1 L" and "- Flask 2 L" are two items with two prices, and stripped they
+    score 1.00 against each other (measured: 0.947 kept, 1.00 stripped), so the
+    till's "KARAK FLASK 1L" could never tell them apart. Here the size stays in
+    the score, and the 1 L flask wins 0.848 to 0.595 on the staged menu and
+    0.973 to 0.919 on the real one - never a tie.
+
+    Archived items are not offered: an archived dish is out of the ranking and
+    the coverage figure, and mapping sales onto it would put value where
+    nobody looks. Ties on the score break on the name, so the order is stable.
+    """
+    if not _dish_words(till_name):
+        return []
+    scored: list[MenuProposal] = []
+    for item in menu_items:
+        if item.get("archived_at") is not None:
+            continue
+        score = _similarity(till_name, item["name"])
+        if score >= MENU_ITEM_PROPOSAL_THRESHOLD:
+            scored.append(MenuProposal(item, score))
+    scored.sort(key=lambda proposal: (-proposal.score, normalize(proposal.item["name"])))
+    return scored[:limit]
 
 
 def match_supplier(suppliers: Sequence[Row], extracted_name: str | None) -> Row | None:

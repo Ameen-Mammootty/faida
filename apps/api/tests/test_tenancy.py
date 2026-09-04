@@ -295,6 +295,14 @@ async def seed_tenant_a(db, fake_storage: FakeStorage) -> Rows:
         tenant_id=TENANT_A, name="Karak", selling_price=Decimal("5.00"), actor="test"
     )
     rows.ids["menu_item"] = item["id"]
+    # A till name the loader minted, for the mapping doors (WP-82).
+    rows.ids["till_item"] = str(
+        await db.pool.fetchval(
+            "insert into till_items (tenant_id, name, name_key, code) "
+            "values ($1, 'KARAK TEA CUP', 'karak tea cup', '52') returning id",
+            TENANT_A,
+        )
+    )
     return rows
 
 
@@ -516,6 +524,24 @@ MATRIX: list[dict] = [
         "method": "GET",
         "path": "/api/sales/coverage",
         "url": lambda r: f"/api/sales/coverage?from={SALES_DAY}&to={SALES_DAY}",
+    },
+    # The till-name mapping doors (WP-82): map, then unmap, then exclude - a
+    # script, because exclude refuses a mapped name.
+    {
+        "method": "POST",
+        "path": "/api/till-items/{till_item_id}/menu-item",
+        "url": lambda r: f"/api/till-items/{r['till_item']}/menu-item",
+        "json": lambda r: {"menu_item_id": r["menu_item"]},
+    },
+    {
+        "method": "DELETE",
+        "path": "/api/till-items/{till_item_id}/menu-item",
+        "url": lambda r: f"/api/till-items/{r['till_item']}/menu-item",
+    },
+    {
+        "method": "POST",
+        "path": "/api/till-items/{till_item_id}/exclude",
+        "url": lambda r: f"/api/till-items/{r['till_item']}/exclude",
     },
 ]
 
