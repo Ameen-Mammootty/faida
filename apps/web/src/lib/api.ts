@@ -54,6 +54,15 @@ import {
   mockUnarchiveMenuItem,
 } from "./mock/menu";
 import {
+  mockAddBranchAlias,
+  mockGetBranches,
+  mockGetSalesDays,
+  mockGetSalesLayouts,
+  mockPostSalesDays,
+  mockPostSalesFile,
+  mockSaveSalesLayout,
+} from "./mock/sales";
+import {
   mockApproveInvoice,
   mockConfirmInvoice,
   mockDismissInvoice,
@@ -66,6 +75,8 @@ import {
 } from "./mock/store";
 import type {
   BlockedCost,
+  Branch,
+  BranchAlias,
   Correction,
   Ingredient,
   IngredientCreateInput,
@@ -84,6 +95,12 @@ import type {
   PriceMove,
   PriceHistory,
   RejectionResult,
+  SalesDay,
+  SalesDaysInput,
+  SalesDaysResult,
+  SalesFileResult,
+  SalesLayout,
+  SalesLayoutInput,
   UnmappedSupplierItem,
   UploadResult,
 } from "./types";
@@ -400,4 +417,70 @@ export async function unarchiveMenuItem(id: string): Promise<MenuItemDetail> {
   return request<MenuItemDetail>(`/api/menu-items/${encodeURIComponent(id)}/unarchive`, {
     method: "POST",
   });
+}
+
+/**
+ * M8 WP-83: the sales loader (Docs/M8_DECOMPOSITION.md §3.1, C11).
+ *
+ *   GET  /api/branches                     the tenant's branches with their till aliases
+ *   POST /api/branches/{id}/aliases        teach the till's label for a branch, once
+ *   POST /api/sales/files                  the raw CSV, kept under its server-computed hash
+ *   GET  /api/sales/layouts                the saved column layouts, one per till
+ *   POST /api/sales/layouts                save or update a layout, by name
+ *   GET  /api/sales/days?from&to           stored branch-days with their lines (the preview reads them)
+ *   POST /api/sales/days                   at most 31 branch-days, one transaction and one outcome each
+ *
+ * The loader posts the file first so every day it loads carries the hash of
+ * the bytes it came from, then one branch-month per request: a refresh
+ * mid-run resumes, and the door answers "unchanged" for anything that
+ * already landed. Net figures come back from the door; the browser never
+ * divides money.
+ */
+
+export async function getBranches(): Promise<Branch[]> {
+  if (MOCK) return mockGetBranches();
+  const body = await request<{ branches: Branch[] }>("/api/branches");
+  return body.branches;
+}
+
+/** 409 when the alias already names another branch - surfaced as the
+ * door's sentence, like every refusal. */
+export async function addBranchAlias(branchId: string, alias: string): Promise<BranchAlias> {
+  if (MOCK) return mockAddBranchAlias(branchId, alias);
+  const body = await request<{ alias: BranchAlias }>(
+    `/api/branches/${encodeURIComponent(branchId)}/aliases`,
+    jsonInit("POST", { alias }),
+  );
+  return body.alias;
+}
+
+export async function postSalesFile(file: File): Promise<SalesFileResult> {
+  if (MOCK) return mockPostSalesFile(file);
+  const body = new FormData();
+  body.append("file", file);
+  return request<SalesFileResult>("/api/sales/files", { method: "POST", body });
+}
+
+export async function getSalesLayouts(): Promise<SalesLayout[]> {
+  if (MOCK) return mockGetSalesLayouts();
+  const body = await request<{ layouts: SalesLayout[] }>("/api/sales/layouts");
+  return body.layouts;
+}
+
+export async function saveSalesLayout(input: SalesLayoutInput): Promise<SalesLayout> {
+  if (MOCK) return mockSaveSalesLayout(input);
+  const body = await request<{ layout: SalesLayout }>("/api/sales/layouts", jsonInit("POST", input));
+  return body.layout;
+}
+
+export async function getSalesDays(from: string, to: string): Promise<SalesDay[]> {
+  if (MOCK) return mockGetSalesDays(from, to);
+  const params = new URLSearchParams({ from, to });
+  const body = await request<{ days: SalesDay[] }>(`/api/sales/days?${params.toString()}`);
+  return body.days;
+}
+
+export async function postSalesDays(input: SalesDaysInput): Promise<SalesDaysResult> {
+  if (MOCK) return mockPostSalesDays(input);
+  return request<SalesDaysResult>("/api/sales/days", jsonInit("POST", input));
 }

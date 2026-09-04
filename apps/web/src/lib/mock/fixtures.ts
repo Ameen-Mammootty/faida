@@ -134,14 +134,17 @@ export interface Fixture {
 }
 
 /**
- * The two mock branches, for pages that offer a branch choice. C6 has no
- * branches endpoint; against the real API those pages derive options from
- * the invoice list, and these ids match the fixtures' branch_id values so
- * both modes behave alike.
+ * The mock branches, for pages that offer a branch choice and for the sales
+ * loader (M8 WP-83), which reads them through the mock of `GET /api/branches`.
+ * The first two carry the fixtures' invoices; the third has papers from no
+ * one, so a loaded week reads "no confirmed purchases" against it exactly
+ * as the demo stage's two quiet branches will. The ids match the fixtures'
+ * branch_id values so both modes behave alike.
  */
 export const MOCK_BRANCHES: { id: string; name: string }[] = [
   { id: "br-01", name: "Al Quoz" },
   { id: "br-02", name: "Karama" },
+  { id: "br-03", name: "Deira" },
 ];
 
 /**
