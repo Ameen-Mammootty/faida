@@ -852,3 +852,97 @@ async def load_sales_days(body: SalesDaysIn, request: Request, ctx: Context) -> 
             }
         )
     return {"days": outcomes}
+
+
+# --- till items: the mapping door (WP-82) --------------------------------------
+#
+# Propose, one keystroke, reverse gear - the WP-52 shape for till names. The
+# loader mints a till item on first sight and never maps it (C11.7); these
+# three doors are the only way a till name gets a menu item, loses one, or is
+# marked as not a menu item at all. Each is one audit row inside its own
+# transaction, and each answers the till item as it now stands.
+
+
+class TillItemMapping(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    menu_item_id: uuid.UUID
+
+
+def _till_item_json(row) -> dict:
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "code": row["code"],
+        "menu_item_id": row["menu_item_id"],
+        "menu_item_name": row["menu_item_name"],
+        "excluded_at": _iso(row["excluded_at"]),
+    }
+
+
+@router.post("/till-items/{till_item_id}/menu-item")
+async def map_till_item(
+    till_item_id: uuid.UUID, body: TillItemMapping, request: Request, ctx: Context
+) -> dict:
+    """Approve the mapping, or move the name to another menu item. An exact
+    name arrives here too - M5's rule, nothing merges without a keystroke.
+    Another tenant's menu item does not exist here (404, and Postgres refuses
+    the write regardless); an archived one is 409, because sales mapped onto
+    a dish nobody ranks is value nobody sees."""
+    db: Database = request.app.state.db
+    item = await db.get_till_item(str(till_item_id), tenant_id=ctx.tenant_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="till item not found")
+    menu_item = await db.get_menu_item(str(body.menu_item_id), tenant_id=ctx.tenant_id)
+    if menu_item is None:
+        raise HTTPException(status_code=404, detail="menu item not found")
+    if menu_item["archived_at"] is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"'{menu_item['name']}' is archived: unarchive it on the menu first, "
+            "or pick a live item",
+        )
+    row = await db.map_till_item(
+        str(till_item_id),
+        tenant_id=ctx.tenant_id,
+        menu_item_id=str(body.menu_item_id),
+        actor=ctx.actor,
+    )
+    return {"till_item": _till_item_json(row)}
+
+
+@router.delete("/till-items/{till_item_id}/menu-item")
+async def unmap_till_item(till_item_id: uuid.UUID, request: Request, ctx: Context) -> dict:
+    """The reverse gear: the name returns to the queue with its value."""
+    db: Database = request.app.state.db
+    item = await db.get_till_item(str(till_item_id), tenant_id=ctx.tenant_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="till item not found")
+    not_mapped = f"'{item['name']}' is not mapped to a menu item"
+    if item["menu_item_id"] is None:
+        raise HTTPException(status_code=409, detail=not_mapped)
+    row = await db.unmap_till_item(str(till_item_id), tenant_id=ctx.tenant_id, actor=ctx.actor)
+    if row is None:
+        raise HTTPException(status_code=409, detail=not_mapped)
+    return {"till_item": _till_item_json(row)}
+
+
+@router.post("/till-items/{till_item_id}/exclude")
+async def exclude_till_item(till_item_id: uuid.UUID, request: Request, ctx: Context) -> dict:
+    """Mark a name as not a menu item: it stays in net sales and leaves the
+    queue. A mapped name is 409 - unmap it first, so "not a dish" is never
+    said about a name that is currently counted as one."""
+    db: Database = request.app.state.db
+    item = await db.get_till_item(str(till_item_id), tenant_id=ctx.tenant_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="till item not found")
+    mapped = (
+        f"'{item['name']}' is mapped to {item['menu_item_name']}: unmap it first "
+        "if it is not a menu item"
+    )
+    if item["menu_item_id"] is not None:
+        raise HTTPException(status_code=409, detail=mapped)
+    row = await db.exclude_till_item(str(till_item_id), tenant_id=ctx.tenant_id, actor=ctx.actor)
+    if row is None:
+        raise HTTPException(status_code=409, detail=mapped)
+    return {"till_item": _till_item_json(row)}

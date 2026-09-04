@@ -2343,6 +2343,164 @@ class Database:
             ids[(kind, key)] = row["id"]
         return ids
 
+    # -- Till items: the mapping door (M8 WP-82) ------------------------------
+
+    #: A till item as the doors answer it: the printed name and code, the
+    #: menu item it is mapped to (by a person, never by the loader), and
+    #: whether it was marked "not a menu item".
+    _TILL_ITEM_SELECT = """
+        select t.id::text as id, t.name, t.name_key, t.code,
+               t.menu_item_id::text as menu_item_id, m.name as menu_item_name, t.excluded_at
+        from till_items t
+        left join menu_items m on m.tenant_id = t.tenant_id and m.id = t.menu_item_id
+    """
+
+    async def get_till_item(self, till_item_id: str, *, tenant_id: str) -> asyncpg.Record | None:
+        return await self.pool.fetchrow(
+            self._TILL_ITEM_SELECT + " where t.id = $1 and t.tenant_id = $2",
+            till_item_id,
+            tenant_id,
+        )
+
+    async def map_till_item(
+        self, till_item_id: str, *, tenant_id: str, menu_item_id: str, actor: str
+    ) -> asyncpg.Record:
+        """Approve a till name as a menu item, or move it to another one
+        (C11.7). Nothing is stored per line: every line with this name follows
+        on the next coverage read, so a remap corrects every day at once.
+
+        The link and the audit row are one transaction (C8), and the row is
+        locked first so two keystrokes on one name serialise. Mapping clears
+        "not a menu item" - a name that turned out to be a dish after all
+        comes back into coverage with the keystroke that says so. A till item
+        outside the tenant raises rather than writing an audit row about
+        nothing; the 0019 composite key refuses another tenant's menu item
+        whatever the API missed."""
+        async with self.pool.acquire() as conn, conn.transaction():
+            before = await conn.fetchrow(
+                "select menu_item_id::text as menu_item_id, excluded_at from till_items "
+                "where id = $1 and tenant_id = $2 for update",
+                till_item_id,
+                tenant_id,
+            )
+            if before is None:
+                raise LookupError(f"till item {till_item_id} is not in tenant {tenant_id}")
+            await conn.execute(
+                "update till_items set menu_item_id = $3, excluded_at = null "
+                "where id = $1 and tenant_id = $2",
+                till_item_id,
+                tenant_id,
+                menu_item_id,
+            )
+            row = await conn.fetchrow(
+                self._TILL_ITEM_SELECT + " where t.id = $1 and t.tenant_id = $2",
+                till_item_id,
+                tenant_id,
+            )
+            await _insert_audit_event(
+                conn,
+                tenant_id=tenant_id,
+                actor=actor,
+                action="till_item.mapped",
+                subject_type="till_item",
+                subject_id=till_item_id,
+                detail={
+                    "name": row["name"],
+                    "code": row["code"],
+                    "menu_item_id": menu_item_id,
+                    "menu_item_name": row["menu_item_name"],
+                    "previous_menu_item_id": before["menu_item_id"],
+                    "was_excluded": before["excluded_at"] is not None,
+                },
+            )
+        return row
+
+    async def unmap_till_item(
+        self, till_item_id: str, *, tenant_id: str, actor: str
+    ) -> asyncpg.Record | None:
+        """The reverse gear: the name goes back to the queue with its value,
+        and every line that followed the mapping stops following it on the
+        next read. None when nothing is mapped (the API answers 409) - the
+        check is inside the lock, so a second tab's unmap after the first
+        does not write an audit row about nothing."""
+        async with self.pool.acquire() as conn, conn.transaction():
+            before = await conn.fetchrow(
+                "select menu_item_id::text as menu_item_id from till_items "
+                "where id = $1 and tenant_id = $2 for update",
+                till_item_id,
+                tenant_id,
+            )
+            if before is None:
+                raise LookupError(f"till item {till_item_id} is not in tenant {tenant_id}")
+            if before["menu_item_id"] is None:
+                return None
+            await conn.execute(
+                "update till_items set menu_item_id = null where id = $1 and tenant_id = $2",
+                till_item_id,
+                tenant_id,
+            )
+            row = await conn.fetchrow(
+                self._TILL_ITEM_SELECT + " where t.id = $1 and t.tenant_id = $2",
+                till_item_id,
+                tenant_id,
+            )
+            await _insert_audit_event(
+                conn,
+                tenant_id=tenant_id,
+                actor=actor,
+                action="till_item.unmapped",
+                subject_type="till_item",
+                subject_id=till_item_id,
+                detail={
+                    "name": row["name"],
+                    "code": row["code"],
+                    "previous_menu_item_id": before["menu_item_id"],
+                },
+            )
+        return row
+
+    async def exclude_till_item(
+        self, till_item_id: str, *, tenant_id: str, actor: str
+    ) -> asyncpg.Record | None:
+        """Mark a name as not a menu item: a delivery charge, a discount line.
+        It stays in net sales - the till took the money - and leaves the queue.
+        None when the name is mapped (the API answers 409: unmap first).
+        Excluding an already-excluded name answers the row and writes
+        nothing, so a double click is not two audit rows."""
+        async with self.pool.acquire() as conn, conn.transaction():
+            before = await conn.fetchrow(
+                "select menu_item_id::text as menu_item_id, excluded_at from till_items "
+                "where id = $1 and tenant_id = $2 for update",
+                till_item_id,
+                tenant_id,
+            )
+            if before is None:
+                raise LookupError(f"till item {till_item_id} is not in tenant {tenant_id}")
+            if before["menu_item_id"] is not None:
+                return None
+            if before["excluded_at"] is None:
+                await conn.execute(
+                    "update till_items set excluded_at = now() where id = $1 and tenant_id = $2",
+                    till_item_id,
+                    tenant_id,
+                )
+            row = await conn.fetchrow(
+                self._TILL_ITEM_SELECT + " where t.id = $1 and t.tenant_id = $2",
+                till_item_id,
+                tenant_id,
+            )
+            if before["excluded_at"] is None:
+                await _insert_audit_event(
+                    conn,
+                    tenant_id=tenant_id,
+                    actor=actor,
+                    action="till_item.excluded",
+                    subject_type="till_item",
+                    subject_id=till_item_id,
+                    detail={"name": row["name"], "code": row["code"]},
+                )
+        return row
+
     async def record_confirmed_prices(
         self, invoice_id: str, *, tenant_id: str, conn: asyncpg.Connection | None = None
     ) -> None:
