@@ -14,13 +14,9 @@ same rule rather than four copies of it:
                     the exact sum of its stored lines (Codex 10)
     day_key         what "the same day" means for the unchanged outcome
                     (C11.4): granularity, basis and the multiset of lines in
-                    any order
+                    any order; a closed day's multiset is its one amount, 0
     duplicate_days  two entries for one branch-day in one body: refused with
                     a sentence, never merged
-    mixed_shapes    a file is one shape throughout (C11.1) - item rows or
-                    summary rows, never both; a zero day (a closed day, an
-                    interior gap) is a summary day in any body and is not a
-                    shape
     interior_gaps   the days strictly inside a branch's range in a file that
                     have no rows: loaded as takings-0 days by the loader,
                     because the export range is the till's own statement of
@@ -28,6 +24,11 @@ same rule rather than four copies of it:
     date_problem    a business date after tomorrow or before 2020, refused
                     with a sentence - a swapped day and month lands in the
                     future (review finding 9)
+
+Item-wise exports only (the founder's call, 2026-09-04): a `summary` day is
+a closed day - amount 0, no lines - and a day-totals export waits for the
+pilot (M11). The granularity stays on the row so that arrival changes the
+door's refusal and nothing here.
 
 Money is Decimal throughout. Nothing here rounds anything but the one
 division it names.
@@ -122,8 +123,9 @@ def day_key(
 ) -> tuple:
     """What "the same day" means (C11.4): the same granularity, the same
     basis and the same multiset of (normalised name, code, qty, amount), in
-    any order. A summary day's multiset is its one amount. Two keys equal
-    means nothing is written and no audit row appears."""
+    any order. A closed (summary) day's multiset is its one amount, 0 today;
+    the key carries it so a day-totals export at M11 changes nothing here.
+    Two keys equal means nothing is written and no audit row appears."""
     if granularity == "summary":
         body: tuple = ((str((amount or Decimal(0)).quantize(FILS)),),)
     else:
@@ -133,9 +135,9 @@ def day_key(
 
 def duplicate_days(days: Iterable[tuple[str, datetime.date]]) -> list[tuple[str, datetime.date]]:
     """Branch-days named more than once in one body, in first-seen order.
-    Two rows for one branch-day in a summary file stop the day with a
-    sentence rather than being summed: the loader groups an item file's rows
-    into days, so a repeat here is a file saying two things about one day."""
+    Two entries for one branch-day stop the day with a sentence rather than
+    being summed: the loader groups an item file's rows into days, so a
+    repeat here is a file saying two things about one day."""
     seen: set[tuple[str, datetime.date]] = set()
     repeated: list[tuple[str, datetime.date]] = []
     for key in days:
@@ -143,20 +145,6 @@ def duplicate_days(days: Iterable[tuple[str, datetime.date]]) -> list[tuple[str,
             repeated.append(key)
         seen.add(key)
     return repeated
-
-
-def mixed_shapes(days: Iterable[tuple[str, Decimal | None]]) -> bool:
-    """A file is one shape throughout (C11.1): item days and summary days
-    with money in one body is two files pasted together, refused with a
-    sentence. A summary day whose amount is zero is a closed day or an
-    interior gap - the loader sends those inside an item-wise body, as the
-    §3.1 example shows - and takes no side."""
-    shapes = {
-        granularity
-        for granularity, amount in days
-        if not (granularity == "summary" and (amount is None or amount == 0))
-    }
-    return len(shapes) > 1
 
 
 def interior_gaps(dates: Iterable[datetime.date]) -> list[datetime.date]:

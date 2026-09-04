@@ -288,51 +288,82 @@ async def test_a_negative_refund_row_reduces_the_day(api, db):
     assert stored["lines"][1]["net_amount"] == "-3.33" and stored["lines"][1]["qty"] == "-1.000"
 
 
-async def test_a_summary_day_stores_net_sales_and_zero_lines_and_a_closed_day_is_a_day(api, db):
+async def test_a_closed_day_is_a_day_with_zero_lines_and_a_day_total_with_money_is_refused(api, db):
+    """Item-wise exports only (2026-09-04): a summary day is a closed day -
+    amount 0, no lines - and a day total with money in it waits for the
+    pilot's day-totals export (M11)."""
     client, _ = api
-    response = await _post(client, [_summary_day(_on(0), "4525.50"), _summary_day(_on(1), "0.00")])
+    response = await _post(client, [_summary_day(_on(0), "0.00")])
     assert response.status_code == 200, response.text
-    open_day, closed_day = (outcome["day"] for outcome in response.json()["days"])
-    assert open_day["granularity"] == "summary" and open_day["line_count"] == 0
-    assert open_day["takings"] == "4525.50" and open_day["net_sales"] == "4310.00"
+    closed_day = response.json()["days"][0]["day"]
+    assert closed_day["granularity"] == "summary" and closed_day["line_count"] == 0
     assert closed_day["takings"] == "0.00" and closed_day["net_sales"] == "0.00"
-    stored = await _stored_days(client, _on(0), _on(1))
-    assert [day["lines"] for day in stored] == [[], []]
+    [stored] = await _stored_days(client, _on(0), _on(0))
+    assert stored["lines"] == []
     assert await db.pool.fetchval("select count(*) from sales_lines") == 0
 
-    # The same summary again is unchanged; a different figure replaces it.
-    again = await _post(client, [_summary_day(_on(0), "4525.50")])
+    refused = await _post(client, [_summary_day(_on(1), "4525.50")])
+    assert refused.status_code == 422, refused.text
+    detail = refused.json()["detail"]
+    assert f"day 1 ({_on(1)})" in detail
+    assert "item-wise exports for now" in detail and "closed day (amount 0)" in detail
+    assert "day-totals export comes with the pilot" in detail
+    assert await db.pool.fetchval("select count(*) from sales_daily") == 1
+
+    # The same closed day again is unchanged.
+    again = await _post(client, [_summary_day(_on(0), "0.00")])
     assert again.json()["days"][0]["outcome"] == "unchanged"
-    moved = await _post(client, [_summary_day(_on(0), "4600.00")])
-    assert moved.json()["days"][0]["outcome"] == "replaced"
-    assert moved.json()["days"][0]["previous"]["net_sales"] == "4310.00"
+
+
+async def test_a_closed_day_and_an_item_day_replace_each_other_with_the_previous_figures(api, db):
+    """The branch turns out to have been open: the item rows replace the
+    closed day. The rows turn out to be a mistake: the closed day replaces
+    them, and its lines go with it."""
+    client, _ = api
+    await _post(client, [_summary_day(_on(0), "0.00")])
+    opened = await _post(client, [_item_day(_on(0), [_line(0, "KARAK", "10.50")])])
+    assert opened.status_code == 200, opened.text
+    [outcome] = opened.json()["days"]
+    assert outcome["outcome"] == "replaced"
+    assert outcome["previous"] == {
+        "takings": "0.00",
+        "net_sales": "0.00",
+        "line_count": 0,
+        "source_sha256": None,
+    }
+    assert outcome["day"]["granularity"] == "item" and outcome["day"]["net_sales"] == "10.00"
+    assert await db.pool.fetchval("select count(*) from sales_lines") == 1
+
+    closed = await _post(client, [_summary_day(_on(0), "0.00")])
+    [outcome] = closed.json()["days"]
+    assert outcome["outcome"] == "replaced"
+    assert outcome["previous"]["net_sales"] == "10.00" and outcome["previous"]["line_count"] == 1
+    assert outcome["day"]["granularity"] == "summary" and outcome["day"]["line_count"] == 0
+    assert await db.pool.fetchval("select count(*) from sales_lines") == 0
+    assert len(await _audit(db, "sales_day.replaced")) == 2
 
 
 # --- the refusal set --------------------------------------------------------------
 
 
-async def test_two_rows_for_one_branch_day_in_a_summary_body_are_refused_with_the_sentence(api, db):
-    client, _ = api
-    response = await _post(client, [_summary_day(_on(0), "100.00"), _summary_day(_on(0), "200.00")])
-    assert response.status_code == 422, response.text
-    assert f"{_on(0)} appears twice for one branch" in response.json()["detail"]
-    assert await db.pool.fetchval("select count(*) from sales_daily") == 0
-
-
-async def test_a_body_mixing_item_and_summary_days_is_refused(api, db):
+async def test_one_branch_day_named_twice_in_one_body_is_refused_with_the_sentence(api, db):
     client, _ = api
     response = await _post(
-        client, [_item_day(_on(0), [_line(0, "KARAK", "1.00")]), _summary_day(_on(1), "5.00")]
+        client,
+        [
+            _item_day(_on(0), [_line(0, "KARAK", "100.00")]),
+            _item_day(_on(0), [_line(0, "SAMOSA", "200.00")]),
+        ],
     )
     assert response.status_code == 422, response.text
-    assert "one shape throughout" in response.json()["detail"]
+    assert f"{_on(0)} appears twice for one branch" in response.json()["detail"]
     assert await db.pool.fetchval("select count(*) from sales_daily") == 0
 
 
 async def test_a_zero_day_rides_inside_an_item_wise_body(api, db):
     """A closed day or an interior gap is a summary day with amount 0, sent
     by the loader inside the item-wise file's own body (C11.4, the §3.1
-    example): it is not a second shape."""
+    example)."""
     client, _ = api
     response = await _post(
         client,
@@ -357,18 +388,19 @@ async def test_a_zero_day_rides_inside_an_item_wise_body(api, db):
 async def test_a_date_after_tomorrow_or_before_2020_is_refused_with_the_sentence(api, db):
     client, _ = api
     future = (TODAY + datetime.timedelta(days=2)).isoformat()
-    response = await _post(client, [_summary_day(future, "10.00")])
+    karak = [_line(0, "KARAK", "10.00")]
+    response = await _post(client, [_item_day(future, karak)])
     assert response.status_code == 422, response.text
     assert f"day 1 ({future}): {future} is after tomorrow" in response.json()["detail"]
     assert "swapped day and month" in response.json()["detail"]
 
-    response = await _post(client, [_summary_day("2019-12-31", "10.00")])
+    response = await _post(client, [_item_day("2019-12-31", karak)])
     assert response.status_code == 422, response.text
     assert "before 2020" in response.json()["detail"]
 
     # Tomorrow itself is allowed: a till east of UTC closes before the server.
     tomorrow = (TODAY + datetime.timedelta(days=1)).isoformat()
-    assert (await _post(client, [_summary_day(tomorrow, "10.00")])).status_code == 200
+    assert (await _post(client, [_item_day(tomorrow, karak)])).status_code == 200
 
 
 async def test_a_bad_row_is_refused_naming_the_day_and_the_position(api, db):
@@ -388,7 +420,7 @@ async def test_a_bad_row_is_refused_naming_the_day_and_the_position(api, db):
     response = await _post(client, [_item_day(_on(0), [])])
     assert response.status_code == 422 and "at least one line" in response.text
 
-    response = await _post(client, [_summary_day(_on(0), "1.00", lines=[_line(0, "K", "1")])])
+    response = await _post(client, [_summary_day(_on(0), "0.00", lines=[_line(0, "K", "1")])])
     assert response.status_code == 422 and "not lines" in response.text
     assert await db.pool.fetchval("select count(*) from sales_daily") == 0
 
@@ -397,7 +429,8 @@ async def test_a_31_day_body_answers_31_outcomes_and_a_32_day_body_is_422(api, d
     client, _ = api
     start = TODAY - datetime.timedelta(days=40)
     days = [
-        _summary_day((start + datetime.timedelta(days=i)).isoformat(), "10.00") for i in range(32)
+        _item_day((start + datetime.timedelta(days=i)).isoformat(), [_line(0, "KARAK", "10.00")])
+        for i in range(32)
     ]
     response = await _post(client, days)
     assert response.status_code == 422, response.text
@@ -518,7 +551,9 @@ async def test_the_day_is_unique_per_branch_date_in_postgres(db):
 async def test_a_foreign_branch_is_404_from_the_api_and_refused_by_postgres(api, db):
     client, _ = api
     await _other_tenant(db)
-    response = await _post(client, [_summary_day(_on(0), "10.00", branch=BRANCH_B)])
+    response = await _post(
+        client, [_item_day(_on(0), [_line(0, "KARAK", "10.00")], branch=BRANCH_B)]
+    )
     assert response.status_code == 404, response.text
     assert await db.pool.fetchval("select count(*) from sales_daily") == 0
 
@@ -562,7 +597,9 @@ async def test_a_layout_of_another_tenant_does_not_exist_here(api, db):
         """,
         TENANT_B,
     )
-    response = await _post(client, [_summary_day(_on(0), "10.00", layout_id=layout_id)])
+    response = await _post(
+        client, [_item_day(_on(0), [_line(0, "KARAK", "10.00")], layout_id=layout_id)]
+    )
     assert response.status_code == 404, response.text
     assert "layout not found" in response.text
 
@@ -614,7 +651,9 @@ async def test_the_layout_upsert_saves_once_updates_on_the_second_call_and_is_te
     assert [row["name"] for row in response.json()["layouts"]] == ["Main till"]
 
     # A day loaded under it carries its id.
-    response = await _post(client, [_summary_day(_on(0), "10.00", layout_id=layout["id"])])
+    response = await _post(
+        client, [_item_day(_on(0), [_line(0, "KARAK", "10.00")], layout_id=layout["id"])]
+    )
     assert response.json()["days"][0]["day"]["layout_id"] == layout["id"], response.text
 
 
