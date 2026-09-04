@@ -16,9 +16,18 @@ from .extraction.currency import currency_differs
 from .matching import clean_name, snap_item, strip_delivery_note
 from .provenance import asserted_fields
 from .recipes import RecipeKey, component_key, recipe_key, recipes_match
+from .takings import FILS, code_key, day_key, name_key, till_item_key
 
 RETRY_LIMIT = 3
 RETRY_BACKOFF_SECONDS = 30
+
+#: One sales day as every read and write returns it (M8 WP-80) - the C6 day
+#: shape minus its lines, which `list_sales_lines` fetches in one query.
+_SALES_DAY_COLUMNS = """
+    id::text as id, branch_id::text as branch_id, business_date, granularity, amount_basis,
+    vat_rate, takings, net_sales, line_count, layout_id::text as layout_id, source_sha256,
+    source_filename, loaded_by, loaded_at
+"""
 
 
 async def _init_conn(conn: asyncpg.Connection) -> None:
@@ -1793,6 +1802,465 @@ class Database:
                 "version": recipe["version"],
                 "changed": changed,
             }
+
+    # -- Sales (M8 WP-80) ------------------------------------------------------
+
+    async def list_branches(self, *, tenant_id: str) -> list[asyncpg.Record]:
+        """The tenant's branches, for the loader's branch picker and the
+        sales table. The console has needed this since the upload screen and
+        derived it from the invoice list instead (C6 extended, M8)."""
+        return await self.pool.fetch(
+            "select id::text as id, name, timezone from branches where tenant_id = $1 "
+            "order by name, id",
+            tenant_id,
+        )
+
+    async def list_branch_aliases(self, *, tenant_id: str) -> list[asyncpg.Record]:
+        return await self.pool.fetch(
+            """
+            select id::text as id, branch_id::text as branch_id, alias, alias_key
+            from branch_aliases where tenant_id = $1
+            order by alias_key
+            """,
+            tenant_id,
+        )
+
+    async def save_branch_alias(
+        self, branch_id: str, *, tenant_id: str, alias: str, alias_key: str, actor: str
+    ) -> dict:
+        """Teach the chain one till label for one branch (C11.1). Idempotent:
+        the same label for the same branch answers the existing row and
+        writes nothing; the same label for another branch answers that
+        branch's id so the API can say which. One audit row on a write."""
+        async with self.pool.acquire() as conn, conn.transaction():
+            row = await conn.fetchrow(
+                """
+                insert into branch_aliases (tenant_id, branch_id, alias_key, alias)
+                values ($1, $2, $3, $4)
+                on conflict (tenant_id, alias_key) do nothing
+                returning id::text as id, branch_id::text as branch_id, alias, alias_key
+                """,
+                tenant_id,
+                branch_id,
+                alias_key,
+                alias,
+            )
+            if row is not None:
+                await _insert_audit_event(
+                    conn,
+                    tenant_id=tenant_id,
+                    actor=actor,
+                    action="branch_alias.saved",
+                    subject_type="branch_alias",
+                    subject_id=row["id"],
+                    detail={"branch_id": branch_id, "alias": alias, "alias_key": alias_key},
+                )
+                return {"alias": row, "created": True, "other_branch_id": None}
+            existing = await conn.fetchrow(
+                """
+                select id::text as id, branch_id::text as branch_id, alias, alias_key
+                from branch_aliases where tenant_id = $1 and alias_key = $2
+                """,
+                tenant_id,
+                alias_key,
+            )
+        if existing["branch_id"] == branch_id:
+            return {"alias": existing, "created": False, "other_branch_id": None}
+        return {"alias": None, "created": False, "other_branch_id": existing["branch_id"]}
+
+    async def list_sales_layouts(self, *, tenant_id: str) -> list[asyncpg.Record]:
+        return await self.pool.fetch(
+            """
+            select id::text as id, name, header_key, columns, amount_basis, date_order,
+                   created_at, updated_at
+            from sales_layouts where tenant_id = $1
+            order by name
+            """,
+            tenant_id,
+        )
+
+    async def get_sales_layout(self, layout_id: str, *, tenant_id: str) -> asyncpg.Record | None:
+        return await self.pool.fetchrow(
+            """
+            select id::text as id, name, header_key, columns, amount_basis, date_order,
+                   created_at, updated_at
+            from sales_layouts where id = $1 and tenant_id = $2
+            """,
+            layout_id,
+            tenant_id,
+        )
+
+    async def save_sales_layout(
+        self,
+        *,
+        tenant_id: str,
+        name: str,
+        header_key: str,
+        columns: dict,
+        amount_basis: str,
+        date_order: str,
+        actor: str,
+    ) -> dict:
+        """Upsert by name (C11.1): the till is the layout's identity, the
+        header key is evidence. Saving the same layout again updates it in
+        place - the consultant re-mapped a renamed column - and one audit row
+        records each save with whether it created or updated."""
+        async with self.pool.acquire() as conn, conn.transaction():
+            row = await conn.fetchrow(
+                """
+                insert into sales_layouts
+                    (tenant_id, name, header_key, columns, amount_basis, date_order)
+                values ($1, $2, $3, $4, $5, $6)
+                on conflict (tenant_id, name) do update
+                    set header_key = excluded.header_key,
+                        columns = excluded.columns,
+                        amount_basis = excluded.amount_basis,
+                        date_order = excluded.date_order,
+                        updated_at = now()
+                returning id::text as id, name, header_key, columns, amount_basis, date_order,
+                          created_at, updated_at, (xmax = 0) as created
+                """,
+                tenant_id,
+                name,
+                header_key,
+                columns,
+                amount_basis,
+                date_order,
+            )
+            await _insert_audit_event(
+                conn,
+                tenant_id=tenant_id,
+                actor=actor,
+                action="sales_layout.saved",
+                subject_type="sales_layout",
+                subject_id=row["id"],
+                detail={
+                    "name": name,
+                    "header_key": header_key,
+                    "columns": columns,
+                    "amount_basis": amount_basis,
+                    "date_order": date_order,
+                    "created": row["created"],
+                },
+            )
+        return {"layout": row, "created": row["created"]}
+
+    async def list_sales_days(
+        self, *, tenant_id: str, date_from: datetime.date, date_to: datetime.date
+    ) -> list[asyncpg.Record]:
+        """The stored days in a range, every branch, so the loader can predict
+        its outcomes before committing (C11.4)."""
+        return await self.pool.fetch(
+            f"""
+            select {_SALES_DAY_COLUMNS}
+            from sales_daily
+            where tenant_id = $1 and business_date between $2 and $3
+            order by branch_id, business_date
+            """,
+            tenant_id,
+            date_from,
+            date_to,
+        )
+
+    async def list_sales_lines(self, *, tenant_id: str, day_ids: list[str]) -> list[asyncpg.Record]:
+        """The lines of the given days in one query, file order within a day."""
+        if not day_ids:
+            return []
+        return await self.pool.fetch(
+            """
+            select sales_day_id::text as sales_day_id, position, till_item_id::text as till_item_id,
+                   name, code, qty, amount, net_amount
+            from sales_lines
+            where tenant_id = $1 and sales_day_id = any($2::uuid[])
+            order by sales_day_id, position
+            """,
+            tenant_id,
+            day_ids,
+        )
+
+    async def load_sales_day(
+        self,
+        *,
+        tenant_id: str,
+        branch_id: str,
+        business_date: datetime.date,
+        granularity: str,
+        amount_basis: str,
+        vat_rate: Decimal | None,
+        layout_id: str | None,
+        source_sha256: str | None,
+        source_filename: str | None,
+        lines: list[dict],
+        amount: Decimal | None,
+        net: Decimal | None,
+        actor: str,
+    ) -> dict:
+        """One branch-day, **one transaction**, one outcome (C11.4):
+
+            loaded      no day stored for this branch-date: the day and its
+                        lines are written, with `sales_day.loaded`
+            unchanged   the stored day has the same granularity, basis and
+                        multiset of lines in any order: nothing is written,
+                        no audit row appears
+            replaced    anything else: the lines are deleted and re-inserted
+                        and the day row updated, with one `sales_day.replaced`
+                        row carrying the previous and new figures and hashes
+
+        so re-uploading the same file is a no-op, a corrected file replaces
+        exactly the days it carries, and nothing is ever double-counted. The
+        row is locked `for update` and the branch-day is held under a
+        transaction-scoped advisory lock first, because a first load has no
+        row to lock: two clients posting the same new day at once are
+        serialised, and the second reads `unchanged` rather than a unique
+        violation (the refresh-mid-run case).
+
+        `lines` carry their net amounts already - the one division lives in
+        `takings.net_amount`, applied by the door - and the day's takings and
+        net sales are the exact sums of what is stored (Codex 10). Till items
+        are minted here on first sight, by code or by normalised name, with
+        `on conflict do nothing` so a race mints one row; a known code seen
+        under a new name keeps its row and its mapping and writes
+        `till_item.renamed`."""
+        if granularity == "summary":
+            takings = (amount or Decimal(0)).quantize(FILS)
+            net_sales = (net or Decimal(0)).quantize(FILS)
+        else:
+            takings = sum((line["amount"] for line in lines), Decimal(0)).quantize(FILS)
+            net_sales = sum((line["net_amount"] for line in lines), Decimal(0)).quantize(FILS)
+        incoming_key = day_key(
+            granularity,
+            amount_basis,
+            [(line["name"], line["code"], line["qty"], line["amount"]) for line in lines],
+            amount,
+        )
+
+        async with self.pool.acquire() as conn, conn.transaction():
+            await conn.execute(
+                "select pg_advisory_xact_lock(hashtext($1))",
+                f"sales_daily:{tenant_id}:{branch_id}:{business_date.isoformat()}",
+            )
+            existing = await conn.fetchrow(
+                f"""
+                select {_SALES_DAY_COLUMNS}
+                from sales_daily
+                where tenant_id = $1 and branch_id = $2 and business_date = $3
+                for update
+                """,
+                tenant_id,
+                branch_id,
+                business_date,
+            )
+            previous: dict | None = None
+            if existing is not None:
+                stored_lines = await conn.fetch(
+                    "select name, code, qty, amount from sales_lines where sales_day_id = $1",
+                    existing["id"],
+                )
+                stored_key = day_key(
+                    existing["granularity"],
+                    existing["amount_basis"],
+                    [(r["name"], r["code"], r["qty"], r["amount"]) for r in stored_lines],
+                    existing["takings"],
+                )
+                if stored_key == incoming_key:
+                    return {"outcome": "unchanged", "previous": None, "day": existing}
+                previous = {
+                    "takings": str(existing["takings"]),
+                    "net_sales": str(existing["net_sales"]),
+                    "line_count": existing["line_count"],
+                    "source_sha256": existing["source_sha256"],
+                }
+                await conn.execute(
+                    "delete from sales_lines where sales_day_id = $1", existing["id"]
+                )
+                day = await conn.fetchrow(
+                    f"""
+                    update sales_daily
+                       set granularity = $3, amount_basis = $4, vat_rate = $5, takings = $6,
+                           net_sales = $7, line_count = $8, layout_id = $9, source_sha256 = $10,
+                           source_filename = $11, loaded_by = $12, loaded_at = now()
+                     where tenant_id = $1 and id = $2
+                    returning {_SALES_DAY_COLUMNS}
+                    """,
+                    tenant_id,
+                    existing["id"],
+                    granularity,
+                    amount_basis,
+                    vat_rate,
+                    takings,
+                    net_sales,
+                    len(lines),
+                    layout_id,
+                    source_sha256,
+                    source_filename,
+                    actor,
+                )
+            else:
+                day = await conn.fetchrow(
+                    f"""
+                    insert into sales_daily
+                        (tenant_id, branch_id, business_date, granularity, amount_basis, vat_rate,
+                         takings, net_sales, line_count, layout_id, source_sha256,
+                         source_filename, loaded_by)
+                    values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                    returning {_SALES_DAY_COLUMNS}
+                    """,
+                    tenant_id,
+                    branch_id,
+                    business_date,
+                    granularity,
+                    amount_basis,
+                    vat_rate,
+                    takings,
+                    net_sales,
+                    len(lines),
+                    layout_id,
+                    source_sha256,
+                    source_filename,
+                    actor,
+                )
+
+            till_item_ids = await self._mint_till_items(
+                conn, tenant_id=tenant_id, lines=lines, actor=actor
+            )
+            if lines:
+                await conn.executemany(
+                    """
+                    insert into sales_lines
+                        (tenant_id, sales_day_id, position, till_item_id, name, code, qty,
+                         amount, net_amount)
+                    values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                    """,
+                    [
+                        (
+                            tenant_id,
+                            day["id"],
+                            line["position"],
+                            till_item_ids[till_item_key(line["name"], line["code"])],
+                            line["name"],
+                            code_key(line["code"]),
+                            line["qty"],
+                            line["amount"],
+                            line["net_amount"],
+                        )
+                        for line in lines
+                    ],
+                )
+
+            figures = {
+                "takings": str(takings),
+                "net_sales": str(net_sales),
+                "line_count": len(lines),
+                "source_sha256": source_sha256,
+            }
+            if previous is None:
+                await _insert_audit_event(
+                    conn,
+                    tenant_id=tenant_id,
+                    actor=actor,
+                    action="sales_day.loaded",
+                    subject_type="sales_day",
+                    subject_id=day["id"],
+                    detail={
+                        "branch_id": branch_id,
+                        "business_date": business_date.isoformat(),
+                        "granularity": granularity,
+                        "amount_basis": amount_basis,
+                        **figures,
+                    },
+                )
+                return {"outcome": "loaded", "previous": None, "day": day}
+            await _insert_audit_event(
+                conn,
+                tenant_id=tenant_id,
+                actor=actor,
+                action="sales_day.replaced",
+                subject_type="sales_day",
+                subject_id=day["id"],
+                detail={
+                    "branch_id": branch_id,
+                    "business_date": business_date.isoformat(),
+                    "granularity": granularity,
+                    "amount_basis": amount_basis,
+                    "previous": previous,
+                    "new": figures,
+                },
+            )
+            return {"outcome": "replaced", "previous": previous, "day": day}
+
+    async def _mint_till_items(
+        self, conn: asyncpg.Connection, *, tenant_id: str, lines: list[dict], actor: str
+    ) -> dict[tuple[str, str], str]:
+        """Every distinct till item named by `lines`, minted on first sight
+        and answered by key (C11.7). By code when the file prints one, by
+        normalised name otherwise; the partial unique indexes make the race
+        between two loaders mint one row. The last name a code is seen under
+        in the file is its display name; a change of it under a known code
+        writes `till_item.renamed` and keeps the mapping."""
+        wanted: dict[tuple[str, str], str] = {}
+        for line in lines:
+            wanted[till_item_key(line["name"], line["code"])] = line["name"].strip()
+        ids: dict[tuple[str, str], str] = {}
+        for (kind, key), name in wanted.items():
+            if kind == "code":
+                row = await conn.fetchrow(
+                    """
+                    insert into till_items (tenant_id, name, name_key, code)
+                    values ($1, $2, $3, $4)
+                    on conflict (tenant_id, code) where code is not null do nothing
+                    returning id::text as id, name
+                    """,
+                    tenant_id,
+                    name,
+                    name_key(name),
+                    key,
+                )
+                if row is None:
+                    row = await conn.fetchrow(
+                        "select id::text as id, name from till_items "
+                        "where tenant_id = $1 and code = $2",
+                        tenant_id,
+                        key,
+                    )
+                    if row["name"] != name:
+                        await conn.execute(
+                            "update till_items set name = $3, name_key = $4 "
+                            "where tenant_id = $1 and id = $2",
+                            tenant_id,
+                            row["id"],
+                            name,
+                            name_key(name),
+                        )
+                        await _insert_audit_event(
+                            conn,
+                            tenant_id=tenant_id,
+                            actor=actor,
+                            action="till_item.renamed",
+                            subject_type="till_item",
+                            subject_id=row["id"],
+                            detail={"code": key, "previous_name": row["name"], "name": name},
+                        )
+            else:
+                row = await conn.fetchrow(
+                    """
+                    insert into till_items (tenant_id, name, name_key, code)
+                    values ($1, $2, $3, null)
+                    on conflict (tenant_id, name_key) where code is null do nothing
+                    returning id::text as id, name
+                    """,
+                    tenant_id,
+                    name,
+                    key,
+                )
+                if row is None:
+                    row = await conn.fetchrow(
+                        "select id::text as id, name from till_items "
+                        "where tenant_id = $1 and name_key = $2 and code is null",
+                        tenant_id,
+                        key,
+                    )
+            ids[(kind, key)] = row["id"]
+        return ids
 
     async def record_confirmed_prices(
         self, invoice_id: str, *, tenant_id: str, conn: asyncpg.Connection | None = None

@@ -11,6 +11,7 @@ from .config import get_settings
 from .db import Database
 from .extraction.pipeline import build_provider
 from .menu import router as menu_router
+from .sales import router as sales_router
 from .storage import Storage
 from .wa import WhatsAppClient
 from .waitlist import router as waitlist_router
@@ -80,6 +81,7 @@ app.add_middleware(
 app.include_router(webhook_router)
 app.include_router(api_router)
 app.include_router(menu_router)
+app.include_router(sales_router)
 app.include_router(waitlist_router)
 
 

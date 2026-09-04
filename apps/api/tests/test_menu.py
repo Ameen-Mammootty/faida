@@ -467,8 +467,11 @@ async def test_apply_file_brings_a_0014_database_to_0016():
     try:
         await conn.execute("drop schema public cascade; create schema public;")
         for migration in sorted(MIGRATIONS_DIR.glob("*.sql")):
-            if migration.name.startswith(("0015", "0016")):
-                continue
+            if migration.name >= "0015":
+                # A database at 0014 has nothing after 0014 - not 0017 and
+                # 0018 either, and not 0019, whose till_items references the
+                # menu table this file is about to create.
+                break
             await conn.execute(migration.read_text())
         await conn.execute(SEED_FILE.read_text())
 
