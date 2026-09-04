@@ -27,17 +27,25 @@ Net sales is the one division in M8 - `takings.net_amount`, per line, to the
 fil - and the browser never computes it: the day's net in the loader's grid
 is what this door answered.
 
+Item-wise exports only (the founder's call, 2026-09-04): a day is its item
+rows, and a `summary` day is a closed day and nothing else - amount 0, no
+lines - which the loader sends for a day inside the file's own range with no
+rows, or for a row the till printed with no item and 0 (C11.4). A summary
+day with money is a day-totals export, and that arrives with the pilot
+(M11); until then it is refused with a sentence rather than stored as a day
+the coverage figure could never see inside.
+
 The refusal set, each with its own plain sentence:
 
     more than 31 days                  one branch-month per request
-    item days and summary days mixed   a file is one shape throughout (a
-                                       zero day is neither: closed days and
-                                       interior gaps ride in any body)
+    a closed day with money in it      item-wise exports only for now; a
+                                       day-totals export comes with the
+                                       pilot (M11)
     one branch-day named twice         a file says one thing about a day
     a business date after tomorrow     a swapped day and month
     a business date before 2020        a swapped year
     an amount with more than 2 decimals, a quantity with more than 3
-    an item day with no lines, a summary day with lines
+    an item day with no lines, a closed day with lines
     a branch or layout the tenant does not have   404, never 403
 """
 
@@ -113,8 +121,10 @@ class SalesLineIn(BaseModel):
 
 class SalesDayIn(BaseModel):
     """One branch-day as the loader grouped it: an `item` day carries lines
-    and no amount; a `summary` day carries one amount and no lines (0 is a
-    closed day, never inferred from a gap)."""
+    and no amount; a `summary` day is a closed day - amount 0 and no lines -
+    for a day inside the file's own range with no rows, or a row the till
+    printed with no item and 0. A summary day with money is refused until
+    the pilot's day-totals export (M11)."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -487,16 +497,21 @@ async def load_sales_days(body: SalesDaysIn, request: Request, ctx: Context) -> 
         else:
             if day.lines:
                 raise HTTPException(
-                    status_code=422, detail=f"{label}: a summary day carries an amount, not lines"
+                    status_code=422,
+                    detail=f"{label}: a closed day carries an amount of 0, not lines",
                 )
             if day.amount is None:
                 raise HTTPException(
-                    status_code=422,
-                    detail=f"{label}: a summary day needs an amount (0 for a closed day)",
+                    status_code=422, detail=f"{label}: a closed day needs an amount of 0"
                 )
-            amount = _signed_number(
-                day.amount, what=f"amount ({label})", places=2, example="4525.50"
-            )
+            amount = _signed_number(day.amount, what=f"amount ({label})", places=2, example="0.00")
+            if amount != 0:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"{label}: Faida loads item-wise exports for now, so a day without "
+                    "item rows can only be a closed day (amount 0); a day-totals export comes "
+                    "with the pilot (M11)",
+                )
             net = takings.net_amount(amount, amount_basis=day.amount_basis, vat_rate=vat_rate)
         prepared.append(
             {
@@ -511,12 +526,6 @@ async def load_sales_days(body: SalesDaysIn, request: Request, ctx: Context) -> 
                 "amount": amount,
                 "net": net,
             }
-        )
-
-    if takings.mixed_shapes((day["granularity"], day["amount"]) for day in prepared):
-        raise HTTPException(
-            status_code=422,
-            detail="a file is one shape throughout: this request mixes item days and summary days",
         )
 
     outcomes: list[dict] = []
