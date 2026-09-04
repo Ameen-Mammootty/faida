@@ -1,6 +1,6 @@
 # M8 decomposition - sales ingestion and the first ratio (drafted 2026-09-03)
 
-Status: **eng-reviewed 2026-09-03** (`/plan-eng-review` with two outside voices, Codex and a Claude subagent; the report is at the end of this file), before any feature code; **decided by the founder 2026-09-04** (§5: seven recommendations taken, P6 overridden - the real till export moves to M11 with the pilot), so the rows in `plan.md` §7.3 are approved to build.
+Status: **eng-reviewed 2026-09-03** (`/plan-eng-review` with two outside voices, Codex and a Claude subagent; the report is at the end of this file), before any feature code; **decided by the founder 2026-09-04** (§5: seven recommendations taken, P6 overridden - the real till export moves to M11 with the pilot), so the rows in `plan.md` §7.3 are approved to build; **Wave 1 (rows 80 and 83) shipped 2026-09-04**, its integration notes in `plan.md`'s Decision Log.
 The session that wrote this ran unattended, so every review question was answered with the recommended option and recorded here as recommended, not as decided; the founder's reply to §5 is the approval.
 M6 and M7 were decomposed, reviewed with an outside voice, and only then approved to build; M8 follows the same path.
 The founder's inputs for this decomposition, given 2026-09-03: sales arrive as a CSV export from the till; there is no real sales data yet, so the build runs on a seeded week of demo sales for the demo chain, generated from the real menu and its selling prices; the Z-report photo path is not assumed available.
@@ -184,11 +184,11 @@ POST /api/sales/files   (multipart: file)
   201 {"sha256": "…64 hex…", "filename": "sales-week.csv", "bytes": 18342}   (a second post of the same bytes: 200, same hash)
 
 GET /api/sales/layouts
-  {"layouts": [{"id": "…", "name": "Main till", "header_key": "amount|branch|code|date|item|qty",
+  {"layouts": [{"id": "…", "name": "Main till", "header_key": "amount|date|item|outlet|plu|qty",
                 "columns": {"branch": "Outlet", "date": "Date", "item": "Item", "code": "PLU",
                             "qty": "Qty", "amount": "Amount"},
                 "amount_basis": "inclusive", "date_order": "dmy", "updated_at": "2026-09-03T18:00:00Z"}]}
-POST /api/sales/layouts   {"name", "columns", "amount_basis", "date_order"}   -> 201 or 200, the layout
+POST /api/sales/layouts   {"name", "columns", "amount_basis", "date_order"}   -> 201 or 200, {"layout": {…}}
   (header_key is derived server-side from the mapped header names, sorted; the client never sends it)
 
 GET /api/sales/days?from=2026-08-25&to=2026-08-31

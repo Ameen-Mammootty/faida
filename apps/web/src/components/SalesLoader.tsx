@@ -730,7 +730,7 @@ export default function SalesLoader() {
                         Status
                       </th>
                       <th scope="col" className="px-4 py-2 font-medium">
-                        What will change
+                        {summary !== null ? "What changed" : "What will change"}
                       </th>
                       <th scope="col" className="px-4 py-2 font-medium">
                         The fix
