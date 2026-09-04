@@ -14,6 +14,7 @@ succeeds for tenant A and is refused for tenant B and for no token. A new
 route that is on neither list fails CI, which is the point.
 """
 
+import datetime
 import uuid
 from decimal import Decimal
 
@@ -28,6 +29,7 @@ from faida_api.auth import AuthContext, require_context
 from faida_api.contracts import InvoiceStatus
 from faida_api.main import app as production_app
 from faida_api.menu import router as menu_router
+from faida_api.sales import router as sales_router
 from faida_api.storage import Storage
 from faida_api.waitlist import router as waitlist_router
 from faida_api.webhook import router as webhook_router
@@ -41,6 +43,8 @@ TENANT_A = DEMO_TENANT_ID  # seed.sql's tenant: where the test user's membership
 BRANCH_A = "00000000-0000-0000-0000-000000000011"
 TENANT_B = "b0000000-0000-0000-0000-000000000001"
 BRANCH_B = "b0000000-0000-0000-0000-000000000011"
+#: A business date the sales door accepts whatever day the suite runs.
+SALES_DAY = (datetime.date.today() - datetime.timedelta(days=7)).isoformat()
 
 #: Routes that take no auth context, each here on purpose. Adding a route to
 #: this set is a product decision, not a convenience: everything else in the
@@ -67,6 +71,11 @@ TENANT_TABLES = (
     "recipes",
     "recipe_components",
     "audit_events",
+    "sales_layouts",
+    "till_items",
+    "sales_daily",
+    "sales_lines",
+    "branch_aliases",
 )
 
 
@@ -142,6 +151,7 @@ async def rig(settings, db):
     app.include_router(webhook_router)
     app.include_router(api_router)
     app.include_router(menu_router)
+    app.include_router(sales_router)
     app.include_router(waitlist_router)
     app.state.settings = settings
     wire_auth(app)
@@ -442,6 +452,59 @@ MATRIX: list[dict] = [
         "method": "POST",
         "path": "/api/menu-items/{menu_item_id}/unarchive",
         "url": lambda r: f"/api/menu-items/{r['menu_item']}/unarchive",
+    },
+    # M8 WP-80: the sales tables' door and the reads beside it.
+    {"method": "GET", "path": "/api/branches", "url": lambda r: "/api/branches"},
+    {
+        "method": "POST",
+        "path": "/api/branches/{branch_id}/aliases",
+        "url": lambda r: f"/api/branches/{r['branch']}/aliases",
+        "json": {"alias": "QUSAIS 1"},
+        "expect": 201,
+    },
+    {
+        "method": "POST",
+        "path": "/api/sales/files",
+        "url": lambda r: "/api/sales/files",
+        "files": {"file": ("sales.csv", b"Outlet,Date,Item,Qty,Amount\n", "text/csv")},
+        "expect": 201,
+    },
+    {"method": "GET", "path": "/api/sales/layouts", "url": lambda r: "/api/sales/layouts"},
+    {
+        "method": "POST",
+        "path": "/api/sales/layouts",
+        "url": lambda r: "/api/sales/layouts",
+        "json": {
+            "name": "Main till",
+            "columns": {"date": "Date", "item": "Item", "amount": "Amount"},
+            "amount_basis": "inclusive",
+            "date_order": "dmy",
+        },
+        "expect": 201,
+    },
+    {
+        "method": "GET",
+        "path": "/api/sales/days",
+        "url": lambda r: f"/api/sales/days?from={SALES_DAY}&to={SALES_DAY}",
+    },
+    {
+        # No id in the path, but the body names A's branch - which does not
+        # exist for B, so B is refused with the same 404 a missing one gets.
+        "method": "POST",
+        "path": "/api/sales/days",
+        "url": lambda r: "/api/sales/days",
+        "json": lambda r: {
+            "days": [
+                {
+                    "branch_id": r["branch"],
+                    "business_date": SALES_DAY,
+                    "granularity": "item",
+                    "amount_basis": "inclusive",
+                    "lines": [{"position": 0, "name": "KARAK", "qty": "3", "amount": "10.50"}],
+                }
+            ]
+        },
+        "expect_b": 404,
     },
 ]
 
