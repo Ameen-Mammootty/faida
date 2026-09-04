@@ -61,12 +61,14 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, UploadFile
 from pydantic import BaseModel, ConfigDict
 
-from . import takings
+from . import ratio, takings
 from .api import _clean, _dec, _iso
 from .auth import AuthContext, require_context
 from .confirm import _parse_number
 from .db import Database
 from .extraction.constants import VAT_RATE_BY_CURRENCY
+from .menu import _menu_context
+from .provenance import asserted_fields
 
 # Declared twice like api.py: at the router, so no route here can exist
 # without the token check, and per handler, to receive the tenant and actor.
@@ -380,6 +382,313 @@ async def save_sales_layout(
     )
     response.status_code = 201 if result["created"] else 200
     return {"layout": _layout_json(result["layout"])}
+
+
+# --- the ratio and coverage (WP-81) -----------------------------------------
+#
+# Two reads, both derived on every request and never stored (`ratio.py`):
+#
+#     GET /api/sales/branches?from&to    purchases ÷ net sales per branch, ranked,
+#                                        every row labelled by its gaps, the
+#                                        unassigned papers and the chain total
+#     GET /api/sales/coverage?from&to    costed share of sales value, the two
+#                                        uncosted buckets and the mapping queue
+#
+# The period defaults to the 28 days ending on the tenant's newest loaded day
+# (C11.6), so it is never empty while any sales exist; `from` and `to` given
+# together are honoured, reversed or longer than 92 days is refused.
+
+
+def _proposals_for(till_item: dict, menu_items: list[dict]) -> list[dict]:
+    """The queue's proposals for one unmapped till name (§3.1 `queue[].proposals`).
+    WP-82 wires `matching.propose_menu_items` here; until it lands the queue
+    carries none, and the screen offers pick-from-menu alone."""
+    return []
+
+
+async def _period(
+    db: Database, tenant_id: str, date_from: datetime.date | None, date_to: datetime.date | None
+) -> tuple[ratio.Period, bool, datetime.date | None]:
+    """The period a read covers, its `default` flag, and the tenant's newest
+    loaded day (the freshness fact every period line states)."""
+    newest_by_branch = await db.newest_sales_dates(tenant_id=tenant_id)
+    newest = max(newest_by_branch.values()) if newest_by_branch else None
+    if (date_from is None) != (date_to is None):
+        raise HTTPException(status_code=422, detail="send both 'from' and 'to', or neither")
+    if date_from is None or date_to is None:
+        end = newest or datetime.datetime.now(datetime.UTC).date()
+        start = end - datetime.timedelta(days=ratio.DEFAULT_PERIOD_DAYS - 1)
+        return ratio.Period(start, end), True, newest
+    if date_from > date_to:
+        raise HTTPException(status_code=422, detail="'from' is after 'to'")
+    period = ratio.Period(date_from, date_to)
+    if period.days > ratio.MAX_PERIOD_DAYS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"{period.days} days is longer than one read covers: "
+            f"at most {ratio.MAX_PERIOD_DAYS}",
+        )
+    return period, False, newest
+
+
+def _period_json(period: ratio.Period, default: bool, newest: datetime.date | None) -> dict:
+    return {
+        "from": period.start.isoformat(),
+        "to": period.end.isoformat(),
+        "days": period.days,
+        "default": default,
+        "sales_through": _iso(newest),
+    }
+
+
+def _sales_day_input(row) -> ratio.SalesDay:
+    return ratio.SalesDay(
+        branch_id=row["branch_id"],
+        business_date=row["business_date"],
+        net_sales=row["net_sales"],
+        takings=row["takings"],
+        granularity=row["granularity"],
+    )
+
+
+def _invoice_input(row) -> ratio.Invoice:
+    provenance = row["provenance"] or {}
+    asserted = any(key in ("total", "tax") for key in asserted_fields(provenance))
+    return ratio.Invoice(
+        invoice_id=row["id"],
+        branch_id=row["branch_id"],
+        status=row["status"],
+        currency=row["currency"],
+        total=row["total"],
+        tax=row["tax"],
+        invoice_date=row["invoice_date"],
+        purchased_on=row["purchased_on"],
+        placed_on=row["placed_on"],
+        supplier_name=row["supplier_name"],
+        invoice_no=row["invoice_no"],
+        asserted=asserted,
+    )
+
+
+def _invoice_figure_json(figure: ratio.InvoiceFigure) -> dict:
+    return {
+        "invoice_id": figure.invoice_id,
+        "supplier_name": figure.supplier_name,
+        "invoice_no": figure.invoice_no,
+        "purchased_on": _iso(figure.purchased_on),
+        "net_purchase": _dec(figure.net_purchase),
+        "total": _dec(figure.total),
+        "tax": _dec(figure.tax),
+        "quality": figure.quality,
+    }
+
+
+def _branch_row_json(row: ratio.BranchRow) -> dict:
+    return {
+        "branch_id": row.branch_id,
+        "branch_name": row.branch_name,
+        "window": {
+            "from": row.window.start.isoformat(),
+            "to": row.window.end.isoformat(),
+            "days": row.window.days,
+        },
+        "net_sales": _dec(row.net_sales),
+        "takings": _dec(row.takings),
+        "purchases": _dec(row.purchases),
+        "ratio_pct": _dec(row.ratio_pct),
+        "quality": row.quality.value,
+        "notes": list(row.notes),
+        "days_loaded": row.days_loaded,
+        "days_missing": row.days_missing,
+        "deliveries": row.deliveries,
+        "sales_through": _iso(row.sales_through),
+        "last_purchase_on": _iso(row.last_purchase_on),
+        "days": [
+            {
+                "business_date": _iso(day.business_date),
+                "net_sales": _dec(day.net_sales),
+                "granularity": day.granularity,
+                "purchases": _dec(day.purchases),
+                "invoices": [_invoice_figure_json(i) for i in day.invoices],
+            }
+            for day in row.days
+        ],
+        "pending": [
+            {
+                "invoice_id": p.invoice_id,
+                "supplier_name": p.supplier_name,
+                "invoice_no": p.invoice_no,
+                "status": p.status,
+                "placed_on": _iso(p.placed_on),
+                "undated": p.undated,
+            }
+            for p in row.pending
+        ],
+        "excluded": [
+            {
+                "invoice_id": e.invoice_id,
+                "supplier_name": e.supplier_name,
+                "invoice_no": e.invoice_no,
+                "currency": e.currency,
+                "total": _dec(e.total),
+            }
+            for e in row.excluded
+        ],
+    }
+
+
+@router.get("/sales/branches")
+async def sales_by_branch(
+    request: Request,
+    ctx: Context,
+    date_from: Annotated[datetime.date | None, Query(alias="from")] = None,
+    date_to: Annotated[datetime.date | None, Query(alias="to")] = None,
+) -> dict:
+    """Purchases ÷ net sales (cash basis) per branch for the period, ranked
+    highest first, every row labelled by its gaps with the sentences that made
+    the label, the drill to each day's papers, the papers the ranking could
+    not place, and the chain total that reconciles the table (C11.5-C11.6,
+    the C9 amendment)."""
+    db: Database = request.app.state.db
+    tenant_id = ctx.tenant_id
+    period, default, newest = await _period(db, tenant_id, date_from, date_to)
+    currency = await db.tenant_currency(tenant_id) or ""
+    branches = await db.list_branches(tenant_id=tenant_id)
+    newest_by_branch = await db.newest_sales_dates(tenant_id=tenant_id)
+    days = [
+        _sales_day_input(row)
+        for row in await db.list_sales_days(
+            tenant_id=tenant_id, date_from=period.start, date_to=period.end
+        )
+    ]
+    invoices = [
+        _invoice_input(row)
+        for row in await db.list_period_invoices(
+            tenant_id=tenant_id, date_from=period.start, date_to=period.end
+        )
+    ]
+    rows = ratio.rank(
+        [
+            ratio.period_row(
+                branch_id=branch["id"],
+                branch_name=branch["name"],
+                days=days,
+                invoices=invoices,
+                period=period,
+                tenant_currency=currency,
+                latest_sales_day=newest_by_branch.get(branch["id"]),
+            )
+            for branch in branches
+        ]
+    )
+    unassigned = ratio.unassigned_group(invoices, period, currency)
+    total = ratio.chain_total(rows, unassigned)
+    return {
+        "period": _period_json(period, default, newest),
+        "rows": [_branch_row_json(row) for row in rows],
+        "unassigned": {
+            "count": unassigned.count,
+            "purchases": _dec(unassigned.purchases),
+            "invoices": [_invoice_figure_json(i) for i in unassigned.invoices],
+        },
+        "total": {
+            "net_sales": _dec(total.net_sales),
+            "purchases": _dec(total.purchases),
+            "ratio_pct": _dec(total.ratio_pct),
+            "quality": total.quality.value,
+            "notes": list(total.notes),
+        },
+    }
+
+
+def _coverage_item_json(item: ratio.CoverageItem) -> dict:
+    return {
+        "till_item_id": item.till_item_id,
+        "name": item.name,
+        "code": item.code,
+        "value": _dec(item.value),
+    }
+
+
+@router.get("/sales/coverage")
+async def sales_coverage(
+    request: Request,
+    ctx: Context,
+    date_from: Annotated[datetime.date | None, Query(alias="from")] = None,
+    date_to: Annotated[datetime.date | None, Query(alias="to")] = None,
+) -> dict:
+    """Recipe coverage by sales value (C11.8): the share of the period's menu
+    sales whose till item maps to a plate that can be costed - *costed*, never
+    *complete* - with the estimated points named, the two uncosted buckets,
+    what sits beside the figure, and the mapping queue ranked by value. A
+    plate's quality comes from `menu._menu_context`, so it is computed by
+    exactly one function on every screen."""
+    db: Database = request.app.state.db
+    tenant_id = ctx.tenant_id
+    period, default, newest = await _period(db, tenant_id, date_from, date_to)
+    values = [
+        ratio.TillItemValue(
+            till_item_id=row["till_item_id"],
+            name=row["name"],
+            code=row["code"],
+            menu_item_id=row["menu_item_id"],
+            excluded=row["excluded_at"] is not None,
+            positive_value=row["positive_value"],
+            refund_value=row["refund_value"],
+        )
+        for row in await db.list_period_sales_lines(
+            tenant_id=tenant_id, date_from=period.start, date_to=period.end
+        )
+    ]
+    menu_rows, _, plate_by_item, _ = await _menu_context(db, tenant_id)
+    plates = {
+        row["id"]: ratio.MenuPlate(
+            menu_item_id=row["id"],
+            name=row["name"],
+            plate_quality=plate_by_item[row["id"]].quality.value,
+            archived=row["archived_at"] is not None,
+        )
+        for row in menu_rows
+    }
+    live_items = [
+        {"id": row["id"], "name": row["name"]} for row in menu_rows if row["archived_at"] is None
+    ]
+    result = ratio.coverage(values, plates)
+    return {
+        "period": _period_json(period, default, newest),
+        "sales_value": _dec(result.sales_value),
+        "costed_value": _dec(result.costed_value),
+        "costed_pct": _dec(result.costed_pct),
+        "estimated_points": _dec(result.estimated_points),
+        "uncosted": {
+            "incomplete_plate": _dec(result.uncosted_incomplete_plate),
+            "unmapped": _dec(result.uncosted_unmapped),
+        },
+        "beside": {
+            "refunds": _dec(result.refunds),
+            "not_menu_items": _dec(result.not_menu_items),
+        },
+        "queue": [
+            {
+                **_coverage_item_json(item),
+                "proposals": _proposals_for(
+                    {"till_item_id": item.till_item_id, "name": item.name, "code": item.code},
+                    live_items,
+                ),
+            }
+            for item in result.queue
+        ],
+        "mapped": [
+            {
+                **_coverage_item_json(item),
+                "menu_item_id": item.menu_item_id,
+                "menu_item_name": item.menu_item_name,
+                "plate_quality": item.plate_quality,
+            }
+            for item in result.mapped
+        ],
+        "excluded": [_coverage_item_json(item) for item in result.excluded],
+    }
 
 
 # --- days -------------------------------------------------------------------
