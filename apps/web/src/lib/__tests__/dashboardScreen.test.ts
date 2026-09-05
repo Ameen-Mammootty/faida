@@ -23,6 +23,7 @@ import {
   itemsHeading,
   leagueFootnote,
   leagueLine,
+  leagueLink,
   leagueStatus,
   noContributionWords,
   noMenuSentence,
@@ -38,6 +39,7 @@ import {
   todaysPlateLink,
   withBranch,
 } from "../dashboardScreen";
+import { anchorBranchId, anchorItemId } from "../anchor";
 import { SCENARIOS, mockGetDashboard } from "../mock/dashboard";
 import type {
   DashboardItemRow,
@@ -345,6 +347,30 @@ describe("the league", () => {
     expect(filteredEmpty(await scenario("full", "br-03"))).toBeNull();
     expect(filteredEmpty(await scenario("partial"))).toBeNull();
   });
+
+  // WP-94: the row opens to /sales for its days and its papers, in the app's
+  // one anchor idiom - not a query parameter of this screen's own.
+  it("sends the row to that branch's own row on /sales, and says so out loud", () => {
+    expect(leagueLink(leagueRow())).toEqual({
+      href: "/sales#branch-br-03",
+      label: "Deira Branch: its days and papers on the Sales screen",
+    });
+  });
+
+  it("escapes an id that would otherwise break the fragment", () => {
+    expect(leagueLink({ branch_id: "br/03 a", branch_name: "Deira" }).href).toBe(
+      "/sales#branch-br%2F03%20a",
+    );
+  });
+
+  it("gives every row in the mock a link, whether or not anything is loaded", async () => {
+    for (const name of ["full", "partial"] as const) {
+      const result = await scenario(name);
+      expect(result.league.map((row) => leagueLink(row).href)).toEqual(
+        result.league.map((row) => `/sales#branch-${row.branch_id}`),
+      );
+    }
+  });
 });
 
 describe("the branch filter", () => {
@@ -489,6 +515,21 @@ describe("the items", () => {
         purchased_on: null,
       }),
     ).toBeNull();
+  });
+
+  // WP-94: the link this screen writes is the link the other screen reads.
+  // Both ends of the anchor are pinned here, in the same file, because a
+  // silent mismatch is a drill that goes to the top of a page.
+  it("writes plate links and invoice links the anchor module reads back", async () => {
+    const full = await scenario("full");
+    for (const row of full.items.all) {
+      const link = todaysPlateLink(row);
+      if (link === null) continue;
+      expect(anchorItemId(new URL(link.href, "https://x").hash)).toBe(row.menu_item_id);
+    }
+    for (const row of full.league) {
+      expect(anchorBranchId(new URL(leagueLink(row).href, "https://x").hash)).toBe(row.branch_id);
+    }
   });
 
   it("marks an item that loses money by its own figure, and the mock carries one", async () => {

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { anchorMaterialId } from "@/lib/anchor";
 import {
   listBlockedCosts,
   listIngredients,
@@ -147,13 +148,15 @@ export default function RawMaterials() {
   // drill lands on the material itself with a visible focus ring, so "fix on
   // the materials screen" means arriving at the fix, not at the page top.
   // Once only - later reloads after decisions must not yank focus back.
+  // The parsing moved to `lib/anchor.ts` at WP-94, where `/menu` and `/sales`
+  // read the same idiom from the same place.
   const arrived = useRef(false);
   useEffect(() => {
     if (materials === null || arrived.current) return;
-    const match = /^#material-(.+)$/.exec(window.location.hash);
-    if (!match) return;
+    const id = anchorMaterialId(window.location.hash);
+    if (id === null) return;
     arrived.current = true;
-    const element = document.getElementById(`material-${match[1]}`);
+    const element = document.getElementById(`material-${id}`);
     if (element) {
       element.scrollIntoView({ block: "center" });
       element.focus();

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { salesAnchorBranchId } from "@/lib/anchor";
 import {
   excludeTillItem,
   getSalesBranches,
@@ -66,6 +67,11 @@ import QualityChip from "./QualityChip";
  * shows; the word is *costed*, never *complete*, and "food cost" appears
  * nowhere. Everything derives on read: a manual reload after confirming an
  * invoice is the demo's own gesture, and nothing here polls.
+ *
+ * M9 WP-94: the screen answers `/sales#branch-<id>`, the app's one anchor
+ * idiom (`lib/anchor.ts`). A league row on the dashboard names a branch; this
+ * is where its days and its papers are, so the link lands on that branch's
+ * own row, open, in the middle of the screen and holding the focus.
  */
 
 type Feedback = { kind: "error" | "done"; text: string } | null;
@@ -469,6 +475,12 @@ export default function SalesTable() {
   const drillRef = useRef<HTMLDivElement>(null);
   const rowButtons = useRef<Map<string, HTMLButtonElement>>(new Map());
   const lastOpened = useRef<string | null>(null);
+  // WP-94: the branch the hash named and has yet to be opened, the one it
+  // named (so the focus effect knows the reader arrived by link), and the
+  // guard that honours a hash once per mount and never again.
+  const pending = useRef<string | null>(null);
+  const anchored = useRef<string | null>(null);
+  const arrived = useRef(false);
   const pickSelect = useRef<HTMLSelectElement>(null);
   // The tenant's newest loaded day, learned from the first read and read back
   // by later ones - a ref, not a dep, so the read that learns it does not
@@ -504,6 +516,16 @@ export default function SalesTable() {
         setCoverage(cover);
         setMenu(items);
         setLoadError(null);
+        // The /sales#branch-<id> anchor (WP-94), decided on the read that has
+        // just landed. Once per mount: the guard is what stops the next read -
+        // a period change, a mapping decision, the "try again" button - from
+        // yanking the reader's focus back to the row they arrived at and have
+        // since left. A hash naming no branch of this tenant opens nothing and
+        // errors nothing.
+        if (!arrived.current) {
+          arrived.current = true;
+          pending.current = salesAnchorBranchId(window.location.hash, branches.rows);
+        }
       } catch (error) {
         if (cancelled) return;
         setLoadError(error instanceof Error ? error.message : "Could not load sales.");
@@ -517,16 +539,35 @@ export default function SalesTable() {
   }, [choice, reloadKey]);
 
   // Focus follows the drill: into the expansion when it opens, back to the
-  // row's own button when it collapses.
+  // row's own button when it collapses. A reader who arrived by link gets the
+  // row put in the middle of the screen first, so the branch's own figures
+  // are above the days rather than off the top of them.
   useEffect(() => {
     if (open !== null) {
       lastOpened.current = open;
+      if (anchored.current === open) {
+        anchored.current = null;
+        rowButtons.current.get(open)?.scrollIntoView({ block: "center" });
+        drillRef.current?.focus({ preventScroll: true });
+        return;
+      }
       drillRef.current?.focus();
     } else if (lastOpened.current !== null) {
       rowButtons.current.get(lastOpened.current)?.focus();
       lastOpened.current = null;
     }
   }, [open]);
+
+  // Taking the reader to the branch the hash named, in the render that put it
+  // on the screen - the DOM only, in the /materials#material-<id> shape. The
+  // row is opened by pressing its own button, the same door a reader presses.
+  useEffect(() => {
+    const branchId = pending.current;
+    if (branchId === null || result === null) return;
+    pending.current = null;
+    anchored.current = branchId;
+    rowButtons.current.get(branchId)?.click();
+  }, [result]);
 
   useEffect(() => {
     if (picking !== null) pickSelect.current?.focus();

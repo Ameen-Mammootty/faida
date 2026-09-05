@@ -32,6 +32,7 @@ import {
   itemsHeading,
   leagueFootnote,
   leagueLine,
+  leagueLink,
   leagueStatus,
   monthOptions,
   noContributionWords,
@@ -80,6 +81,13 @@ import QualityChip from "./QualityChip";
  * show lives in `lib/dashboardScreen.ts`, where vitest pins it. Never
  * "profit", never "food cost"; a status is a word and a sentence, never a
  * colour alone.
+ *
+ * WP-94, the drill: every number on this screen reaches the paper it came
+ * from. A league row's branch name opens `/sales` at that branch's own row,
+ * days and papers and all; an item row opens in place and links onward to
+ * `/menu#item-<id>` for today's plate and to `/invoices/<id>#line-<n>` for the
+ * line behind each ingredient's price. All three are the same anchor idiom
+ * (`lib/anchor.ts`), so the app has one thing to learn.
  */
 
 /** The table and the card rows are both always in the DOM - only one is
@@ -148,10 +156,20 @@ function KeptFigure({ value }: { value: string | null }) {
 
 function LeagueTableRow({ row }: { row: LeagueRow }) {
   const status = leagueStatus(row);
+  const link = leagueLink(row);
   return (
     <tr className="border-b border-ink/5 align-top">
-      <td className="px-4 py-3">
-        <p className="font-medium text-ink">{row.branch_name}</p>
+      {/* The name cell is `/sales`' own: `py-2` against the figures' `py-3`,
+          so the 44 px control and the figures beside it sit where they sit on
+          that screen - the two league tables are the same table. */}
+      <td className="px-4 py-2">
+        <Link
+          href={link.href}
+          aria-label={link.label}
+          className="inline-flex min-h-11 items-center rounded-sm py-1 font-medium text-ink underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-palm/30"
+        >
+          {row.branch_name}
+        </Link>
         <p className="text-xs text-stone">{leagueLine(row)}</p>
       </td>
       <td className="px-4 py-3 text-right tabular-nums">
@@ -193,13 +211,18 @@ function LeagueTableRow({ row }: { row: LeagueRow }) {
 
 function LeagueCard({ row }: { row: LeagueRow }) {
   const status = leagueStatus(row);
+  const link = leagueLink(row);
   return (
     <li className="rounded-md border border-ink/10 bg-paper p-3">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="min-h-11 py-1 font-medium text-ink">
+          <Link
+            href={link.href}
+            aria-label={link.label}
+            className="inline-flex min-h-11 items-center rounded-sm py-1 font-medium text-ink underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-palm/30"
+          >
             {row.branch_name}
-          </p>
+          </Link>
           <p className="text-xs text-stone">{leagueLine(row)}</p>
         </div>
         <div className="pt-1 text-right">

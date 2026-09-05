@@ -222,6 +222,27 @@ export function noContributionWords(row: {
   return "Nothing costed";
 }
 
+/**
+ * Where a league row goes: `/sales`, at that branch's own row, opened to its
+ * days and its papers (WP-94). The link is the app's one anchor idiom -
+ * `#branch-<id>`, the shape `/materials#material-<id>` shipped in M6 - and
+ * not a query parameter of its own, so there is one thing to learn and one
+ * thing to keep working.
+ *
+ * The branch name is the link, so the row reads exactly as it does on
+ * `/sales`, and the label is what a screen reader hears: "Deira" on its own
+ * does not say where clicking it leads.
+ */
+export function leagueLink(row: { branch_id: string; branch_name: string }): {
+  href: string;
+  label: string;
+} {
+  return {
+    href: `/sales#branch-${encodeURIComponent(row.branch_id)}`,
+    label: `${row.branch_name}: its days and papers on the Sales screen`,
+  };
+}
+
 /** The status chip carries the contribution's word (the figure this screen
  * exists for); the ratio's own story lives in the ratio cell. */
 export function leagueStatus(row: {
