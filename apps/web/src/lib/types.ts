@@ -916,3 +916,180 @@ export interface SalesDayResult {
 export interface SalesDaysResult {
   days: SalesDayResult[];
 }
+
+/**
+ * M8 WP-81/82/84: the sales screen's reads and the till-name doors, pinned by
+ * Docs/M8_DECOMPOSITION.md §3.1 (C11.5-C11.8, the C9 amendment). Money and
+ * percentages are strings; the ratio is derived on every read and nothing
+ * here is ever stored, so a paper confirmed from a phone moves these numbers
+ * on the next load.
+ */
+
+/** PRD §24's words for a period figure. `verified` is absent on purpose:
+ * nothing cross-checks a till's figures. Precedence worst first. */
+export type PeriodQuality =
+  | "reliable_with_limitations"
+  | "estimated"
+  | "incomplete"
+  | "unavailable";
+
+/** The period a read covers. `default` is true when the caller sent no
+ * range and the API chose 28 days ending on the tenant's newest loaded day;
+ * `sales_through` is that newest day, null when nothing was ever loaded -
+ * the one fact the empty state is decided on. */
+export interface SalesPeriod {
+  from: string;
+  to: string;
+  days: number;
+  default: boolean;
+  sales_through: string | null;
+}
+
+/** One confirmed paper counted in a row: `net_purchase` is `total - tax`,
+ * the two printed figures the drill shows beside the photo (P2). */
+export interface InvoiceFigure {
+  invoice_id: string;
+  supplier_name: string | null;
+  invoice_no: string | null;
+  purchased_on: string | null;
+  net_purchase: string;
+  total: string;
+  tax: string;
+  /** `estimated` when the total or the VAT was entered by a person. */
+  quality: "reliable_with_limitations" | "estimated";
+}
+
+/** A paper on its way: awaiting confirm or held for review, placed on its
+ * printed date or, when it printed none, the day it arrived. */
+export interface PendingPaper {
+  invoice_id: string;
+  supplier_name: string | null;
+  invoice_no: string | null;
+  status: "awaiting_confirm" | "needs_review";
+  placed_on: string | null;
+  undated: boolean;
+}
+
+/** A confirmed paper in another currency: named, never counted. */
+export interface ExcludedPaper {
+  invoice_id: string;
+  supplier_name: string | null;
+  invoice_no: string | null;
+  currency: string;
+  total: string;
+}
+
+/** One day of a branch's drill: every loaded day, plus any date a counted
+ * paper sits on with no sales row (`net_sales` and `granularity` null). */
+export interface DayFigure {
+  business_date: string;
+  net_sales: string | null;
+  granularity: SalesGranularity | null;
+  purchases: string;
+  invoices: InvoiceFigure[];
+}
+
+/** One branch's row, ranked by the API highest ratio first, unrated rows
+ * last. `window` is the period clipped to the branch's own loaded range;
+ * `ratio_pct` is null whenever the row cannot honestly carry one; `notes`
+ * are the sentences that made the label, in the API's own words. */
+export interface BranchRow {
+  branch_id: string;
+  branch_name: string;
+  window: { from: string; to: string; days: number };
+  net_sales: string | null;
+  takings: string | null;
+  purchases: string;
+  ratio_pct: string | null;
+  quality: PeriodQuality;
+  notes: string[];
+  days_loaded: number;
+  days_missing: number;
+  deliveries: number;
+  sales_through: string | null;
+  last_purchase_on: string | null;
+  days: DayFigure[];
+  pending: PendingPaper[];
+  excluded: ExcludedPaper[];
+}
+
+/** Confirmed papers with no branch: counted in the total, ranked nowhere,
+ * and shown as the "No branch" row only when there are any. */
+export interface SalesUnassigned {
+  count: number;
+  purchases: string;
+  invoices: InvoiceFigure[];
+}
+
+/** The row that reconciles the table: every branch plus the unassigned
+ * group. Incomplete when any branch is unavailable or incomplete. */
+export interface SalesTotal {
+  net_sales: string;
+  purchases: string;
+  ratio_pct: string | null;
+  quality: PeriodQuality;
+  notes: string[];
+}
+
+/** GET /api/sales/branches?from&to */
+export interface SalesBranchesResult {
+  period: SalesPeriod;
+  rows: BranchRow[];
+  unassigned: SalesUnassigned;
+  total: SalesTotal;
+}
+
+/** A menu item the matcher proposes for a till name, best first, at most
+ * three; `score` is a two-decimal string. Proposes, never decides. */
+export interface CoverageProposal {
+  menu_item_id: string;
+  name: string;
+  score: string;
+}
+
+export interface CoverageItem {
+  till_item_id: string;
+  name: string;
+  code: string | null;
+  /** The positive net value sold in the period. Money string. */
+  value: string;
+}
+
+export interface CoverageQueueItem extends CoverageItem {
+  proposals: CoverageProposal[];
+}
+
+export interface CoverageMappedItem extends CoverageItem {
+  menu_item_id: string;
+  menu_item_name: string;
+  plate_quality: PlateQuality;
+}
+
+/** GET /api/sales/coverage?from&to - recipe coverage by sales value
+ * (C11.8): the share of the period's menu sales whose till item maps to a
+ * plate that can be costed. The word is *costed*, never *complete*: an
+ * estimated plate counts as costed and its points are named. `costed_pct`
+ * and `estimated_points` are null when nothing item-wise was sold. */
+export interface SalesCoverageResult {
+  period: SalesPeriod;
+  sales_value: string;
+  costed_value: string;
+  costed_pct: string | null;
+  estimated_points: string | null;
+  uncosted: { incomplete_plate: string; unmapped: string };
+  beside: { refunds: string; not_menu_items: string };
+  queue: CoverageQueueItem[];
+  mapped: CoverageMappedItem[];
+  excluded: CoverageItem[];
+}
+
+/** A till name as the three doors answer it: mapped (`menu_item_id` set),
+ * back in the queue (null), or marked not a menu item (`excluded_at`). */
+export interface TillItem {
+  id: string;
+  name: string;
+  code: string | null;
+  menu_item_id: string | null;
+  menu_item_name: string | null;
+  excluded_at: string | null;
+}

@@ -136,10 +136,12 @@ export interface Fixture {
 /**
  * The mock branches, for pages that offer a branch choice and for the sales
  * loader (M8 WP-83), which reads them through the mock of `GET /api/branches`.
- * The first two carry the fixtures' invoices; the third has papers from no
- * one, so a loaded week reads "no confirmed purchases" against it exactly
- * as the demo stage's two quiet branches will. The ids match the fixtures'
- * branch_id values so both modes behave alike.
+ * Al Quoz carries a confirmed delivery and three papers still on their way,
+ * so a loaded week reads *estimated* against it; Deira carries one confirmed
+ * delivery and nothing pending, so it reads *reliable with limitations*;
+ * Karama has only a paper awaiting confirm, so it reads "no confirmed
+ * purchases" exactly as the demo stage's two quiet branches will (M8 WP-84).
+ * The ids match the fixtures' branch_id values so both modes behave alike.
  */
 export const MOCK_BRANCHES: { id: string; name: string }[] = [
   { id: "br-01", name: "Al Quoz" },
@@ -536,6 +538,118 @@ export const FIXTURES: Fixture[] = [
         line_total: "15.00",
         supplier_item_id: null,
         snapped: null,
+      },
+    ],
+  },
+  // M8 WP-84: three confirmed papers, so the sales screen's ratio has
+  // purchases to count offline. Dated inside the week the QA export covers
+  // (17-23 Aug 2026); the arithmetic on each one adds up, so the review
+  // screen shows a clean confirmed paper. One has no branch, which is the
+  // "No branch" row on the sales screen.
+  {
+    id: "inv-1006",
+    document_id: "doc-9006",
+    branch_id: "br-01",
+    branch_name: "Al Quoz",
+    supplier_id: "sup-01",
+    supplier_name: "Al Madina Foodstuff Trading LLC",
+    invoice_no: "INV-10391",
+    invoice_date: "2026-08-18",
+    currency: "AED",
+    subtotal: "1240.00",
+    tax: "62.00",
+    total: "1302.00",
+    payment_kind: "credit",
+    status: "confirmed",
+    source: "whatsapp",
+    image_url: "/fixtures/inv-1001.svg",
+    created_at: "2026-08-18T09:12:00+00:00",
+    lines: [
+      {
+        raw_name: "Rainbow Milk Powder 2.25kg",
+        qty: "20",
+        unit: "tin",
+        pack_size: "2.25kg",
+        unit_price: "50.50",
+        line_total: "1010.00",
+        supplier_item_id: "si-2001",
+        snapped: true,
+        cost: costs("0.02244444", "g", "22.44", "kg", "2.25kg"),
+      },
+      {
+        raw_name: "Karak Tea Dust 5kg",
+        qty: "5",
+        unit: "bag",
+        pack_size: "5kg",
+        unit_price: "46.00",
+        line_total: "230.00",
+        supplier_item_id: "si-2002",
+        snapped: true,
+        cost: costs("0.00920000", "g", "9.20", "kg", "5kg"),
+      },
+    ],
+  },
+  {
+    id: "inv-1007",
+    document_id: "doc-9007",
+    branch_id: "br-03",
+    branch_name: "Deira",
+    supplier_id: "sup-02",
+    supplier_name: "Al Seeb Trading Co LLC",
+    invoice_no: "INV-7702",
+    invoice_date: "2026-08-19",
+    currency: "AED",
+    subtotal: "540.00",
+    tax: "27.00",
+    total: "567.00",
+    payment_kind: "credit",
+    status: "confirmed",
+    source: "whatsapp",
+    image_url: "/fixtures/inv-1002.svg",
+    created_at: "2026-08-19T10:40:00+00:00",
+    lines: [
+      {
+        raw_name: "Evaporated Milk 410ml",
+        qty: "120",
+        unit: "tin",
+        pack_size: "410ml",
+        unit_price: "4.50",
+        line_total: "540.00",
+        supplier_item_id: "si-2102",
+        snapped: true,
+        cost: costs("0.01097561", "ml", "10.98", "litre", "410ml"),
+      },
+    ],
+  },
+  {
+    id: "inv-1008",
+    document_id: "doc-9008",
+    branch_id: null,
+    branch_name: null,
+    supplier_id: null,
+    supplier_name: "Gulf Fresh Vegetables & Fruits",
+    invoice_no: "2198",
+    invoice_date: "2026-08-20",
+    currency: "AED",
+    subtotal: "200.00",
+    tax: "10.00",
+    total: "210.00",
+    payment_kind: "cash",
+    status: "confirmed",
+    source: "whatsapp",
+    image_url: "/fixtures/inv-1003.svg",
+    created_at: "2026-08-20T08:05:00+00:00",
+    lines: [
+      {
+        raw_name: "Tomatoes Box 5kg",
+        qty: "10",
+        unit: "box",
+        pack_size: "5kg",
+        unit_price: "20.00",
+        line_total: "200.00",
+        supplier_item_id: null,
+        snapped: null,
+        cost: costs("0.00400000", "g", "4.00", "kg", "5kg"),
       },
     ],
   },
