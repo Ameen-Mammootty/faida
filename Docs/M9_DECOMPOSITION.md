@@ -286,6 +286,8 @@ ItemRow =
  "archived": false}
 ```
 
+*Added at WP-93 and WP-92 (Decision Log 2026-09-05): one block beyond the shape above, `"menu": {"items": 14, "costed": 12}` - the live menu items and the ones whose plate has a price for every ingredient today - for the first-run paragraph's "your menu is costed" fact from the same read.*
+
 `items.top` and `items.bottom` are five each and are **slices of `items.all`, not separate queries**; `items.all` carries every costed row plus the incomplete ones (numbers null, `notes` saying why) so the panel expands with no further request. There is no per-day array on an item: a day-by-day view of one dish is nobody's ask, and the branch drill on `/sales` already shows the days a figure came from. (The database read does carry days, per C12.1; the wire does not.)
 
 An `incomplete` `ItemRow` carries `contribution`, `contribution_pct`, `cost` and `cost_per_portion` as `null` and its reasons in `notes`, exactly as `plates.Plate` does (`plates.py:218-219`): a hole never renders as a fat margin.

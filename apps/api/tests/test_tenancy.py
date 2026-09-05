@@ -27,6 +27,7 @@ from fastapi.routing import APIRoute
 from faida_api.api import router as api_router
 from faida_api.auth import AuthContext, require_context
 from faida_api.contracts import InvoiceStatus
+from faida_api.dashboard import router as dashboard_router
 from faida_api.main import app as production_app
 from faida_api.menu import router as menu_router
 from faida_api.sales import router as sales_router
@@ -152,6 +153,7 @@ async def rig(settings, db):
     app.include_router(api_router)
     app.include_router(menu_router)
     app.include_router(sales_router)
+    app.include_router(dashboard_router)
     app.include_router(waitlist_router)
     app.state.settings = settings
     wire_auth(app)
@@ -524,6 +526,12 @@ MATRIX: list[dict] = [
         "method": "GET",
         "path": "/api/sales/coverage",
         "url": lambda r: f"/api/sales/coverage?from={SALES_DAY}&to={SALES_DAY}",
+    },
+    # M9 WP-92: the one dashboard read, derived per tenant on every call.
+    {
+        "method": "GET",
+        "path": "/api/dashboard",
+        "url": lambda r: f"/api/dashboard?from={SALES_DAY}&to={SALES_DAY}",
     },
     # The till-name mapping doors (WP-82): map, then unmap, then exclude - a
     # script, because exclude refuses a mapped name.
