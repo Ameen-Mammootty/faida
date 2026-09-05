@@ -241,6 +241,12 @@ on-stage paper and AED 116.40 after it. Both milk moves fire as spikes, dated 31
 milk AED 25.93 across 9 items, milk powder AED 1.11 across 2 - small because the delivery landed
 on the week's last day, so only that day's cups carry it.
 
+The script prints money rounded half up, and the screen's table **truncates** its whole-dirham
+headlines (`roundedAed`, which can only ever understate a ranking figure by under a dirham), so a
+script figure and a table figure can differ by one: AED 135.58 prints as `AED 135.58` here and
+reads `AED 135` on the dashboard. The exact figure is always in the drill and on the wire. Whether
+the screen should round instead of truncate is a separate call for the founder.
+
 Two honesty notes the runbook repeats. The script **types** the four preparation papers, and a
 typed price is asserted (C8), so every plate it prints is capped at *estimated*; on the real stage
 those papers were read from photographs and the same figures read *reliable with limitations*. The

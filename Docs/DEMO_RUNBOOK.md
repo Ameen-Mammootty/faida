@@ -474,7 +474,7 @@ Hot Chocolate - Large 250 ml sells more than any item that earns under the menu'
 ```
 
 Say: "Act three told you where the money went out. This tells you what stayed - and it names the branch and the dish before you have read a single number."
-Point at the freshness line ("Sales loaded to Mon 31 Aug") and at "45 live items, 45 costed": the screen says what it is built on before it says anything else.
+Point at the freshness line ("Sales loaded to Mon 31 Aug") and at the items heading further down - **Items: what each one contributed**, with **45 costed** beside it (it reads "N costed of M" the moment a row carries no numbers): the screen says what it is built on before it says anything else. (The menu counts - "your menu is costed" - belong to the first-run paragraph and are not on a ready screen.)
 
 **2. The league, with contribution beside the ratio (about 40 seconds).** The table, ordered by what each branch keeps, least first - **not** by the ratio, which is `/sales`' key:
 
@@ -484,6 +484,8 @@ Rolla       net sales 18,608.45   kept 12,148.63   65.8%   costed 100%   ratio  
 Al Qusais   net sales 30,267.43   kept 19,843.16   66.0%   costed 100%   ratio 30.3%
 The chain   net sales 71,942.35   kept 47,020.76   65.8%   costed 100%   ratio 12.7%
 ```
+
+(Every block in act four quotes the figures behind the rows. The screen truncates a whole-dirham headline rather than rounding it, so 15,028.97 reads **AED 15,028** in the table and the exact figure is in the drill.)
 
 Say: "This is contribution before overheads - ingredients and packaging out of what the till took. It is **not** net profit: rent, wages and electricity are not in it, and neither is waste, because nobody records waste yet and this screen does not invent it."
 Then point at Al Nahda and Rolla: "Those two have no invoices yet, so act three could not give them a ratio. They still have a contribution, because contribution needs sales and a costed menu, not papers. That is the same discipline in the other direction: it says what it knows."
@@ -499,7 +501,7 @@ Karak Delivery - Medium 250 ml  kept   353.46   22.8%
 Karak Delivery - Small 120 ml   kept   135.58   19.3%   on 492 cups and AED 702.86 of sales
 ```
 
-Say: "The small delivery karak sold 492 cups this week and kept AED 136 of the AED 703 it took."
+Say: "The small delivery karak sold 492 cups this week and kept AED 135.58 of the AED 702.86 it took."
 Then open the row - the drill opens in place, the ranking never leaves the screen - and read the reason off it:
 
 ```
@@ -510,7 +512,7 @@ sold at an average of AED 1.429 net of VAT; AED 1.153 of ingredients and packagi
   Cinnamon stick       0.09 g    0.008     White sugar         5 g   0.013
 ```
 
-Say: "A 47 ml pour of evaporated milk and a 23-fils cup and lid, against a sale of AED 1.43 net of VAT. Nobody had that number before: the till knows what sold, the invoice knows what a lid costs, and nothing joined them."
+Say: "A 47 ml pour of evaporated milk and a 23-fils cup and lid, against a sale of AED 1.429 net of VAT. Nobody had that number before: the till knows what sold, the invoice knows what a lid costs, and nothing joined them."
 Every one of those component lines carries the invoice line its price came from - three clicks to a photograph of a piece of paper.
 
 **4. The reload, one layer up (about 25 seconds).** KAS-5 was confirmed in act one, and act three reloaded `/sales` to watch Al Qusais move from 30.3% to 39.3%. Act four is the same gesture one layer up. **Reload `/dashboard`.**
