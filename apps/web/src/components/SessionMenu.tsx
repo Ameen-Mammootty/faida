@@ -21,10 +21,16 @@ const MOCK_OWNER_EMAIL = "owner@sample.faida";
  * In mock mode there is no session to clear and no network to reach: the
  * shell shows the sample owner, and sign out simply goes to /login.
  *
- * `showEmail` forces the address on: the shell's narrow-screen row has the
- * room for it, the desktop header only from md up.
+ * One instance serves all three chromes (M9 WP-97), so where the address is
+ * shown is now a matter of width alone: the phone's quiet row has the space
+ * for it, the header row only from md up, and the sidebar always. The colours
+ * follow the ground the shell puts this on - Slate on cream under 1280 px,
+ * Warm Cream on Date Palm in the sidebar, where the focus ring has to be gold
+ * because the palm ring the app uses elsewhere would vanish on palm. The `!`
+ * is deliberate: the global `:focus-visible` rule is unlayered and would
+ * otherwise beat a utility.
  */
-export default function SessionMenu({ showEmail = false }: { showEmail?: boolean } = {}) {
+export default function SessionMenu() {
   const router = useRouter();
   const mock = isMockMode();
   const [email, setEmail] = useState<string | null>(mock ? MOCK_OWNER_EMAIL : null);
@@ -61,10 +67,12 @@ export default function SessionMenu({ showEmail = false }: { showEmail?: boolean
   }
 
   return (
-    <div className="flex items-center gap-3 sm:gap-4">
+    <div className="flex min-w-0 items-center gap-3 sm:gap-4 xl:w-full xl:flex-col xl:items-start xl:gap-1">
       {email ? (
         <span
-          className={`max-w-[16rem] truncate text-xs text-stone ${showEmail ? "" : "hidden md:inline"}`}
+          // min-w-0 so a long address truncates rather than pushing the row
+          // wide; the cap is the sidebar's own width from 1280 px.
+          className="min-w-0 max-w-64 truncate text-xs text-stone sm:hidden md:inline xl:max-w-full xl:text-cream/70"
           title={email}
         >
           {email}
@@ -74,7 +82,7 @@ export default function SessionMenu({ showEmail = false }: { showEmail?: boolean
         type="button"
         onClick={signOut}
         disabled={busy}
-        className="text-sm font-medium whitespace-nowrap text-stone hover:text-palm disabled:opacity-60"
+        className="text-sm font-medium whitespace-nowrap text-stone hover:text-palm disabled:opacity-60 xl:text-cream/80 xl:hover:text-cream xl:focus-visible:outline-gold!"
       >
         Sign out
       </button>
