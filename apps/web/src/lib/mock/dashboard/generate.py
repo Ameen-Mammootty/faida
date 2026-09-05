@@ -17,7 +17,9 @@ Run from apps/api with its venv (the modules are imported from src):
         ../web/src/lib/mock/dashboard src
 
 The answer and freshness sentences here are copies of dashboard.py's; a
-change there is a change here.
+change there is a change here. The price-moves block is **not** copied: the
+route's own `dashboard.price_moves_block` is imported and called, so the
+panel's gate, ranking and three sentences can never drift from the API's.
 """
 
 import datetime
@@ -27,6 +29,7 @@ from decimal import ROUND_HALF_UP, Decimal as D
 
 sys.path.insert(0, sys.argv[2] if len(sys.argv) > 2 else "src")
 from faida_api import contribution as C  # noqa: E402
+from faida_api.dashboard import price_moves_block  # noqa: E402
 from faida_api import menu as M  # noqa: E402
 from faida_api import plates as P  # noqa: E402
 from faida_api import ratio as R  # noqa: E402
@@ -57,7 +60,11 @@ def net_price(price: str) -> D:
 A21 = datetime.date(2026, 8, 21)
 A22 = datetime.date(2026, 8, 22)
 A25 = datetime.date(2026, 8, 25)
+A26 = datetime.date(2026, 8, 26)
+A27 = datetime.date(2026, 8, 27)
 A28 = datetime.date(2026, 8, 28)
+A29 = datetime.date(2026, 8, 29)
+A30 = datetime.date(2026, 8, 30)
 
 REL = P.PlateQuality.RELIABLE
 EST = P.PlateQuality.ESTIMATED
@@ -366,6 +373,14 @@ def move(ingredient_id, name, unit, previous, current, items):
                        items=tuple(items))
 
 
+def basis_move(ingredient_id, name, unit, previous, current):
+    """A winner-pack switch: both packs named, no delta anywhere. A delta
+    across pack sizes is a pack artifact wearing a percent sign (D3)."""
+    return M.PriceMove(ingredient_id=ingredient_id, ingredient_name=name, base_unit=unit,
+                       kind="basis_changed", current=current, previous=previous,
+                       delta_per_base_unit=None, delta_per_display_unit=None, items=())
+
+
 def impact(mid, name, per_portion):
     return M.MoveImpact(menu_item_id=mid, name=name, impact_per_portion=D(per_portion),
                         margin_before=D(0), margin_after=D(0), margin_pct_before=D(0), margin_pct_after=D(0))
@@ -383,6 +398,33 @@ FULL_MOVES = [
          [impact("menu-2", "Karak Tea (Flask 1 L)", "0.016"), impact("menu-3", "Nido Shake", "0.004"),
           impact("menu-1", "Karak Tea (Cup)", "0.002"), impact("menu-6", "Sulaimani", "0.002"),
           impact("menu-14", "Masala Chai", "0.002")]),
+    # A fall of 9.1% on 26 Aug: three gravies use 50 ml each, so each keeps
+    # 7.5 fils more a plate. Not a spike (a fall never is), on the panel with
+    # the dirhams it saved - the case the panel exists for.
+    move("ing-cream", "Cream", "ml",
+         line("0.0165", datetime.date(2026, 8, 12), pack="sitem-12", product="Cooking Cream 1L", supplier="Al Seeb Trading Co LLC", invoice="inv-0994", position=4, unit="ml"),
+         line("0.0150", A26, pack="sitem-12", product="Cooking Cream 1L", supplier="Al Seeb Trading Co LLC", invoice="inv-1002", position=4, unit="ml"),
+         [impact("menu-7", "Butter Chicken", "-0.075"), impact("menu-8", "Paneer Butter Masala", "-0.075"),
+          impact("menu-10", "Mutter Mushroom", "-0.075")]),
+    # A rise of 11.1% on 27 Aug on a material only Chicken Mandi uses, and
+    # Chicken Mandi has no costed plate - so nothing can be weighed and the
+    # evidence says so instead of quoting a number it does not have.
+    move("ing-chicken", "Chicken", "g",
+         line("0.0180", datetime.date(2026, 7, 28), pack="sitem-13", product="Fresh Chicken", supplier="Al Madina Foodstuff Trading LLC", invoice="inv-0998", position=2, unit="g"),
+         line("0.0200", A27, pack="sitem-13", product="Fresh Chicken", supplier="Al Madina Foodstuff Trading LLC", invoice="inv-1006", position=2, unit="g"),
+         []),
+    # 2.5% on 29 Aug: under the gate both ways, so it is in neither panel -
+    # the drift the gate exists to keep off the screen.
+    move("ing-rice", "Basmati Rice", "g",
+         line("0.0080", datetime.date(2026, 8, 9), pack="sitem-14", product="Basmati Rice 20kg", supplier="Al Seeb Trading Co LLC", invoice="inv-0994", position=1, unit="g"),
+         line("0.0082", A29, pack="sitem-14", product="Basmati Rice 20kg", supplier="Al Seeb Trading Co LLC", invoice="inv-1002", position=1, unit="g"),
+         [impact("menu-12", "Veg Biryani", "0.040")]),
+    # The pack changed on 30 Aug: no before and after to show, listed anyway
+    # because it is evidence and it is rare, and it sorts behind every move
+    # that carries a number.
+    basis_move("ing-ghee", "Ghee", "g",
+               line("0.0916", datetime.date(2026, 8, 14), pack="sitem-15", product="GHEE 1KG PKT", supplier="Gulf Fresh Vegetables & Fruits", invoice="inv-0999", position=3, unit="g"),
+               line("0.0880", A30, pack="sitem-16", product="Vegetable Ghee 16kg Tin", supplier="Al Madina Foodstuff Trading LLC", invoice="inv-1001", position=3, unit="g")),
 ]
 
 
@@ -589,6 +631,7 @@ def payload(*, menu, sales, invoices, today, approvals, papers, moves, scope_id=
         "items": {"top": [item_row_json(r) for r in costed[:5]], "bottom": [item_row_json(r) for r in costed[-5:]] if len(costed) > 5 else [],
                   "all": [item_row_json(r) for r in scope_rows], "count": len(costed)},
         "signals": [signal_json(x) for x in sigs],
+        "price_moves": price_moves_block(moves, period_sales, all_rows, period=period, scope=scope, currency=CURRENCY),
         "unmapped": {"names": C.unmapped(period_sales, branch_id=scope_id).names, "value": s(C.unmapped(period_sales, branch_id=scope_id).value)},
         "menu": menu_counts or {"items": len(menu), "costed": sum(1 for m in menu.values() if m.plate.cost_per_portion is not None)},
     }
@@ -603,6 +646,8 @@ def scenario(name, **kw):
         f.write("\n")
     chain = out[""]
     print(name, "signals:", [(x["kind"], x["money_at_stake"]) for x in chain["signals"]])
+    print("  price moves:", chain["price_moves"]["count"], "of which listed:",
+          [(m["ingredient_name"], m["kind"], m["money_at_stake"]) for m in chain["price_moves"]["moves"]])
     print("  answer:", chain["answer"])
     print("  total:", chain["total"]["contribution"], chain["total"]["contribution_pct"], chain["total"]["contribution_quality"])
     for row in chain["league"]:

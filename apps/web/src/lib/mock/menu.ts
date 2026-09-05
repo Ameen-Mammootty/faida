@@ -623,6 +623,12 @@ export async function mockUnarchiveMenuItem(id: string): Promise<MenuItemDetail>
  * those amounts. The basis-changed example carries no delta and no items, by
  * the rule the screen exists to keep: a delta across pack sizes is a pack
  * artifact wearing a percent sign.
+ *
+ * `plates` is written out here to the letter the API composes it (M9 WP-99,
+ * `signals.move_plates`): the worst plate first with AED and "a portion", up
+ * to three more in brackets carrying the change in *margin*, so a rise reads
+ * as a minus. Fils, cut and never rounded, the way this screen has always
+ * printed a per-plate figure.
  */
 const MOVES: PriceMove[] = [
   {
@@ -657,6 +663,8 @@ const MOVES: PriceMove[] = [
       invoice_date: dateDaysAgo(21),
     },
     delta_per_display_unit: "0.50",
+    plates:
+      "Karak Tea (Flask 1 L) earns AED 0.19 less a portion; also Nido Shake (-0.05) and Karak Tea (Cup) (-0.02).",
     items: [
       {
         menu_item_id: "menu-2",
@@ -719,6 +727,8 @@ const MOVES: PriceMove[] = [
       invoice_date: dateDaysAgo(12),
     },
     delta_per_display_unit: null,
+    // Nothing to attribute across a pack change, so no clause either.
+    plates: null,
     items: [],
   },
 ];

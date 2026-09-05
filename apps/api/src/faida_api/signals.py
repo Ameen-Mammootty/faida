@@ -31,6 +31,12 @@ cheap material with few sales ranks last with its small money beside it,
 which is information, and it appears only when fewer than five bigger
 things are happening.
 
+Beside the three kinds, this module owns everything a **price move** is said
+and weighed with (M9 WP-99): the 5% gate, the sales weighing, and the three
+sentences. The spike is one reader of that; the dashboard's price-moves panel
+and `/menu`'s card are the others, and they show falls and basis changes the
+spike refuses - but never in different words or for different money.
+
 A signal never fires on an input it would not trust: an `incomplete` or
 `unavailable` row produces nothing, and an `estimated` one produces a signal
 that carries the word. Every sentence that states a fact or a number is
@@ -46,7 +52,7 @@ branch is never compared to itself.
 import datetime
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
 from typing import TYPE_CHECKING
 
 from . import contribution
@@ -91,6 +97,11 @@ BRANCH_GAP_POINTS = Decimal("5.0")
 #: The panel shows at most five, largest money first; the fifth figure tells
 #: the reader where the tail starts.
 MAX_SIGNALS = 5
+
+#: How many other plates the "plates" clause names before it counts the rest.
+#: `/menu`'s own `ALSO_NAMED`, one layer up: a comma-run of nine items read as
+#: three lines of grey, and the whole list lives on `/materials` anyway.
+MOVE_ALSO_NAMED = 3
 
 KIND_POPULAR_LOW_MARGIN = "popular_low_margin"
 KIND_PRICE_SPIKE = "price_spike"
@@ -256,6 +267,250 @@ def popular_low_margin(
     return out
 
 
+# --- one material's move: the gate, the weighing, the words (WP-99) ---------
+#
+# The spike is one reader of a price move and the dashboard's price-moves
+# panel is the other, and the panel lists the falls and the basis changes the
+# spike refuses. The two must never put different dirhams or different words
+# against the same rise, so the gate, the weighing and the three sentences
+# live here once; each panel only chooses which moves to show. `/menu`'s
+# price-move card reads the same `plates` clause off `/api/price-moves`, so
+# one wording serves three screens.
+
+
+@dataclass(frozen=True)
+class Weighing:
+    """What a move did to the plates that sold since it landed: the signed
+    money, the portions behind it, and the rows that could be weighed at all.
+
+    The sign belongs to the cost, not to the feeling (`plates.margin_impact`):
+    positive is what the move cost the chain, negative is what it saved.
+    """
+
+    money_at_stake: Decimal
+    portions: Decimal
+    rows: tuple[ItemRow, ...]
+
+
+@dataclass(frozen=True)
+class MoveWords:
+    """A move said three ways: what happened, which plates felt it, and the
+    evidence for both. `plates` is None when no costed item uses the material
+    and for a basis change, which touches no plate it can name."""
+
+    sentence: str
+    plates: str | None
+    evidence: str
+
+
+def move_frame(
+    sales: Iterable[ItemSales],
+    rows: Iterable[ItemRow],
+    *,
+    period: Period,
+    scope: Scope,
+) -> tuple[dict[str, ItemRow], list[ItemSales]]:
+    """The rows and the days every move in this read is weighed against,
+    narrowed once to the scope in view (C13.6).
+
+    Under `?branch_id` the portions are that branch's, so the same rise
+    carries the same dirhams in the signals and in the price-moves panel
+    whatever the scope - which is only true because both build their frame
+    here rather than each filtering its own way.
+    """
+    in_scope = {r.menu_item_id: r for r in rows if r.branch_id == scope.branch_id}
+    since_rows = [
+        s
+        for s in sales
+        if s.business_date <= period.end
+        and not s.excluded
+        and s.menu_item_id is not None
+        and (scope.branch_id is None or s.branch_id == scope.branch_id)
+    ]
+    return in_scope, since_rows
+
+
+def moved_enough(move: "PriceMove") -> bool:
+    """`SPIKE_MIN_PCT` of the price it moved from, in either direction.
+
+    A rise of 5% is news and so is a fall of 5%; a 0.3% drift on a spice
+    nobody sells is not, and without the gate a 45-item menu would count
+    twenty "moves" and list five rows of nothing. A basis change carries no
+    percentage at all, so it is not gated here - the panel lists it on its
+    own rule.
+    """
+    delta = move.delta_per_base_unit
+    if delta is None:
+        return False
+    base = move.previous.cost_per_base_unit
+    return base > 0 and abs(delta) >= SPIKE_MIN_PCT * base
+
+
+def weigh_move(
+    move: "PriceMove",
+    moved_on: datetime.date,
+    *,
+    in_scope: Mapping[str, ItemRow],
+    since_rows: Sequence[ItemSales],
+) -> Weighing:
+    """The per-plate impact times the portions sold **on or after the day the
+    move landed** - never the whole period, which would charge the owner for
+    plates sold at the old price.
+
+    It is a since-landed figure and not a component of the contribution
+    column, which already charges every portion at the new price (D19); the
+    two are never added. An item whose days since the move have a line with
+    no quantity cannot be weighed and is left out of the money rather than
+    guessed at, and an item that is not costed has no margin for the move to
+    have touched.
+    """
+    since = contribution.days_since(since_rows, moved_on)
+    portions: dict[str, Decimal] = {}
+    uncountable: set[str] = set()
+    for day in since:
+        item_id = day.menu_item_id or ""
+        if day.no_qty_lines:
+            uncountable.add(item_id)
+        portions[item_id] = portions.get(item_id, Decimal(0)) + day.qty_sold - day.qty_refunded
+
+    stake = Decimal(0)
+    weighed: list[ItemRow] = []
+    total_portions = Decimal(0)
+    for impact in move.items:
+        row = in_scope.get(impact.menu_item_id)
+        sold = portions.get(impact.menu_item_id, Decimal(0))
+        if row is None or not row.costed or impact.menu_item_id in uncountable or sold <= 0:
+            continue
+        stake += impact.impact_per_portion * sold
+        total_portions += sold
+        weighed.append(row)
+    return Weighing(
+        money_at_stake=stake.quantize(FILS, rounding=ROUND_HALF_UP),
+        portions=total_portions,
+        rows=tuple(weighed),
+    )
+
+
+def _per_unit_words(unit: str) -> str:
+    """ "per kg", "per litre", "each" - the display unit as a price is read
+    aloud, never "per each"."""
+    return "each" if unit == "each" else f"per {unit}"
+
+
+def _plate_words(amount: Decimal, currency: str) -> str:
+    """A per-plate figure exactly as `/menu` prints it (`summaryMoney`): fils,
+    cut and never rounded, because the stored impact carries three decimals
+    and the third is storage precision, not information. Whole dirhams are
+    forbidden here - a plate margin rounded to AED 0 at karak prices says
+    nothing (the 2026-08-30 design review)."""
+    return f"{currency} {amount.quantize(FILS, rounding=ROUND_DOWN)}"
+
+
+def _plate_figure(impact: Decimal) -> str:
+    """The bracketed figure beside a named plate: the change in **margin**,
+    so a rise reads "-0.07" and a fall "0.07". `impact_per_portion` carries
+    the cost's sign, and a card that showed it unflipped would print a plus
+    against a plate that just got dearer."""
+    return str((-impact).quantize(FILS, rounding=ROUND_DOWN))
+
+
+def move_plates(move: "PriceMove", *, currency: str = DEFAULT_CURRENCY) -> str | None:
+    """Which plates felt it, named and counted, with no action verb: each
+    screen keeps its own action line ("check the price or the recipe" on
+    `/menu`) and its own type sizes, and only the naming is shared.
+
+    None when no costed item uses the material, and for a basis change, whose
+    items are empty by construction - there is nothing to attribute across a
+    pack change.
+    """
+    if not move.items:
+        return None
+    top, rest = move.items[0], move.items[1:]
+    up = (move.delta_per_base_unit or top.impact_per_portion) > 0
+    lead = (
+        f"{top.name} earns {_plate_words(abs(top.impact_per_portion), currency)} "
+        f"{'less' if up else 'more'} a portion"
+    )
+    named = [f"{item.name} ({_plate_figure(item.impact_per_portion)})" for item in rest]
+    counted = named[MOVE_ALSO_NAMED:]
+    named = named[:MOVE_ALSO_NAMED]
+    if counted:
+        named.append(f"{len(counted)} more")
+    if not named:
+        return f"{lead}."
+    listed = named[0] if len(named) == 1 else f"{', '.join(named[:-1])} and {named[-1]}"
+    return f"{lead}; also {listed}."
+
+
+def move_sentence(move: "PriceMove", *, period: Period, currency: str = DEFAULT_CURRENCY) -> str:
+    """What happened, in one line. A basis change says there is nothing to
+    compare rather than inventing a percentage across two pack sizes (D3),
+    and a move whose baseline is older than the window names that date instead
+    of thresholding it - a recency cutoff would be an invented number."""
+    if move.kind == "basis_changed":
+        return (
+            f"{move.ingredient_name} is priced from a different pack now, so there is "
+            "no before and after to show."
+        )
+    up = (move.delta_per_base_unit or Decimal(0)) > 0
+    rise = _price_words(abs(move.delta_per_display_unit or Decimal(0)), currency)
+    moved_on = move.current.purchased_on
+    since = "" if moved_on is None else f" since {_short_date(moved_on)}"
+    sentence = (
+        f"{move.ingredient_name} is {'up' if up else 'down'} {rise} "
+        f"{_per_unit_words(move.current.display_unit)}{since}"
+    )
+    previous_on = move.previous.purchased_on
+    if previous_on is not None and previous_on < period.start:
+        sentence += f", against its last purchase on {_short_date(previous_on)}"
+    return sentence + "."
+
+
+def move_evidence(
+    move: "PriceMove", weighing: Weighing | None, *, currency: str = DEFAULT_CURRENCY
+) -> str:
+    """The figures behind the sentence: the price it moved from, and the money
+    the portions sold since carried. A fall says "saved", because the same
+    signed sum that costs the chain on a rise is money it kept on a fall, and
+    calling both "at stake" would read as a bill. A basis change names both
+    packs instead - that is the whole evidence it has."""
+    if move.kind == "basis_changed":
+        return (
+            f"Now {move.current.product_name} from {move.current.supplier_name}, "
+            f"was {move.previous.product_name} from {move.previous.supplier_name}."
+        )
+    was = (
+        f"was {_price_words(move.previous.per_display_unit, currency)} "
+        f"{_per_unit_words(move.previous.display_unit)}"
+    )
+    if weighing is None or weighing.portions <= 0:
+        return f"{was} · no sales of items using it since it landed."
+    verb = "saved" if weighing.money_at_stake < 0 else "at stake"
+    moved_on = move.current.purchased_on
+    since = "since it landed" if moved_on is None else f"since {_short_date(moved_on)}"
+    return (
+        f"{was} · {_money_words(abs(weighing.money_at_stake), currency)} {verb} on the "
+        f"{_portions_words(weighing.portions)} portions sold {since}."
+    )
+
+
+def move_words(
+    move: "PriceMove",
+    *,
+    period: Period,
+    weighing: Weighing | None = None,
+    currency: str = DEFAULT_CURRENCY,
+) -> MoveWords:
+    """The three sentences at once, for the panel that shows all three. The
+    route that has no sales in hand (`/api/price-moves`) calls `move_plates`
+    alone; nobody composes any of this a second time."""
+    return MoveWords(
+        sentence=move_sentence(move, period=period, currency=currency),
+        plates=move_plates(move, currency=currency),
+        evidence=move_evidence(move, weighing, currency=currency),
+    )
+
+
 # --- supplier price spike (C13.2) -------------------------------------------
 
 
@@ -288,68 +543,28 @@ def price_spike(
     An item whose days since the move have a line with no quantity cannot be
     weighed and is left out of the money rather than guessed at.
     """
-    in_scope = {r.menu_item_id: r for r in rows if r.branch_id == scope.branch_id}
-    since_rows = [
-        s
-        for s in sales
-        if s.business_date <= period.end
-        and not s.excluded
-        and s.menu_item_id is not None
-        and (scope.branch_id is None or s.branch_id == scope.branch_id)
-    ]
+    in_scope, since_rows = move_frame(sales, rows, period=period, scope=scope)
 
     out: list[Signal] = []
     for move in moves:
         if move.kind != "moved" or move.delta_per_base_unit is None:
             continue
-        delta = move.delta_per_base_unit
-        if delta <= 0:
+        if move.delta_per_base_unit <= 0:
             continue  # a fall is not a spike
         moved_on = move.current.purchased_on
         if moved_on is None or moved_on > period.end:
             continue
-        base = move.previous.cost_per_base_unit
-        if base <= 0 or delta < SPIKE_MIN_PCT * base:
+        if not moved_enough(move):
             continue
 
-        since = contribution.days_since(since_rows, moved_on)
-        portions: dict[str, Decimal] = {}
-        uncountable: set[str] = set()
-        for day in since:
-            item_id = day.menu_item_id or ""
-            if day.no_qty_lines:
-                uncountable.add(item_id)
-            portions[item_id] = portions.get(item_id, Decimal(0)) + day.qty_sold - day.qty_refunded
-
-        stake = Decimal(0)
-        weighed: list[ItemRow] = []
-        total_portions = Decimal(0)
-        for impact in move.items:
-            row = in_scope.get(impact.menu_item_id)
-            sold = portions.get(impact.menu_item_id, Decimal(0))
-            if row is None or not row.costed or impact.menu_item_id in uncountable or sold <= 0:
-                continue
-            stake += impact.impact_per_portion * sold
-            total_portions += sold
-            weighed.append(row)
-        stake = stake.quantize(FILS, rounding=ROUND_HALF_UP)
+        weighing = weigh_move(move, moved_on, in_scope=in_scope, since_rows=since_rows)
+        stake, total_portions, weighed = weighing.money_at_stake, weighing.portions, weighing.rows
 
         line_qualities = [
             Quality.ESTIMATED if line.quality == ESTIMATED_WORD else Quality.RELIABLE
             for line in (move.current, move.previous)
         ]
         quality = _quality(*line_qualities, *(r.quality for r in weighed))
-
-        unit = move.current.display_unit
-        per_unit = "each" if unit == "each" else f"per {unit}"
-        rise = _price_words(move.delta_per_display_unit or Decimal(0), currency)
-        sentence = f"{move.ingredient_name} is up {rise} {per_unit} since {_short_date(moved_on)}"
-        previous_on = move.previous.purchased_on
-        if previous_on is not None and previous_on < period.start:
-            # A baseline older than the window is named, not thresholded:
-            # a recency cutoff would be an invented number.
-            sentence += f", against its last purchase on {_short_date(previous_on)}"
-        sentence += "."
 
         if total_portions > 0:
             detail = (
@@ -363,7 +578,7 @@ def price_spike(
         out.append(
             Signal(
                 kind=KIND_PRICE_SPIKE,
-                sentence=sentence,
+                sentence=move_sentence(move, period=period, currency=currency),
                 detail=_estimated(detail, quality),
                 money_at_stake=stake,
                 quality=quality,

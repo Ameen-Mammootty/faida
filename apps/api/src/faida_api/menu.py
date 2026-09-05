@@ -49,7 +49,7 @@ import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
 
-from . import costing, plates
+from . import costing, plates, signals
 from .api import (
     MEASURE_WORDS,
     _clean,
@@ -948,7 +948,13 @@ def _move_line_payload(line: MoveLine) -> dict:
 
 
 def _move_payload(move: PriceMove) -> dict:
-    """The wire shape the screen has read since WP-63, unchanged."""
+    """The wire shape the screen has read since WP-63, plus `plates` - the
+    named-and-counted clause the dashboard's price-moves panel reads too
+    (M9 WP-99), so `/menu`'s card and the panel never word the same move two
+    ways. Additive and optional: the field is new, nothing else moved, and
+    the currency is the module default because this route holds no tenant
+    currency and the card has always printed AED.
+    """
     return {
         "ingredient_id": move.ingredient_id,
         "ingredient_name": move.ingredient_name,
@@ -957,6 +963,7 @@ def _move_payload(move: PriceMove) -> dict:
         "previous": _move_line_payload(move.previous),
         "kind": move.kind,
         "delta_per_display_unit": _dec(move.delta_per_display_unit),
+        "plates": signals.move_plates(move),
         "items": [
             {
                 "menu_item_id": item.menu_item_id,
