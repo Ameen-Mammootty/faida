@@ -663,6 +663,106 @@ change, so it is the founder's call (the 2026-08-30 design review pinned the rou
 
 **Depends on:** nothing. Trigger: fired, on the dashboard's signal line.
 
+## Theoretical usage vs purchases (deferred by the M12 decomposition, 2026-09-05)
+
+M12 was decomposed in `Docs/M12_DECOMPOSITION.md` on 2026-09-05, unattended and not yet reviewed; the
+founder decides its §5 before a line is coded. The entries below are what the decomposition consciously
+left out, each with the trigger that brings it back and the decision it hangs on where there is one.
+
+### Stock on hand, counts, and a count sheet through WhatsApp
+
+**What:** An opening balance per material per branch, a stock-count session, and a count sheet photographed
+to the WhatsApp number through the same extraction door (PRD §22).
+
+**Why:** M12 measures what the sales needed against what was bought and says plainly that the difference is on
+the shelf, in the bin or unrecorded. A count is the first thing that asks the cafeteria to change how it works,
+and one lazy count turns every figure built on it into noise.
+
+**Depends on:** M12 shipped. Trigger: a pilot owner asks for a count by name, or says the ratio is useless
+because deliveries are lumpy.
+
+### Waste, spoilage, staff-meal and transfer entries
+
+**What:** Recorded events that explain a gap (PRD §22's event types), through a door with an actor and an audit row.
+
+**Why:** Neither has a schema home and neither is anyone's ask; the panel's standing sentence says they are unrecorded.
+
+**Depends on:** M12 shipped. Trigger: a chain that records waste, or asks why two branches' gaps differ by a transfer.
+
+### The append-only inventory ledger, balances as a projection, goods receipts
+
+**What:** PRD §22 whole: events and event lines, balances rebuilt from the ledger, invoice kept apart from receipt.
+
+**Why:** M12 measures what was billed. Billed 20 cartons and received 18 is a real rule with no paper behind it yet.
+
+**Depends on:** a count and at least one event type above. Trigger: a customer whose received quantities differ
+from billed ones and says so with a paper.
+
+### The word variance, and theoretical against physical
+
+**What:** Variance = physical − theoretical, never auto-labelled theft (PRD §22).
+
+**Why:** There is no physical figure, so the word has no referent; M12's forbidden-word test pins its absence.
+
+**Depends on:** a count. Trigger: the same.
+
+### A fourth signal: a material whose sales needed more than was bought
+
+**What:** A C13 kind with a threshold, ranked by money with the other three (M12 §5 P3).
+
+**Why:** Used above bought is a window that started with stock on the shelf **or** a wrong recipe or pack size,
+and no threshold tells them apart without a count; the ranked panel and its answer sentence say "look here
+first" without claiming one.
+
+**Depends on:** M12 shipped. Trigger: a material reads `under` for the same branch over two consecutive
+periods that each hold at least two purchases - the pattern that makes the reading a recipe rather than a
+shelf, at which point the threshold is measured rather than guessed.
+
+### "Days of use" beside the gap
+
+**What:** Bought ÷ (used per day), so two sacks on the last day of a week read as "34 days of use" (M12 §5 P8).
+
+**Why:** One more derived number on a row that carries four, dividing by a rate a short window has not earned;
+"1 purchase in this window; a single delivery is not a rate" says it in words.
+
+**Depends on:** M12 shipped. Trigger: an owner asks how long a delivery lasts.
+
+### A usage row on `/materials`
+
+**What:** The gap for the period beside a material's price on the consultant's screen (M12 §5 P1 option (b)).
+
+**Why:** `/materials` has no period and no branch filter; the dashboard's row already links to the material's anchor.
+
+**Depends on:** M12 shipped. Trigger: a consultant asks to see the gap while mapping.
+
+### A fifth slot in the daily brief
+
+**What:** `usage.answer` as a brief slot (M9 P8 pinned four).
+
+**Why:** C13.5 makes it free - the sentence is on the wire - and whether the template has room is M10's decision
+when the template is drafted.
+
+**Depends on:** M10, M12. Trigger: the template is drafted and the founder wants the shelf in it.
+
+### Re-resolving packs for uncosted lines
+
+**What:** `costing.resolve_pack` at read time for a line with no `cost_basis`, so a line blocked for a missing
+unit price with a readable "25 kg" still counts as bought (M12 §5 P2 option (b)).
+
+**Why:** One door: the factor that measured a line is the factor that costed it, frozen at confirm. The case this
+rescues is already on the blocked-costs queue with a person's name on it.
+
+**Depends on:** M12 shipped. Trigger: a chain where lines blocked for a missing price are a material share of purchases.
+
+### An index on `invoice_lines` for the period read
+
+**What:** The first index for `db.list_period_material_purchases`, which walks 0012's two indexes and filters
+by invoice date.
+
+**Why:** 0009's policy refuses an index ahead of the query that needs it.
+
+**Depends on:** WP-120. Trigger: the read passes 500 ms, or a tenant's confirmed stock lines pass 100,000.
+
 ## Extraction & matching
 
 ### A handwritten margin note gets folded into an item name and splits the catalog
