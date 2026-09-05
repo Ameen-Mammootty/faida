@@ -665,8 +665,8 @@ change, so it is the founder's call (the 2026-08-30 design review pinned the rou
 
 ## Theoretical usage vs purchases (deferred by the M12 decomposition, 2026-09-05)
 
-M12 was decomposed in `Docs/M12_DECOMPOSITION.md` on 2026-09-05, unattended and not yet reviewed; the
-founder decides its §5 before a line is coded. The entries below are what the decomposition consciously
+M12 was decomposed in `Docs/M12_DECOMPOSITION.md` on 2026-09-05 and reviewed the same evening by one
+outside voice (Codex, 16 findings, 12 folded); the founder decides its §5 before a line is coded. The entries below are what the decomposition consciously
 left out, each with the trigger that brings it back and the decision it hangs on where there is one.
 
 ### Stock on hand, counts, and a count sheet through WhatsApp
@@ -744,15 +744,30 @@ when the template is drafted.
 
 **Depends on:** M10, M12. Trigger: the template is drafted and the founder wants the shelf in it.
 
-### Re-resolving packs for uncosted lines
+### A drill route for a material's purchase lines
 
-**What:** `costing.resolve_pack` at read time for a line with no `cost_basis`, so a line blocked for a missing
-unit price with a readable "25 kg" still counts as bought (M12 §5 P2 option (b)).
+**What:** `GET /api/materials/{id}/usage?from&to&branch_id` serving one material's purchase lines and dishes,
+backed by the same pure rules, so the dashboard's usage block keeps its summary rows and drops the drill
+(M12 C14.4; the review's finding 13).
 
-**Why:** One door: the factor that measured a line is the factor that costed it, frozen at confirm. The case this
-rescues is already on the blocked-costs queue with a person's name on it.
+**Why:** The drill rides on the dashboard payload by C6 extended's rule - "nothing loads, the payload carries it" -
+and "every number traces to source" needs the line; at pilot scale a chain-month of measured stock lines is a
+few hundred rows.
 
-**Depends on:** M12 shipped. Trigger: a chain where lines blocked for a missing price are a material share of purchases.
+**Depends on:** WP-121. Trigger: a tenant's confirmed stock lines in one period pass 5,000, or the usage block
+passes 200 KB on the wire (recorded by `test_dashboard.py`).
+
+### A frozen quantity basis per line, written at confirm
+
+**What:** A per-line pack quantity frozen at confirm independent of price and currency - a migration and a
+change to `db._cost_stock_lines` (M12 §5 P2 option (c); the review's finding 1).
+
+**Why:** M12 measures a line at read time with `costing.resolve_pack` over the line's own printed cells and its
+pack's override, the resolver that costed it, and pins that a costed line's measure equals its frozen basis.
+Nothing derived is stored anywhere in this product, and the resolver's inputs are immutable.
+
+**Depends on:** WP-120. Trigger: a line's printed pack cells ever become mutable, or `resolve_pack` ever takes an
+input that is not on the line - the equality test would say so first.
 
 ### An index on `invoice_lines` for the period read
 
