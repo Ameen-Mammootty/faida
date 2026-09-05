@@ -202,6 +202,62 @@ regenerated practice file afterwards); `demo_reset_loop.sql` never touches the f
 and removing KAS-5 is what puts the ratio back to 30.3% by itself. Act three's script is
 `Docs/DEMO_RUNBOOK.md` §G.
 
+## Act four, and the figures the runbook quotes (WP-95, added 2026-09-05)
+
+Act three ends on a ratio; act four (`Docs/DEMO_RUNBOOK.md` §H) answers what is underneath it -
+what the chain **kept**, which dish sells and does not earn, and what one delivery did to both.
+`act_four.py` prints every figure §H quotes, so none of them is typed:
+
+    apps/api/.venv/bin/python Docs/demo-invoices/koukh-al-shay/act_four.py --migrate \
+        --database-url postgresql://localhost:5432/faida_act_four --stage real
+    ... --stage practice          # the seeded five-item menu and the rehearsal week
+    ... --menu-csv <path>         # the real menu, if it is not at the default location
+
+`--migrate` drops and rebuilds `public` from `supabase/migrations/`, so point it at a throwaway
+database and never at a live one. The script stages the chain through the doors a person uses -
+the menu through the loader, the four preparation papers through the typed-invoice door and the
+confirm, each pack mapped to its material on the `/materials` queue, the week through
+`POST /api/sales/days`, one keystroke per till name and `DELIVERY CHARGE` marked not a menu item -
+and then reads `GET /api/dashboard` twice, before and after the on-stage paper. It imports the
+shipped modules and computes nothing of its own; the only two things it simulates are the browser
+and the sign-in.
+
+**The real stage, after KAS-5 is confirmed** - the state act four reloads into at §H step 4, with
+45 items costed and every till name mapped:
+
+| | net sales | contribution | kept | ratio |
+|---|---|---|---|---|
+| Al Nahda | 23,066.47 | 14,994.39 | **65.5%** | - |
+| Rolla | 18,608.45 | 12,117.63 | 65.6% | - |
+| Al Qusais | 30,267.43 | 19,796.71 | 65.8% | 39.3% |
+| the chain | 71,942.35 | **46,908.73** | **65.7%** | 16.5% |
+
+Before that confirm the chain kept 47,020.76 at 65.8% and the signals panel held no milk move at
+all; the confirm moves the whole week, because it is costed at the price in force on its last day
+and KAS-5 is printed **on** that day (C12.4). The dish that sells and does not earn is
+Hot Chocolate - Large 250 ml (AED 403 at stake); the bottom of the item panel is
+Karak Delivery - Small 120 ml, 492 cups and AED 702.86 of sales, which kept AED 135.58 before the
+on-stage paper and AED 116.40 after it. Both milk moves fire as spikes, dated 31 Aug: evaporated
+milk AED 25.93 across 9 items, milk powder AED 1.11 across 2 - small because the delivery landed
+on the week's last day, so only that day's cups carry it.
+
+The script prints money rounded half up, and the screen's table **truncates** its whole-dirham
+headlines (`roundedAed`, which can only ever understate a ranking figure by under a dirham), so a
+script figure and a table figure can differ by one: AED 135.58 prints as `AED 135.58` here and
+reads `AED 135` on the dashboard. The exact figure is always in the drill and on the wire. Whether
+the screen should round instead of truncate is a separate call for the founder.
+
+Two honesty notes the runbook repeats. The script **types** the four preparation papers, and a
+typed price is asserted (C8), so every plate it prints is capped at *estimated*; on the real stage
+those papers were read from photographs and the same figures read *reliable with limitations*. The
+money is identical and only the word moves. And on the **practice** stage - the seeded five-item
+menu - every dish keeps between 81% and 86%, so nothing is ten points below the average, no branch
+is five points below the chain, and the seed's own price history moves nothing by 5%: **no signal
+can fire there**, which is C13.3a's warning about a relative rule on a very short menu rather than
+a fault. `tests/test_demo_seed.py` pins both stages - the practice one everywhere, the real one
+where the menu CSV is - so a change that quietly breaks the script fails a test instead of the
+demo.
+
 ## House rules these papers keep
 
 - Distinct invoice number on every paper (since WP-44 a reused supplier + number + total is held

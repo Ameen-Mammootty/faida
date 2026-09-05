@@ -621,6 +621,48 @@ the league does not show it.
 **Depends on:** WP-92. Trigger: a tenant's `sales_lines` passes a million rows or the dashboard read
 passes 500 ms.
 
+### The real menu CSV lives outside the repository, so act four's exact figures cannot fail CI
+
+**What:** Commit a copy of the founder's 45-item menu in the loader's shape (or a fixture derived
+from it) under `Docs/demo-invoices/koukh-al-shay/`, and drop the skip in
+`tests/test_demo_seed.py::test_act_four_speaks_the_figures_the_runbook_quotes`.
+
+**Why:** `DEMO_RUNBOOK.md` §H quotes exact figures (the branch the league puts first, the chain's
+kept percentage before and after KAS-5, the dish at the bottom of the five, the two milk moves)
+that `act_four.py` prints from the real stage, and the test that pins them runs only where
+`~/Downloads/Menu engineer/koukh-al-shay/faida-loader-preview.csv` exists - the founder's
+machine, not CI. Until the CSV is in the repository a change that quietly breaks act four fails
+on stage rather than in CI, which is the failure the row's acceptance was written to prevent.
+
+**Context:** WP-95, 2026-09-05. The practice stage (the seed's five items and the rehearsal week)
+is pinned everywhere, but it fires no signal and speaks none of §H's figures. The runbook already
+publishes the derived plate costs, so the prices are not a new disclosure; the recipes are the
+client's, which is why this is a data call and not an engineering one.
+
+**Depends on:** the founder's say-so on committing the client's menu. Trigger: fired - the day
+act four became the demo bar.
+
+### The screen's headline rounding truncates while every API sentence rounds half up
+
+**What:** Decide one rounding for a whole-dirham headline and apply it to `format.roundedAed`
+(string operations only, per the house rule), with its tests; or keep truncation and say so
+beside every Python sentence that sits next to a table figure.
+
+**Why:** `roundedAed` truncates by design since M5 ("can only ever understate a ranking figure by
+under a dirham"), and every sentence composed in Python - the signals, the answer, the
+contribution notes, the runbook's script - rounds half up (`ROUND_HALF_UP`). The dashboard is the
+first screen to put both on one line: a signal's detail says "AED 1,106 more" while the money
+column beside it reads "AED 1,105", and the runbook had to quote fils (135.58 rather than 136) to
+avoid naming a figure the table would not show. One dirham, but on the one screen whose job is to
+be believed at a glance.
+
+**Context:** Found at WP-93's browser walk and again at WP-95's runbook, 2026-09-05. The
+recommended fix is to round half up in `roundedAed` - it moves other screens' headline figures
+by at most one dirham, towards the figure the API's own words use - and it is a display-rule
+change, so it is the founder's call (the 2026-08-30 design review pinned the rounding rule).
+
+**Depends on:** nothing. Trigger: fired, on the dashboard's signal line.
+
 ## Extraction & matching
 
 ### A handwritten margin note gets folded into an item name and splits the catalog

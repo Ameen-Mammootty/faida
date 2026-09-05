@@ -1356,3 +1356,218 @@ def test_the_generator_runs_with_no_database_and_no_key_and_is_reproducible(tmp_
         regenerated = tmp_path / "committed.csv"
         gen.write_csv(gen.real_week(gen.DEFAULT_CSV), regenerated)
         assert regenerated.read_bytes() == REAL_WEEK_CSV.read_bytes()
+
+
+# --- act four (WP-95) ---------------------------------------------------------
+#
+# `DEMO_RUNBOOK.md` §H is the dashboard read straight after act three, and every
+# figure in it is printed by `Docs/demo-invoices/koukh-al-shay/act_four.py`,
+# never typed. These are the assertions that keep the script true: what act four
+# says on each stage, so a change that quietly breaks the script fails here
+# instead of on stage.
+#
+# Two stages, because they say different things (C13.3a). The **practice** stage
+# is `demo_seed.sql`'s five costed items and the rehearsal week - all of it
+# inside this repository, so it runs everywhere - and it is a five-item tea menu
+# where every dish keeps between 81% and 86%. No dish can sit ten points below
+# an average made of those dishes, no branch can sit five points below a chain
+# selling the same five, and the seed's own price history moves nothing by 5%,
+# so **no signal can fire on it** and act four must not promise one there. The
+# **real** stage is the one the demo runs on - the 45-item menu, the five KAS
+# papers, the committed week - and it is where the league, the low-margin dish
+# and the milk moves live. It needs the founder's menu CSV, which lives outside
+# the repository, so it is skipped where that file is not.
+
+ACT_FOUR = GENERATOR.parent / "act_four.py"
+
+
+def _act_four():
+    """The script as a module, imported from its path the way `_generator` is."""
+    spec = importlib.util.spec_from_file_location("act_four", ACT_FOUR)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.fixture
+def act_four(db):
+    """The script's own app over the test database: the shipped routers, the
+    real doors, and the token check replaced by a fixed context."""
+    module = _act_four()
+    app = module._app(db, TEST_DATABASE_URL)
+    client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://act-four")
+    return module, client
+
+
+def _every_money_is_a_string(payload: dict) -> None:
+    for row in payload["league"] + [payload["total"]]:
+        for field in ("net_sales", "purchases", "contribution", "contribution_pct"):
+            assert row.get(field) is None or isinstance(row[field], str), field
+    for row in payload["items"]["all"]:
+        for field in ("net_item_sales", "contribution", "contribution_pct", "cost_per_portion"):
+            assert row[field] is None or isinstance(row[field], str), field
+
+
+async def test_act_four_on_the_practice_stage_says_only_what_is_there(act_four, db):
+    """The rehearsal stage: a contribution figure for every branch, the league
+    ordered by what each keeps and the sentence naming its top row, the chain
+    reconciling to its branches, the Paratha carrying no numbers and saying
+    why - and **no signal at all**, which is the honest answer on a five-item
+    menu whose dishes all keep within five points of each other."""
+    module, client = act_four
+    async with client:
+        reads = await module.practice_stage(client, db, TEST_DATABASE_URL)
+    [(title, payload)] = reads
+    assert title == "the practice stage"
+
+    kept = [Decimal(row["contribution_pct"]) for row in payload["league"]]
+    assert len(kept) == 3 and kept == sorted(kept)
+    first = payload["league"][0]["branch_name"]
+    assert payload["answer"]["branch"] == (
+        f"Look at {first.removesuffix(' Branch')} first: it keeps about AED "
+        f"{Decimal(payload['league'][0]['contribution_pct']).quantize(Decimal('1'))} "
+        "of every 100 it takes, the least of the three."
+    )
+    assert Decimal(payload["total"]["contribution"]) == sum(
+        Decimal(row["contribution"]) for row in payload["league"]
+    )
+
+    assert payload["menu"] == {"items": 5, "costed": 4}
+    assert payload["items"]["count"] == 4
+    assert payload["items"]["bottom"] == []  # four costed rows do not make two fives
+    paratha = next(r for r in payload["items"]["all"] if r["menu_item_name"] == "Paratha")
+    assert paratha["contribution"] is None and paratha["contribution_pct"] is None
+    assert "no supplier product is mapped to Atta Flour yet" in paratha["notes"]
+    _every_money_is_a_string(payload)
+
+    # The whole week is mapped, so nothing is waiting and nothing is unnamed.
+    assert payload["unmapped"] == {"names": 0, "value": "0.00"}
+
+    # No signal, and therefore no dish sentence: act four's panel is empty here
+    # and §H says so rather than promising a money moment the stage cannot show.
+    assert payload["signals"] == []
+    assert payload["answer"]["item"] is None
+
+    # C12.4: the dashboard's plate equals /menu's only while no confirmed paper
+    # is dated after the period's last day. On the committed stage none is.
+    assert all(row["cost_per_portion_today"] is None for row in payload["items"]["all"])
+
+
+async def test_act_four_speaks_the_figures_the_runbook_quotes(act_four, db):
+    """The stage the demo runs on, read twice: the 45-item menu costed off the
+    four preparation papers, the committed week loaded through the door, every
+    till name mapped - then the same read again after the paper the founder
+    forwards on stage. These are §H's figures, and this is what keeps them
+    true: the branch the league puts first, the chain's kept percentage before
+    and after, the dish that sells and does not earn, the item at the bottom of
+    the five, and the two milk moves with their money and their date."""
+    module, client = act_four
+    if not module.DEFAULT_CSV.exists():
+        pytest.skip("the founder's 45-item menu lives outside the repository")
+    async with client:
+        reads = await module.real_stage(client, db, module.DEFAULT_CSV)
+    (before_title, before), (after_title, after) = reads
+    assert before_title == "the real stage, before KAS-5"
+    assert after_title == "the real stage, after KAS-5 is confirmed on stage"
+
+    # The period is the week's own, whatever day the demo runs on: 28 days
+    # ending on the newest loaded day, and the plates costed at that day.
+    for payload in (before, after):
+        assert payload["period"]["from"] == "2026-08-04"
+        assert payload["period"]["to"] == "2026-08-31"
+        assert payload["period"]["days"] == 28 and payload["period"]["default"] is True
+        assert payload["period"]["costed_at"] == "2026-08-31"
+        assert payload["menu"] == {"items": 45, "costed": 45}
+        assert payload["items"]["count"] == 45
+        assert payload["unmapped"] == {"names": 0, "value": "0.00"}
+        _every_money_is_a_string(payload)
+        # C12.4 again: no paper is dated after 31 Aug - KAS-5 is printed on it -
+        # so the dashboard's plate is today's plate, and no row carries a second
+        # cost. Print a paper dated 1 Sep and this changes, which is why §H
+        # states it as a condition and never as a promise.
+        assert all(row["cost_per_portion_today"] is None for row in payload["items"]["all"])
+
+        # The one sentence, named and worded.
+        assert payload["answer"]["branch"] == (
+            "Look at Al Nahda first: it keeps about AED 66 of every 100 it takes, "
+            "the least of the three."
+        )
+        assert payload["answer"]["item"] == (
+            "Hot Chocolate - Large 250 ml sells more than any item that earns under "
+            "the menu's average."
+        )
+        assert [row["branch_name"] for row in payload["league"]] == [
+            "Al Nahda Branch",
+            "Rolla Branch",
+            "Al Qusais Branch",
+        ]
+
+    # The league and the chain, before the on-stage paper and after it. Act
+    # three's own ratio is the row underneath, and it moves the way §G says.
+    assert [row["contribution_pct"] for row in before["league"]] == ["65.7", "65.8", "66.0"]
+    assert [row["contribution_pct"] for row in after["league"]] == ["65.5", "65.6", "65.8"]
+    assert before["total"]["contribution"] == "47020.76"
+    assert before["total"]["contribution_pct"] == "65.8"
+    assert after["total"]["contribution"] == "46908.73"
+    assert after["total"]["contribution_pct"] == "65.7"
+    assert before["league"][-1]["ratio_pct"] == "30.3"
+    assert after["league"][-1]["ratio_pct"] == "39.3"
+
+    # The item that sells and does not earn, and the bottom of the five.
+    assert [row["menu_item_name"] for row in after["items"]["bottom"]] == [
+        "Lotus Cake - slice",
+        "Honey Cake - slice",
+        "Karak Delivery - Large 400 ml",
+        "Karak Delivery - Medium 250 ml",
+        "Karak Delivery - Small 120 ml",
+    ]
+    worst = after["items"]["bottom"][-1]
+    assert (worst["contribution"], worst["contribution_pct"]) == ("116.40", "16.6")
+    assert (worst["qty_sold"], worst["net_item_sales"]) == ("492.000", "702.86")
+
+    # The signals, in the order the panel reads them. Before the on-stage paper
+    # there is no move to compare, so the panel is the two low-margin dishes.
+    assert [(s["kind"], s["money_at_stake"]) for s in before["signals"]] == [
+        ("popular_low_margin", "406.29"),
+        ("popular_low_margin", "245.64"),
+    ]
+    assert [
+        (s["kind"], s["money_at_stake"], s["menu_item_name"] or s["ingredient_name"])
+        for s in after["signals"]
+    ] == [
+        ("popular_low_margin", "403.28", "Hot Chocolate - Large 250 ml"),
+        ("popular_low_margin", "243.66", "Hot Chocolate - Small 150 ml"),
+        ("price_spike", "25.93", "Evaporated milk"),
+        ("price_spike", "1.11", "Milk powder"),
+    ]
+
+    # The drill §H opens on that row: its plate to the fils, and the one
+    # component the on-stage paper moved, each naming the invoice line behind it.
+    def _evaporated(payload: dict) -> dict:
+        row = payload["items"]["bottom"][-1]
+        return next(c for c in row["components"] if c["ingredient_name"] == "Evaporated milk")
+
+    assert (worst["cost_per_portion"], worst["net_price"], worst["avg_sold_at"]) == (
+        "1.192",
+        "1.429",
+        "1.429",
+    )
+    assert (_evaporated(before)["cost_per_portion"], _evaporated(before)["purchased_on"]) == (
+        "0.541",
+        "2026-08-25",
+    )
+    assert (_evaporated(after)["cost_per_portion"], _evaporated(after)["purchased_on"]) == (
+        "0.580",
+        "2026-08-31",
+    )
+    assert before["items"]["bottom"][-1]["contribution"] == "135.58"
+
+    spikes = {s["ingredient_name"]: s for s in after["signals"] if s["kind"] == "price_spike"}
+    assert spikes["Milk powder"]["sentence"] == "Milk powder is up AED 1.06 per kg since 31 Aug."
+    assert spikes["Milk powder"]["moved_on"] == "2026-08-31"
+    assert spikes["Evaporated milk"]["sentence"] == (
+        "Evaporated milk is up AED 0.83 per litre since 31 Aug."
+    )
+    assert spikes["Evaporated milk"]["moved_on"] == "2026-08-31"
