@@ -117,6 +117,16 @@ export function formatDate(isoDate: string): string {
   return `${Number(day)} ${MONTHS[monthIndex]} ${year}`;
 }
 
+/**
+ * "7.2 points" for a gap between two percentages the API already subtracted
+ * (M9 WP-93). String operations only, like everything else here: the API's
+ * one-decimal string rides through, and nothing is parsed or divided.
+ */
+export function points(value: string): string {
+  const one = value === "1" || value === "1.0" || value === "-1" || value === "-1.0";
+  return `${value} ${one ? "point" : "points"}`;
+}
+
 export const STATUS_LABEL: Record<InvoiceStatus, string> = {
   draft: "Draft",
   awaiting_confirm: "To confirm",

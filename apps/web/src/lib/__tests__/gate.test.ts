@@ -9,6 +9,7 @@ import { needsSession, gateDecision, isGatedPath, isMockMode, loginPath, safeNex
  */
 
 const GATED = [
+  "/dashboard",
   "/invoices",
   "/invoices/inv-1001",
   "/invoices/new",
@@ -34,6 +35,7 @@ const OPEN = [
   "/faida-sales-template.csv",
   "/fixtures/inv-1001.svg",
   // Lookalike prefixes are not the console.
+  "/dashboards",
   "/menus",
   "/invoicesx",
   "/materialsheet",
@@ -92,11 +94,37 @@ describe("gateDecision", () => {
     });
   });
 
-  it("sends a signed-in visitor on /login to the invoice list", () => {
+  it("sends a signed-in visitor on /login to the dashboard (M9 P10)", () => {
     expect(gateDecision({ pathname: "/login", hasSession: true, mockMode: false })).toEqual({
       kind: "console",
-      to: "/invoices",
+      to: "/dashboard",
     });
+  });
+
+  it("round-trips a bookmark to /invoices through ?next= after the landing change", () => {
+    // Signed out on the bookmark: to /login, the path remembered - where
+    // before the change the bare /login would have done, because /invoices
+    // was the default.
+    const out = gateDecision({ pathname: "/invoices", hasSession: false, mockMode: false });
+    expect(out).toEqual({ kind: "login", to: "/login?next=%2Finvoices" });
+    // Signed in on that login URL: back to the bookmark, not the dashboard.
+    const back = gateDecision({
+      pathname: "/login",
+      search: "?next=%2Finvoices",
+      hasSession: true,
+      mockMode: false,
+    });
+    expect(back).toEqual({ kind: "console", to: "/invoices" });
+  });
+
+  it("keeps a branch link to the dashboard through the gate", () => {
+    const decision = gateDecision({
+      pathname: "/dashboard",
+      search: "?branch=br-03",
+      hasSession: false,
+      mockMode: false,
+    });
+    expect(decision).toEqual({ kind: "login", to: "/login?next=%2Fdashboard%3Fbranch%3Dbr-03" });
   });
 
   it("sends a signed-in visitor on /login to the screen they were heading for", () => {
@@ -133,14 +161,22 @@ describe("safeNextPath", () => {
     "invoices",
     "/login",
     "/login?next=%2Fmenu",
-  ])("falls back to the invoice list for %s", (value) => {
-    expect(safeNextPath(value)).toBe("/invoices");
+  ])("falls back to the dashboard for %s", (value) => {
+    expect(safeNextPath(value)).toBe("/dashboard");
+  });
+
+  it("still follows a bookmark to the invoice list", () => {
+    expect(safeNextPath("/invoices")).toBe("/invoices");
   });
 });
 
 describe("loginPath", () => {
   it("omits next when the destination is the default", () => {
-    expect(loginPath("/invoices")).toBe("/login");
+    expect(loginPath("/dashboard")).toBe("/login");
+  });
+
+  it("carries next for the invoice list now that it is not the default", () => {
+    expect(loginPath("/invoices")).toBe("/login?next=%2Finvoices");
   });
 
   it("encodes the destination otherwise", () => {
@@ -152,6 +188,7 @@ describe("needsSession", () => {
   it("is true for every gated path and for /login itself", () => {
     for (const path of [
       "/login",
+      "/dashboard",
       "/invoices",
       "/invoices/abc",
       "/materials",
@@ -165,7 +202,7 @@ describe("needsSession", () => {
   });
 
   it("is false for the public site, so no Supabase client is ever built there", () => {
-    for (const path of ["/", "/api/waitlist", "/menus", "/nowhere", "/login-help"]) {
+    for (const path of ["/", "/api/waitlist", "/menus", "/dashboards", "/nowhere", "/login-help"]) {
       expect(needsSession(path)).toBe(false);
     }
   });
