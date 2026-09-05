@@ -214,6 +214,17 @@ class BranchRow:
     days: tuple[DayFigure, ...]
     pending: tuple[PendingPaper, ...]
     excluded: tuple[ExcludedPaper, ...]
+    #: The **sales half** of the label above, and the sentences that made it
+    #: (M9 C9 extended): a gap strictly inside the window, net sales that are
+    #: not positive, or nothing loaded at all. Derived here because
+    #: `period_row` derives it anyway on its way to the merged word, and read
+    #: by `contribution.py`, which must not carry the purchase side - a
+    #: pending paper is a fact about the ratio, not about a contribution -
+    #: and must not re-word a gap sentence. `sales_notes` is always a subset
+    #: of `notes`; the merged `quality` and `notes` above are unchanged, and
+    #: `test_ratio.py` green is what proves the `/sales` wire did not move.
+    sales_quality: Quality = Quality.RELIABLE
+    sales_notes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -375,28 +386,50 @@ def period_row(
     loaded_dates = {d.business_date for d in own_days}
     days_missing = window.days - len(loaded_dates) if own_days else 0
 
+    # The sales half is tracked as it is derived (M9 C9 extended): every
+    # sentence that goes into `sales_notes` is the same one that goes into
+    # `notes`, so the two can never word one gap two ways and the merged word
+    # stays exactly what it was.
     notes: list[str] = []
+    sales_notes: list[str] = []
+    sales_quality = Quality.RELIABLE
     quality: Quality
     if not own_days and not counted:
         quality = Quality.UNAVAILABLE
-        notes.append(f"no sales loaded and no confirmed purchases {window_words(window)}")
+        sentence = f"no sales loaded and no confirmed purchases {window_words(window)}"
+        notes.append(sentence)
+        # Nothing loaded is the sales side's own `unavailable`; the sentence
+        # is the one this branch composes, purchases and all, because a
+        # contribution must never re-word it.
+        sales_quality = Quality.UNAVAILABLE
+        sales_notes.append(sentence)
     else:
         incomplete = False
+        sales_incomplete = False
         if days_missing > 0:
             incomplete = True
-            notes.append(
+            sales_incomplete = True
+            sentence = (
                 f"{days_missing} of {window.days} days "
                 f"{'has' if days_missing == 1 else 'have'} no sales"
             )
+            notes.append(sentence)
+            sales_notes.append(sentence)
         if counted and not own_days:
             incomplete = True
-            notes.append(f"no sales loaded {window_words(window)}")
+            sentence = f"no sales loaded {window_words(window)}"
+            notes.append(sentence)
+            sales_quality = Quality.UNAVAILABLE
+            sales_notes.append(sentence)
         if own_days and not counted:
             incomplete = True
             notes.append(f"no confirmed purchases {window_words(window)}")
         if own_days and net_sales is not None and net_sales <= 0:
             incomplete = True
-            notes.append("net sales are not positive this period")
+            sales_incomplete = True
+            sentence = "net sales are not positive this period"
+            notes.append(sentence)
+            sales_notes.append(sentence)
         estimated = bool(pending) or bool(excluded) or any(i.asserted for i in counted)
         if incomplete:
             quality = Quality.INCOMPLETE
@@ -404,6 +437,8 @@ def period_row(
             quality = Quality.ESTIMATED
         else:
             quality = Quality.RELIABLE
+        if sales_quality is not Quality.UNAVAILABLE and sales_incomplete:
+            sales_quality = Quality.INCOMPLETE
     notes.extend(_pending_sentences(pending))
     notes.extend(_currency_sentences(excluded))
     asserted_count = sum(1 for i in counted if i.asserted)
@@ -472,6 +507,8 @@ def period_row(
             )
             for i in excluded
         ),
+        sales_quality=sales_quality,
+        sales_notes=tuple(sales_notes),
     )
 
 

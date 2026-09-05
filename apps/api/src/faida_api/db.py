@@ -756,7 +756,9 @@ class Database:
             tenant_id,
         )
 
-    async def list_mapped_pack_costs(self, *, tenant_id: str) -> list[asyncpg.Record]:
+    async def list_mapped_pack_costs(
+        self, *, tenant_id: str, as_of: datetime.date | None = None
+    ) -> list[asyncpg.Record]:
         """The newest costed invoice line behind every mapped pack, grouped by
         material with **that material's current price first** (M5 WP-54).
 
@@ -792,6 +794,14 @@ class Database:
         two broke on a random uuid (found by the 2026-08-29 M6 eng review's
         outside voice). Ties inside one invoice break on the printed line
         position - in both orderings - so the winner is the same on every run.
+
+        `as_of` is M9 C12.4: the price **in force on a date**, for a period
+        figure that must not move when an unrelated paper lands after the
+        period it covers. It bounds the same `purchased_on` expression the
+        ordering already uses, so a paper printed after the date is invisible
+        whenever it was confirmed, and a paper printed inside it counts
+        however late it was confirmed. Omitted or None it adds nothing: the
+        rows are today's, byte for byte, and a test pins that.
         """
         return await self.pool.fetch(
             """
@@ -817,6 +827,9 @@ class Database:
                   and l.cost_per_base_unit is not null
                   and l.cost_base_unit = ing.base_unit
                   and coalesce(l.qty, 0) >= 0
+                  and ($2::date is null
+                       or coalesce(inv.invoice_date,
+                                   (inv.confirmed_at at time zone 'UTC')::date) <= $2::date)
                 order by s.id, purchased_on desc, inv.confirmed_at desc,
                          l.position desc, l.id desc
             )
@@ -825,6 +838,7 @@ class Database:
                      position desc, invoice_line_id desc
             """,
             tenant_id,
+            as_of,
         )
 
     async def list_unmapped_supplier_items(self, *, tenant_id: str) -> list[asyncpg.Record]:
@@ -1317,7 +1331,9 @@ class Database:
             tenant_id,
         )
 
-    async def list_newest_purchases(self, *, tenant_id: str) -> list[asyncpg.Record]:
+    async def list_newest_purchases(
+        self, *, tenant_id: str, as_of: datetime.date | None = None
+    ) -> list[asyncpg.Record]:
         """The newest confirmed stock line per material - costed **or not**
         (WP-61 amendment 3, D11).
 
@@ -1331,7 +1347,12 @@ class Database:
         names this line as the reason.
 
         Same ordering and same qty >= 0 rule as the price query, so 'newest'
-        means the same thing in both and a credit line wins neither."""
+        means the same thing in both and a credit line wins neither.
+
+        `as_of` bounds it the same way (M9 C12.4) and for the same reason: a
+        blocked purchase printed **after** the period must not mark that
+        period's plate stale, or a closed month would go estimated because a
+        bare carton arrived in the next one."""
         return await self.pool.fetch(
             """
             select distinct on (ing.id)
@@ -1355,13 +1376,19 @@ class Database:
               and inv.status = 'confirmed'
               and l.line_kind = 'stock_item'
               and coalesce(l.qty, 0) >= 0
+              and ($2::date is null
+                   or coalesce(inv.invoice_date,
+                               (inv.confirmed_at at time zone 'UTC')::date) <= $2::date)
             order by ing.id, purchased_on desc, inv.confirmed_at desc,
                      l.position desc, l.id desc
             """,
             tenant_id,
+            as_of,
         )
 
-    async def list_price_move_pairs(self, *, tenant_id: str) -> list[asyncpg.Record]:
+    async def list_price_move_pairs(
+        self, *, tenant_id: str, as_of: datetime.date | None = None
+    ) -> list[asyncpg.Record]:
         """Per material, its two newest costed lines across **all** its mapped
         packs - the raw material of WP-63's money moment.
 
@@ -1376,7 +1403,12 @@ class Database:
 
         Same joins, filters and ordering as the price query, so 'newest'
         means the same thing on every screen and a credit line wins
-        nothing."""
+        nothing.
+
+        `as_of` bounds both halves of the pair (M9 C12.4 and C13.2): the move
+        a signal reports must be the newest one **at or before the period's
+        end**, or a September delivery would be multiplied by August's sales
+        and the sentence would name a rise the window never paid for."""
         return await self.pool.fetch(
             """
             with costed as (
@@ -1400,6 +1432,9 @@ class Database:
                   and l.cost_per_base_unit is not null
                   and l.cost_base_unit = ing.base_unit
                   and coalesce(l.qty, 0) >= 0
+                  and ($2::date is null
+                       or coalesce(inv.invoice_date,
+                                   (inv.confirmed_at at time zone 'UTC')::date) <= $2::date)
             ),
             ranked as (
                 select *, row_number() over (
@@ -1417,6 +1452,7 @@ class Database:
             order by ingredient_id, recency
             """,
             tenant_id,
+            as_of,
         )
 
     async def create_menu_item(
@@ -2068,6 +2104,64 @@ class Database:
             where t.tenant_id = $1
             group by t.id
             order by positive_value desc, t.name, t.id
+            """,
+            tenant_id,
+            date_from,
+            date_to,
+        )
+
+    async def list_period_item_sales(
+        self, *, tenant_id: str, date_from: datetime.date, date_to: datetime.date
+    ) -> list[asyncpg.Record]:
+        """What each till item sold, per branch and per business day (M9
+        C12.1): one query whatever the period, one row per branch-item-day,
+        every figure summed in SQL and never over lines in Python (C11.8).
+
+        The day is the grain because M9 needs three different roll-ups of the
+        same numbers - the whole period, one branch's clipped window, and the
+        days on or after a price move - and none can be recovered from a
+        period total. `contribution.py` rolls them up in Python exactly as
+        `ratio.period_row` rolls up `db.list_sales_days`' rows; the wire
+        carries no day array.
+
+        The four money and quantity sums are C12.6a's rule in SQL. Portions
+        are split by the **amount's** sign, not the quantity's, so a till that
+        prints a refund as `qty 1, amount -20.00` and a till that prints
+        `qty -1` give the same answer: the first would otherwise charge the
+        chain a plate's ingredients twice and the second would charge it
+        nothing. `no_qty_lines` is the count that cannot be multiplied at all
+        (`sales_lines.qty` is nullable by the M8 review's finding 7), and a
+        quantity is never derived from money ÷ menu price - that would invent
+        the one number the till did not print.
+
+        The menu item is read through `till_items.menu_item_id` at read time
+        and never stored on a line (0019:189-190), so remapping a name
+        corrects every past day at once; `excluded_at` rides along so a name
+        marked "not a menu item" can leave the figures without leaving the
+        denominator's exclusion rule.
+
+        Ordered by the till's own name inside each branch-day, so the answer
+        is the same on every run: the id alone is a uuid, which is stable but
+        arbitrary, and the caller groups the rows anyway.
+        """
+        return await self.pool.fetch(
+            """
+            select d.branch_id::text as branch_id, d.business_date,
+                   t.id::text as till_item_id, t.name, t.code,
+                   t.menu_item_id::text as menu_item_id, t.excluded_at,
+                   coalesce(sum(l.qty) filter (where l.net_amount >= 0), 0) as qty_sold,
+                   coalesce(sum(abs(l.qty)) filter (where l.net_amount < 0), 0) as qty_refunded,
+                   coalesce(sum(l.net_amount) filter (where l.net_amount > 0), 0)
+                     as positive_value,
+                   coalesce(sum(l.net_amount) filter (where l.net_amount < 0), 0)
+                     as refund_value,
+                   count(*) filter (where l.qty is null) as no_qty_lines
+            from sales_lines l
+            join sales_daily d on d.id = l.sales_day_id and d.tenant_id = l.tenant_id
+            join till_items t on t.id = l.till_item_id and t.tenant_id = l.tenant_id
+            where l.tenant_id = $1 and d.business_date between $2 and $3
+            group by d.branch_id, d.business_date, t.id
+            order by d.branch_id, d.business_date, t.name, t.id
             """,
             tenant_id,
             date_from,
