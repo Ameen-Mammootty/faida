@@ -428,18 +428,20 @@ existing days' stream; the loader's layout step already names the till.
 **Priority:** P3
 **Depends on:** WP-80. Trigger: a branch with two sales sources.
 
-### A custom date range on the sales screen
+### A custom date range on the sales and dashboard screens
 
 **What:** Free `from` and `to` inputs beside the picker.
 
 **Why:** The API takes any range up to 92 days; the picker exposes 28 days, 7 days and the months that
 have sales, because a free range is two inputs nobody asked for.
 
-**Context:** `GET /api/sales/branches?from&to` needs nothing; the change is the picker.
+**Context:** `GET /api/sales/branches?from&to` needs nothing; the change is the picker. The founder's reference
+for the main dashboard (2026-09-05, `Docs/M9_MAIN_DASHBOARD.md` §7 D3) drew From and To inputs; the
+recommendation keeps the picker on both screens, and `GET /api/dashboard?from&to` needs nothing either.
 
 **Effort:** S
 **Priority:** P3
-**Depends on:** WP-84. Trigger: a pilot asks for a range the picker lacks.
+**Depends on:** WP-84, WP-93. Trigger: a pilot asks for a range the picker lacks, or the founder answers D3 with (b).
 
 ### Correcting a wrongly taught branch alias
 
