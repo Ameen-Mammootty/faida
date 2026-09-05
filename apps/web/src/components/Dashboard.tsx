@@ -7,6 +7,8 @@ import { getBranches, getDashboard } from "@/lib/api";
 import {
   COST_COVERS,
   DEFAULT_CHOICE,
+  ITEMS_LINK,
+  LEAGUE_LINK,
   NO_ITEMS,
   NO_SIGNALS,
   answerCaveat,
@@ -49,9 +51,11 @@ import {
   signalsCount,
   signalsFootnote,
   tillNamesWords,
+  tiles,
   todaysPlateLink,
   withBranch,
   type PeriodChoice,
+  type Tile,
 } from "@/lib/dashboardScreen";
 import { roundedAed } from "@/lib/format";
 import type {
@@ -61,7 +65,8 @@ import type {
   DashboardSignal,
   LeagueRow,
 } from "@/lib/types";
-import { AlertIcon, ChevronIcon } from "./icons";
+import { ChevronIcon } from "./icons";
+import LossFigure from "./LossFigure";
 import QualityChip from "./QualityChip";
 
 /**
@@ -97,9 +102,9 @@ function onScreen(el: HTMLElement | null): boolean {
   return el !== null && el.offsetParent !== null;
 }
 
-/** A negative contribution, `/menu`'s `LossFigure` verbatim: the glyph, the
- * figure and the words on one line, never colour alone. */
-function LossFigure({
+/** A negative contribution: the shared loss figure with this screen's own
+ * noun (M9 WP-98), the glyph, the figure and the words on one line. */
+function ItemLoss({
   value,
   layout,
 }: {
@@ -107,19 +112,11 @@ function LossFigure({
   layout: "table" | "card";
 }) {
   return (
-    <span
-      className={`inline-flex flex-wrap items-center gap-x-1.5 font-medium text-plum ${
-        layout === "table" ? "justify-end" : ""
-      }`}
-    >
-      <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-        <AlertIcon className="h-3.5 w-3.5" />
-        <span className="tabular-nums">
-          -{roundedAed(value.replace("-", ""))}
-        </span>
-      </span>
-      <span className="text-xs font-normal">this item loses money</span>
-    </span>
+    <LossFigure
+      figure={`-${roundedAed(value.replace("-", ""))}`}
+      noun="this item"
+      align={layout === "table" ? "end" : "start"}
+    />
   );
 }
 
@@ -133,7 +130,7 @@ function ContributionFigure({
   if (row.contribution === null)
     return <span className="text-xs text-stone">-</span>;
   if (isLoss(row))
-    return <LossFigure value={row.contribution} layout={layout} />;
+    return <ItemLoss value={row.contribution} layout={layout} />;
   return (
     <span className="font-display text-[15px] font-semibold text-ink tabular-nums">
       {roundedAed(row.contribution)}
@@ -149,6 +146,84 @@ function KeptFigure({ value }: { value: string | null }) {
     >
       {percent(value)}
     </span>
+  );
+}
+
+// --- the tiles ----------------------------------------------------------------
+
+/** The quiet link at the right of a section's heading: where the whole of
+ * that section lives. */
+function SectionLink({ href, label }: { href: string; label: string }) {
+  return (
+    <Link
+      href={href}
+      className="text-xs font-medium text-palm underline-offset-2 hover:underline"
+    >
+      {label} &rarr;
+    </Link>
+  );
+}
+
+/**
+ * One headline: a label, the figure, the sentence beneath it and the quality
+ * word where the figure has one. No icon, no bar, no gauge, no arrow - the
+ * figure beside the sentence says everything a bar would, and a bar would
+ * carry meaning by colour alone.
+ */
+function HeadlineTile({ tile }: { tile: Tile }) {
+  return (
+    <dl className="rounded-md border border-ink/10 bg-paper p-4">
+      {/* Two labels of the four run to a second line in a quarter-width
+          column, so the label reserves both and the four figures sit on one
+          line across the row. */}
+      <dt className="min-h-8 text-xs font-medium tracking-wider text-stone uppercase">
+        {tile.label}
+      </dt>
+      <dd className="mt-1.5 flex flex-wrap items-baseline gap-x-2">
+        {tile.figure === null ? (
+          <span className="text-sm text-stone">{tile.words}</span>
+        ) : tile.loss ? (
+          <LossFigure
+            figure={tile.figure}
+            noun="the costed sales"
+            plural
+            figureClass="font-display text-2xl font-semibold tabular-nums"
+          />
+        ) : (
+          <span className="font-display text-2xl font-semibold text-ink tabular-nums">
+            {tile.figure}
+          </span>
+        )}
+        {tile.caption ? (
+          <span className="text-xs text-stone">· {tile.caption}</span>
+        ) : null}
+      </dd>
+      {/* A word with a note behind it leads that note, the way the league's
+          status cell does; a word with nothing behind it - the freshness
+          one - rides beside the date it qualifies. */}
+      {tile.sentence ? (
+        <dd className="mt-1 text-xs text-stone">
+          {tile.sentence}
+          {tile.status !== null && tile.status.sentence === null ? (
+            <>
+              {" "}
+              <QualityChip quality={tile.status.quality} />
+            </>
+          ) : null}
+        </dd>
+      ) : null}
+      {tile.status?.sentence ? (
+        <dd className="mt-1.5 text-xs text-stone">
+          <QualityChip quality={tile.status.quality} />{" "}
+          <span className="align-middle">{tile.status.sentence}</span>
+        </dd>
+      ) : null}
+      {tile.link ? (
+        <dd className="mt-1.5">
+          <SectionLink href={tile.link.href} label={tile.link.label} />
+        </dd>
+      ) : null}
+    </dl>
   );
 }
 
@@ -694,6 +769,7 @@ export default function Dashboard() {
     })),
   ];
   const options = branchOptions(branches);
+  const headlines = tiles(result);
   const panel = itemPanel(result.items, expanded);
   const incomplete = incompleteItems(result.items);
   const strip = coverageStrip(result);
@@ -836,6 +912,25 @@ export default function Dashboard() {
             </p>
             {caveat ? <p className="text-xs text-stone">{caveat}</p> : null}
           </div>
+
+          {/* The four headlines: the row in view, with the chain named beside
+              it. One column on a phone, two by two on a tablet, one row on a
+              laptop. */}
+          {headlines.length > 0 ? (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {headlines.map((tile) => (
+                <HeadlineTile key={tile.key} tile={tile} />
+              ))}
+            </div>
+          ) : null}
+
+          <section className="space-y-2">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h2 className="font-display text-lg font-semibold text-ink">
+                Branch league
+              </h2>
+              <SectionLink href={LEAGUE_LINK.href} label={LEAGUE_LINK.label} />
+            </div>
 
           {/* The league: one fixed grid so every row lines up (the sales screen's rule). */}
           <div className="hidden overflow-hidden rounded-md border border-ink/10 bg-paper sm:block">
@@ -988,6 +1083,7 @@ export default function Dashboard() {
               {leagueFootnote(result)}
             </li>
           </ul>
+          </section>
 
           {/* What to look at: prose, ranked by money, never a widget. */}
           <section className="space-y-2">
@@ -1028,11 +1124,14 @@ export default function Dashboard() {
               <h2 className="font-display text-lg font-semibold text-ink">
                 Items: what each one contributed
               </h2>
-              {itemsHeading(result.items) ? (
-                <span className="text-xs text-stone">
-                  {itemsHeading(result.items)}
-                </span>
-              ) : null}
+              <span className="flex flex-wrap items-baseline gap-x-3">
+                {itemsHeading(result.items) ? (
+                  <span className="text-xs text-stone">
+                    {itemsHeading(result.items)}
+                  </span>
+                ) : null}
+                <SectionLink href={ITEMS_LINK.href} label={ITEMS_LINK.label} />
+              </span>
             </div>
             {panel.kind === "none" ? (
               <div className="rounded-md border border-ink/10 bg-paper px-4 py-3">

@@ -20,8 +20,10 @@ import { formatDate, points, quantity, roundedAed } from "./format";
 import {
   QUALITY_WORD,
   daysBetween,
+  percent,
   shortBranchName,
   statusSentence,
+  weekdayDate,
   windowWords,
 } from "./salesScreen";
 import type {
@@ -31,6 +33,8 @@ import type {
   DashboardResult,
   DashboardScope,
   DashboardSignal,
+  DashboardTotal,
+  DashboardUnmapped,
   ItemComponent,
   LeagueRow,
   PeriodQuality,
@@ -197,7 +201,211 @@ export function answerCaveat(result: DashboardResult): string | null {
   return notes.length === 0 ? word : `${word}: ${notes.join(" · ")}`;
 }
 
+// --- the tiles ----------------------------------------------------------------
+
+export type TileKey = "net_sales" | "ratio" | "contribution" | "costed_share";
+
+export interface Tile {
+  key: TileKey;
+  label: string;
+  /** The headline, rounded and ready to print; null when there is no figure. */
+  figure: string | null;
+  /** What stands where the figure would: the cell's own words, or the
+   * no-menu sentence. */
+  words: string | null;
+  /** A negative contribution, printed as the loss figure with its words. */
+  loss: boolean;
+  /** The one sentence beneath the figure; empty when the words say it all. */
+  sentence: string;
+  /** Whose row this is, named once under a branch filter. */
+  caption: string | null;
+  /** The quality word, and the note that earned it where there is one. */
+  status: { quality: PeriodQuality; sentence: string | null } | null;
+  link: { href: string; label: string } | null;
+}
+
+/** The fields a tile reads. The chain total and every league row carry the
+ * same ones, which is what lets a tile follow the filter without a second
+ * shape. */
+type HeadlineRow = Pick<
+  LeagueRow,
+  | "net_sales"
+  | "purchases"
+  | "ratio_pct"
+  | "contribution"
+  | "contribution_pct"
+  | "costed_share_pct"
+  | "ratio_quality"
+  | "ratio_notes"
+  | "contribution_quality"
+  | "contribution_notes"
+>;
+
+/** The tile's chip: the quality word and the first note behind it, through
+ * the shipped sentence maker - so a row whose only note is its delivery
+ * count gets the standing sentence rather than a count dressed as a caveat. */
+function tileStatus(
+  quality: PeriodQuality,
+  notes: string[],
+): { quality: PeriodQuality; sentence: string } {
+  return { quality, sentence: statusSentence(quality, notes.slice(0, 1)) };
+}
+
+/** The ratio cell's words for the chain. `total` carries no delivery count,
+ * and under a branch filter the league cannot supply one, so a chain that
+ * paid nothing in the window is read off its own purchases - which is the
+ * "no confirmed purchases" case the words are asking about. */
+function chainRatioWords(total: DashboardTotal): string {
+  return noRatioWords({
+    net_sales: total.net_sales,
+    deliveries: /^0+(\.0+)?$/.test(total.purchases) ? 0 : 1,
+  });
+}
+
+/** The share of what sold that could be costed. Unfiltered it is the
+ * chain's; under a filter it is that branch's own row, never the chain's -
+ * the strip's rule since WP-93, now shared with the tile above it so the two
+ * can never print different shares of the same sales. */
+function costedShare(result: DashboardResult): string | null {
+  return result.scope.branch_id === null
+    ? result.total.costed_share_pct
+    : (result.league[0]?.costed_share_pct ?? null);
+}
+
+/** "3 till names worth AED 8,320 have no dish yet." - the queue in the words
+ * the strip has used since WP-93, said once for both. */
+function unmappedWords(unmapped: DashboardUnmapped): string {
+  const { names, value } = unmapped;
+  if (names === 0) return "Every till name is mapped.";
+  return `${names} till ${names === 1 ? "name" : "names"} worth ${roundedAed(value)} ${
+    names === 1 ? "has" : "have"
+  } no dish yet.`;
+}
+
+const MAP_THEM = { href: "/sales", label: "Map them on Sales" };
+
+/**
+ * The four headline tiles (M9 WP-98), in reading order: what the till took,
+ * what the papers cost against it, what is left after ingredients and
+ * packaging, and how much of the sales those figures could be costed from.
+ *
+ * The tiles are the row in view, and they name the chain beside it: every
+ * figure is the chain's unfiltered and that branch's own under `?branch=`,
+ * because a chain figure above a branch sentence is a number about one thing
+ * captioned with another. No tile on a first run - there is nothing to count
+ * yet, and the paragraph is the screen.
+ */
+export function tiles(result: DashboardResult): Tile[] {
+  if (isFirstRun(result)) return [];
+  const filtered = result.scope.branch_id !== null;
+  const branchRow = result.league[0];
+  if (filtered && branchRow === undefined) return [];
+  const chain = result.total;
+  const row: HeadlineRow = filtered ? branchRow : chain;
+  // The row is named once, on the first tile: the other three name the chain
+  // in their own sentences, and four captions saying the same word is noise.
+  const caption = filtered
+    ? shortBranchName(result.scope.branch_name ?? branchRow.branch_name)
+    : null;
+  const noMenu = noMenuSentence(result);
+  const loadedTo = result.freshness.sales_through;
+  const ownRatioWords = filtered ? noRatioWords(branchRow) : chainRatioWords(chain);
+  const chainRatio =
+    chain.ratio_pct === null ? chainRatioWords(chain).toLowerCase() : percent(chain.ratio_pct);
+  const contribution = row.contribution;
+  const loss = contribution !== null && contribution.startsWith("-");
+  const keeps =
+    row.contribution_pct === null
+      ? "after ingredients and packaging"
+      : `keeps ${percent(row.contribution_pct)} of costed sales · after ingredients and packaging`;
+  const share = costedShare(result);
+
+  return [
+    {
+      key: "net_sales",
+      label: "Net sales",
+      figure: row.net_sales === null ? null : roundedAed(row.net_sales),
+      words: row.net_sales === null ? "Nothing loaded" : null,
+      loss: false,
+      sentence:
+        loadedTo === null
+          ? "from the till, net of VAT"
+          : `from the till, net of VAT · loaded to ${weekdayDate(loadedTo)}`,
+      caption,
+      // Past seven days the API says estimated, and the word rides beside the
+      // date it qualifies; there is no note behind it to print.
+      status:
+        result.freshness.quality === "estimated"
+          ? { quality: "estimated", sentence: null }
+          : null,
+      link: null,
+    },
+    {
+      key: "ratio",
+      label: "Purchases ÷ net sales (cash basis)",
+      figure: row.ratio_pct === null ? null : percent(row.ratio_pct),
+      words: row.ratio_pct === null ? ownRatioWords : null,
+      loss: false,
+      sentence: `${roundedAed(row.purchases)} of confirmed papers in this window${
+        filtered ? ` · the chain reads ${chainRatio}` : ""
+      }`,
+      caption: null,
+      status: tileStatus(row.ratio_quality, row.ratio_notes),
+      link: null,
+    },
+    {
+      key: "contribution",
+      label: "Contribution before overheads (estimate)",
+      figure:
+        noMenu !== null || contribution === null
+          ? null
+          : loss
+            ? `-${roundedAed(contribution.slice(1))}`
+            : roundedAed(contribution),
+      words:
+        noMenu !== null
+          ? noMenu
+          : contribution === null
+            ? noContributionWords(row)
+            : null,
+      loss,
+      sentence:
+        noMenu !== null
+          ? ""
+          : `${keeps}${
+              filtered && chain.contribution_pct !== null
+                ? ` · the chain keeps ${percent(chain.contribution_pct)}`
+                : ""
+            }`,
+      caption: null,
+      // Nothing is costed without a menu, so the quality word behind the
+      // figure has nothing to qualify.
+      status: noMenu !== null ? null : tileStatus(row.contribution_quality, row.contribution_notes),
+      link: null,
+    },
+    {
+      key: "costed_share",
+      label: "Costed share of sales",
+      figure: noMenu !== null || share === null ? null : percent(share),
+      words:
+        noMenu !== null ? noMenu : share === null ? "Nothing sold here can be costed yet." : null,
+      loss: false,
+      sentence: noMenu !== null ? "" : unmappedWords(result.unmapped),
+      caption: null,
+      // A share is a fact about the rows, not a figure with a caveat.
+      status: null,
+      link: noMenu !== null || result.unmapped.names === 0 ? null : MAP_THEM,
+    },
+  ];
+}
+
 // --- the league ---------------------------------------------------------------
+
+/** Where the league's own days and papers live, beside its heading. */
+export const LEAGUE_LINK = { href: "/sales", label: "Days and papers on Sales" };
+
+/** Where every plate lives, beside the item panel's heading. */
+export const ITEMS_LINK = { href: "/menu", label: "Every plate on Menu" };
 
 /** "25-31 Aug, 7 days · 3 deliveries" under the branch name. */
 export function leagueLine(row: LeagueRow): string {
@@ -497,25 +705,15 @@ export interface CoverageStrip {
 export function coverageStrip(result: DashboardResult): CoverageStrip {
   // Under a branch filter the figures on the screen are that branch's, so
   // the share quoted beside them is that branch's row, never the chain's.
-  const share =
-    result.scope.branch_id === null
-      ? result.total.costed_share_pct
-      : (result.league[0]?.costed_share_pct ?? null);
-  const { names, value } = result.unmapped;
+  const share = costedShare(result);
   const lead =
     share === null
       ? "Nothing sold here can be costed yet."
       : `These figures cover ${share}% of what was sold.`;
-  const rest =
-    names === 0
-      ? "Every till name is mapped."
-      : `${names} till ${names === 1 ? "name" : "names"} worth ${roundedAed(value)} ${
-          names === 1 ? "has" : "have"
-        } no dish yet.`;
   return {
     lead,
-    rest,
-    link: names === 0 ? null : { href: "/sales", label: "Map them on Sales" },
+    rest: unmappedWords(result.unmapped),
+    link: result.unmapped.names === 0 ? null : MAP_THEM,
   };
 }
 

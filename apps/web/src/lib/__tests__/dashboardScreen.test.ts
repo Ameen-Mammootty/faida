@@ -36,6 +36,7 @@ import {
   signalWhen,
   signalsCount,
   signalsFootnote,
+  tiles,
   todaysPlateLink,
   withBranch,
 } from "../dashboardScreen";
@@ -225,7 +226,7 @@ describe("the freshness line", () => {
     expect(line).toEqual({
       sentence: "Sales loaded to Mon 31 Aug, 5 days ago.",
       estimated: false,
-      takings: "AED 9,492 taken that day across 3 branches",
+      takings: "AED 9,493 taken that day across 3 branches",
       papers: { label: "2 papers waiting for you", href: "/invoices?status=needs_review" },
     });
   });
@@ -235,7 +236,7 @@ describe("the freshness line", () => {
     expect(partial?.sentence).toBe("Sales loaded to Mon 31 Aug, 12 days ago.");
     expect(partial?.estimated).toBe(true);
     const karama = freshnessLine(await scenario("full", "br-02"));
-    expect(karama?.takings).toBe("AED 2,986 taken that day at Karama");
+    expect(karama?.takings).toBe("AED 2,987 taken that day at Karama");
     expect(karama?.papers).toBeNull(); // Karama holds no paper for review
     const quoz = freshnessLine(await scenario("full", "br-01"));
     expect(quoz?.papers).toEqual({
@@ -315,9 +316,9 @@ describe("the league", () => {
   });
 
   it("writes the card's caption from the row's own figures", () => {
-    expect(cardLine(leagueRow())).toBe("Kept AED 7,827 of AED 15,845 · purchases ÷ net sales 26.0%");
+    expect(cardLine(leagueRow())).toBe("Kept AED 7,828 of AED 15,846 · purchases ÷ net sales 26.0%");
     expect(cardLine(leagueRow({ ratio_pct: null, deliveries: 0 }))).toBe(
-      "Kept AED 7,827 of AED 15,845 · no confirmed purchases",
+      "Kept AED 7,828 of AED 15,846 · no confirmed purchases",
     );
     expect(
       cardLine(leagueRow({ net_sales: null, ratio_pct: null, contribution: null, contribution_pct: null, deliveries: 0 })),
@@ -541,6 +542,125 @@ describe("the items", () => {
     expect(chicken?.quality).toBe("estimated");
     expect(chicken?.cost_per_portion_today).toBe("25.400");
     expect(chicken?.notes.join(" ")).toMatch(/sold at an average AED 40\.15 against today's menu price of AED 42\.86/);
+  });
+});
+
+describe("the headline tiles", () => {
+  it("is the chain's four figures, each with the sentence that qualifies it", async () => {
+    const full = await scenario("full");
+    const [netSales, ratio, contribution, share] = tiles(full);
+
+    expect(netSales).toEqual({
+      key: "net_sales",
+      label: "Net sales",
+      figure: "AED 67,471",
+      words: null,
+      loss: false,
+      sentence: "from the till, net of VAT · loaded to Mon 31 Aug",
+      caption: null,
+      status: null,
+      link: null,
+    });
+    expect(ratio.label).toBe("Purchases ÷ net sales (cash basis)");
+    expect(ratio.figure).toBe("23.7%");
+    expect(ratio.sentence).toBe("AED 16,019 of confirmed papers in this window");
+    expect(ratio.status).toEqual({
+      quality: "incomplete",
+      sentence: "1 of 3 branches incomplete.",
+    });
+    expect(contribution.label).toBe("Contribution before overheads (estimate)");
+    expect(contribution.figure).toBe("AED 37,952");
+    expect(contribution.sentence).toBe(
+      "keeps 67.4% of costed sales · after ingredients and packaging",
+    );
+    expect(contribution.status?.quality).toBe("estimated");
+    expect(share).toEqual({
+      key: "costed_share",
+      label: "Costed share of sales",
+      figure: "84.2%",
+      words: null,
+      loss: false,
+      sentence: "3 till names worth AED 8,320 have no dish yet.",
+      caption: null,
+      status: null,
+      link: { href: "/sales", label: "Map them on Sales" },
+    });
+  });
+
+  it("carries the word beside the date when the sales are old", async () => {
+    const partial = tiles(await scenario("partial"));
+    expect(partial[0].figure).toBe("AED 51,595");
+    expect(partial[0].status).toEqual({ quality: "estimated", sentence: null });
+    expect(partial[1].status?.sentence).toBe("2 of 3 branches incomplete.");
+    expect(partial[2].sentence).toBe(
+      "keeps 69.4% of costed sales · after ingredients and packaging",
+    );
+  });
+
+  it("says every till name is mapped, with nothing to click", async () => {
+    const quiet = tiles(await scenario("quiet"));
+    expect(quiet[3].figure).toBe("100.0%");
+    expect(quiet[3].sentence).toBe("Every till name is mapped.");
+    expect(quiet[3].link).toBeNull();
+    expect(quiet[1].status?.sentence).toBe("Every day loaded, every paper confirmed.");
+  });
+
+  it("is the branch's own row under the filter, with the chain named beside it", async () => {
+    const quoz = await scenario("full", "br-01");
+    const [netSales, ratio, contribution, share] = tiles(quoz);
+
+    // The branch's figures, never the chain's - the league row and the strip
+    // on the same screen say the same numbers.
+    expect(netSales.figure).toBe("AED 30,719");
+    expect(netSales.caption).toBe("Al Quoz");
+    expect(ratio.figure).toBe("38.7%");
+    expect(ratio.sentence).toBe(
+      "AED 11,898 of confirmed papers in this window · the chain reads 23.7%",
+    );
+    expect(contribution.figure).toBe("AED 18,319");
+    expect(contribution.sentence).toBe(
+      "keeps 69.9% of costed sales · after ingredients and packaging · the chain keeps 67.4%",
+    );
+    expect(share.figure).toBe("86.0%");
+    expect(share.sentence).toBe("1 till name worth AED 3,120 has no dish yet.");
+    // Not the chain's 84.2%, which the same read still carries.
+    expect(quoz.total.costed_share_pct).toBe("84.2");
+    expect(coverageStrip(quoz).lead).toBe("These figures cover 86.0% of what was sold.");
+  });
+
+  it("says why the last two tiles are empty when there is no menu", async () => {
+    const nomenu = tiles(await scenario("nomenu"));
+    expect(nomenu[0].figure).toBe("AED 67,471");
+    expect(nomenu[1].figure).toBe("23.7%");
+    for (const tile of [nomenu[2], nomenu[3]]) {
+      expect(tile.figure).toBeNull();
+      expect(tile.words).toBe("No menu is loaded, so nothing can be costed yet.");
+      expect(tile.sentence).toBe("");
+      expect(tile.status).toBeNull();
+      expect(tile.link).toBeNull();
+    }
+    const filtered = tiles(await scenario("nomenu", "br-01"));
+    expect(filtered[0].caption).toBe("Al Quoz");
+    expect(filtered[2].words).toBe("No menu is loaded, so nothing can be costed yet.");
+  });
+
+  it("shows no tile at all on a first run", async () => {
+    expect(tiles(await scenario("empty"))).toEqual([]);
+    expect(tiles(await scenario("empty", "br-01"))).toEqual([]);
+  });
+
+  it("names a loss as a loss, rounded up by its size", async () => {
+    const quiet = await scenario("quiet");
+    const losing = {
+      ...quiet,
+      total: { ...quiet.total, contribution: "-411.50", contribution_pct: "-1.4" },
+    };
+    const [, , contribution] = tiles(losing);
+    expect(contribution.loss).toBe(true);
+    expect(contribution.figure).toBe("-AED 412");
+    expect(contribution.sentence).toBe(
+      "keeps -1.4% of costed sales · after ingredients and packaging",
+    );
   });
 });
 
