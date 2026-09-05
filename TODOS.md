@@ -441,7 +441,8 @@ recommendation keeps the picker on both screens, and `GET /api/dashboard?from&to
 
 **Effort:** S
 **Priority:** P3
-**Depends on:** WP-84, WP-93. Trigger: a pilot asks for a range the picker lacks, or the founder answers D3 with (b).
+**Depends on:** WP-84, WP-93. Trigger: a pilot asks for a range the picker lacks (the founder answered D3 with the
+picker, 2026-09-05).
 
 ### Correcting a wrongly taught branch alias
 
@@ -614,6 +615,37 @@ branch bought it, which is right for central buying and a stated limit otherwise
 **Depends on:** WP-90. Trigger: a chain whose branches buy the same material at different prices asks why
 the league does not show it.
 
+### A `tiles` block on the dashboard wire
+
+**What:** The four headline tiles' figures and sentences composed in Python and carried on `GET /api/dashboard`,
+instead of joined in `dashboardScreen.tiles()` from fields the API already sends (M9 main dashboard, WP-98).
+
+**Why:** One of the two outside voices proposed it. The tiles are joins of `total` / `league[0]` fields with
+labels, the shipped screen's own practice (`cardLine`, `coverageStrip`), and M10's brief reads `freshness`,
+`league[0]` and `signals` directly, so nothing else would consume the block today.
+
+**Depends on:** WP-98. Trigger: a second consumer of the tiles' sentences.
+
+### The dashboard's answer and freshness composers shared with the mock generator
+
+**What:** Extract `dashboard.py`'s `branch_answer`, `item_answer` and `freshness_sentence` into a pure module so
+`mock/dashboard/generate.py` imports them instead of carrying copies (its own docstring says they are copies).
+
+**Why:** WP-99 puts its new composers in `signals.py` so the generator imports them; the two shipped copies
+predate that rule and can drift on their own.
+
+**Depends on:** WP-99. Trigger: the third copied sentence.
+
+### A price-move history inside a window
+
+**What:** Every move a material made inside the period, not only its latest: a new read over every costed line in
+the window with its baseline, replacing the newest-pair read for the panel.
+
+**Why:** `db.list_price_move_pairs` returns the two newest lines per material, so the dashboard's panel is "each
+material's latest move inside the window" by construction and its caption says so.
+
+**Depends on:** WP-99. Trigger: an owner asks why a material's price moved twice in a month and the panel shows one.
+
 ### An index on the sales tables
 
 **What:** The first index beyond the uniques on `sales_lines` and `sales_daily`, in a 0020.
@@ -663,7 +695,8 @@ recommended fix is to round half up in `roundedAed` - it moves other screens' he
 by at most one dirham, towards the figure the API's own words use - and it is a display-rule
 change, so it is the founder's call (the 2026-08-30 design review pinned the rounding rule).
 
-**Depends on:** nothing. Trigger: fired, on the dashboard's signal line.
+**Depends on:** nothing. Trigger: fired, on the dashboard's signal line. **Decided 2026-09-05 (D7 of
+`Docs/M9_MAIN_DASHBOARD.md`): round half up; WP-98 owns the change and the sweep of the four screens that use it.**
 
 ## Extraction & matching
 
