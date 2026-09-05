@@ -302,30 +302,16 @@ def _cost_component(
     )
 
 
-async def _menu_context(
-    db: Database, tenant_id: str, *, as_of: datetime.date | None = None
-) -> tuple[
-    list[asyncpg.Record],
-    dict[str, list[asyncpg.Record]],
-    dict[str, plates.Plate],
-    Decimal | None,
-]:
-    """The whole menu, costed, from a fixed number of queries (D10): every
-    item row, each item's current components, each item's plate answer, and
-    the VAT rate. Both menu reads - the list and the money moment - derive
-    from this same bundle, so they can never disagree on what a plate earns.
-
-    `as_of` is passed straight to `_pricing` (M9 C12.4). The **recipe** is
-    always the current version even then, by decision: recipes are loaded at
-    onboarding after the sales they cost, so an as-of recipe read would mark
-    every onboarding month incomplete. A period row says *recipe version N*
-    so a reader can see which one costed it."""
-    prices, stale, vat_rate = await _pricing(db, tenant_id, as_of=as_of)
-    components_by_item: dict[str, list[asyncpg.Record]] = {}
-    for row in await db.list_current_recipe_components(tenant_id=tenant_id):
-        components_by_item.setdefault(row["menu_item_id"], []).append(row)
-
-    rows = await db.list_menu_items(tenant_id=tenant_id)
+def _plates_for(
+    rows: Sequence,
+    components_by_item: Mapping[str, Sequence],
+    prices: dict[str, asyncpg.Record],
+    stale: dict[str, asyncpg.Record],
+    vat_rate: Decimal | None,
+) -> dict[str, plates.Plate]:
+    """Every item's plate from one set of prices - the loop `_menu_context`
+    runs, on its own so the dashboard can cost the same menu twice (as of the
+    period's end and today, M9 D20) with one set of recipe and item rows."""
     plate_by_item: dict[str, plates.Plate] = {}
     for row in rows:
         if row["recipe_id"] is None:
@@ -341,7 +327,39 @@ async def _menu_context(
                 selling_price=row["selling_price"],
                 vat_rate=vat_rate,
             )
-    return rows, components_by_item, plate_by_item, vat_rate
+    return plate_by_item
+
+
+async def _menu_context(
+    db: Database, tenant_id: str, *, as_of: datetime.date | None = None
+) -> tuple[
+    list[asyncpg.Record],
+    dict[str, list[asyncpg.Record]],
+    dict[str, plates.Plate],
+    Decimal | None,
+    dict[str, asyncpg.Record],
+]:
+    """The whole menu, costed, from a fixed number of queries (D10): every
+    item row, each item's current components, each item's plate answer, the
+    VAT rate, and the price row each material was costed from. Both menu
+    reads - the list and the money moment - derive from this same bundle, so
+    they can never disagree on what a plate earns.
+
+    `as_of` is passed straight to `_pricing` (M9 C12.4). The **recipe** is
+    always the current version even then, by decision: recipes are loaded at
+    onboarding after the sales they cost, so an as-of recipe read would mark
+    every onboarding month incomplete. A period row says *recipe version N*
+    so a reader can see which one costed it. The prices are returned too (the
+    fifth value, WP-90's hand-off to WP-92) so a contribution row can name the
+    invoice line behind each component's price with no further read."""
+    prices, stale, vat_rate = await _pricing(db, tenant_id, as_of=as_of)
+    components_by_item: dict[str, list[asyncpg.Record]] = {}
+    for row in await db.list_current_recipe_components(tenant_id=tenant_id):
+        components_by_item.setdefault(row["menu_item_id"], []).append(row)
+
+    rows = await db.list_menu_items(tenant_id=tenant_id)
+    plate_by_item = _plates_for(rows, components_by_item, prices, stale, vat_rate)
+    return rows, components_by_item, plate_by_item, vat_rate, prices
 
 
 def _plate_payload(result: plates.Plate) -> dict:
@@ -475,7 +493,7 @@ async def list_menu_items(request: Request, ctx: Context) -> dict:
     tenant currency - joined in Python, nothing stored, nothing to
     invalidate."""
     db: Database = request.app.state.db
-    rows, _, plate_by_item, _ = await _menu_context(db, ctx.tenant_id)
+    rows, _, plate_by_item, _, _ = await _menu_context(db, ctx.tenant_id)
     return {
         "menu_items": [
             {
@@ -977,6 +995,6 @@ async def list_price_moves(request: Request, ctx: Context) -> dict:
     pairs: dict[str, list[asyncpg.Record]] = {}
     for line in await db.list_price_move_pairs(tenant_id=tenant_id):
         pairs.setdefault(line["ingredient_id"], []).append(line)
-    rows, components_by_item, plate_by_item, _ = await _menu_context(db, tenant_id)
+    rows, components_by_item, plate_by_item, _, _ = await _menu_context(db, tenant_id)
     moves = price_moves(pairs, rows, components_by_item, plate_by_item)
     return {"moves": [_move_payload(move) for move in moves]}

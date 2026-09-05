@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .api import router as api_router
 from .auth import TokenVerifier
 from .config import get_settings
+from .dashboard import router as dashboard_router
 from .db import Database
 from .extraction.pipeline import build_provider
 from .menu import router as menu_router
@@ -82,6 +83,7 @@ app.include_router(webhook_router)
 app.include_router(api_router)
 app.include_router(menu_router)
 app.include_router(sales_router)
+app.include_router(dashboard_router)
 app.include_router(waitlist_router)
 
 

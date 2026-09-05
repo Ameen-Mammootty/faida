@@ -243,6 +243,42 @@ class Total:
     notes: tuple[str, ...]
 
 
+# --- the period (C11.6; extracted for M9 C6 extended) -----------------------
+
+
+class PeriodError(ValueError):
+    """A period a read refuses, carrying the sentence the route answers 422
+    with. Plain, because this module imports no FastAPI: `sales.py` and
+    `dashboard.py` each turn it into the same 422, so the two routers cannot
+    drift (second review, D18)."""
+
+
+def resolve_period(
+    newest: datetime.date | None,
+    date_from: datetime.date | None,
+    date_to: datetime.date | None,
+    *,
+    today: datetime.date | None = None,
+) -> tuple[Period, bool]:
+    """The period a read covers and whether it was the default: 28 days
+    ending on the tenant's newest loaded day (or today, with nothing loaded),
+    `from` and `to` together honoured, reversed or longer than 92 days
+    refused, one without the other refused. Returns `(period, default)`."""
+    if (date_from is None) != (date_to is None):
+        raise PeriodError("send both 'from' and 'to', or neither")
+    if date_from is None or date_to is None:
+        end = newest or today or datetime.datetime.now(datetime.UTC).date()
+        return Period(end - datetime.timedelta(days=DEFAULT_PERIOD_DAYS - 1), end), True
+    if date_from > date_to:
+        raise PeriodError("'from' is after 'to'")
+    period = Period(date_from, date_to)
+    if period.days > MAX_PERIOD_DAYS:
+        raise PeriodError(
+            f"{period.days} days is longer than one read covers: at most {MAX_PERIOD_DAYS}"
+        )
+    return period, False
+
+
 # --- helpers ----------------------------------------------------------------
 
 

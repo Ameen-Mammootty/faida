@@ -430,22 +430,13 @@ async def _period(
     newest_by_branch = await db.newest_sales_dates(tenant_id=tenant_id)
     newest = max(newest_by_branch.values()) if newest_by_branch else None
     months = await db.sales_months(tenant_id=tenant_id)
-    if (date_from is None) != (date_to is None):
-        raise HTTPException(status_code=422, detail="send both 'from' and 'to', or neither")
-    if date_from is None or date_to is None:
-        end = newest or datetime.datetime.now(datetime.UTC).date()
-        start = end - datetime.timedelta(days=ratio.DEFAULT_PERIOD_DAYS - 1)
-        return _PeriodRead(ratio.Period(start, end), True, newest, months)
-    if date_from > date_to:
-        raise HTTPException(status_code=422, detail="'from' is after 'to'")
-    period = ratio.Period(date_from, date_to)
-    if period.days > ratio.MAX_PERIOD_DAYS:
-        raise HTTPException(
-            status_code=422,
-            detail=f"{period.days} days is longer than one read covers: "
-            f"at most {ratio.MAX_PERIOD_DAYS}",
-        )
-    return _PeriodRead(period, False, newest, months)
+    # The rule itself is `ratio.resolve_period` (M9 C6 extended), shared with
+    # the dashboard read; its refusal is the same 422 sentence on both.
+    try:
+        period, default = ratio.resolve_period(newest, date_from, date_to)
+    except ratio.PeriodError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    return _PeriodRead(period, default, newest, months)
 
 
 def _period_json(read: _PeriodRead) -> dict:
@@ -660,7 +651,7 @@ async def sales_coverage(
             tenant_id=tenant_id, date_from=period.start, date_to=period.end
         )
     ]
-    menu_rows, _, plate_by_item, _ = await _menu_context(db, tenant_id)
+    menu_rows, _, plate_by_item, _, _ = await _menu_context(db, tenant_id)
     plates = {
         row["id"]: ratio.MenuPlate(
             menu_item_id=row["id"],
