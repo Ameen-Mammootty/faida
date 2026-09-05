@@ -543,9 +543,11 @@ export const FIXTURES: Fixture[] = [
   },
   // M8 WP-84: three confirmed papers, so the sales screen's ratio has
   // purchases to count offline. Dated inside the week the QA export covers
-  // (17-23 Aug 2026); the arithmetic on each one adds up, so the review
-  // screen shows a clean confirmed paper. One has no branch, which is the
-  // "No branch" row on the sales screen.
+  // (17-23 Aug 2026); each has its own photo that prints its own figures,
+  // and the arithmetic adds up, so the review screen shows a clean confirmed
+  // paper. One has no branch, which is the "No branch" row on the sales
+  // screen, and it is a market receipt with no VAT line - the paper whose
+  // tax is null on the wire.
   {
     id: "inv-1006",
     document_id: "doc-9006",
@@ -556,13 +558,13 @@ export const FIXTURES: Fixture[] = [
     invoice_no: "INV-10391",
     invoice_date: "2026-08-18",
     currency: "AED",
-    subtotal: "1240.00",
-    tax: "62.00",
-    total: "1302.00",
+    subtotal: "1255.00",
+    tax: "62.75",
+    total: "1317.75",
     payment_kind: "credit",
     status: "confirmed",
     source: "whatsapp",
-    image_url: "/fixtures/inv-1001.svg",
+    image_url: "/fixtures/inv-1006.svg",
     created_at: "2026-08-18T09:12:00+00:00",
     lines: [
       {
@@ -581,11 +583,11 @@ export const FIXTURES: Fixture[] = [
         qty: "5",
         unit: "bag",
         pack_size: "5kg",
-        unit_price: "46.00",
-        line_total: "230.00",
+        unit_price: "49.00",
+        line_total: "245.00",
         supplier_item_id: "si-2002",
         snapped: true,
-        cost: costs("0.00920000", "g", "9.20", "kg", "5kg"),
+        cost: costs("0.00980000", "g", "9.80", "kg", "5kg"),
       },
     ],
   },
@@ -605,7 +607,7 @@ export const FIXTURES: Fixture[] = [
     payment_kind: "credit",
     status: "confirmed",
     source: "whatsapp",
-    image_url: "/fixtures/inv-1002.svg",
+    image_url: "/fixtures/inv-1007.svg",
     created_at: "2026-08-19T10:40:00+00:00",
     lines: [
       {
@@ -631,13 +633,13 @@ export const FIXTURES: Fixture[] = [
     invoice_no: "2198",
     invoice_date: "2026-08-20",
     currency: "AED",
-    subtotal: "200.00",
-    tax: "10.00",
-    total: "210.00",
+    subtotal: null,
+    tax: null,
+    total: "200.00",
     payment_kind: "cash",
     status: "confirmed",
     source: "whatsapp",
-    image_url: "/fixtures/inv-1003.svg",
+    image_url: "/fixtures/inv-1008.svg",
     created_at: "2026-08-20T08:05:00+00:00",
     lines: [
       {

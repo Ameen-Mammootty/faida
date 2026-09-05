@@ -1,7 +1,7 @@
 # Faida web
 
-The public waitlist landing page plus the review screen and invoice list (plan.md M3).
-Next.js App Router + TypeScript + Tailwind, deployable to Vercel untouched.
+The public waitlist landing page plus the console: the invoice list and review screen (M3), raw materials (M5), the costed menu and its loader (M6), and sales - the till-export loader and the branch table (M8) - all behind Supabase login (M7).
+Next.js App Router + TypeScript + Tailwind, deployable to Vercel untouched. Mock mode is the default and serves every screen offline with sample data; see `src/lib/api.ts` for the switch to the real API.
 
 ## Run it
 

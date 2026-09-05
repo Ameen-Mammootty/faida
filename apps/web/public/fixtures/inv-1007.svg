@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 720" role="img" aria-label="Tax invoice INV-7702 from Al Seeb Trading Co Llc">
+  <rect width="620" height="720" fill="#fffcf5"/>
+  <rect x="0.5" y="0.5" width="619" height="719" fill="none" stroke="#e2ddd0"/>
+  <g font-family="Helvetica, Arial, sans-serif" fill="#20261f">
+    <text x="40" y="58" font-size="21" font-weight="bold" letter-spacing="0.5">AL SEEB TRADING CO LLC</text>
+    <text x="40" y="80" font-size="12" fill="#4c534e">Karama, Dubai, UAE &#183; Tel 04 397 6650</text>
+    <text x="40" y="97" font-size="12" fill="#4c534e">TRN 100876554300003</text>
+
+    <text x="310" y="138" font-size="15" font-weight="bold" letter-spacing="3" text-anchor="middle">TAX INVOICE</text>
+    <line x1="240" y1="146" x2="380" y2="146" stroke="#20261f" stroke-width="1"/>
+
+    <text x="40" y="176" font-size="13">Invoice No: <tspan font-weight="bold">INV-7702</tspan></text>
+    <text x="40" y="196" font-size="13">Date: 19/08/2026</text>
+    <text x="420" y="176" font-size="13">Payment: CREDIT</text>
+    <text x="420" y="196" font-size="13">Customer: Karak House - Deira</text>
+
+    <line x1="40" y1="222" x2="580" y2="222" stroke="#20261f" stroke-width="1.2"/>
+    <g font-size="11.5" font-weight="bold" fill="#3a413d">
+      <text x="46" y="242">SL</text>
+      <text x="80" y="242">DESCRIPTION</text>
+      <text x="388" y="242" text-anchor="end">QTY</text>
+      <text x="470" y="242" text-anchor="end">RATE</text>
+      <text x="574" y="242" text-anchor="end">AMOUNT</text>
+    </g>
+    <line x1="40" y1="252" x2="580" y2="252" stroke="#20261f" stroke-width="0.8"/>
+
+    <g font-size="13">
+      <text x="46" y="278">1</text>
+      <text x="80" y="278">Evaporated Milk 410ml</text>
+      <text x="388" y="278" text-anchor="end">120</text>
+      <text x="470" y="278" text-anchor="end">4.50</text>
+      <text x="574" y="278" text-anchor="end">540.00</text>
+    </g>
+
+    <line x1="40" y1="302" x2="580" y2="302" stroke="#20261f" stroke-width="0.8"/>
+
+    <g font-size="13">
+      <text x="470" y="332" text-anchor="end">SUBTOTAL</text>
+      <text x="574" y="332" text-anchor="end">540.00</text>
+      <text x="470" y="358" text-anchor="end">VAT 5%</text>
+      <text x="574" y="358" text-anchor="end">27.00</text>
+    </g>
+    <line x1="380" y1="372" x2="580" y2="372" stroke="#20261f" stroke-width="0.8"/>
+    <text x="470" y="398" font-size="15" font-weight="bold" text-anchor="end">TOTAL AED</text>
+    <text x="574" y="398" font-size="15" font-weight="bold" text-anchor="end">567.00</text>
+    <line x1="380" y1="412" x2="580" y2="412" stroke="#20261f" stroke-width="1.4"/>
+
+    <text x="40" y="600" font-size="12" fill="#4c534e">Received the above goods in good condition.</text>
+    <path d="M60 652 q14 -22 30 -4 q14 14 24 -10 q8 -12 22 4" fill="none" stroke="#2c3a63" stroke-width="1.6" stroke-linecap="round"/>
+    <text x="40" y="678" font-size="11" fill="#4c534e">Receiver signature</text>
+    <text x="420" y="678" font-size="11" fill="#4c534e">Salesman: S. Aboobacker</text>
+  </g>
+</svg>

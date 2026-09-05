@@ -6,8 +6,8 @@ import {
   costedSentence,
   exVatWords,
   freshnessSentence,
-  mergeMonths,
-  monthsWithSales,
+  isZero,
+  monthOptions,
   noRatioWords,
   periodBounds,
   segmentWords,
@@ -50,7 +50,7 @@ function row(overrides: Partial<BranchRow>): BranchRow {
 
 function result(rows: BranchRow[], salesThrough: string | null = "2026-08-31"): SalesBranchesResult {
   return {
-    period: { from: "2026-08-04", to: "2026-08-31", days: 28, default: true, sales_through: salesThrough },
+    period: { from: "2026-08-04", to: "2026-08-31", days: 28, default: true, sales_through: salesThrough, months: ["2026-08"] },
     rows,
     unassigned: { count: 0, purchases: "0.00", invoices: [] },
     total: { net_sales: "0.00", purchases: "0.00", ratio_pct: null, quality: "incomplete", notes: [] },
@@ -88,6 +88,19 @@ describe("the answer sentence", () => {
     });
     expect(answerSentence(result([row({ ratio_pct: null, net_sales: null, takings: null, quality: "unavailable" })]))).toBeNull();
   });
+
+  it("never tells a branch with confirmed papers that it has none: net sales that are not positive get their own clause", () => {
+    const sentence = answerSentence(
+      result([
+        row({}),
+        row({ branch_id: "br-03", branch_name: "Deira", ratio_pct: null, net_sales: "0.00", deliveries: 3, quality: "incomplete", notes: ["net sales are not positive this period", "3 deliveries in this window"] }),
+      ]),
+    );
+    expect(sentence?.rest).toBe(
+      "about AED 30 of every 100 it took went to suppliers this window. Deira's net sales are not positive this period, so it is not rated.",
+    );
+    expect(noRatioWords(row({ ratio_pct: null, net_sales: "0.00", deliveries: 3 }))).toBe("Net sales not positive");
+  });
 });
 
 describe("the period picker", () => {
@@ -100,23 +113,17 @@ describe("the period picker", () => {
     expect(periodBounds({ kind: "month", year: 2028, month: 2 }, null)).toEqual({ from: "2028-02-01", to: "2028-02-29" });
   });
 
-  it("offers the months a read has shown loaded days in, newest first, and only grows", () => {
-    const seen = monthsWithSales(
-      result([
-        row({ window: { from: "2026-07-28", to: "2026-08-03", days: 7 }, days_loaded: 7 }),
-        row({ branch_id: "br-02", window: { from: "2026-08-04", to: "2026-08-31", days: 28 }, days_loaded: 0 }),
-      ]),
-    );
-    expect(seen.map((m) => m.label)).toEqual(["Aug 2026", "Jul 2026"]);
-    const merged = mergeMonths(seen, [{ year: 2026, month: 6, label: "Jun 2026" }]);
-    expect(merged.map((m) => m.label)).toEqual(["Aug 2026", "Jul 2026", "Jun 2026"]);
-    expect(monthsWithSales(result([], null))).toEqual([]);
+  it("offers exactly the months the API says hold sales, newest first, and nothing it cannot read", () => {
+    const period = { from: "2026-08-04", to: "2026-08-31", days: 28, default: true, sales_through: "2026-08-31", months: ["2026-08", "2026-07", "2026-05"] };
+    expect(monthOptions(period).map((m) => m.label)).toEqual(["Aug 2026", "Jul 2026", "May 2026"]);
+    expect(monthOptions({ ...period, months: [] })).toEqual([]);
+    expect(monthOptions({ ...period, months: ["garbage", "2026-13"] })).toEqual([]);
   });
 });
 
 describe("dates and status words", () => {
   it("says how fresh the sales are, by the calendar", () => {
-    const period = { from: "2026-08-04", to: "2026-08-31", days: 28, default: true, sales_through: "2026-08-31" };
+    const period = { from: "2026-08-04", to: "2026-08-31", days: 28, default: true, sales_through: "2026-08-31", months: ["2026-08"] };
     expect(freshnessSentence(period, "2026-09-03")).toBe("Sales loaded to Mon 31 Aug, 3 days ago.");
     expect(freshnessSentence(period, "2026-09-01")).toBe("Sales loaded to Mon 31 Aug, yesterday.");
     expect(freshnessSentence(period, "2026-08-31")).toBe("Sales loaded to Mon 31 Aug, today.");
@@ -135,6 +142,10 @@ describe("dates and status words", () => {
     expect(statusSentence("incomplete", ["2 of 3 branches incomplete", "1 invoice on no branch, counted in the total"])).toBe(
       "2 of 3 branches incomplete. 1 invoice on no branch, counted in the total.",
     );
+    // A chip never stands alone: the chain total reads estimated with no note
+    // of its own when a branch below it does.
+    expect(statusSentence("estimated", [])).toBe("At least one figure behind it is estimated - see the rows.");
+    expect(statusSentence("incomplete", [])).toBe("Some days or papers are missing - see the rows.");
   });
 
   it("writes the window line and the words that stand in for a missing ratio", () => {
@@ -152,6 +163,13 @@ describe("dates and status words", () => {
     expect(
       exVatWords({ invoice_id: "x", supplier_name: "s", invoice_no: "n", purchased_on: "2026-08-25", net_purchase: "5081.70", total: "5335.79", tax: "254.09", quality: "reliable_with_limitations" }),
     ).toBe("AED 5,081.70 = 5,335.79 less VAT 254.09");
+    // A market receipt with no VAT line still confirms; its tax is null on the wire.
+    expect(
+      exVatWords({ invoice_id: "x", supplier_name: "s", invoice_no: "n", purchased_on: "2026-08-25", net_purchase: "200.00", total: "200.00", tax: null, quality: "reliable_with_limitations" }),
+    ).toBe("AED 200.00 = 200.00, no VAT printed");
+    expect(
+      exVatWords({ invoice_id: "x", supplier_name: "s", invoice_no: "n", purchased_on: null, net_purchase: "0.00", total: null, tax: null, quality: "reliable_with_limitations" }),
+    ).toBe("AED 0.00, no total printed");
   });
 });
 
@@ -213,7 +231,7 @@ describe("the drill", () => {
 
 describe("the coverage line", () => {
   const coverage = (over: Partial<SalesCoverageResult>): SalesCoverageResult => ({
-    period: { from: "2026-08-04", to: "2026-08-31", days: 28, default: true, sales_through: "2026-08-31" },
+    period: { from: "2026-08-04", to: "2026-08-31", days: 28, default: true, sales_through: "2026-08-31", months: ["2026-08"] },
     sales_value: "52000.00",
     costed_value: "40560.00",
     costed_pct: "78.0",
@@ -229,11 +247,13 @@ describe("the coverage line", () => {
   it("says costed, never complete, and names every bucket in words", () => {
     expect(costedSentence(coverage({}))).toBe("Costed: 78.0% of sales value");
     expect(bucketsLine(coverage({}))).toBe(
-      "12.0 points of it on estimated plates · Not yet mapped: AED 8,320 · Cannot be costed yet: AED 3,120 · Refunds AED 210 and non-menu takings AED 640 sit outside the figure",
+      "12.0 points of it on estimated plates · Not yet mapped: AED 8,320 · Cannot be costed yet: AED 3,120 · Refunds AED 210 and non-menu net sales AED 640 sit outside the figure",
     );
     expect(bucketsLine(coverage({ estimated_points: "0.0", uncosted: { incomplete_plate: "0.00", unmapped: "0.00" }, beside: { refunds: "0.00", not_menu_items: "15.00" } }))).toBe(
-      "Non-menu takings AED 15 sit outside the figure",
+      "Non-menu net sales AED 15 sit outside the figure",
     );
+    expect(bucketsLine(coverage({ estimated_points: "0", uncosted: { incomplete_plate: "0", unmapped: "0.000" }, beside: { refunds: "-0.00", not_menu_items: "0.0" } }))).toBe("");
     expect(costedSentence(coverage({ costed_pct: null }))).toBe("No item-wise sales in this window");
+    expect([isZero("0"), isZero("0.00"), isZero("-0.00"), isZero(null), isZero("0.10"), isZero("10")]).toEqual([true, true, true, true, false, false]);
   });
 });

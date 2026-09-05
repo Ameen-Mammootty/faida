@@ -7,9 +7,9 @@ Profit visibility for GCC cafeterias and multi-branch chains, fed through WhatsA
 
 ```
 apps/api    FastAPI backend: WhatsApp webhook, job worker, (M1+) extraction pipeline
-apps/web    Next.js review screen + dashboard (arrives M3)
+apps/web    Next.js console behind Supabase login: invoices, materials, menu, sales (mock mode by default)
 supabase/   SQL migrations + demo seed
-eval/       invoice extraction eval harness (arrives M1)
+eval/       invoice extraction eval harness
 ```
 
 ## Local development

@@ -215,7 +215,7 @@ Rollback, independent on each host and one click each: Railway redeploys the pre
 
 Run this ONCE, outside demo hours, with the founder: it is the sitting that puts the sales screen and the demo week on the real stage. Nothing in it migrates the database (0019 has been live since 2026-09-04) and nothing touches the API (every M8 route has been on Railway since the Wave 1 and Wave 2 merges of 2026-09-04), so the only deploy is the web.
 
-Pre-flight, run 2026-09-05 (plan.md Progress Log), all true: the five sales tables exist on the live project and are empty for the demo chain (0 days, 0 layouts, 0 aliases, 0 till names); Al Qusais carries KAS-1..4 confirmed (newest printed 25 Aug) and nothing pending, the other two branches nothing; Vercel Production carries every variable the screen needs (the two Supabase values, the API base, mock off) and its newest deployment is the M7 cutover of 2026-09-03; master builds clean (`next build`; 182 web tests, 738 API tests). The committed week has 46 till names, one of them DELIVERY CHARGE.
+Pre-flight, run 2026-09-05 (plan.md Progress Log), all true: the five sales tables exist on the live project and are empty for the demo chain (0 days, 0 layouts, 0 aliases, 0 till names); Al Qusais carries KAS-1..4 confirmed (newest printed 25 Aug) and nothing pending, the other two branches nothing; Vercel Production carries every variable the screen needs (the two Supabase values, the API base, mock off) and its newest deployment is the M7 cutover of 2026-09-03; master builds clean (`next build`; 184 web tests, 738 API tests); the live API answers `/health` ok with the database reachable and every sales route 401 without a token (probed 2026-09-05 from the host recorded in the session memory, not in the repo). The committed week has 46 till names, one of them DELIVERY CHARGE.
 
 ```bash
 # 1. Backup - cheap, and the 0017 lesson.
@@ -426,7 +426,7 @@ Say: "Every purchase number on this screen is a photograph of a piece of paper, 
 
 **3. The coverage panel (about 30 seconds).** Below the table **[WP-84]**: "Costed: N% of sales value" - the share of what was sold that the menu can already cost - and the queue of till names not yet mapped, ranked by money.
 Map one with a keystroke: `CHKN 65 DRY` proposes Chicken 65 Dry at the top; `B/CHKN` proposes nothing and needs the pick-from-menu path - show it needing you.
-Mark `DELIVERY CHARGE` as "not a menu item": it stays in takings and leaves the queue.
+Mark `DELIVERY CHARGE` as "not a menu item": it stays in net sales and leaves the queue (and a pick from the menu would bring it back).
 Say: "It never maps a name on its own. One keystroke each, once, and every day that name was ever sold follows."
 
 **4. The move (about 20 seconds).** KAS-5 was confirmed in act one. **Reload `/sales`.** Al Qusais moves from **30.3% to 39.3%**: AED 2,736.50 of net purchases landing on 31 Aug, the week's last day, and the row's deliveries going from 2 to 3.

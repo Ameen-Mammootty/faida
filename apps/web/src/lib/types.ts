@@ -943,6 +943,10 @@ export interface SalesPeriod {
   days: number;
   default: boolean;
   sales_through: string | null;
+  /** The calendar months holding at least one loaded day, newest first, as
+   * "YYYY-MM": the period picker's choices, served rather than inferred so a
+   * tenant's oldest month stays reachable (WP-84 review). */
+  months: string[];
 }
 
 /** One confirmed paper counted in a row: `net_purchase` is `total - tax`,
@@ -953,8 +957,10 @@ export interface InvoiceFigure {
   invoice_no: string | null;
   purchased_on: string | null;
   net_purchase: string;
-  total: string;
-  tax: string;
+  /** The two printed figures; null when the paper printed none (a market
+   * receipt with no VAT line still confirms, and its VAT is null). */
+  total: string | null;
+  tax: string | null;
   /** `estimated` when the total or the VAT was entered by a person. */
   quality: "reliable_with_limitations" | "estimated";
 }
@@ -976,7 +982,7 @@ export interface ExcludedPaper {
   supplier_name: string | null;
   invoice_no: string | null;
   currency: string;
-  total: string;
+  total: string | null;
 }
 
 /** One day of a branch's drill: every loaded day, plus any date a counted
