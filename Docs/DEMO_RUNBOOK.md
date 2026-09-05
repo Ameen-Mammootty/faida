@@ -363,13 +363,13 @@ If it names white sugar instead of milk powder, the seed was re-applied after th
 - [ ] Zoom the browser to about 125% so the back row can read the margin column.
 - [ ] Run act two once immediately after act one in every rehearsal - the price-move callout only exists once an invoice has been confirmed in that same reset cycle.
 
-## G. Act three: the branches (added 2026-09-04, WP-85; the screen lands with WP-84)
+## G. Act three: the branches (added 2026-09-04, WP-85; the screen built 2026-09-05, WP-84; live at WP-86)
 
 Act two ends on a plate. Act three answers the owner's next question: *which branch is this happening in?*
 One screen, `/sales`, and one number per branch: **purchases ÷ net sales (cash basis)** - what the branch's suppliers billed it, against what its till took net of VAT, over the same days.
 Never "food cost": purchases are what arrived, not what was consumed, and nothing here pretends otherwise.
 
-Run it straight after act two, in the same browser. Steps marked **[WP-84]** describe the screen the design review pinned (variant B, "answer first"); until WP-84 merges, the same figures are on `GET /api/sales/branches`.
+Run it straight after act two, in the same browser. Steps marked **[WP-84]** describe the screen as built (variant B, "answer first", on master since 2026-09-05); until WP-86 deploys the web, the same figures are on `GET /api/sales/branches`.
 
 **1. The ranked table (about 40 seconds).** Open `/sales`. **[WP-84]** The sentence above the table names the row to look at first:
 
