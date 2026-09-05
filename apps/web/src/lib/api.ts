@@ -55,12 +55,17 @@ import {
 } from "./mock/menu";
 import {
   mockAddBranchAlias,
+  mockExcludeTillItem,
   mockGetBranches,
+  mockGetSalesBranches,
+  mockGetSalesCoverage,
   mockGetSalesDays,
   mockGetSalesLayouts,
+  mockMapTillItem,
   mockPostSalesDays,
   mockPostSalesFile,
   mockSaveSalesLayout,
+  mockUnmapTillItem,
 } from "./mock/sales";
 import {
   mockApproveInvoice,
@@ -95,12 +100,15 @@ import type {
   PriceMove,
   PriceHistory,
   RejectionResult,
+  SalesBranchesResult,
+  SalesCoverageResult,
   SalesDay,
   SalesDaysInput,
   SalesDaysResult,
   SalesFileResult,
   SalesLayout,
   SalesLayoutInput,
+  TillItem,
   UnmappedSupplierItem,
   UploadResult,
 } from "./types";
@@ -483,4 +491,63 @@ export async function getSalesDays(from: string, to: string): Promise<SalesDay[]
 export async function postSalesDays(input: SalesDaysInput): Promise<SalesDaysResult> {
   if (MOCK) return mockPostSalesDays(input);
   return request<SalesDaysResult>("/api/sales/days", jsonInit("POST", input));
+}
+
+/**
+ * M8 WP-81/82/84: the sales screen (Docs/M8_DECOMPOSITION.md §3.1).
+ *
+ *   GET    /api/sales/branches?from&to       purchases ÷ net sales per branch, ranked and labelled
+ *   GET    /api/sales/coverage?from&to       recipe coverage by sales value, with the mapping queue
+ *   POST   /api/till-items/{id}/menu-item    approve a proposal, or remap
+ *   DELETE /api/till-items/{id}/menu-item    unmap - the name goes back to the queue
+ *   POST   /api/till-items/{id}/exclude      not a menu item
+ *
+ * Both reads take the same optional range; with neither the API answers the
+ * 28 days ending on the tenant's newest loaded day (C11.6). The ratio is
+ * derived on every read and never stored, so a manual reload after a paper
+ * is confirmed is the whole refresh story. The three doors each write one
+ * audit row on the server; a till name is never mapped without a keystroke.
+ */
+
+function rangeQuery(from?: string, to?: string): string {
+  if (from === undefined || to === undefined) return "";
+  const params = new URLSearchParams({ from, to });
+  return `?${params.toString()}`;
+}
+
+export async function getSalesBranches(from?: string, to?: string): Promise<SalesBranchesResult> {
+  if (MOCK) return mockGetSalesBranches(from, to);
+  return request<SalesBranchesResult>(`/api/sales/branches${rangeQuery(from, to)}`);
+}
+
+export async function getSalesCoverage(from?: string, to?: string): Promise<SalesCoverageResult> {
+  if (MOCK) return mockGetSalesCoverage(from, to);
+  return request<SalesCoverageResult>(`/api/sales/coverage${rangeQuery(from, to)}`);
+}
+
+export async function mapTillItem(tillItemId: string, menuItemId: string): Promise<TillItem> {
+  if (MOCK) return mockMapTillItem(tillItemId, menuItemId);
+  const body = await request<{ till_item: TillItem }>(
+    `/api/till-items/${encodeURIComponent(tillItemId)}/menu-item`,
+    jsonInit("POST", { menu_item_id: menuItemId }),
+  );
+  return body.till_item;
+}
+
+export async function unmapTillItem(tillItemId: string): Promise<TillItem> {
+  if (MOCK) return mockUnmapTillItem(tillItemId);
+  const body = await request<{ till_item: TillItem }>(
+    `/api/till-items/${encodeURIComponent(tillItemId)}/menu-item`,
+    { method: "DELETE" },
+  );
+  return body.till_item;
+}
+
+export async function excludeTillItem(tillItemId: string): Promise<TillItem> {
+  if (MOCK) return mockExcludeTillItem(tillItemId);
+  const body = await request<{ till_item: TillItem }>(
+    `/api/till-items/${encodeURIComponent(tillItemId)}/exclude`,
+    { method: "POST" },
+  );
+  return body.till_item;
 }
