@@ -716,3 +716,40 @@ is reviewable as exactly that. Do not bundle it with a content change.
 **Effort:** S
 **Priority:** P3
 **Depends on:** Founder availability for the F8 re-sign.
+
+### A supplier merge door
+
+**What:** A screen action that folds one supplier row into another - items, price history, invoices
+and aliases move, one audit row - for a vendor the catalog holds twice.
+
+**Why:** A miss creates a second supplier on confirm (the eval corpus already does it: "Gulf Pantry"
+at 0.67 against "Gulf Pantry Supply LLC"), and after the 2026-09-05 word check a false refusal does
+the same. WP-87 lets a person fix a paper *before* confirm; a duplicate already confirmed has no way
+back, and both reviewers of the 2026-09-05 eng review named this the only repair for a confirmed
+wrong booking.
+
+**Context:** `db.record_confirmed_prices` creates suppliers on confirm and nothing merges them.
+Moving `supplier_items` and `supplier_item_prices` between suppliers touches the M5 material
+mappings and the M6 plate costs, so this is a day of careful work with its own review. Start from
+the M5 material-merge door for the audit shape, and from `matching.same_name` for the sameness rule.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** WP-87. Trigger: the first real duplicate supplier seen in the field.
+
+### A chat phrase for the supplier correction
+
+**What:** "supplier Gulf Foods" or "new supplier" in WhatsApp, resolved through WP-87's
+`SupplierEdit`, with a disambiguation reply when two suppliers match the typed name.
+
+**Why:** The cafeteria confirms by chat, and WP-87's chat reply says "Booked under X" with no way to
+answer it from the phone; today the fix lives on the screen, the same half-answer the till-item
+doors deliberately accepted.
+
+**Context:** `confirm.py` parses header edits (invoice number, payment kind, currency, date); this is
+one more parser plus a name-to-id resolution over `db.list_suppliers` using `matching.known_as`,
+and a reply in the shape of the pending-papers disambiguation when the name fits more than one.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** WP-87, and a customer quote before it enters plan.md (§2: new scope needs a named ask).

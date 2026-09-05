@@ -13,7 +13,7 @@ import asyncpg
 from . import costing
 from .contracts import InvoiceStatus, JobKind
 from .extraction.currency import currency_differs
-from .matching import clean_name, snap_item, strip_delivery_note
+from .matching import clean_name, match_supplier, snap_item, strip_delivery_note
 from .provenance import asserted_fields
 from .recipes import RecipeKey, component_key, recipe_key, recipes_match
 from .takings import FILS, code_key, day_key, name_key, till_item_key
@@ -707,7 +707,10 @@ class Database:
 
     async def list_suppliers(self, tenant_id: str) -> list[asyncpg.Record]:
         return await self.pool.fetch(
-            "select id, name, name_aliases from suppliers where tenant_id = $1", tenant_id
+            # Ordered so matching.match_supplier's tie-break sees the same
+            # rows in the same order on every run (2026-09-05 eng review).
+            "select id, name, name_aliases from suppliers where tenant_id = $1 order by name",
+            tenant_id,
         )
 
     async def list_supplier_items(self, supplier_id: str) -> list[asyncpg.Record]:
@@ -2518,7 +2521,7 @@ class Database:
 
     async def record_confirmed_prices(
         self, invoice_id: str, *, tenant_id: str, conn: asyncpg.Connection | None = None
-    ) -> None:
+    ) -> dict:
         """The catalog self-builds and the price baseline moves - never before
         confirm, so an unconfirmed invoice can't pollute it (plan.md §5 layer
         4, §6 M2).
@@ -2530,6 +2533,18 @@ class Database:
         the 0003 partial unique index), and shift prev/last price only when
         this invoice's observation is new AND the price actually changed -
         re-running for the same invoice is a no-op.
+
+        **A paper with no supplier is matched again here before one is
+        created** (2026-09-05 eng review, D21). `unique (tenant_id, name)`
+        collapses only byte-identical names, so two papers from a brand-new
+        vendor read before either was confirmed ("Al Madina ABC LLC" and "AL
+        MADINA ABC L.L.C.") used to become two suppliers with split price
+        history. The same `match_supplier` as extraction, word check included,
+        runs against the catalog as it stands at confirm, so the vendor's own
+        earlier paper is found. The return value says when that happened -
+        `{"supplier_attached_at_confirm": {"supplier_id", "name"}}`, else
+        `{}` - and `_confirm` folds it into the audit row, because the person
+        who said OK never saw a "Booked under" line for this attach.
 
         **It also freezes each line's cost per base unit** (WP-53), here rather
         than in a step of its own, because the two ex-VAT and post-discount
@@ -2557,19 +2572,35 @@ class Database:
                 raise ValueError(f"invoice {invoice_id} not found")
 
             supplier_id = invoice["supplier_id"]
+            attached: dict = {}
             if supplier_id is None:
                 supplier_name = clean_name(invoice["supplier_name"] or "")
                 if not supplier_name:
-                    return  # no supplier and no name to create one from
-                supplier_id = await conn.fetchval(
-                    """
-                    insert into suppliers (tenant_id, name) values ($1, $2)
-                    on conflict (tenant_id, name) do update set name = excluded.name
-                    returning id
-                    """,
+                    return attached  # no supplier and no name to create one from
+                suppliers = await conn.fetch(
+                    "select id, name, name_aliases from suppliers where tenant_id = $1 "
+                    "order by name",
                     invoice["tenant_id"],
-                    supplier_name,
                 )
+                matched = match_supplier(suppliers, invoice["supplier_name"])
+                if matched is not None:
+                    supplier_id = matched["id"]
+                    attached = {
+                        "supplier_attached_at_confirm": {
+                            "supplier_id": str(supplier_id),
+                            "name": matched["name"],
+                        }
+                    }
+                else:
+                    supplier_id = await conn.fetchval(
+                        """
+                        insert into suppliers (tenant_id, name) values ($1, $2)
+                        on conflict (tenant_id, name) do update set name = excluded.name
+                        returning id
+                        """,
+                        invoice["tenant_id"],
+                        supplier_name,
+                    )
                 await conn.execute(
                     "update invoices set supplier_id = $2 where id = $1", invoice_id, supplier_id
                 )
@@ -2581,7 +2612,7 @@ class Database:
             # supplier link above is kept (identity, not price), and the ack
             # says plainly that the prices were held back.
             if currency_differs(invoice["currency"], invoice["tenant_currency"]):
-                return
+                return attached
 
             # C4 net-canonical price memory: an inclusive invoice's unit prices
             # are gross, so they are converted once here before they reach the
@@ -2708,6 +2739,7 @@ class Database:
             # catalog row in the loop above - and that row is where a person's
             # conversion for an unlabelled container lives (WP-55).
             await _cost_stock_lines(conn, invoice_id)
+            return attached
 
     # -- Confirm flow (WP-21, C5) --------------------------------------------
 
@@ -2916,6 +2948,12 @@ class Database:
             )
             if row is None:
                 return False
+            # Prices first, so the trail entry can say whether the supplier was
+            # attached here rather than at extraction (D21); both commit or
+            # neither does, whichever order they run in.
+            attached = await self.record_confirmed_prices(
+                invoice_id, tenant_id=tenant_id, conn=conn
+            )
             await _insert_audit_event(
                 conn,
                 tenant_id=row["tenant_id"],
@@ -2923,9 +2961,8 @@ class Database:
                 action=action,
                 subject_type="invoice",
                 subject_id=invoice_id,
-                detail={"from_status": from_status, **(detail or {})},
+                detail={"from_status": from_status, **(detail or {}), **attached},
             )
-            await self.record_confirmed_prices(invoice_id, tenant_id=tenant_id, conn=conn)
         return True
 
     async def dismiss_invoice(self, invoice_id: str, *, tenant_id: str, actor: str) -> bool:

@@ -4,16 +4,27 @@ real-Postgres tests for the on-confirm price machinery
 (Database.record_confirmed_prices, which since WP-50 commits inside the same
 transaction as the confirm that triggers it)."""
 
+import itertools
+import json
+import pathlib
+import re
 from decimal import Decimal
 
 import pytest
 
 from faida_api.matching import (
+    _SUPPLIER_BOILERPLATE,
+    SUPPLIER_MATCH_THRESHOLD,
+    _join_single_letters,
+    _similarity,
     clean_name,
+    known_as,
     match_supplier,
     normalize,
     normalize_invoice_no,
+    same_name,
     snap_item,
+    words_agree,
 )
 
 from .conftest import DEMO_TENANT_ID, requires_db
@@ -121,6 +132,167 @@ def test_match_supplier_no_name_or_no_suppliers():
     assert match_supplier(SUPPLIERS, None) is None
     assert match_supplier(SUPPLIERS, "") is None
     assert match_supplier([], "Gulf Foods Trading LLC") is None
+
+
+# -- the supplier word check (2026-09-05 eng review) --------------------------
+
+REPO = pathlib.Path(__file__).resolve().parents[3]
+TRUTH_FILES = REPO / "eval" / "fixtures"
+DEMO_SEED = REPO / "supabase" / "demo_seed.sql"
+PAIRS = json.loads(
+    (pathlib.Path(__file__).parent / "fixtures" / "supplier_name_pairs.json").read_text()
+)
+
+
+def supplier_corpus_names() -> list[str]:
+    """Every supplier name the signed ground truth prints, plus the demo seed's
+    supplier names and aliases - read from the files rather than copied here,
+    so a corpus that grows is a corpus this test covers."""
+    names: set[str] = set()
+    for path in sorted(TRUTH_FILES.rglob("truth.json")):
+        invoice = json.loads(path.read_text()).get("invoice") or {}
+        if invoice.get("supplier_name"):
+            names.add(invoice["supplier_name"])
+    block = re.search(r"insert into suppliers.*?;", DEMO_SEED.read_text(), re.S)
+    assert block is not None, "demo_seed.sql no longer inserts suppliers - update this loader"
+    for quoted in re.findall(r"'([^']+)'", block.group(0)):
+        if not re.fullmatch(r"[0-9a-f-]{36}", quoted):
+            names.add(quoted)
+    return sorted(names)
+
+
+def test_word_check_refuses_a_lookalike_with_an_extra_word():
+    """The founder's question (2026-09-05): "if al madina is already there in
+    supplier list, and new vendor ... al madina abc comes, will the current
+    design lead to wrong mapping to al madina". On characters alone it did:
+    0.91, over the bar, and the new vendor's prices went into Al Madina's
+    history for good. The extra word refuses it."""
+    madina = [_supplier("Al Madina Trading LLC", id=1)]
+    assert match_supplier(madina, "Al Madina ABC Trading LLC") is None
+    # Dotted initials are one word, never three dropped letters (0.88).
+    assert match_supplier(madina, "Al Madina A.B.C Trading LLC") is None
+    assert match_supplier(madina, "Al Madina M.H Trading LLC") is None
+    # A bilingual read is judged on the Latin half both names carry (0.88).
+    assert (
+        match_supplier(madina, "Al Madina Fresh Trading LLC / المدينة فريش للتجارة ذ.م.م") is None
+    )
+    # Once both exist, the right one wins outright, however it is printed.
+    both = [*madina, _supplier("Al Madina ABC Trading LLC", id=2)]
+    assert match_supplier(both, "AL MADINA ABC TRADING L.L.C.")["id"] == 2
+    assert match_supplier(both, "Al Madina Trading LLC")["id"] == 1
+
+
+@pytest.mark.parametrize(
+    ("a", "b", "agree"),
+    [
+        # Close spelling: the transliteration drift.
+        ("Al Madina Trading", "Al Madeena Trading", True),
+        # Appears inside, spaces removed: a space lost or gained.
+        ("Al Madina Trading", "Almadina Trading", True),
+        ("Gulf Foodstuff Trading", "Gulf Food Stuff Trading", True),
+        # A dotted abbreviation stands in for the word it heads, either way round.
+        ("Al Madina Vegetables & Fruits Trading LLC", "AL MADINA VEG. & FRUITS TRADING", True),
+        ("AL MADINA VEG. & FRUITS TRADING", "Al Madina Vegetables & Fruits Trading LLC", True),
+        # Without the dot a prefix is just a different word ("Star" / "Starlet").
+        ("Al Madina Star Trading LLC", "Al Madina Starlet Trading LLC", False),
+        ("Al Madina Vegetables Trading", "Al Madina Veg Trading", False),
+        # Single letters are joined, so initials count and legal forms do not.
+        ("A.B.C Trading LLC", "ABC Trading L.L.C.", True),
+        ("Al Madina Trading LLC", "Al Madina A.B.C Trading LLC", False),
+        # Boilerplate on its own agrees; the character score decides alone.
+        ("Trading LLC", "General Trading Co.", True),
+        # A script only one side carries is not compared (WP-29).
+        ("Dairy House Foodstuff LLC", "Dairy House Foodstuff LLC / بيت الألبان ذ.م.م", True),
+        # Both carry Arabic: the Arabic halves must agree too.
+        (
+            "Alpha Foods LLC شركة ألفا للمواد الغذائية",
+            "Alpha Foods LLC شركة بيتا للمواد الغذائية",
+            False,
+        ),
+        ("مؤسسة الخليج للمواد الغذائية", "شركة الخليج للمواد الغذائية ذ.م.م", True),
+        ("مؤسسة الخليج للمواد الغذائية", "مؤسسة النور للمواد الغذائية", False),
+    ],
+)
+def test_words_agree_rules(a: str, b: str, agree: bool):
+    assert words_agree(a, b) is agree
+    assert words_agree(b, a) is agree
+
+
+def test_labelled_pairs_go_the_right_way():
+    """tests/fixtures/supplier_name_pairs.json is the validation: every pair a
+    real paper or a review has labelled, grown from every surprise. A
+    must-match pair below the bar would test nothing about the word check, so
+    the fixture is held to that too."""
+    for catalog, printed in PAIRS["must_match"]:
+        score = _similarity(printed, catalog)
+        assert score >= SUPPLIER_MATCH_THRESHOLD, (catalog, printed, score)
+        assert match_supplier([_supplier(catalog, id=1)], printed) is not None, (catalog, printed)
+    for catalog, printed in PAIRS["must_not_match"]:
+        assert match_supplier([_supplier(catalog, id=1)], printed) is None, (catalog, printed)
+
+
+def test_word_check_changes_no_outcome_in_the_supplier_corpus():
+    """The regression guard, not a validation: among the real supplier names
+    (the signed ground truth and the demo seed), no pair the character score
+    matches is refused by the word check - so nothing that books together
+    today stops. Names the corpus keeps apart stay apart by score alone."""
+    names = supplier_corpus_names()
+    assert len(names) >= 15, "the corpus shrank - check the truth files and demo_seed.sql"
+    refused = [
+        (a, b)
+        for a, b in itertools.combinations(names, 2)
+        if _similarity(a, b) >= SUPPLIER_MATCH_THRESHOLD and not words_agree(a, b)
+    ]
+    assert refused == []
+
+
+def test_every_boilerplate_word_is_pinned_to_a_name():
+    """The list is a judgement call, so each word in it must be earned by a
+    name somebody has actually printed: a corpus name or a labelled pair. A
+    word nobody prints does not belong on the list, however legal it looks."""
+    printed = [name for name in supplier_corpus_names()]
+    printed += [name for pair in PAIRS["must_match"] + PAIRS["must_not_match"] for name in pair]
+    seen: set[str] = set()
+    for name in printed:
+        seen.update(_join_single_letters(normalize(name).split()))
+    unpinned = sorted(word for word in _SUPPLIER_BOILERPLATE if word not in seen)
+    assert unpinned == []
+
+
+def test_match_supplier_tie_breaks_on_the_catalog_name_whatever_the_row_order():
+    # Two suppliers hold the same alias (possible once aliases are learned from
+    # papers, WP-87): the winner is the smaller catalog name, on every run.
+    a = _supplier("Gulf Foods Trading LLC", ["Gulf Foods"], id=1)
+    b = _supplier("Emirates Gulf Foods LLC", ["Gulf Foods"], id=2)
+    assert match_supplier([a, b], "Gulf Foods")["id"] == 2
+    assert match_supplier([b, a], "Gulf Foods")["id"] == 2
+
+
+def test_match_supplier_survives_empty_aliases():
+    suppliers = [
+        _supplier("Gulf Foods Trading LLC", [""], id=1),
+        {"id": 2, "name": "Al Ain Poultry", "name_aliases": None},
+    ]
+    assert match_supplier(suppliers, "Gulf Foods Trading LLC")["id"] == 1
+    assert match_supplier(suppliers, "Al Ain Poultry")["id"] == 2
+    assert match_supplier(suppliers, "") is None
+
+
+def test_same_name_and_known_as():
+    # The same name is equality after normalization, nothing fuzzier: case,
+    # spacing and edge punctuation are forgiven, a spelling variant is not.
+    assert same_name("Gulf Foods Trading LLC", "  GULF FOODS TRADING LLC. ")
+    assert not same_name("Gulf Foods Trading LLC", "GULF FOODS TRADING L.L.C.")
+    assert not same_name("Gulf Foods Trading LLC", "Gulf Foods Trading")
+    # Two absent or punctuation-only names are never the same name.
+    assert not same_name(None, None)
+    assert not same_name("", "")
+    assert not same_name("...", "- -")
+    supplier = _supplier("Al Madina Trading Co.", ["Al Madeena Trading"], id=1)
+    assert known_as(supplier, "AL MADINA TRADING CO")
+    assert known_as(supplier, "al madeena trading")
+    assert not known_as(supplier, "Al Madina Trading")
+    assert not known_as(supplier, None)
 
 
 # -- snap_item -----------------------------------------------------------------
@@ -448,6 +620,72 @@ async def test_confirm_self_builds_catalog_from_unknown_supplier(db):
         (Decimal("54.500"), invoice["id"]),
         (Decimal("18.750"), invoice["id"]),
     ]
+
+
+@requires_db
+async def test_confirm_attaches_a_supplier_created_since_the_paper_was_read(db):
+    """D21 (2026-09-05 eng review): a new vendor's second paper, read before its
+    first was confirmed, carries no supplier - the row did not exist yet. At
+    confirm it is matched again against the catalog as it now stands, so the
+    vendor's own earlier paper is found and the two papers share one supplier
+    and one price history. The trail entry says the attach happened here,
+    because nobody saw a "Booked under" line for it."""
+    invoice_id = await _seed_invoice(
+        db,
+        supplier_name="AL MADINA ABC L.L.C.",
+        status="awaiting_confirm",
+        total=Decimal("120.00"),
+        lines=[
+            {
+                "raw_name": "BASMATI RICE 5KG",
+                "qty": Decimal("4"),
+                "unit_price": Decimal("30.00"),
+                "line_total": Decimal("120.00"),
+            }
+        ],
+    )
+    # Confirmed after this paper was read: the vendor's first paper, and a
+    # lookalike that must not attract it.
+    earlier = await _seed_supplier(db, "Al Madina ABC LLC")
+    await _seed_supplier(db, "Al Madina Trading Co.")
+
+    assert await db.confirm_invoice(invoice_id, tenant_id=DEMO_TENANT_ID, actor="user:test")
+    invoice = await db.pool.fetchrow("select supplier_id from invoices where id = $1", invoice_id)
+    assert str(invoice["supplier_id"]) == earlier
+    assert await db.pool.fetchval("select count(*) from suppliers") == 2
+    audit = await db.pool.fetchrow(
+        "select detail from audit_events where subject_id = $1 and action = 'invoice.confirmed'",
+        invoice_id,
+    )
+    assert audit["detail"]["supplier_attached_at_confirm"] == {
+        "supplier_id": earlier,
+        "name": "Al Madina ABC LLC",
+    }
+
+    # A name with an extra word is nobody's earlier paper: its own row, and the
+    # trail entry says nothing about an attach.
+    other_id = await _seed_invoice(
+        db,
+        supplier_name="Al Madina XYZ Trading Co.",
+        status="awaiting_confirm",
+        total=Decimal("30.00"),
+        lines=[
+            {
+                "raw_name": "BASMATI RICE 5KG",
+                "qty": Decimal("1"),
+                "unit_price": Decimal("30.00"),
+                "line_total": Decimal("30.00"),
+            }
+        ],
+    )
+    assert await db.confirm_invoice(other_id, tenant_id=DEMO_TENANT_ID, actor="user:test")
+    names = [row["name"] for row in await db.pool.fetch("select name from suppliers order by name")]
+    assert names == ["Al Madina ABC LLC", "Al Madina Trading Co.", "Al Madina XYZ Trading Co"]
+    audit = await db.pool.fetchrow(
+        "select detail from audit_events where subject_id = $1 and action = 'invoice.confirmed'",
+        other_id,
+    )
+    assert "supplier_attached_at_confirm" not in audit["detail"]
 
 
 @requires_db
