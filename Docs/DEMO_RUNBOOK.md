@@ -46,7 +46,7 @@ Run through this list the day before, and again 30 minutes before going on.
 - [ ] Signed in on the demo laptop as the founder's account (Supabase Auth, email and password; sign-ups are off, accounts are created in the dashboard and given a `memberships` row), and the invoice list for the demo chain carries no rehearsal leftovers - on the practice stage that means empty; on the real stage it means only the KAS-1..4 preparation purchases and the chain's own real invoices, nothing from a previous run of the props (DEMO-1..3, KAS-5). The list hides dismissed rows by default, so open `/invoices?status=dismissed` as well: a dismissed leftover passes the eye test and still needs the reset.
 - [ ] The right papers are on the demo phone, first in the gallery: on the practice stage, the 3 curated invoice photos and the meme; on the real stage, **KAS-5** and the meme (KAS-1..4 were confirmed once during preparation and are not forwarded again - a re-forward trips the duplicate hold).
 - [ ] **Act three's week is loaded and its layout saved** (added 2026-09-04, WP-85; the screen
-      lands with WP-84). On the real stage, `Docs/demo-invoices/koukh-al-shay/sales-week.csv`
+      built 2026-09-05, WP-84; loaded once at the §C4 sitting). On the real stage, `Docs/demo-invoices/koukh-al-shay/sales-week.csv`
       was uploaded once at `/sales/load`: the mapping walked, the three till labels
       (`AL QUSAIS`, `AL NAHDA`, `ROLLA`) taught as aliases, the layout saved as "Main till" -
       and `/sales` shows Al Qusais at **30.3%** against KAS-3 and KAS-4 with the other two
@@ -210,6 +210,44 @@ cd apps/web && vercel --prod --yes
 Rollback, independent on each host and one click each: Railway redeploys the previous build; Vercel promotes the previous deployment. Neither touches the database, and 0018 is harmless to the previous code.
 
 **Ran 2026-09-03, 19:20 to 21:30 local, no rollback needed.** Backup `~/faida-before-cutover-2026-09-03-1920.sql`; merge `304eeec`; Railway up at 19:24 (old token 401, a fresh token 200); web deployed, sign-in page live; the founder signed in, forwarded KAS-5 and confirmed it in 18 s; the money moment on the reloaded screen; both dead variables removed. §E row 5 is that run.
+
+## C4. One-off: the M8 go-live (WP-86)
+
+Run this ONCE, outside demo hours, with the founder: it is the sitting that puts the sales screen and the demo week on the real stage. Nothing in it migrates the database (0019 has been live since 2026-09-04) and nothing touches the API (every M8 route has been on Railway since the Wave 1 and Wave 2 merges of 2026-09-04), so the only deploy is the web.
+
+Pre-flight, run 2026-09-05 (plan.md Progress Log), all true: the five sales tables exist on the live project and are empty for the demo chain (0 days, 0 layouts, 0 aliases, 0 till names); Al Qusais carries KAS-1..4 confirmed (newest printed 25 Aug) and nothing pending, the other two branches nothing; Vercel Production carries every variable the screen needs (the two Supabase values, the API base, mock off) and its newest deployment is the M7 cutover of 2026-09-03; master builds clean (`next build`; 182 web tests, 738 API tests). The committed week has 46 till names, one of them DELIVERY CHARGE.
+
+```bash
+# 1. Backup - cheap, and the 0017 lesson.
+pg_dump "$DATABASE_URL" --no-owner --no-privileges -f ~/faida-before-m8-live-$(date +%F).sql
+# 2. Deploy the web from master. The API needs nothing.
+cd apps/web && vercel --prod --yes
+# 3. Sign in on the deployed screen. /sales reads "No sales loaded yet." with the one link to the loader.
+# 4. Load the week at /sales/load from Docs/demo-invoices/koukh-al-shay/sales-week.csv. First upload, so the
+#    mapping step: Outlet / Date / PLU / Item / Qty / Amount, VAT-inclusive, day first, till name "Main till";
+#    the three labels AL QUSAIS, AL NAHDA, ROLLA taught as aliases; "Load 21 days" -> 21 loaded, 0 replaced,
+#    0 unchanged; "See the branches".
+# 5. /sales: Al Qusais 30.3%, reliable with limitations, 2 deliveries; Al Nahda and Rolla incomplete, "no
+#    confirmed purchases 25-31 Aug"; the total incomplete. Open Al Qusais; KAS-3 drills to its photo.
+# 6. The queue: one keystroke per till name (CHKN 65 DRY proposes; B/CHKN needs P); DELIVERY CHARGE -> X.
+# 7. Act three in full (section G) with KAS-5 forwarded from the demo phone: reload, 39.3%, 3 deliveries.
+# 8. The loop reset (supabase/demo_reset_loop.sql), then the read-backs below: the week survives, KAS-5 is
+#    gone, Al Qusais is back at 30.3%.
+```
+
+Read-backs, against the live project, after step 8:
+
+```sql
+select count(*) from sales_daily    where tenant_id = 'd0000000-0000-0000-0000-000000000001';  -- 21
+select count(*) from sales_layouts  where tenant_id = 'd0000000-0000-0000-0000-000000000001';  -- 1
+select count(*) from branch_aliases where tenant_id = 'd0000000-0000-0000-0000-000000000001';  -- 3
+select count(*) as names, count(menu_item_id) as mapped, count(excluded_at) as not_menu
+  from till_items where tenant_id = 'd0000000-0000-0000-0000-000000000001';                   -- 46, the mapped, 1
+```
+
+Then the record, in one commit: this file's §A week box ticked and §G's **[WP-84]** markers dropped, plan.md's four M8 boxes, its §1 line and Progress Log, and the M8 line in README, CLAUDE.md and AGENTS.md if the sitting changed anything they say.
+
+Rollback: Vercel promotes the previous deployment, one click. The week's rows are data on tables nothing older reads, so they can stay either way.
 
 ## D. Failure playbook
 

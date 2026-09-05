@@ -69,6 +69,8 @@ then fix up three things:
 
 There is no `API_TOKEN` (M7). The review screen sends the signed-in user's own Supabase access token, and the API verifies it against the project's public signing keys at `$SUPABASE_URL/auth/v1/.well-known/jwks.json`, then reads the `memberships` row. Two things that setup needs, both in the Supabase dashboard: the project on **JWT signing keys** with the ES256 key **Current** (Project Settings, JWT Keys; never revoke the legacy secret, it signs the service key the API uses for storage), and **sign-ups off** (Authentication, Sign In / Providers). Accounts are created in Authentication, Users, with Auto Confirm, and each gets one row: `insert into memberships (tenant_id, user_id) values ('<tenant>', '<auth user id>');`.
 
+Sales (M8) need no new host and no new variable: the till's item-wise CSV export is loaded at `/sales/load` on the deployed web, migration `0019` must be applied (`Docs/apply_m8_migrations.sql`; live since 2026-09-04), and the ratio on `/sales` is derived on every read from the loaded days and the confirmed invoices - nothing to backfill, nothing to recompute.
+
 Everything else (`SUPABASE_*`, `META_*`, `ANTHROPIC_API_KEY`, `STORAGE_BUCKET`) carries over
 from `.env` unchanged.
 Keep the service at a single replica for the demo.
