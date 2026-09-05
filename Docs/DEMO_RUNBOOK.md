@@ -45,8 +45,8 @@ Run through this list the day before, and again 30 minutes before going on.
 - [ ] The founder phone is mapped to the demo chain: the commented UPDATE at the bottom of `supabase/demo_seed.sql` has been run once, so the sender resolves to Al Qusais Branch of Karak Al Khaleej Cafeterias.
 - [ ] Signed in on the demo laptop as the founder's account (Supabase Auth, email and password; sign-ups are off, accounts are created in the dashboard and given a `memberships` row), and the invoice list for the demo chain carries no rehearsal leftovers - on the practice stage that means empty; on the real stage it means only the KAS-1..4 preparation purchases and the chain's own real invoices, nothing from a previous run of the props (DEMO-1..3, KAS-5). The list hides dismissed rows by default, so open `/invoices?status=dismissed` as well: a dismissed leftover passes the eye test and still needs the reset.
 - [ ] The right papers are on the demo phone, first in the gallery: on the practice stage, the 3 curated invoice photos and the meme; on the real stage, **KAS-5** and the meme (KAS-1..4 were confirmed once during preparation and are not forwarded again - a re-forward trips the duplicate hold).
-- [ ] **Act three's week is loaded and its layout saved** (added 2026-09-04, WP-85; the screen
-      built 2026-09-05, WP-84; loaded once at the §C4 sitting). On the real stage, `Docs/demo-invoices/koukh-al-shay/sales-week.csv`
+- [x] **Act three's week is loaded and its layout saved** (added 2026-09-04, WP-85; the screen
+      built 2026-09-05, WP-84; loaded once at the §C4 sitting, 2026-09-05 - done). On the real stage, `Docs/demo-invoices/koukh-al-shay/sales-week.csv`
       was uploaded once at `/sales/load`: the mapping walked, the three till labels
       (`AL QUSAIS`, `AL NAHDA`, `ROLLA`) taught as aliases, the layout saved as "Main till" -
       and `/sales` shows Al Qusais at **30.3%** against KAS-3 and KAS-4 with the other two
@@ -249,6 +249,8 @@ Then the record, in one commit: this file's §A week box ticked and §G's **[WP-
 
 Rollback: Vercel promotes the previous deployment, one click. The week's rows are data on tables nothing older reads, so they can stay either way.
 
+**Ran 2026-09-05, afternoon, no rollback needed.** Backup `~/faida-before-m8-live-2026-09-05.sql`; CI green on `8a557f2`; web deployed at 16:0x local, `/sales` answering with a redirect to sign-in where it had answered 404. The founder signed in and loaded the week; the first pass loaded 14 days because the alias question for `AL NAHDA` was answered with Al Qusais Branch, so both outlets' rows landed in Al Qusais's days (92 lines a day instead of 46) - caught by the read-back, fixed by deleting the one alias row in SQL (there is no screen door for a wrongly taught alias) and re-uploading the same file: the loader asked the branch question again, offered the seven Al Qusais days as a shrinking replace with a tick each, and answered "7 loaded, 7 replaced, 7 unchanged". Read-backs: 21 days, 322 lines a branch, takings 75,540.00 equal to the file's footer, Al Qusais net 30,267.43. The screen: Al Qusais 30.3% reliable with limitations, two deliveries, the other two incomplete; the 46 till names mapped one keystroke each (45 mapped, DELIVERY CHARGE not a menu item, one audit row each), costed 100.0%. KAS-5 forwarded from the demo phone and confirmed; the reloaded screen read **39.3%** with three deliveries and AED 11,899 of purchases, the other rows untouched. The loop reset ran; the read-backs after it: 21 days and 75,540.00 intact, the layout, the three aliases and the 46 mappings intact, KAS-5 gone, Al Qusais back at 30.3% with two deliveries. §E row 6 is that run. One finding for `TODOS.md`: a wrongly taught alias has no way back on the screen.
+
 ## D. Failure playbook
 
 Rule one, from plan.md §7.3 WP-41: every flake found in rehearsal gets fixed, never retried around.
@@ -331,6 +333,7 @@ The target is under about 20 seconds from forward to reply; 18.7 s was measured 
 | 3 | 2026-09-01 | 17.7 (message timestamps; extraction 4.1 s, zero repair) | yes - both callouts, the drill, "push this, fix that" | none; the ack ran 8.5 s because no warm-up preceded the day's first forward - the §A warm-up rule, not a pipeline flake |
 | 4 | 2026-09-01 | 17.9 (message timestamps; extraction 5.7 s, zero repair) | yes - both callouts live on the reloaded screen | none; an "OK" typed before the read-out arrived confirmed correctly once persisted, and the second "OK" hit the WP-21 duplicate guard and re-acked without double-recording - the guard proving itself live, exactly as in the §E0 runs |
 | 5 | 2026-09-03 | 18 (message timestamps: photo 17:24:56, read-back 17:25:14 UTC; zero repair) | yes - the money moment on the reloaded screen, signed in through the new front door | none; the M7 cutover's walk-through (§C3), on the repriced papers - the first of the two clean runs §C2 asks for |
+| 6 | 2026-09-05 | not captured in the record (the forward and confirm ran clean inside act three's step 4) | act three on the reloaded `/sales`: 30.3% to 39.3%, three deliveries, the drill to KAS-3's photo; act two not separately walked | none in the pipeline; the M8 go-live sitting (§C4) - the loader's alias question was answered wrong once and corrected before the walk |
 
 Rows 1-2's seconds were not logged. That is a gap in the record, not in the loop; row 3's seconds are derived from the `wa_messages` timestamps (photo in → reply out) - grep the Railway `latency document=` lines for the official per-stage split when convenient.
 
@@ -401,15 +404,15 @@ If it names white sugar instead of milk powder, the seed was re-applied after th
 - [ ] Zoom the browser to about 125% so the back row can read the margin column.
 - [ ] Run act two once immediately after act one in every rehearsal - the price-move callout only exists once an invoice has been confirmed in that same reset cycle.
 
-## G. Act three: the branches (added 2026-09-04, WP-85; the screen built 2026-09-05, WP-84; live at WP-86)
+## G. Act three: the branches (added 2026-09-04, WP-85; the screen built 2026-09-05, WP-84; live since 2026-09-05, WP-86)
 
 Act two ends on a plate. Act three answers the owner's next question: *which branch is this happening in?*
 One screen, `/sales`, and one number per branch: **purchases ÷ net sales (cash basis)** - what the branch's suppliers billed it, against what its till took net of VAT, over the same days.
 Never "food cost": purchases are what arrived, not what was consumed, and nothing here pretends otherwise.
 
-Run it straight after act two, in the same browser. Steps marked **[WP-84]** describe the screen as built (variant B, "answer first", on master since 2026-09-05); until WP-86 deploys the web, the same figures are on `GET /api/sales/branches`.
+Run it straight after act two, in the same browser. The screen is variant B, "answer first", live since 2026-09-05 (§C4); the same figures are on `GET /api/sales/branches`.
 
-**1. The ranked table (about 40 seconds).** Open `/sales`. **[WP-84]** The sentence above the table names the row to look at first:
+**1. The ranked table (about 40 seconds).** Open `/sales`. The sentence above the table names the row to look at first:
 
 ```
 Al Qusais: of every AED 100 taken this week, about 30 went to suppliers.
@@ -420,11 +423,11 @@ Then the table: Al Qusais on top with its ratio, and Al Nahda and Rolla below it
 Say: "Two branches have sales and no papers yet. It does not guess a number for them. Register their phones and their invoices flow in exactly the way you just saw."
 Every row says how many deliveries its window holds ("3 deliveries in this window"), and the period line says how fresh the sales are ("sales to Mon 31 Aug").
 
-**2. The drill (about 30 seconds).** Click Al Qusais. **[WP-84]** The row opens in place: seven days, each with its net sales and the papers dated that day.
+**2. The drill (about 30 seconds).** Click Al Qusais. The row opens in place: seven days, each with its net sales and the papers dated that day.
 Click KAS-3 (Al Madina Trading Co., AMT-26-1203, 25 Aug): the invoice opens with the photo beside the figures, "AED 5,081.70 = 5,335.79 less VAT 254.09".
 Say: "Every purchase number on this screen is a photograph of a piece of paper, two clicks away."
 
-**3. The coverage panel (about 30 seconds).** Below the table **[WP-84]**: "Costed: N% of sales value" - the share of what was sold that the menu can already cost - and the queue of till names not yet mapped, ranked by money.
+**3. The coverage panel (about 30 seconds).** Below the table: "Costed: N% of sales value" - the share of what was sold that the menu can already cost - and the queue of till names not yet mapped, ranked by money.
 Map one with a keystroke: `CHKN 65 DRY` proposes Chicken 65 Dry at the top; `B/CHKN` proposes nothing and needs the pick-from-menu path - show it needing you.
 Mark `DELIVERY CHARGE` as "not a menu item": it stays in net sales and leaves the queue (and a pick from the menu would bring it back).
 Say: "It never maps a name on its own. One keystroke each, once, and every day that name was ever sold follows."

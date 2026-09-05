@@ -441,6 +441,19 @@ have sales, because a free range is two inputs nobody asked for.
 **Priority:** P3
 **Depends on:** WP-84. Trigger: a pilot asks for a range the picker lacks.
 
+### Correcting a wrongly taught branch alias
+
+**What:** A way back for an alias taught to the wrong branch: a delete on `POST /api/branches/{id}/aliases`'s
+row (one audit row), and the loader offering to re-teach a label it already knows when the consultant asks.
+
+**Why:** It happened on the first live upload (2026-09-05, the M8 go-live sitting): `AL NAHDA` was answered
+with Al Qusais Branch, both outlets' rows landed in one branch's days, and nothing on the screen could undo it.
+The fix was one row deleted in SQL and a re-upload - acceptable once, with an engineer at the keyboard, and
+not for a pilot chain's consultant.
+
+**Depends on:** WP-80, WP-83. Trigger: already fired once; build it before the first pilot upload (M11) or the
+moment a consultant asks.
+
 ## Contribution, signals, dashboards (deferred by the M9 decomposition, 2026-09-05)
 
 M9 was decomposed in `Docs/M9_DECOMPOSITION.md`, reviewed twice on 2026-09-05 (once unattended, once
