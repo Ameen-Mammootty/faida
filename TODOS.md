@@ -441,6 +441,133 @@ have sales, because a free range is two inputs nobody asked for.
 **Priority:** P3
 **Depends on:** WP-84. Trigger: a pilot asks for a range the picker lacks.
 
+## Contribution, signals, dashboards (deferred by the M9 decomposition, 2026-09-05)
+
+M9 was decomposed in `Docs/M9_DECOMPOSITION.md` and reviewed with one outside voice on 2026-09-05; the
+founder has not yet answered its §5. The entries below are what the decomposition and its review
+consciously left out, each with the trigger that brings it back; they stand whichever way the founder
+decides, except where an entry names the proposal it hangs on.
+
+### Versioned calculation runs and stored results
+
+**What:** A run table, an invalidation rule, a recompute path, the answer to "what does a user see between
+runs", and PRD §14's rule that changing a rule never rewrites history (PRD §23; M9 §5 P1 option (c)).
+
+**Why:** Everything shipped derives on every read and stores nothing, by four recorded decisions; the
+recommendation is to keep that and cost a period at the prices in force on its last day, which buys a
+closed period that stops moving for one `where` clause. A run is a subsystem, and nothing has asked for
+one.
+
+**Depends on:** M9 shipped. Trigger: a customer keeps a monthly report and asks why last month's figure
+changed, or an auditor asks for a figure as it stood.
+
+### A menu price history table
+
+**What:** Selling price changes as rows, so a past margin can be reproduced at the price then in force.
+
+**Why:** A price change lives only in `audit_events` today, enough to answer "who changed it" and not
+enough to reproduce a past margin.
+
+**Depends on:** M9 shipped. Trigger: the same as the calculation runs.
+
+### A packaging flag on `ingredients`
+
+**What:** One boolean, one migration, one sentence: the coverage panel says how many costed items list
+no packaging (M9 §5 P2 option (b)).
+
+**Why:** Packaging is already costed as a recipe component, and 14 of the real menu's 20 checked items
+carry a cup or a container; what nothing can do is tell a recipe with no cup from a dish that needs none.
+The recommendation is one standing sentence, and this is the flag the founder may prefer.
+
+**Depends on:** M9's P2. Trigger: the founder or a consultant wants the count on the screen.
+
+### Waste and directly attributable variable fees in branch contribution
+
+**What:** Recorded waste and a delivery aggregator's commission subtracted from branch contribution
+(PRD §23).
+
+**Why:** Neither has a schema home and neither is anyone's ask; the sentence beneath the figure says
+they are absent.
+
+**Depends on:** M9 shipped. Trigger: a chain that records waste, or a commission statement.
+
+### Per-tenant signal thresholds and a settings screen
+
+**What:** The three signal thresholds as a per-tenant setting rather than constants in one module
+(M9 §5 P5).
+
+**Why:** There is no settings table anywhere in the schema, and the first customer who says a threshold
+is wrong for their menu is also the first evidence about what the right one is.
+
+**Depends on:** WP-91. Trigger: a customer says a threshold is wrong for their menu.
+
+### A signals table, dismissal, snooze, a lifecycle
+
+**What:** Signals as rows an owner can hide once acted on.
+
+**Why:** Until asked, a signal is a sentence derived from the data - C5's rule and WP-55's precedent.
+
+**Depends on:** WP-91. Trigger: an owner asks to hide a signal they have already acted on.
+
+### A branch dashboard as its own route
+
+**What:** A second route for a branch manager, with the branch role (WP-78 above).
+
+**Why:** There is no user who can only see one branch; `/dashboard?branch=<id>` is the bridge, and the
+day the branch role lands that link becomes the manager's landing page with no new screen written
+(M9 §5 P7).
+
+**Depends on:** WP-78. Trigger: WP-78's own - a pilot chain asks for a branch manager on the screen.
+
+### Contribution trend over time
+
+**What:** A direction rather than a level: two windows side by side, sparklines, charts.
+
+**Why:** The period picker answers "which window"; a trend is a different screen nobody has asked for.
+
+**Depends on:** WP-93. Trigger: a customer asks to see a direction.
+
+### A day-by-day view of one dish
+
+**What:** Which Tuesdays the karak sells: a per-day array on an item row.
+
+**Why:** The branch drill on `/sales` already shows the days a branch's money came from, and an item's
+day array would make the dashboard payload thirty times its size for a question nobody has asked.
+
+**Depends on:** WP-92. Trigger: a customer asks.
+
+### A download route for the stored source CSV
+
+**What:** A signed-URL read in `storage.py`'s shape, scoped by tenant, serving the file a sales day came
+from.
+
+**Why:** M8 stores every uploaded file immutably under its hash and puts the hash on every day, but no
+route serves it back, so "traces to source" on the sales side reaches the day and its file's name and
+hash, not the bytes. The gap is M8's; M9 neither widens nor closes it.
+
+**Depends on:** WP-80. Trigger: a customer or an auditor asks to see the file a figure came from.
+
+### An as-of menu-item detail read
+
+**What:** The plate drill at a past date's prices, so a historical contribution figure can show the
+invoice lines it was costed from.
+
+**Why:** The only place a component's invoice line is visible is today's plate; the contribution row
+carries today's cost beside its own whenever they differ and the link says which is which. An as-of
+detail payload is a variant of the whole screen for a question nobody has asked.
+
+**Depends on:** WP-90. Trigger: a consultant asks why a past figure differs from today's plate and the
+row's two costs do not answer it.
+
+### An index on the sales tables
+
+**What:** The first index beyond the uniques on `sales_lines` and `sales_daily`, in a 0020.
+
+**Why:** 0019 refuses indexes until a read needs one, and the dashboard read is the read that will.
+
+**Depends on:** WP-92. Trigger: a tenant's `sales_lines` passes a million rows or the dashboard read
+passes 500 ms.
+
 ## Extraction & matching
 
 ### A handwritten margin note gets folded into an item name and splits the catalog
