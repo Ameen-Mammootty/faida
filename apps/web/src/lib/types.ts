@@ -1099,3 +1099,242 @@ export interface TillItem {
   menu_item_name: string | null;
   excluded_at: string | null;
 }
+
+// --- M9 WP-93: the owner dashboard (Docs/M9_DECOMPOSITION.md §3.1) ----------
+//
+// One read for the whole screen: the period and its freshness, the two
+// answer sentences, the newest loaded day (M10's first brief slot), the
+// papers waiting, the branch league with contribution beside the ratio, every
+// item row, the signals ranked by money, and the unmapped count. Money and
+// percentages are strings, dates ISO, exactly as the sales shapes are; every
+// sentence that states a fact or a number is composed by the API (C13.5), so
+// the screen frames and joins and never computes, re-words or re-ranks.
+
+/** The dashboard's period: `/sales`' shape plus the age of the newest loaded
+ * day and the date the plates were costed at (the period's last day, C12.4). */
+export interface DashboardPeriod extends SalesPeriod {
+  sales_age_days: number | null;
+  costed_at: string | null;
+}
+
+/** The two answers, each one sentence composed by the API, null when that
+ * side cannot be answered; `quality` is the worse of the two rows behind
+ * them and `notes` the sentences that made it. */
+export interface DashboardAnswer {
+  branch: string | null;
+  item: string | null;
+  quality: PeriodQuality;
+  notes: string[];
+}
+
+/** How fresh the sales are. `quality` is `estimated` past seven days, and the
+ * screen carries the word beside the sentence, never only a tone. */
+export interface DashboardFreshness {
+  sales_through: string | null;
+  sales_age_days: number | null;
+  last_purchase_on: string | null;
+  branches_without_sales: number;
+  quality: "reliable_with_limitations" | "estimated";
+  sentence: string | null;
+}
+
+export interface LatestDayBranch {
+  branch_id: string;
+  branch_name: string;
+  date: string;
+  net_sales: string;
+}
+
+/** The newest loaded day's net sales, chain and per branch (P6, P8): present
+ * when that day lies inside the period, null otherwise. */
+export interface LatestDay {
+  date: string;
+  net_sales: string;
+  branches: LatestDayBranch[];
+}
+
+export interface ApprovalPaper {
+  invoice_id: string;
+  supplier_name: string | null;
+  invoice_no: string | null;
+  total: string | null;
+  invoice_date: string | null;
+  branch_name: string | null;
+  status: "needs_review" | "awaiting_confirm";
+  is_duplicate: boolean;
+}
+
+/** Papers waiting: `count` is the papers held for review (the owner's job),
+ * `awaiting_confirm` the ones waiting for a branch's OK, both from one read;
+ * `invoices` is at most five of the held ones - the count is the truth and
+ * the list a courtesy. */
+export interface DashboardApprovals {
+  count: number;
+  duplicates: number;
+  awaiting_confirm: number;
+  invoices: ApprovalPaper[];
+}
+
+/** One branch of the league: `/sales`' row (the same fields, the same
+ * figures, matched by `branch_id`) with contribution beside the ratio. Two
+ * quality words because they routinely differ (C9 extended): a branch with
+ * no papers has an unavailable ratio and a perfectly reliable contribution.
+ * Ranked by the API by kept percentage, lowest first (C12.9). */
+export interface LeagueRow {
+  branch_id: string;
+  branch_name: string;
+  window: { from: string; to: string; days: number };
+  net_sales: string | null;
+  takings: string | null;
+  purchases: string;
+  ratio_pct: string | null;
+  contribution: string | null;
+  contribution_pct: string | null;
+  costed_share_pct: string | null;
+  ratio_quality: PeriodQuality;
+  ratio_notes: string[];
+  contribution_quality: PeriodQuality;
+  contribution_notes: string[];
+  days_loaded: number;
+  days_missing: number;
+  deliveries: number;
+  sales_through: string | null;
+  last_purchase_on: string | null;
+}
+
+export interface DashboardUnassigned {
+  count: number;
+  purchases: string;
+}
+
+/** Set when `?branch_id` filters the view; the league, the items and the
+ * signals follow it, `total` never does. */
+export interface DashboardScope {
+  branch_id: string | null;
+  branch_name: string | null;
+}
+
+/** Always the chain, filter or no filter, so a branch is compared to the
+ * chain and never to itself. */
+export interface DashboardTotal {
+  net_sales: string;
+  purchases: string;
+  ratio_pct: string | null;
+  contribution: string | null;
+  contribution_pct: string | null;
+  costed_share_pct: string | null;
+  ratio_quality: PeriodQuality;
+  ratio_notes: string[];
+  contribution_quality: PeriodQuality;
+  contribution_notes: string[];
+}
+
+export interface ItemTillName {
+  till_item_id: string;
+  name: string;
+  code: string | null;
+}
+
+/** One recipe component's share of a portion's cost and the invoice line the
+ * as-of price came from (C12.4a): the drill links `/invoices/<id>#line-<n>`. */
+export interface ItemComponent {
+  ingredient_id: string;
+  ingredient_name: string;
+  qty: string;
+  unit: string;
+  cost_per_portion: string | null;
+  invoice_id: string | null;
+  line_position: number | null;
+  purchased_on: string | null;
+}
+
+/** One (menu item, branch, period), or the chain when `branch_id` is null.
+ * An incomplete row carries every cost number as null and its reasons in
+ * `notes` - a hole never renders as a fat margin. */
+export interface DashboardItemRow {
+  menu_item_id: string;
+  menu_item_name: string;
+  category: string | null;
+  branch_id: string | null;
+  qty_sold: string | null;
+  qty_refunded: string | null;
+  net_item_sales: string;
+  cost_per_portion: string | null;
+  cost: string | null;
+  /** Present only when today's plate differs from the one the period used. */
+  cost_per_portion_today: string | null;
+  contribution: string | null;
+  contribution_pct: string | null;
+  avg_sold_at: string | null;
+  net_price: string | null;
+  plate_quality: PlateQuality;
+  quality: PlateQuality;
+  notes: string[];
+  recipe_version: number | null;
+  till_items: ItemTillName[];
+  components: ItemComponent[];
+  archived: boolean;
+}
+
+/** `top` and `bottom` are slices of `all`, five each; `all` carries every
+ * costed row plus the incomplete ones, so the panel expands with no further
+ * request; `count` is how many rows carry numbers. */
+export interface DashboardItems {
+  top: DashboardItemRow[];
+  bottom: DashboardItemRow[];
+  all: DashboardItemRow[];
+  count: number;
+}
+
+export type SignalKind = "popular_low_margin" | "price_spike" | "branch_gap";
+
+/** One line of "what to look at" (C13): the sentence, the detail beneath
+ * it, the AED at stake it is ranked by, and the ids the screen links with.
+ * A signal that fired on an estimated input carries the word in its detail. */
+export interface DashboardSignal {
+  kind: SignalKind;
+  money_at_stake: string;
+  quality: "reliable_with_limitations" | "estimated";
+  sentence: string;
+  detail: string;
+  branch_id: string | null;
+  branch_name: string | null;
+  menu_item_id: string | null;
+  menu_item_name: string | null;
+  ingredient_id: string | null;
+  ingredient_name: string | null;
+  invoice_id: string | null;
+  moved_on: string | null;
+}
+
+/** Till names with sales in the window that have no dish and no exclusion,
+ * and the value they hold - a note beside the figures and a link to the
+ * queue on `/sales` that owns them, never a second queue. */
+export interface DashboardUnmapped {
+  names: number;
+  value: string;
+}
+
+/** What the menu can cost today, for the first-run paragraph: live items
+ * and the ones whose plate has a price for every ingredient. */
+export interface DashboardMenu {
+  items: number;
+  costed: number;
+}
+
+/** GET /api/dashboard?from&to&branch_id */
+export interface DashboardResult {
+  period: DashboardPeriod;
+  answer: DashboardAnswer;
+  freshness: DashboardFreshness;
+  latest_day: LatestDay | null;
+  approvals: DashboardApprovals;
+  league: LeagueRow[];
+  unassigned: DashboardUnassigned;
+  scope: DashboardScope;
+  total: DashboardTotal;
+  items: DashboardItems;
+  signals: DashboardSignal[];
+  unmapped: DashboardUnmapped;
+  menu: DashboardMenu;
+}

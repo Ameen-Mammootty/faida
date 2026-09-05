@@ -67,6 +67,7 @@ import {
   mockSaveSalesLayout,
   mockUnmapTillItem,
 } from "./mock/sales";
+import { mockGetDashboard } from "./mock/dashboard";
 import {
   mockApproveInvoice,
   mockConfirmInvoice,
@@ -83,6 +84,7 @@ import type {
   Branch,
   BranchAlias,
   Correction,
+  DashboardResult,
   Ingredient,
   IngredientCreateInput,
   IngredientMappingInput,
@@ -97,8 +99,8 @@ import type {
   MenuItemSummary,
   MenuLoadResult,
   PackSizeOverrideResult,
-  PriceMove,
   PriceHistory,
+  PriceMove,
   RejectionResult,
   SalesBranchesResult,
   SalesCoverageResult,
@@ -513,6 +515,23 @@ function rangeQuery(from?: string, to?: string): string {
   if (from === undefined || to === undefined) return "";
   const params = new URLSearchParams({ from, to });
   return `?${params.toString()}`;
+}
+
+/** GET /api/dashboard?from&to&branch_id - the whole owner screen in one read
+ * (M9 C6 extended). `branchId` filters the league, the items and the signals;
+ * the total always stays the chain. */
+export async function getDashboard(
+  from?: string,
+  to?: string,
+  branchId?: string,
+): Promise<DashboardResult> {
+  if (MOCK) return mockGetDashboard(from, to, branchId);
+  const params = new URLSearchParams();
+  if (from) params.set("from", from);
+  if (to) params.set("to", to);
+  if (branchId) params.set("branch_id", branchId);
+  const query = params.size > 0 ? `?${params.toString()}` : "";
+  return request<DashboardResult>(`/api/dashboard${query}`);
 }
 
 export async function getSalesBranches(from?: string, to?: string): Promise<SalesBranchesResult> {

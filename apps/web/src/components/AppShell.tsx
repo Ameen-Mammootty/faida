@@ -10,8 +10,14 @@ import SessionMenu from "./SessionMenu";
  * rather than read from the router so the layouts stay server components.
  * The one client island is `SessionMenu` (M7 WP-71): who is signed in, and
  * the sign-out control.
+ *
+ * The brand lockup is the dashboard's nav entry (M9 WP-93, the design review
+ * of 2026-09-05): a fifth word does not fit the top row at 390 px by this
+ * shell's own measurement below, so the mark itself is the link, with a small
+ * "Dashboard" label beside the wordmark from 640 px up and the word in the
+ * quiet second row on a phone. The nav keeps its four words.
  */
-type Screen = "invoices" | "materials" | "menu" | "sales";
+type Screen = "dashboard" | "invoices" | "materials" | "menu" | "sales";
 
 export default function AppShell({
   current,
@@ -30,13 +36,21 @@ export default function AppShell({
       <header className="border-b border-ink/10">
         <div className="mx-auto flex h-14 w-full max-w-6xl items-center justify-between px-4 sm:px-6">
           <Link
-            href="/invoices"
+            href="/dashboard"
             className="flex items-center gap-2.5 rounded-sm"
-            aria-label="Faida invoices"
+            aria-label="Faida dashboard"
+            aria-current={current === "dashboard" ? "page" : undefined}
           >
             <img src="/brand/faida-mark.svg" alt="" className="h-5 w-auto" />
             <span className="font-display text-xl font-semibold tracking-[-0.02em] text-ink">
               faida
+            </span>
+            <span
+              className={`hidden text-xs font-medium sm:inline ${
+                current === "dashboard" ? "text-palm" : "text-stone"
+              }`}
+            >
+              Dashboard
             </span>
           </Link>
           <div className="flex items-center gap-3 sm:gap-4">
@@ -88,13 +102,24 @@ export default function AppShell({
             so who is signed in and the way out get a quiet row of their own. */}
         <div className="border-t border-ink/5 sm:hidden">
           <div className="mx-auto flex h-9 w-full max-w-6xl items-center justify-between px-4">
-            {isMockMode() ? (
-              <span className="rounded-sm bg-mist px-2 py-0.5 text-xs font-medium whitespace-nowrap text-stone">
-                Sample data
-              </span>
-            ) : (
-              <span />
-            )}
+            <div className="flex items-center gap-3">
+              <Link
+                href="/dashboard"
+                aria-current={current === "dashboard" ? "page" : undefined}
+                className={`text-xs ${
+                  current === "dashboard"
+                    ? "font-semibold text-palm"
+                    : "font-medium text-stone hover:text-palm"
+                }`}
+              >
+                Dashboard
+              </Link>
+              {isMockMode() ? (
+                <span className="rounded-sm bg-mist px-2 py-0.5 text-xs font-medium whitespace-nowrap text-stone">
+                  Sample data
+                </span>
+              ) : null}
+            </div>
             <SessionMenu showEmail />
           </div>
         </div>

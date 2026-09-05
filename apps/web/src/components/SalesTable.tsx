@@ -14,7 +14,6 @@ import { groupedMoney, roundedAed } from "@/lib/format";
 import { isoToday } from "@/lib/salesLoad";
 import {
   DEFAULT_CHOICE,
-  QUALITY_WORD,
   answerSentence,
   bucketsLine,
   choiceKey,
@@ -43,11 +42,11 @@ import type {
   InvoiceFigure,
   MenuItemSummary,
   PendingPaper,
-  PeriodQuality,
   SalesBranchesResult,
   SalesCoverageResult,
 } from "@/lib/types";
-import { AlertIcon, CheckIcon, ChevronIcon, PendingIcon } from "./icons";
+import { ChevronIcon } from "./icons";
+import QualityChip from "./QualityChip";
 
 /**
  * M8 WP-84: the sales screen - variant B, "Answer first" (design review
@@ -77,25 +76,6 @@ type Feedback = { kind: "error" | "done"; text: string } | null;
  * screen's rule). */
 function onScreen(el: HTMLElement | null): boolean {
   return el !== null && el.offsetParent !== null;
-}
-
-/** The status word with its icon: mist for reliable and for the two gaps,
- * gold-soft for estimated - the menu screen's tones, PRD §24's words. */
-function QualityChip({ quality }: { quality: PeriodQuality }) {
-  const style =
-    quality === "estimated"
-      ? { classes: "bg-gold-soft text-caution", Icon: AlertIcon }
-      : quality === "reliable_with_limitations"
-        ? { classes: "bg-mist text-palm", Icon: CheckIcon }
-        : { classes: "bg-mist text-plum", Icon: PendingIcon };
-  return (
-    <span
-      className={`inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[11px] font-medium whitespace-nowrap ${style.classes}`}
-    >
-      <style.Icon className="h-3 w-3" />
-      {QUALITY_WORD[quality]}
-    </span>
-  );
 }
 
 function RatioFigure({ row }: { row: BranchRow }) {

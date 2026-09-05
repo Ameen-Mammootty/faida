@@ -7,8 +7,8 @@
  *
  * The shape of the rule, pinned by the M7 decomposition:
  *
- * - The console screens - /invoices, /materials, /menu, /sales and
- *   everything under them, /menu/load and /sales/load included - need a
+ * - The console screens - /dashboard, /invoices, /materials, /menu, /sales
+ *   and everything under them, /menu/load and /sales/load included - need a
  *   signed-in user.
  * - The landing page, /login, the waitlist post and Next's own static assets
  *   stay open. The landing page is the marketing site; a redirect there
@@ -20,12 +20,14 @@
 
 /** The gated prefixes. A prefix matches itself and any path beneath it,
  * never a sibling that merely starts with the same letters (`/menus`). */
-const GATED_PREFIXES = ["/invoices", "/materials", "/menu", "/sales"] as const;
+const GATED_PREFIXES = ["/dashboard", "/invoices", "/materials", "/menu", "/sales"] as const;
 
 export const LOGIN_PATH = "/login";
 
-/** Where a fresh sign-in lands when nothing asked for a particular screen. */
-export const DEFAULT_AFTER_LOGIN = "/invoices";
+/** Where a fresh sign-in lands when nothing asked for a particular screen:
+ * the answer, not the queue (M9 P10, decided 2026-09-05). A bookmark to
+ * /invoices still round-trips through `?next=`. */
+export const DEFAULT_AFTER_LOGIN = "/dashboard";
 
 /** Mock mode is the default; only the exact string "false" turns it off. */
 export function isMockMode(value: string | undefined): boolean {
@@ -62,8 +64,8 @@ export function loginPath(next: string): string {
 /**
  * The only `next` values the login form will follow: a path on this site.
  * Anything else - an absolute URL, a protocol-relative `//evil`, an empty
- * string, a path back to /login itself - falls back to the invoice list, so
- * a crafted link cannot bounce a signed-in owner off the site.
+ * string, a path back to /login itself - falls back to the dashboard, so a
+ * crafted link cannot bounce a signed-in owner off the site.
  */
 export function safeNextPath(next: string | null | undefined): string {
   if (!next) return DEFAULT_AFTER_LOGIN;
