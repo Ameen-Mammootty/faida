@@ -68,7 +68,7 @@ describe("the branch read in mock mode", () => {
     // incomplete ("no sales loaded ..."), exactly as the API does; the rows
     // are not asserted by label here because the fixtures' dates are fixed
     // and today moves.
-    expect(read.period).toMatchObject({ days: 28, default: true, sales_through: null });
+    expect(read.period).toMatchObject({ days: 28, default: true, sales_through: null, months: [] });
     expect(read.rows).toHaveLength(3);
     expect(read.rows.every((row) => row.net_sales === null && row.ratio_pct === null)).toBe(true);
     expect(["incomplete", "unavailable"]).toContain(read.total.quality);
@@ -79,7 +79,7 @@ describe("the branch read in mock mode", () => {
     const door = await fresh();
     await loadWeek(door);
     const read = await door.mockGetSalesBranches("2026-08-17", "2026-08-23");
-    expect(read.period).toMatchObject({ from: "2026-08-17", to: "2026-08-23", days: 7, default: false, sales_through: "2026-08-23" });
+    expect(read.period).toMatchObject({ from: "2026-08-17", to: "2026-08-23", days: 7, default: false, sales_through: "2026-08-23", months: ["2026-08"] });
 
     expect(read.rows.map((row) => row.branch_name)).toEqual(["Deira", "Al Quoz", "Karama"]);
 
@@ -107,8 +107,8 @@ describe("the branch read in mock mode", () => {
     expect(alQuoz).toMatchObject({
       window: { from: "2026-08-17", to: "2026-08-23", days: 7 },
       net_sales: "21000.00",
-      purchases: "1240.00",
-      ratio_pct: "5.9",
+      purchases: "1255.00",
+      ratio_pct: "6.0",
       quality: "estimated",
       notes: ["1 invoice awaiting confirm", "3 invoices held for review", "1 delivery in this window"],
       days_loaded: 7,
@@ -120,7 +120,12 @@ describe("the branch read in mock mode", () => {
       ["inv-1003", "needs_review", "2026-08-22"],
       ["inv-1005", "needs_review", "2026-08-22"],
     ]);
-    expect(alQuoz.days.find((d) => d.business_date === "2026-08-18")?.invoices[0].invoice_id).toBe("inv-1006");
+    expect(alQuoz.days.find((d) => d.business_date === "2026-08-18")?.invoices[0]).toMatchObject({
+      invoice_id: "inv-1006",
+      net_purchase: "1255.00",
+      total: "1317.75",
+      tax: "62.75",
+    });
 
     // Karama: nothing loaded, a paper awaiting confirm riding along.
     expect(karama).toMatchObject({
@@ -133,11 +138,12 @@ describe("the branch read in mock mode", () => {
 
     // The paper with no branch is counted in the total and ranked nowhere.
     expect(read.unassigned).toMatchObject({ count: 1, purchases: "200.00" });
-    expect(read.unassigned.invoices[0].invoice_id).toBe("inv-1008");
+    // A market receipt with no VAT line: the tax is null on the wire, as the API sends it.
+    expect(read.unassigned.invoices[0]).toMatchObject({ invoice_id: "inv-1008", net_purchase: "200.00", total: "200.00", tax: null });
     expect(read.total).toEqual({
       net_sales: "22005.00",
-      purchases: "1980.00",
-      ratio_pct: "9.0",
+      purchases: "1995.00",
+      ratio_pct: "9.1",
       quality: "incomplete",
       notes: ["1 of 3 branches with nothing loaded", "1 invoice on no branch, counted in the total"],
     });
@@ -148,7 +154,7 @@ describe("the branch read in mock mode", () => {
     await loadWeek(door);
     await door.mockPostSalesDays({ days: [day("br-02", "2026-08-23", [{ name: "KARAK TEA CUP", amount: "105.00" }])] });
     const read = await door.mockGetSalesBranches();
-    expect(read.period).toMatchObject({ from: "2026-07-27", to: "2026-08-23", days: 28, default: true });
+    expect(read.period).toMatchObject({ from: "2026-07-27", to: "2026-08-23", days: 28, default: true, months: ["2026-08"] });
     const karama = read.rows.find((row) => row.branch_name === "Karama");
     // One loaded day clips the window to 23 Aug, so the paper placed on 22 Aug
     // is outside it and not pending here - the API's rule.
@@ -223,6 +229,14 @@ describe("coverage and the three doors in mock mode", () => {
     const back = await door.mockGetSalesCoverage("2026-08-17", "2026-08-23");
     expect(back.queue.map((item) => item.name)).toEqual(["KARAK TEA CUP", "FLASK 1L"]);
     expect(back.costed_pct).toBe("4.5");
+  });
+
+  it("scores word order the API's way: the token-sorted arm lifts a swapped name to an exact match", async () => {
+    const door = await fresh();
+    await door.mockPostSalesDays({ days: [day("br-02", "2026-08-20", [{ name: "MANDI CHICKEN", amount: "105.00" }, { name: "TEA KARAK CUP", amount: "3.00" }])] });
+    const coverage = await door.mockGetSalesCoverage("2026-08-17", "2026-08-23");
+    expect(coverage.queue.find((item) => item.name === "MANDI CHICKEN")?.proposals[0]).toMatchObject({ name: "Chicken Mandi", score: "1.00" });
+    expect(coverage.queue.find((item) => item.name === "TEA KARAK CUP")?.proposals[0]).toMatchObject({ name: "Karak Tea (Cup)", score: "1.00" });
   });
 
   it("refuses what the doors refuse: a foreign row, an archived item, an unmap of the unmapped, an exclusion of the mapped", async () => {

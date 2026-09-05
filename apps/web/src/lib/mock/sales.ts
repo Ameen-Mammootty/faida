@@ -378,8 +378,14 @@ const DEFAULT_PERIOD_DAYS = 28;
 const MAX_PERIOD_DAYS = 92;
 const TENANT_CURRENCY = "AED";
 const PENDING_STATUSES = new Set<string>(["awaiting_confirm", "needs_review"]);
-/** provenance.ASSERTED_ORIGINS: a figure a person typed, not a camera saw. */
-const ASSERTED_ORIGINS = new Set<string>(["corrected_chat", "corrected_screen", "manual"]);
+/** provenance.ASSERTED_ORIGINS - every origin but `extracted` and `repaired`:
+ * a figure a person supplied, not one a camera saw and the arithmetic checked. */
+const ASSERTED_ORIGINS = new Set<string>([
+  "corrected_chat",
+  "corrected_screen",
+  "manual",
+  "reconstructed",
+]);
 
 /** Precedence, worst first (C9 amended). */
 const QUALITY_RANK: Record<PeriodQuality, number> = {
@@ -435,11 +441,20 @@ function newestLoadedDay(): string | null {
   return newest;
 }
 
+/** The calendar months holding a loaded day, newest first, as "YYYY-MM" -
+ * `db.sales_months`, the picker's choices. */
+function monthsLoaded(): string[] {
+  const months = new Set<string>();
+  for (const day of days.values()) months.add(day.business_date.slice(0, 7));
+  return [...months].sort().reverse();
+}
+
 /** The period a read covers: the caller's range, or 28 days ending on the
  * newest loaded day (today when nothing is loaded) - `sales.py`'s `_period`
  * with its three refusals, word for word. */
 function periodFor(from?: string, to?: string): SalesPeriod {
   const newest = newestLoadedDay();
+  const months = monthsLoaded();
   if ((from === undefined) !== (to === undefined)) {
     throw new ApiError(422, "send both 'from' and 'to', or neither");
   }
@@ -451,6 +466,7 @@ function periodFor(from?: string, to?: string): SalesPeriod {
       days: DEFAULT_PERIOD_DAYS,
       default: true,
       sales_through: newest,
+      months,
     };
   }
   if (from > to) throw new ApiError(422, "'from' is after 'to'");
@@ -461,7 +477,7 @@ function periodFor(from?: string, to?: string): SalesPeriod {
       `${count} days is longer than one read covers: at most ${MAX_PERIOD_DAYS}`,
     );
   }
-  return { from, to, days: count, default: false, sales_through: newest };
+  return { from, to, days: count, default: false, sales_through: newest, months };
 }
 
 // --- papers -----------------------------------------------------------------
@@ -533,8 +549,10 @@ function figureOf(paper: Paper): InvoiceFigure {
     invoice_no: paper.invoice_no,
     purchased_on: paper.purchased_on,
     net_purchase: netPurchase(paper),
-    total: fils(toDec(paper.total ?? "0")),
-    tax: fils(toDec(paper.tax ?? "0")),
+    // The two printed figures pass through as the API's `_dec` does: null
+    // when the paper printed none. Only the net figure treats null as zero.
+    total: paper.total === null ? null : fils(toDec(paper.total)),
+    tax: paper.tax === null ? null : fils(toDec(paper.tax)),
     quality: paper.asserted ? "estimated" : "reliable_with_limitations",
   };
 }
@@ -698,7 +716,7 @@ function periodRow(
         supplier_name: p.supplier_name,
         invoice_no: p.invoice_no,
         currency: p.currency,
-        total: fils(toDec(p.total ?? "0")),
+        total: p.total === null ? null : fils(toDec(p.total)),
       }),
     ),
   };
@@ -796,12 +814,9 @@ function normalizeName(name: string): string {
     .trim();
 }
 
-/** The whole-string ratio the API's scorer floors on (difflib's 2M/T, with
- * the matched characters counted along the longest common subsequence). */
-function similarity(a: string, b: string): number {
-  const na = normalizeName(a);
-  const nb = normalizeName(b);
-  if (!na || !nb) return 0;
+/** difflib's 2M/T over two strings, the matched characters counted along
+ * the longest common subsequence. */
+function lcsRatio(na: string, nb: string): number {
   const previous = new Array<number>(nb.length + 1).fill(0);
   for (let i = 1; i <= na.length; i += 1) {
     let diagonal = 0;
@@ -812,6 +827,19 @@ function similarity(a: string, b: string): number {
     }
   }
   return (2 * previous[nb.length]) / (na.length + nb.length);
+}
+
+/** `matching._ratio`: the better of the whole-string ratio and the
+ * token-sorted ratio over normalised names, so word order never sinks a
+ * match ("SHAWARMA CHICKEN" is "Chicken Shawarma"). */
+function similarity(a: string, b: string): number {
+  const na = normalizeName(a);
+  const nb = normalizeName(b);
+  if (!na || !nb) return 0;
+  if (na === nb) return 1;
+  const sortedA = na.split(" ").sort().join(" ");
+  const sortedB = nb.split(" ").sort().join(" ");
+  return Math.max(lcsRatio(na, nb), lcsRatio(sortedA, sortedB));
 }
 
 const MENU_ITEM_PROPOSAL_THRESHOLD = 0.72;

@@ -209,7 +209,8 @@ POST /api/sales/days
   422 for more than 31 days, or a bad row (the day and the position named); 404 for a foreign branch
 
 GET /api/sales/branches?from=2026-08-04&to=2026-08-31
-  {"period": {"from": "2026-08-04", "to": "2026-08-31", "days": 28, "default": true, "sales_through": "2026-08-31"},
+  {"period": {"from": "2026-08-04", "to": "2026-08-31", "days": 28, "default": true, "sales_through": "2026-08-31",
+              "months": ["2026-08"]},
    "rows": [{"branch_id": "…", "branch_name": "Al Qusais Branch",
              "window": {"from": "2026-08-25", "to": "2026-08-31", "days": 7},
              "net_sales": "30120.00", "takings": "31626.00", "purchases": "9162.65", "ratio_pct": "30.4" | null,

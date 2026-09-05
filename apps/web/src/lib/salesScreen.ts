@@ -78,40 +78,18 @@ export interface MonthOption {
   label: string;
 }
 
-/**
- * The calendar months the picker offers: the ones a read has shown loaded
- * days in - each row's clipped window starts and ends on a loaded day, so
- * both its months have sales - plus the month of the newest loaded day.
- * Newest first. The API has no "months with sales" read; this is what the
- * screen can honestly claim from what it has seen, and it only ever grows
- * as reads come back (the caller unions it with what it already offers).
- */
-export function monthsWithSales(result: SalesBranchesResult): MonthOption[] {
-  const seen = new Map<string, MonthOption>();
-  const note = (iso: string | null) => {
-    if (!iso) return;
-    const year = Number(iso.slice(0, 4));
-    const month = Number(iso.slice(5, 7));
-    if (!year || !month) return;
-    seen.set(`${year}-${pad(month)}`, { year, month, label: monthLabel(year, month) });
-  };
-  note(result.period.sales_through);
-  for (const row of result.rows) {
-    if (row.days_loaded === 0) continue;
-    note(row.window.from);
-    note(row.window.to);
+/** The calendar months the picker offers: the ones the API says hold loaded
+ * days (`period.months`, newest first), so a month offered always has sales
+ * and the oldest month is reachable however long the history. */
+export function monthOptions(period: SalesPeriod): MonthOption[] {
+  const options: MonthOption[] = [];
+  for (const key of period.months) {
+    const year = Number(key.slice(0, 4));
+    const month = Number(key.slice(5, 7));
+    if (!year || !month || month > 12) continue;
+    options.push({ year, month, label: monthLabel(year, month) });
   }
-  return [...seen.entries()]
-    .sort(([a], [b]) => (a < b ? 1 : a > b ? -1 : 0))
-    .map(([, option]) => option);
-}
-
-export function mergeMonths(known: MonthOption[], fresh: MonthOption[]): MonthOption[] {
-  const byKey = new Map<string, MonthOption>();
-  for (const option of [...known, ...fresh]) byKey.set(`${option.year}-${pad(option.month)}`, option);
-  return [...byKey.entries()]
-    .sort(([a], [b]) => (a < b ? 1 : a > b ? -1 : 0))
-    .map(([, option]) => option);
+  return options;
 }
 
 // --- dates and words --------------------------------------------------------
@@ -197,16 +175,31 @@ export interface AnswerSentence {
  */
 export function answerSentence(result: SalesBranchesResult): AnswerSentence | null {
   const ranked = result.rows.filter((row) => row.ratio_pct !== null);
-  const withSalesOnly = result.rows.filter(
-    (row) => row.ratio_pct === null && row.net_sales !== null,
+  // Two reasons a row with sales carries no ratio, and they get two different
+  // sentences: no confirmed paper in its window, or net sales that are not
+  // positive (a refund-heavy or zero week) - the second must never be told as
+  // the first, because its row lists the papers it did confirm.
+  const noPapers = result.rows.filter(
+    (row) => row.ratio_pct === null && row.net_sales !== null && row.deliveries === 0,
   );
-  const names = withSalesOnly.map((row) => shortBranchName(row.branch_name));
-  const unranked =
+  const notPositive = result.rows.filter(
+    (row) => row.ratio_pct === null && row.net_sales !== null && row.deliveries > 0,
+  );
+  const names = noPapers.map((row) => shortBranchName(row.branch_name));
+  const unrankedNoPapers =
     names.length === 0
       ? ""
       : ` ${listNames(names)} ${names.length === 1 ? "has" : "have"} sales loaded and no papers confirmed, so ${
           names.length === 1 ? "it" : "they"
         } cannot be ranked yet.`;
+  const zeroNames = notPositive.map((row) => shortBranchName(row.branch_name));
+  const unrankedNotPositive =
+    zeroNames.length === 0
+      ? ""
+      : ` ${listNames(zeroNames)}${zeroNames.length === 1 ? "'s" : "'"} net sales are not positive this period, so ${
+          zeroNames.length === 1 ? "it is" : "they are"
+        } not rated.`;
+  const unranked = unrankedNoPapers + unrankedNotPositive;
   const top = ranked[0];
   if (top && top.ratio_pct !== null) {
     const caveat =
@@ -218,7 +211,7 @@ export function answerSentence(result: SalesBranchesResult): AnswerSentence | nu
         `this window.${caveat}${unranked}`,
     };
   }
-  if (names.length > 0) return { lead: "No branch can be ranked yet", rest: unranked.trim() };
+  if (unranked) return { lead: "No branch can be ranked yet", rest: unranked.trim() };
   return null;
 }
 
@@ -237,9 +230,18 @@ const DELIVERIES_NOTE = / in this window$/;
 export function statusSentence(quality: PeriodQuality, notes: string[]): string {
   const rest = notes.filter((note) => !DELIVERIES_NOTE.test(note));
   if (rest.length === 0) {
-    return quality === "reliable_with_limitations"
-      ? "Every day loaded, every paper confirmed."
-      : "";
+    // A word is never left standing alone. The chain total, for one, reads
+    // estimated with no note of its own when a branch below it does.
+    switch (quality) {
+      case "reliable_with_limitations":
+        return "Every day loaded, every paper confirmed.";
+      case "estimated":
+        return "At least one figure behind it is estimated - see the rows.";
+      case "incomplete":
+        return "Some days or papers are missing - see the rows.";
+      case "unavailable":
+        return "Nothing to rate.";
+    }
   }
   return `${rest.map((note) => note.charAt(0).toUpperCase() + note.slice(1)).join(". ")}.`;
 }
@@ -255,12 +257,17 @@ export function windowLine(row: BranchRow): string {
 export function noRatioWords(row: BranchRow): string {
   if (row.net_sales === null) return row.deliveries > 0 ? "No sales loaded" : "Nothing loaded";
   if (row.deliveries === 0) return "No confirmed purchases";
-  return "Not rated";
+  return "Net sales not positive";
 }
 
 /** "AED 5,081.70 = 5,335.79 less VAT 254.09" - the two printed figures the
- * photo shows, beside the paper (P2). */
+ * photo shows, beside the paper (P2). A paper that printed no VAT line says
+ * so; one that printed no total (it still confirmed) shows what was counted. */
 export function exVatWords(figure: InvoiceFigure): string {
+  if (figure.total === null) return `AED ${grouped(figure.net_purchase)}, no total printed`;
+  if (figure.tax === null) {
+    return `AED ${grouped(figure.net_purchase)} = ${grouped(figure.total)}, no VAT printed`;
+  }
   return `AED ${grouped(figure.net_purchase)} = ${grouped(figure.total)} less VAT ${grouped(figure.tax)}`;
 }
 
@@ -359,23 +366,30 @@ export function costedSentence(coverage: SalesCoverageResult): string {
 
 /** The buckets in words, on one line: the estimated points named, then what
  * is not yet costed and why, then what sits beside the figure. */
+/** A money or percentage string that is zero however it is written:
+ * "0", "0.0", "0.00", "-0.00". */
+export function isZero(value: string | null): boolean {
+  return value === null || /^-?0+(\.0+)?$/.test(value.trim());
+}
+
 export function bucketsLine(coverage: SalesCoverageResult): string {
   const parts: string[] = [];
-  if (coverage.estimated_points !== null && coverage.estimated_points !== "0.0") {
+  if (!isZero(coverage.estimated_points)) {
     parts.push(`${coverage.estimated_points} points of it on estimated plates`);
   }
-  if (coverage.uncosted.unmapped !== "0.00") {
+  if (!isZero(coverage.uncosted.unmapped)) {
     parts.push(`Not yet mapped: ${roundedAed(coverage.uncosted.unmapped)}`);
   }
-  if (coverage.uncosted.incomplete_plate !== "0.00") {
+  if (!isZero(coverage.uncosted.incomplete_plate)) {
     parts.push(`Cannot be costed yet: ${roundedAed(coverage.uncosted.incomplete_plate)}`);
   }
   const beside: string[] = [];
-  if (coverage.beside.refunds !== "0.00") {
+  if (!isZero(coverage.beside.refunds)) {
     beside.push(`refunds ${roundedAed(coverage.beside.refunds.replace("-", ""))}`);
   }
-  if (coverage.beside.not_menu_items !== "0.00") {
-    beside.push(`non-menu takings ${roundedAed(coverage.beside.not_menu_items)}`);
+  // Net of VAT, like every figure on this panel: the word is never "takings".
+  if (!isZero(coverage.beside.not_menu_items)) {
+    beside.push(`non-menu net sales ${roundedAed(coverage.beside.not_menu_items)}`);
   }
   if (beside.length > 0) {
     const joined = beside.length === 2 ? `${beside[0]} and ${beside[1]}` : beside[0];

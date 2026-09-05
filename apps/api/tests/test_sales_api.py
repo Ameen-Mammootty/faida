@@ -153,6 +153,7 @@ async def test_three_branches_answer_the_right_rows_and_the_drill_resolves(api, 
         "days": 7,
         "default": False,
         "sales_through": _iso(6),
+        "months": sorted({_iso(i)[:7] for i in range(7)}, reverse=True),
     }
     assert [row["branch_id"] for row in payload["rows"]] == [
         BRANCH,  # the only rated row
@@ -226,6 +227,7 @@ async def test_the_default_period_is_28_days_ending_on_the_newest_sales_day(api,
     assert period["from"] == _iso(6 - 27)
     assert period["days"] == 28
     assert period["sales_through"] == _iso(6)
+    assert period["months"] == sorted({_iso(i)[:7] for i in range(7)}, reverse=True)
     coverage = await api.get("/api/sales/coverage", headers=AUTH)
     assert coverage.json()["period"] == period
 
@@ -238,6 +240,7 @@ async def test_with_no_sales_at_all_the_default_period_ends_today_and_rows_are_u
     assert payload["period"]["to"] == TODAY.isoformat()
     assert payload["period"]["days"] == 28
     assert payload["period"]["sales_through"] is None
+    assert payload["period"]["months"] == []
     assert {row["quality"] for row in payload["rows"]} == {"unavailable"}
     assert payload["total"]["quality"] == "unavailable"
 

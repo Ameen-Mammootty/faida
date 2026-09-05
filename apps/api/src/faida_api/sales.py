@@ -55,7 +55,7 @@ import re
 import uuid
 from collections import defaultdict
 from decimal import Decimal
-from typing import Annotated, Literal
+from typing import Annotated, Literal, NamedTuple
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, UploadFile
@@ -414,19 +414,28 @@ def _proposals_for(till_item: dict, menu_items: list[dict]) -> list[dict]:
     ]
 
 
+class _PeriodRead(NamedTuple):
+    period: ratio.Period
+    default: bool
+    newest: datetime.date | None
+    months: list[datetime.date]
+
+
 async def _period(
     db: Database, tenant_id: str, date_from: datetime.date | None, date_to: datetime.date | None
-) -> tuple[ratio.Period, bool, datetime.date | None]:
-    """The period a read covers, its `default` flag, and the tenant's newest
-    loaded day (the freshness fact every period line states)."""
+) -> _PeriodRead:
+    """The period a read covers, its `default` flag, the tenant's newest
+    loaded day (the freshness fact every period line states), and the months
+    that hold sales (the picker's choices, WP-84 review)."""
     newest_by_branch = await db.newest_sales_dates(tenant_id=tenant_id)
     newest = max(newest_by_branch.values()) if newest_by_branch else None
+    months = await db.sales_months(tenant_id=tenant_id)
     if (date_from is None) != (date_to is None):
         raise HTTPException(status_code=422, detail="send both 'from' and 'to', or neither")
     if date_from is None or date_to is None:
         end = newest or datetime.datetime.now(datetime.UTC).date()
         start = end - datetime.timedelta(days=ratio.DEFAULT_PERIOD_DAYS - 1)
-        return ratio.Period(start, end), True, newest
+        return _PeriodRead(ratio.Period(start, end), True, newest, months)
     if date_from > date_to:
         raise HTTPException(status_code=422, detail="'from' is after 'to'")
     period = ratio.Period(date_from, date_to)
@@ -436,16 +445,17 @@ async def _period(
             detail=f"{period.days} days is longer than one read covers: "
             f"at most {ratio.MAX_PERIOD_DAYS}",
         )
-    return period, False, newest
+    return _PeriodRead(period, False, newest, months)
 
 
-def _period_json(period: ratio.Period, default: bool, newest: datetime.date | None) -> dict:
+def _period_json(read: _PeriodRead) -> dict:
     return {
-        "from": period.start.isoformat(),
-        "to": period.end.isoformat(),
-        "days": period.days,
-        "default": default,
-        "sales_through": _iso(newest),
+        "from": read.period.start.isoformat(),
+        "to": read.period.end.isoformat(),
+        "days": read.period.days,
+        "default": read.default,
+        "sales_through": _iso(read.newest),
+        "months": [month.strftime("%Y-%m") for month in read.months],
     }
 
 
@@ -559,7 +569,8 @@ async def sales_by_branch(
     the C9 amendment)."""
     db: Database = request.app.state.db
     tenant_id = ctx.tenant_id
-    period, default, newest = await _period(db, tenant_id, date_from, date_to)
+    read = await _period(db, tenant_id, date_from, date_to)
+    period = read.period
     currency = await db.tenant_currency(tenant_id) or ""
     branches = await db.list_branches(tenant_id=tenant_id)
     newest_by_branch = await db.newest_sales_dates(tenant_id=tenant_id)
@@ -592,7 +603,7 @@ async def sales_by_branch(
     unassigned = ratio.unassigned_group(invoices, period, currency)
     total = ratio.chain_total(rows, unassigned)
     return {
-        "period": _period_json(period, default, newest),
+        "period": _period_json(read),
         "rows": [_branch_row_json(row) for row in rows],
         "unassigned": {
             "count": unassigned.count,
@@ -633,7 +644,8 @@ async def sales_coverage(
     exactly one function on every screen."""
     db: Database = request.app.state.db
     tenant_id = ctx.tenant_id
-    period, default, newest = await _period(db, tenant_id, date_from, date_to)
+    read = await _period(db, tenant_id, date_from, date_to)
+    period = read.period
     values = [
         ratio.TillItemValue(
             till_item_id=row["till_item_id"],
@@ -663,7 +675,7 @@ async def sales_coverage(
     ]
     result = ratio.coverage(values, plates)
     return {
-        "period": _period_json(period, default, newest),
+        "period": _period_json(read),
         "sales_value": _dec(result.sales_value),
         "costed_value": _dec(result.costed_value),
         "costed_pct": _dec(result.costed_pct),

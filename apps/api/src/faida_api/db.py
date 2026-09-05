@@ -1994,6 +1994,21 @@ class Database:
         )
         return {row["branch_id"]: row["newest"] for row in rows}
 
+    async def sales_months(self, *, tenant_id: str) -> list[datetime.date]:
+        """The calendar months holding at least one loaded day, newest first,
+        each as its first day: what the sales screen's period picker offers
+        (WP-84 review, 2026-09-05). A month it lists always has sales, and a
+        tenant's oldest month is reachable however long its history."""
+        rows = await self.pool.fetch(
+            """
+            select distinct date_trunc('month', business_date)::date as month
+            from sales_daily where tenant_id = $1
+            order by month desc
+            """,
+            tenant_id,
+        )
+        return [row["month"] for row in rows]
+
     async def list_period_invoices(
         self, *, tenant_id: str, date_from: datetime.date, date_to: datetime.date
     ) -> list[asyncpg.Record]:

@@ -25,8 +25,7 @@ import {
   freshnessSentence,
   headline,
   mappedWords,
-  mergeMonths,
-  monthsWithSales,
+  monthOptions,
   noRatioWords,
   paperName,
   percent,
@@ -34,11 +33,11 @@ import {
   segmentWords,
   statusSentence,
   windowLine,
-  type MonthOption,
   type PeriodChoice,
 } from "@/lib/salesScreen";
 import type {
   BranchRow,
+  CoverageItem,
   CoverageQueueItem,
   ExcludedPaper,
   InvoiceFigure,
@@ -154,8 +153,8 @@ function ExcludedLine({ paper }: { paper: ExcludedPaper }) {
   return (
     <p className="text-xs text-stone">
       <span className="font-medium text-ink">{paperName(paper)}</span> · {paper.currency}{" "}
-      <span className="tabular-nums">{groupedMoney(paper.total)}</span> · in {paper.currency}, not
-      counted · <InvoiceLink id={paper.invoice_id} />
+      <span className="tabular-nums">{paper.total === null ? "-" : groupedMoney(paper.total)}</span>{" "}
+      · in {paper.currency}, not counted · <InvoiceLink id={paper.invoice_id} />
     </p>
   );
 }
@@ -168,6 +167,9 @@ function ExcludedLine({ paper }: { paper: ExcludedPaper }) {
  * printed ones, to the fil.
  */
 function BranchDrill({ row, layout }: { row: BranchRow; layout: "table" | "card" }) {
+  if (row.days.length === 0 && row.pending.length === 0 && row.excluded.length === 0) {
+    return <p className="pt-2 text-xs text-stone">Nothing loaded and no papers in this window.</p>;
+  }
   const placed = new Set(
     row.pending.map((paper) => paper.placed_on).filter((date): date is string => date !== null),
   );
@@ -250,6 +252,22 @@ function BranchDrill({ row, layout }: { row: BranchRow; layout: "table" | "card"
           <col className="w-[16%]" />
           <col className="w-[38%]" />
         </colgroup>
+        <thead>
+          <tr className="text-left text-[11px] font-medium tracking-wider text-stone uppercase">
+            <th scope="col" className="py-1 pr-2 font-medium">
+              Day
+            </th>
+            <th scope="col" className="py-1 text-right font-medium">
+              Net sales
+            </th>
+            <th scope="col" className="py-1 text-right font-medium">
+              Purchases
+            </th>
+            <th scope="col" className="py-1 pl-4 font-medium">
+              Papers
+            </th>
+          </tr>
+        </thead>
         <tbody>
           {lines.map((line) => (
             <tr key={line.key} className="border-b border-ink/5 last:border-b-0 align-top">
@@ -379,6 +397,67 @@ function BranchCard({ row, open, drillRef, rowButtons, onToggle }: RowProps) {
   );
 }
 
+/** The pick-from-the-menu form, shared by a queue row and a name marked not
+ * a menu item (mapping is the one way such a name comes back). */
+function PickForm({
+  liveMenu,
+  draftPick,
+  onDraft,
+  onSave,
+  onCancel,
+  busy,
+  selectRef,
+}: {
+  liveMenu: MenuItemSummary[];
+  draftPick: string;
+  onDraft: (value: string) => void;
+  onSave: () => void;
+  onCancel: () => void;
+  busy: boolean;
+  selectRef: React.RefObject<HTMLSelectElement | null>;
+}) {
+  return (
+    <form
+      className="mt-3 flex flex-wrap items-end gap-2 border-t border-ink/10 pt-3"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSave();
+      }}
+    >
+      <label className="flex flex-col gap-1 text-sm font-medium text-stone">
+        Which menu item is it?
+        <select
+          ref={selectRef}
+          value={draftPick}
+          onChange={(event) => onDraft(event.target.value)}
+          className="min-h-11 w-64 rounded-sm border border-ink/20 bg-paper px-2 py-1.5 text-sm text-ink"
+        >
+          <option value="">Choose</option>
+          {liveMenu.map((row) => (
+            <option key={row.id} value={row.id}>
+              {row.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <button
+        type="submit"
+        disabled={busy || draftPick === ""}
+        className="min-h-11 rounded-sm bg-palm px-3 py-1.5 text-sm font-semibold text-cream hover:bg-palm-deep disabled:opacity-50"
+      >
+        Save
+      </button>
+      <button
+        type="button"
+        onClick={onCancel}
+        className="min-h-11 rounded-sm px-2 py-1.5 text-sm font-medium text-stone hover:text-ink"
+      >
+        Cancel
+      </button>
+    </form>
+  );
+}
+
 const NO_BRANCH_ID = "(no branch)";
 
 /** The papers the ranking could not place: counted in the total, ranked
@@ -395,11 +474,9 @@ function NoBranchPapers({ result }: { result: SalesBranchesResult }) {
 
 export default function SalesTable() {
   const [choice, setChoice] = useState<PeriodChoice>(DEFAULT_CHOICE);
-  const [salesThrough, setSalesThrough] = useState<string | null>(null);
   const [result, setResult] = useState<SalesBranchesResult | null>(null);
   const [coverage, setCoverage] = useState<SalesCoverageResult | null>(null);
   const [menu, setMenu] = useState<MenuItemSummary[] | null>(null);
-  const [months, setMonths] = useState<MonthOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -413,8 +490,18 @@ export default function SalesTable() {
   const rowButtons = useRef<Map<string, HTMLButtonElement>>(new Map());
   const lastOpened = useRef<string | null>(null);
   const pickSelect = useRef<HTMLSelectElement>(null);
-
-  const bounds = periodBounds(choice, salesThrough);
+  // The tenant's newest loaded day, learned from the first read and read back
+  // by later ones - a ref, not a dep, so the read that learns it does not
+  // re-run itself (the effect below fired twice per visit when it was state).
+  const salesThroughRef = useRef<string | null>(null);
+  // The period the screen is showing, so a coverage refresh that comes back
+  // after a period switch is dropped rather than put under another window's table.
+  const periodKeyRef = useRef<string>(choiceKey(DEFAULT_CHOICE));
+  const queueRows = useRef<Map<string, HTMLLIElement>>(new Map());
+  // Where focus goes once the coverage read after a decision lands: the queue
+  // position the acted-on row held, so one keystroke per name stays one
+  // keystroke per name instead of a Tab from the top of the page each time.
+  const pendingFocus = useRef<number | null>(null);
 
   // Both reads and the menu (for the pick-from-the-menu path) are fetched
   // together and land as one, so the table and the panel below it can never
@@ -422,7 +509,8 @@ export default function SalesTable() {
   // than the effect body - the shipped pattern.
   useEffect(() => {
     let cancelled = false;
-    const range = periodBounds(choice, salesThrough);
+    periodKeyRef.current = choiceKey(choice);
+    const range = periodBounds(choice, salesThroughRef.current);
     (async () => {
       try {
         const [branches, cover, items] = await Promise.all([
@@ -431,11 +519,10 @@ export default function SalesTable() {
           listMenuItems(),
         ]);
         if (cancelled) return;
+        salesThroughRef.current = branches.period.sales_through;
         setResult(branches);
         setCoverage(cover);
         setMenu(items);
-        setSalesThrough(branches.period.sales_through);
-        setMonths((known) => mergeMonths(known, monthsWithSales(branches)));
         setLoadError(null);
       } catch (error) {
         if (cancelled) return;
@@ -447,7 +534,7 @@ export default function SalesTable() {
     return () => {
       cancelled = true;
     };
-  }, [choice, salesThrough, reloadKey]);
+  }, [choice, reloadKey]);
 
   // Focus follows the drill: into the expansion when it opens, back to the
   // row's own button when it collapses.
@@ -465,46 +552,94 @@ export default function SalesTable() {
     if (picking !== null) pickSelect.current?.focus();
   }, [picking]);
 
-  /** Every decision goes through here: one request, then the coverage read
+  // After a decision the acted-on row has left the queue and React removed
+  // the element that held focus; move it to the row now at that position.
+  useEffect(() => {
+    const position = pendingFocus.current;
+    if (position === null || coverage === null) return;
+    pendingFocus.current = null;
+    const queue = coverage.queue;
+    if (queue.length === 0) return;
+    const next = queue[Math.min(position, queue.length - 1)];
+    queueRows.current.get(next.till_item_id)?.focus();
+  }, [coverage]);
+
+  /** Every decision goes through here: one write, then the coverage read
    * again - the value follows the mapping on the next read, and the ratio
-   * above does not move (a mapping changes no purchase and no sale). */
-  async function decide(id: string, action: () => Promise<unknown>, done: string) {
+   * above does not move (a mapping changes no purchase and no sale). The
+   * write and the refresh are reported apart: a refresh that fails is said as
+   * a refresh that failed, never as a write that did not happen, because the
+   * server has already kept its audit row by then. */
+  async function decide(
+    id: string,
+    action: () => Promise<unknown>,
+    done: string,
+    focusAfter: number | null = null,
+  ) {
     setBusyId(id);
     setFeedback(null);
     try {
       await action();
-      setFeedback({ kind: "done", text: done });
-      setPicking(null);
-      setDraftPick("");
-      setCoverage(await getSalesCoverage(bounds?.from, bounds?.to));
     } catch (error) {
       setFeedback({
         kind: "error",
         text: error instanceof Error ? error.message : "That did not work.",
+      });
+      setBusyId(null);
+      return;
+    }
+    setFeedback({ kind: "done", text: done });
+    setPicking(null);
+    setDraftPick("");
+    const key = periodKeyRef.current;
+    const range = periodBounds(choice, salesThroughRef.current);
+    try {
+      const fresh = await getSalesCoverage(range?.from, range?.to);
+      if (periodKeyRef.current === key) {
+        pendingFocus.current = focusAfter;
+        setCoverage(fresh);
+      }
+    } catch (error) {
+      setFeedback({
+        kind: "done",
+        text: `${done} The panel could not refresh (${
+          error instanceof Error ? error.message : "no answer"
+        }) - reload to see it.`,
       });
     } finally {
       setBusyId(null);
     }
   }
 
-  function approve(item: CoverageQueueItem, menuItemId: string, label: string) {
+  const queuePosition = (id: string): number | null => {
+    const position = coverage?.queue.findIndex((row) => row.till_item_id === id) ?? -1;
+    return position < 0 ? null : position;
+  };
+
+  function approve(item: CoverageItem, menuItemId: string, label: string) {
     return decide(
       item.till_item_id,
       () => mapTillItem(item.till_item_id, menuItemId),
       `${item.name} is now ${label}.`,
+      queuePosition(item.till_item_id),
     );
   }
 
-  function exclude(item: CoverageQueueItem) {
+  function exclude(item: CoverageItem) {
     return decide(
       item.till_item_id,
       () => excludeTillItem(item.till_item_id),
-      `${item.name} is not a menu item - it stays in takings and leaves the queue.`,
+      `${item.name} is not a menu item - it stays in net sales and leaves the queue.`,
+      queuePosition(item.till_item_id),
     );
   }
 
   function onRowKey(event: React.KeyboardEvent<HTMLLIElement>, item: CoverageQueueItem) {
     if (event.target !== event.currentTarget) return; // inside the pick form
+    // A modifier means a browser or system shortcut (Cmd+X cuts, Cmd+1 switches
+    // tabs), a repeat means a held key, and a write in flight means wait -
+    // none of them is the one keystroke that maps a name.
+    if (event.ctrlKey || event.metaKey || event.altKey || event.repeat || busyId !== null) return;
     const index = Number(event.key) - 1;
     if (index >= 0 && index < item.proposals.length) {
       event.preventDefault();
@@ -524,9 +659,20 @@ export default function SalesTable() {
     }
   }
 
+  const header = (
+    <header>
+      <h1 className="font-display text-2xl font-semibold tracking-[-0.02em] text-ink">Sales</h1>
+      <p className="mt-1 max-w-2xl text-sm text-stone">
+        What each branch took, set against what it paid its suppliers over the same days.
+      </p>
+    </header>
+  );
+
   if (loadError) {
     return (
-      <div role="alert" className="rounded-md border border-ink/10 bg-paper p-6">
+      <div className="space-y-6">
+        {header}
+        <div role="alert" className="rounded-md border border-ink/10 bg-paper p-6">
         <p className="text-sm font-medium text-ink">Could not load sales</p>
         <p className="mt-1 text-sm text-stone">{loadError}</p>
         <button
@@ -539,6 +685,7 @@ export default function SalesTable() {
         >
           Try again
         </button>
+        </div>
       </div>
     );
   }
@@ -553,14 +700,6 @@ export default function SalesTable() {
     );
   }
 
-  const header = (
-    <header>
-      <h1 className="font-display text-2xl font-semibold tracking-[-0.02em] text-ink">Sales</h1>
-      <p className="mt-1 max-w-2xl text-sm text-stone">
-        What each branch took, set against what it paid its suppliers over the same days.
-      </p>
-    </header>
-  );
 
   if (result.period.sales_through === null) {
     // Nothing was ever loaded: the loader is the way in, and the only link
@@ -587,6 +726,7 @@ export default function SalesTable() {
 
   const answer = answerSentence(result);
   const freshness = freshnessSentence(result.period, isoToday());
+  const months = monthOptions(result.period);
   const choices: PeriodChoice[] = [
     { kind: "last28" },
     { kind: "last7" },
@@ -594,6 +734,16 @@ export default function SalesTable() {
   ];
   const liveMenu = menu.filter((item) => item.archived_at === null);
   const toggle = (id: string) => setOpen((current) => (current === id ? null : id));
+  const savePick = (item: CoverageItem) => {
+    const chosen = liveMenu.find((row) => row.id === draftPick);
+    if (!chosen) return;
+    void approve(item, chosen.id, chosen.name);
+  };
+  const cancelPick = () => {
+    setPicking(null);
+    setDraftPick("");
+  };
+  const writing = busyId !== null;
 
   return (
     <div className="space-y-6">
@@ -894,14 +1044,18 @@ export default function SalesTable() {
             </p>
             <ul className="divide-y divide-ink/10 rounded-md bg-paper">
               {coverage.queue.map((item) => {
-                const busy = busyId === item.till_item_id;
+                const busy = writing;
                 return (
                   <li
                     key={item.till_item_id}
+                    ref={(el) => {
+                      if (el) queueRows.current.set(item.till_item_id, el);
+                      else queueRows.current.delete(item.till_item_id);
+                    }}
                     tabIndex={0}
                     onKeyDown={(event) => onRowKey(event, item)}
                     aria-label={item.name}
-                    className="p-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-palm/30"
+                    className="p-3 focus:ring-2 focus:ring-palm/30 focus:ring-inset focus:outline-none"
                   >
                     <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
                       <div className="min-w-0">
@@ -956,49 +1110,15 @@ export default function SalesTable() {
                       </div>
                     </div>
                     {picking === item.till_item_id ? (
-                      <form
-                        className="mt-3 flex flex-wrap items-end gap-2 border-t border-ink/10 pt-3"
-                        onSubmit={(event) => {
-                          event.preventDefault();
-                          const chosen = liveMenu.find((row) => row.id === draftPick);
-                          if (!chosen) return;
-                          void approve(item, chosen.id, chosen.name);
-                        }}
-                      >
-                        <label className="flex flex-col gap-1 text-sm font-medium text-stone">
-                          Which menu item is it?
-                          <select
-                            ref={pickSelect}
-                            value={draftPick}
-                            onChange={(event) => setDraftPick(event.target.value)}
-                            className="min-h-11 w-64 rounded-sm border border-ink/20 bg-paper px-2 py-1.5 text-sm text-ink"
-                          >
-                            <option value="">Choose</option>
-                            {liveMenu.map((row) => (
-                              <option key={row.id} value={row.id}>
-                                {row.name}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <button
-                          type="submit"
-                          disabled={busy || draftPick === ""}
-                          className="min-h-11 rounded-sm bg-palm px-3 py-1.5 text-sm font-semibold text-cream hover:bg-palm-deep disabled:opacity-50"
-                        >
-                          Save
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setPicking(null);
-                            setDraftPick("");
-                          }}
-                          className="min-h-11 rounded-sm px-2 py-1.5 text-sm font-medium text-stone hover:text-ink"
-                        >
-                          Cancel
-                        </button>
-                      </form>
+                      <PickForm
+                        liveMenu={liveMenu}
+                        draftPick={draftPick}
+                        onDraft={setDraftPick}
+                        onSave={() => savePick(item)}
+                        onCancel={cancelPick}
+                        busy={busy}
+                        selectRef={pickSelect}
+                      />
                     ) : null}
                   </li>
                 );
@@ -1043,7 +1163,7 @@ export default function SalesTable() {
                     </div>
                     <button
                       type="button"
-                      disabled={busyId === item.till_item_id}
+                      disabled={writing}
                       onClick={() =>
                         void decide(
                           item.till_item_id,
@@ -1063,16 +1183,50 @@ export default function SalesTable() {
         ) : null}
 
         {coverage.excluded.length > 0 ? (
-          <p className="text-xs text-stone">
-            Not menu items:{" "}
-            {coverage.excluded.map((item, index) => (
-              <span key={item.till_item_id}>
-                {index > 0 ? ", " : ""}
-                {item.name} ({roundedAed(item.value)})
-              </span>
-            ))}
-            . They stay in takings and count nowhere here.
-          </p>
+          <div>
+            <p className="text-xs text-stone">
+              {coverage.excluded.length === 1 ? "Not a menu item" : "Not menu items"}: kept in net
+              sales, counted nowhere here. Picking a menu item brings a name back.
+            </p>
+            <ul className="mt-1 divide-y divide-ink/10 rounded-md bg-paper">
+              {coverage.excluded.map((item) => (
+                <li key={item.till_item_id} className="p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+                    <p className="text-sm text-ink">
+                      {item.name}
+                      <span className="text-xs text-stone tabular-nums">
+                        {item.code ? ` · code ${item.code}` : ""} · {roundedAed(item.value)} this window
+                      </span>
+                    </p>
+                    {picking === item.till_item_id ? null : (
+                      <button
+                        type="button"
+                        disabled={writing}
+                        onClick={() => {
+                          setPicking(item.till_item_id);
+                          setDraftPick("");
+                        }}
+                        className="min-h-11 rounded-sm border border-palm/30 px-3 py-1.5 text-sm font-medium text-palm hover:border-palm disabled:opacity-50"
+                      >
+                        Pick from the menu
+                      </button>
+                    )}
+                  </div>
+                  {picking === item.till_item_id ? (
+                    <PickForm
+                      liveMenu={liveMenu}
+                      draftPick={draftPick}
+                      onDraft={setDraftPick}
+                      onSave={() => savePick(item)}
+                      onCancel={cancelPick}
+                      busy={writing}
+                      selectRef={pickSelect}
+                    />
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </div>
         ) : null}
 
         <p className="text-xs text-stone">
