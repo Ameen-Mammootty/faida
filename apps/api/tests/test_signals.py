@@ -448,6 +448,38 @@ def test_an_item_with_a_line_without_quantity_since_the_move_is_not_weighed():
     assert signal.money_at_stake == D("0.00")
 
 
+# --- the weighing on its own (WP-99) ----------------------------------------
+
+
+def test_the_weighing_signs_a_rise_positive_and_a_fall_negative():
+    """The loop the spike used to hold inline is one function now, and the
+    dashboard's price-moves panel calls it for falls the spike refuses. The
+    sign is the cost's: a rise costs the chain, a fall saved it, and the same
+    seventy cups are behind both figures - so the panel can rank by magnitude
+    and still say which way the money went."""
+    sales = _karak_week()
+    rows = _rows(sales, _menu(KARAK))
+    in_scope, since_rows = signals.move_frame(sales, rows, period=PERIOD, scope=signals.CHAIN)
+
+    rise = signals.weigh_move(_milk_move(), DAY_ONE, in_scope=in_scope, since_rows=since_rows)
+    assert rise.money_at_stake == D("4.20")  # 0.060 a cup x 70 cups
+    assert rise.portions == D("70")
+    assert [r.menu_item_id for r in rise.rows] == ["m-karak"]
+
+    # The mirror image: 0.040 -> 0.038 a gram, five percent the other way.
+    fall = _milk_move(
+        previous_cost="0.040", current_cost="0.038", items=(_impact("m-karak", "-0.060"),)
+    )
+    weighed = signals.weigh_move(fall, DAY_ONE, in_scope=in_scope, since_rows=since_rows)
+    assert weighed.money_at_stake == D("-4.20")
+    assert weighed.portions == rise.portions
+
+    # And the gate reads the size of the move, not its direction.
+    assert signals.moved_enough(_milk_move()) is True
+    assert signals.moved_enough(fall) is True
+    assert signals.moved_enough(_milk_move(current_cost="0.0419")) is False  # 4.75%
+
+
 # --- branch gap -------------------------------------------------------------
 
 #: Qusais sells item A at 80% (AED 1,000 net); Rolla sells item B at 55%

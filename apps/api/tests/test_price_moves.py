@@ -88,6 +88,11 @@ async def test_milk_up_names_each_plate_and_its_exact_aed_drop(api, db):
     assert item["margin_pct_after"] == "91.5"
     assert item["margin_pct_before"] == "92.1"
 
+    # The named-and-counted clause the dashboard's panel reads too (WP-99),
+    # composed once in Python so the two screens cannot word it differently.
+    # No action verb: /menu's card keeps "check the price or the recipe".
+    assert move["plates"] == "Karak Cup earns AED 0.06 less a portion."
+
     # The unaffected item is byte-identical, not merely similar.
     assert await _detail(api, flask) == flask_before
 
@@ -139,6 +144,8 @@ async def test_a_winning_pack_switch_shows_basis_changed_and_no_delta(api, db):
     assert move["previous"]["pack_size"] == "1l"
     assert move["current"]["product_name"] == "EVAP MILK 24x400ML"
     assert move["previous"]["product_name"] == "EVAP MILK 1L"
+    # Nothing to attribute across a pack change, so no plates clause either.
+    assert move["plates"] is None
 
 
 @requires_db

@@ -5,9 +5,11 @@ The whole owner screen in one read, derived on every request and never
 stored: the period and its freshness, the two answer sentences, the newest
 loaded day (M10's first brief slot), the papers waiting, the branch league
 with contribution beside the ratio, every item row, the signals ranked by
-money, and the unmapped count. Every block shares one period, one set of
-clipped windows and one costed menu, so nothing on the screen can disagree
-with anything else on it (P9).
+money, the supplier price moves, and the unmapped count. Every block shares
+one period, one set of clipped windows and one costed menu, so nothing on the
+screen can disagree with anything else on it (P9) - the price-moves panel and
+the price spike in the signals are the same weighing of the same move, so
+they can never quote different dirhams for it.
 
 Nothing is computed here that a pure module already computes: the league
 **calls** `ratio.period_row`, `unassigned_group` and `chain_total` (a second
@@ -29,7 +31,7 @@ row can carry today's cost beside its own when they differ (C12.4a, D20).
 import datetime
 from collections.abc import Iterable, Mapping, Sequence
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Annotated
+from typing import Annotated, NamedTuple
 
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -38,7 +40,7 @@ from . import contribution, plates, ratio, signals
 from .api import _dec, _iso
 from .auth import AuthContext, require_context
 from .db import Database
-from .menu import _menu_context, _plates_for, _pricing, price_moves
+from .menu import PriceMove, _menu_context, _plates_for, _pricing, price_moves
 from .ratio import Quality
 from .sales import _invoice_input, _sales_day_input
 from .signals import _short_branch
@@ -59,6 +61,11 @@ PAPERS_LISTED = 5
 
 #: The item panel's two slices (§3.1): five best and five worst.
 ITEMS_SLICE = 5
+
+#: The price-moves panel lists this many and counts them all, the papers
+#: block's rule again: five rows is what fits beside "what to look at", and
+#: `/menu`'s callout and `/materials` hold the whole list.
+PRICE_MOVES_LISTED = 5
 
 _WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 _NUMBER_WORDS = {
@@ -312,6 +319,101 @@ def _signal_json(signal: signals.Signal) -> dict:
         "ingredient_name": signal.ingredient_name,
         "invoice_id": signal.invoice_id,
         "moved_on": _iso(signal.moved_on),
+    }
+
+
+class _PanelMove(NamedTuple):
+    """One candidate for the price-moves panel, held with the figures it is
+    ranked by before any of it is serialised."""
+
+    move: PriceMove
+    moved_on: datetime.date
+    direction: str | None
+    money_at_stake: Decimal | None
+    words: signals.MoveWords
+
+
+def price_moves_block(
+    moves: Sequence[PriceMove],
+    sales: Sequence[contribution.ItemSales],
+    rows: Sequence[contribution.ItemRow],
+    *,
+    period: ratio.Period,
+    scope: signals.Scope,
+    currency: str,
+) -> dict:
+    """Supplier price moves as a block of their own (WP-99, §4.3), from the
+    moves the read already has in hand - no second query, which is why the
+    enumerated query list does not move.
+
+    **Each material's latest move, inside this window**, and the caption says
+    so. `menu.price_moves` returns at most one move per material, the newest
+    at or before the period's end, with no lower bound at all, so a material
+    last bought twice in March would otherwise surface a March move in an
+    August window: the window's own start is that lower bound.
+
+    Both directions at the 5% gate (`signals.moved_enough`), because a fall is
+    a fact an owner acts on too, and every basis change regardless - it is
+    evidence, it is rare, and it carries no percentage to gate. Ranked by the
+    dirhams the move actually moved, whichever way, so the karak's milk sits
+    above a spice nobody sells; a move nothing was sold after carries zero and
+    ranks with the small ones; a basis change carries no money at all and
+    sorts behind every real move.
+    """
+    in_scope, since_rows = signals.move_frame(sales, rows, period=period, scope=scope)
+
+    listed: list[_PanelMove] = []
+    for move in moves:
+        moved_on = move.current.purchased_on
+        if moved_on is None or not (period.start <= moved_on <= period.end):
+            continue
+        weighing = None
+        money = direction = None
+        if move.kind == "moved":
+            if not signals.moved_enough(move):
+                continue
+            weighing = signals.weigh_move(move, moved_on, in_scope=in_scope, since_rows=since_rows)
+            money = weighing.money_at_stake
+            direction = "up" if (move.delta_per_base_unit or Decimal(0)) > 0 else "down"
+        elif move.kind != "basis_changed":
+            continue
+        listed.append(
+            _PanelMove(
+                move=move,
+                moved_on=moved_on,
+                direction=direction,
+                money_at_stake=money,
+                words=signals.move_words(move, period=period, weighing=weighing, currency=currency),
+            )
+        )
+
+    listed.sort(
+        key=lambda row: (
+            row.money_at_stake is None,
+            -abs(row.money_at_stake) if row.money_at_stake is not None else Decimal(0),
+            -row.move.worst_impact,
+            row.move.ingredient_name,
+        )
+    )
+    return {
+        "count": len(listed),
+        "moves": [
+            {
+                "ingredient_id": row.move.ingredient_id,
+                "ingredient_name": row.move.ingredient_name,
+                "kind": row.move.kind,
+                "direction": row.direction,
+                "moved_on": _iso(row.moved_on),
+                # The newest line, for the /invoices/<id>#line-<n> anchor.
+                "invoice_id": row.move.current.invoice_id,
+                "line_position": row.move.current.position,
+                "money_at_stake": _dec(row.money_at_stake),
+                "sentence": row.words.sentence,
+                "plates": row.words.plates,
+                "evidence": row.words.evidence,
+            }
+            for row in listed[:PRICE_MOVES_LISTED]
+        ],
     }
 
 
@@ -569,6 +671,9 @@ async def dashboard(
             "count": len(costed),
         },
         "signals": [_signal_json(s) for s in fired],
+        "price_moves": price_moves_block(
+            moves, sales, all_rows, period=period, scope=scope, currency=currency
+        ),
         "unmapped": {"names": unmapped.names, "value": _dec(unmapped.value)},
         "menu": {
             "items": len(live),

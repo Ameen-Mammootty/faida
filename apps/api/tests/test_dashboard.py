@@ -31,7 +31,15 @@ from faida_api.sales import router as sales_router
 from faida_api.storage import Storage
 
 from .conftest import AUTH, DEMO_TENANT_ID, FakeStorage, requires_db, wire_auth
-from .test_plates import _CountingPool, _karak, _menu_item, _recipe
+from .test_plates import (
+    _catalog_item,
+    _CountingPool,
+    _delivery,
+    _karak,
+    _material,
+    _menu_item,
+    _recipe,
+)
 from .test_sales_api import BRANCH, BRANCH_2, DAY, _branches, _iso, _on, _paper
 from .test_sales_load import _item_day, _line
 
@@ -472,6 +480,214 @@ async def test_an_empty_tenant_answers_a_well_formed_empty_payload(api, db):
     assert payload["items"] == {"top": [], "bottom": [], "all": [], "count": 0}
     assert payload["signals"] == []
     assert payload["menu"] == {"items": 0, "costed": 0}
+
+
+# --- supplier price moves (WP-99) ------------------------------------------
+
+#: The karak stage buys every pack once on 6 Jul, well before any window a
+#: test asks for, so a second delivery is what makes a move - and the older
+#: baseline is what the sentence names.
+BASELINE = "6 Jul"
+
+
+def _short(offset: int) -> str:
+    """A date the way every sentence in this product says it: "16 Aug"."""
+    day = _on(offset)
+    return f"{day.day} {day.strftime('%b')}"
+
+
+async def _again(db, scenario: dict, pack: str, *, pack_size: str, price: str, offset: int) -> str:
+    """The same pack delivered again at a new price on a day in the period:
+    the read then sees a move on that material, same basis, real confirm."""
+    return await _delivery(
+        db,
+        pack,
+        supplier_id=scenario["supplier_id"],
+        pack_size=pack_size,
+        unit_price=Decimal(price),
+        invoice_date=_iso(offset),
+        raw_name=f"REDELIVERY {pack_size}",
+    )
+
+
+async def _spice(db, api, scenario: dict, name: str, *, base: str, moved: str, offset: int) -> str:
+    """A material bought before the window and again inside it, so a sixth
+    and seventh move exist to be counted. It reaches the panel only through a
+    recipe - a moved material no dish uses belongs to M2's alert, not here."""
+    pack = await _catalog_item(db, scenario["supplier_id"], f"{name.upper()} 1KG", "1kg")
+    for price, on in ((base, None), (moved, _iso(offset))):
+        await _delivery(
+            db,
+            pack,
+            supplier_id=scenario["supplier_id"],
+            pack_size="1kg",
+            unit_price=Decimal(price),
+            raw_name=f"{name.upper()} 1KG",
+            **({} if on is None else {"invoice_date": on}),
+        )
+        if on is None:
+            await _material(db, pack, name, "g")
+    return await db.pool.fetchval(
+        "select ingredient_id::text from supplier_items where id = $1", pack
+    )
+
+
+async def test_a_fall_of_five_percent_is_in_the_panel_with_its_money_and_not_a_signal(api, db):
+    """A fall is a fact the owner acts on and it is not a spike: the panel
+    carries it with the dirhams it saved, the signals stay quiet about it."""
+    scenario = await _stage(api, db)
+    await _again(db, scenario, scenario["milk_pack"], pack_size="1l", price="7.00", offset=0)
+    payload = await _read(api)
+
+    panel = payload["price_moves"]
+    assert panel["count"] == 1
+    [move] = panel["moves"]
+    assert move["kind"] == "moved"
+    assert move["direction"] == "down"
+    assert move["ingredient_name"] == "Evaporated Milk"
+    # 0.001 a millilitre off a 60 ml cup, on all 1,050 cups sold since.
+    assert move["money_at_stake"] == "-63.00"
+    assert move["moved_on"] == _iso(0)
+    assert move["sentence"] == (
+        f"Evaporated Milk is down AED 1.00 per litre since {_short(0)}, "
+        f"against its last purchase on {BASELINE}."
+    )
+    assert move["plates"] == "Karak Cup earns AED 0.06 more a portion."
+    assert move["evidence"] == (
+        f"was AED 8.00 per litre · AED 63 saved on the 1,050 portions sold since {_short(0)}."
+    )
+    assert move["invoice_id"] and move["line_position"] == 0
+
+    assert "price_spike" not in [s["kind"] for s in payload["signals"]]
+
+
+async def test_a_fall_under_the_gate_is_in_neither_panel(api, db):
+    """Tea 90.00 to 89.64 a 5 kg sack is four tenths of a percent. Without
+    the gate a 45-item menu would count twenty moves and list five rows of
+    nothing."""
+    scenario = await _stage(api, db)
+    await _again(db, scenario, scenario["tea_pack"], pack_size="5kg", price="89.64", offset=2)
+    payload = await _read(api)
+    assert payload["price_moves"] == {"count": 0, "moves": []}
+    assert "price_spike" not in [s["kind"] for s in payload["signals"]]
+
+
+async def test_a_basis_change_carries_no_money_and_sorts_behind_every_move(api, db):
+    """A carton bought after the tin: no delta can honestly be taken across
+    two pack sizes, so the row carries no number and never outranks a move
+    that does."""
+    scenario = await _stage(api, db)
+    await _again(db, scenario, scenario["tea_pack"], pack_size="5kg", price="102.50", offset=1)
+    carton = await _catalog_item(db, scenario["supplier_id"], "EVAP MILK 24x400ML", "24x400ml")
+    await _delivery(
+        db,
+        carton,
+        supplier_id=scenario["supplier_id"],
+        pack_size="24x400ml",
+        unit_price=Decimal("45.00"),
+        invoice_date=_iso(2),
+        raw_name="EVAP MILK 24x400ML",
+    )
+    await db.map_supplier_item(
+        carton, tenant_id=TENANT, ingredient_id=scenario["milk"], actor="console"
+    )
+
+    panel = (await _read(api))["price_moves"]
+    assert panel["count"] == 2
+    assert [m["kind"] for m in panel["moves"]] == ["moved", "basis_changed"]
+    basis = panel["moves"][1]
+    assert basis["direction"] is None
+    assert basis["money_at_stake"] is None
+    assert basis["plates"] is None
+    assert basis["moved_on"] == _iso(2)
+    assert basis["sentence"] == (
+        "Evaporated Milk is priced from a different pack now, so there is no before "
+        "and after to show."
+    )
+    assert basis["evidence"] == (
+        "Now EVAP MILK 24x400ML from Gulf Foods Trading L.L.C., "
+        "was EVAP MILK 1L from Gulf Foods Trading L.L.C.."
+    )
+
+
+async def test_the_same_rise_is_in_both_panels_with_the_same_money_at_every_scope(api, db):
+    """The panel and the spike weigh one move once (`signals.weigh_move`), so
+    a reader who sees the karak's tea in both places sees one figure - and
+    the branch filter narrows both the same way."""
+    scenario = await _stage(api, db)
+    await _again(db, scenario, scenario["tea_pack"], pack_size="5kg", price="102.50", offset=1)
+
+    # The move lands on the second of the seven days, so six days of karak
+    # (900 cups at a fil each) and six of chicken (300 plates at a dirham)
+    # are weighed - never the whole window, which would charge the owner for
+    # plates sold at the old price.
+    for params, expected in (({}, "309.00"), ({"branch_id": BRANCH}, "306.00")):
+        payload = await _read(api, **params)
+        [move] = payload["price_moves"]["moves"]
+        spike = next(s for s in payload["signals"] if s["kind"] == "price_spike")
+        assert move["direction"] == "up"
+        assert move["money_at_stake"] == spike["money_at_stake"] == expected
+        assert move["sentence"] == spike["sentence"]
+        assert move["ingredient_id"] == spike["ingredient_id"]
+        assert move["invoice_id"] == spike["invoice_id"]
+        assert move["moved_on"] == spike["moved_on"] == _iso(1)
+        # The plates clause names the worst first and brackets the rest.
+        assert move["plates"] == (
+            "Chicken 65 earns AED 1.00 less a portion; also Karak Cup (-0.01)."
+        )
+
+
+async def test_a_move_from_before_the_window_is_not_in_the_panel(api, db):
+    """`db.list_price_move_pairs` has no lower date bound, so a material last
+    bought in March would surface a March move in an August window. The panel
+    is "each material's latest move, inside this window", and the signals -
+    which are about the price in force - still carry it."""
+    scenario = await _stage(api, db)
+    await _again(db, scenario, scenario["tea_pack"], pack_size="5kg", price="102.50", offset=-3)
+    payload = await _read(api)
+    assert payload["price_moves"] == {"count": 0, "moves": []}
+    assert "price_spike" in [s["kind"] for s in payload["signals"]]
+
+
+async def test_six_qualifying_moves_give_the_count_and_five_listed(api, db):
+    """Five rows and the whole number beside them, the papers block's rule:
+    the count is the truth and the list a courtesy."""
+    scenario = await _stage(api, db)
+    cup_pack = await db.pool.fetchval(
+        "select id::text from supplier_items where tenant_id = $1 and canonical_name = $2",
+        TENANT,
+        "PAPER CUP 50PCS",
+    )
+    await _again(db, scenario, scenario["tea_pack"], pack_size="5kg", price="102.50", offset=1)
+    await _again(db, scenario, scenario["milk_pack"], pack_size="1l", price="7.00", offset=0)
+    await _again(db, scenario, cup_pack, pack_size="50 pcs", price="12.00", offset=2)
+    spices = [
+        await _spice(db, api, scenario, name, base=base, moved=moved, offset=offset)
+        for name, base, moved, offset in (
+            ("Saffron", "500.00", "560.00", 3),
+            ("Cardamom", "80.00", "96.00", 4),
+            ("Ginger", "20.00", "24.00", 5),
+        )
+    ]
+    dish = await _menu_item(api, "Masala Karak", "14.00")
+    await _recipe(api, dish, [{"ingredient_id": i, "qty": "2", "unit": "g"} for i in spices])
+
+    panel = (await _read(api))["price_moves"]
+    assert panel["count"] == 6
+    assert len(panel["moves"]) == 5
+    # Largest money first whichever way it moved; the three spices nothing
+    # was sold of carry nothing and break their tie on the per-plate figure.
+    assert [m["ingredient_name"] for m in panel["moves"]] == [
+        "CTC Black Tea",
+        "Evaporated Milk",
+        "Paper Cup",
+        "Saffron",
+        "Cardamom",
+    ]
+    money = [abs(Decimal(m["money_at_stake"])) for m in panel["moves"]]
+    assert money == sorted(money, reverse=True)
+    assert panel["moves"][-1]["money_at_stake"] == "0.00"
+    assert panel["moves"][-1]["evidence"].endswith("· no sales of items using it since it landed.")
 
 
 # --- the query count (D10, D16, D20) --------------------------------------------

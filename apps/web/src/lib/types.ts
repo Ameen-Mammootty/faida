@@ -756,6 +756,14 @@ export interface PriceMove {
   previous: PriceMoveLine;
   /** Signed money string per display unit; null when the basis changed. */
   delta_per_display_unit: string | null;
+  /**
+   * The plates it moved, named and counted, composed by the API (M9 WP-99):
+   * "Karak Tea earns AED 0.13 less a portion; also Sulaimani (-0.02) and 2
+   * more." No action verb - each screen keeps its own. Null when no costed
+   * item uses the material and for a basis change. Optional so a stale
+   * deploy of either half breaks nothing.
+   */
+  plates?: string | null;
   /** Empty when the basis changed - no impact can honestly be attributed. */
   items: PriceMoveItem[];
 }
@@ -1322,6 +1330,39 @@ export interface DashboardMenu {
   costed: number;
 }
 
+/** One supplier price move on the dashboard's own panel (M9 WP-99): each
+ * material's latest move inside the window, both directions at the 5% gate
+ * plus every basis change. Every sentence is composed in Python and carried
+ * whole (C13.5) - the screen tags it, links it and never re-words it. */
+export interface DashboardPriceMove {
+  ingredient_id: string;
+  ingredient_name: string;
+  kind: PriceMoveKind;
+  /** Null for a basis change: no delta can honestly be taken across packs. */
+  direction: "up" | "down" | null;
+  moved_on: string;
+  /** The newest line, for the /invoices/<id>#line-<n> anchor. */
+  invoice_id: string;
+  line_position: number;
+  /** Signed money string: positive cost the chain, negative it saved. Null
+   * for a basis change, which carries no number at all. */
+  money_at_stake: string | null;
+  /** "Milk Powder is up AED 1.60 per kg since 25 Aug." */
+  sentence: string;
+  /** The named-and-counted clause; null when no costed item uses it. */
+  plates: string | null;
+  /** "was AED 22.40 per kg · AED 210 at stake on the 1,240 portions sold
+   * since 25 Aug." */
+  evidence: string;
+}
+
+/** `count` is every move that qualified; `moves` is the first five, ranked
+ * by the money the move actually moved, basis changes last. */
+export interface DashboardPriceMoves {
+  count: number;
+  moves: DashboardPriceMove[];
+}
+
 /** GET /api/dashboard?from&to&branch_id */
 export interface DashboardResult {
   period: DashboardPeriod;
@@ -1335,6 +1376,8 @@ export interface DashboardResult {
   total: DashboardTotal;
   items: DashboardItems;
   signals: DashboardSignal[];
+  /** Optional only while WP-99's web half lands: the API always sends it. */
+  price_moves?: DashboardPriceMoves;
   unmapped: DashboardUnmapped;
   menu: DashboardMenu;
 }
