@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { menuAnchor, menuGroupKey, type MenuAnchor } from "@/lib/anchor";
 import { getMenuItem, listMenuItems, listPriceMoves } from "@/lib/api";
 import { formatDate, groupedMoney, money, quantity } from "@/lib/format";
 import type {
@@ -36,6 +37,12 @@ import { AlertIcon, ChevronIcon, TrendDownIcon, TrendUpIcon } from "./icons";
  *
  * Everything derives on read - a manual page reload after confirming an
  * invoice is the demo's own gesture; there is no polling to build.
+ *
+ * M9 WP-94: the screen answers `/menu#item-<id>`, the app's one anchor idiom
+ * (`lib/anchor.ts`, first shipped as `/materials#material-<id>`). The
+ * dashboard's "See today's plate" lands the reader on the dish itself -
+ * expanded, in the middle of the screen, holding the focus - and one click
+ * from there is the invoice line behind any ingredient's price.
  */
 
 /**
@@ -414,6 +421,13 @@ export default function MenuMargins() {
   const drillRef = useRef<HTMLDivElement>(null);
   const rowButtons = useRef<Map<string, HTMLButtonElement>>(new Map());
   const lastOpened = useRef<string | null>(null);
+  // WP-94's three refs: the row the hash named and has yet to be taken to,
+  // the row it named (so the focus effect knows the reader arrived by link
+  // rather than by clicking a row already in front of them), and the guard
+  // that honours a hash once per mount and never again.
+  const pending = useRef<MenuAnchor | null>(null);
+  const anchored = useRef<string | null>(null);
+  const arrived = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -424,6 +438,24 @@ export default function MenuMargins() {
         setItems(menu);
         setMoves(priceMoves);
         setLoadError(null);
+        // The /menu#item-<id> anchor (WP-94), decided on the list that has
+        // just landed so the group it opens and the list arrive in one
+        // render. Once per mount: the guard is what stops a later reload -
+        // the "try again" button, or anything else - from yanking a reader's
+        // focus back to the row they arrived at and have since left. Which
+        // row the hash names is decided in `lib/anchor.ts`, where vitest
+        // pins it; archived, unknown and uncosted each open nothing, and
+        // none of them is an error. A ranked row's category group is
+        // expanded because a collapsed group renders only its first five
+        // rows and the named one need not be among them.
+        if (!arrived.current) {
+          arrived.current = true;
+          const target = menuAnchor(window.location.hash, menu);
+          pending.current = target;
+          if (target?.kind === "ranked") {
+            setShowAll((set) => new Set(set).add(target.groupKey));
+          }
+        }
       } catch (error) {
         if (cancelled) return;
         setLoadError(error instanceof Error ? error.message : "Could not load the menu.");
@@ -437,15 +469,47 @@ export default function MenuMargins() {
   // Focus follows the drill: into the expansion when it opens, back to the
   // row's own button when it collapses (design review - the ranking never
   // leaves the screen mid-demo, and neither does the keyboard user).
+  //
+  // A reader who arrived by link gets one thing more: the row itself is put
+  // in the middle of the screen before focus is taken, so the name, the price
+  // and the margin are above the recipe rather than off the top of it.
   useEffect(() => {
     if (open !== null) {
       lastOpened.current = open;
+      if (anchored.current === open) {
+        anchored.current = null;
+        rowButtons.current.get(open)?.scrollIntoView({ block: "center" });
+        drillRef.current?.focus({ preventScroll: true });
+        return;
+      }
       drillRef.current?.focus();
     } else if (lastOpened.current !== null) {
       rowButtons.current.get(lastOpened.current)?.focus();
       lastOpened.current = null;
     }
   }, [open]);
+
+  // Taking the reader to the row the hash named, in the render that put it on
+  // the screen - the DOM only, in the /materials#material-<id> shape.
+  //
+  // A ranked row is opened by pressing its own button, the same door a reader
+  // presses, so the recipe behind it is read by the one function that reads
+  // it. An uncosted row has nothing to open, only somewhere to arrive: its
+  // entry in the can't-be-costed-yet section, where the sentences say what it
+  // is waiting for.
+  useEffect(() => {
+    const target = pending.current;
+    if (target === null || items === null) return;
+    pending.current = null;
+    if (target.kind === "uncosted") {
+      const element = document.getElementById(`item-${target.id}`);
+      element?.scrollIntoView({ block: "center" });
+      element?.focus({ preventScroll: true });
+      return;
+    }
+    anchored.current = target.id;
+    rowButtons.current.get(target.id)?.click();
+  }, [items]);
 
   async function toggle(id: string) {
     if (open === id) {
@@ -578,7 +642,7 @@ export default function MenuMargins() {
           ) : (
             <section className="space-y-5">
               {orderedGroups.map(([category, groupItems]) => {
-                const groupKey = category ?? "(none)";
+                const groupKey = menuGroupKey(category);
                 const { visible, expanded, collapsible } = renderRows(groupKey, groupItems);
                 const heading = onlyGroup ? null : (category ?? "Other items");
                 return (
@@ -711,7 +775,15 @@ export default function MenuMargins() {
                   it acts on. */}
               <ul className="divide-y divide-ink/10">
                 {incomplete.map((item) => (
-                  <li key={item.id} className="py-3 first:pt-0">
+                  // The anchor lands here too: an item the ranking cannot
+                  // carry is still an item a dashboard row links to, and the
+                  // sentences under it are the answer to why it has no cost.
+                  <li
+                    key={item.id}
+                    id={`item-${item.id}`}
+                    tabIndex={-1}
+                    className="rounded-sm py-3 first:pt-0 focus:outline-none focus:ring-2 focus:ring-palm/40"
+                  >
                     <p className="font-medium text-ink">{item.name}</p>
                     <p className="mt-0.5 text-sm text-stone">
                       sells at AED {money(item.selling_price)}

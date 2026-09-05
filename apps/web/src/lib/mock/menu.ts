@@ -379,6 +379,21 @@ const DETAILS: MenuItemDetail[] = [
     plate: CAKE_PLATE,
     recipe: null,
   },
+  // One item off the menu, so the archived path is something a QA walk or a
+  // design review can actually see (WP-94): every owner-facing screen filters
+  // `archived_at`, so this appears on none of them, and `/menu#item-menu-6`
+  // opens nothing and errors nothing. It shows up only where it should - the
+  // loader's "Archived, and off every screen" list.
+  {
+    id: "menu-6",
+    category: "Tea Corner",
+    name: "Ramadan Special Karak",
+    selling_price: "9.000",
+    archived_at: daysAgo(3),
+    created_at: daysAgo(40),
+    plate: CAKE_PLATE,
+    recipe: null,
+  },
 ];
 
 export async function mockListMenuItems(): Promise<MenuItemSummary[]> {
