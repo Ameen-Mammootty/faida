@@ -40,6 +40,8 @@ the C6 convention.
 
 import datetime
 import uuid
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Annotated
 
@@ -697,62 +699,126 @@ async def load_menu_item(body: MenuItemLoad, request: Request, ctx: Context) -> 
 # --- the money moment (WP-63) -------------------------------------------------
 
 
-def _move_line(line: asyncpg.Record) -> dict:
+# --- the money moment, pure (WP-63; extracted for M9 WP-91) ----------------
+#
+# The per-plate impact loop lived inside the price-moves route until the
+# signals needed it too. It is one function now, `price_moves`, which the
+# route serialises and `signals.py` weighs by what sold; `test_price_moves.py`
+# green on the route proves the extraction moved nothing.
+
+
+@dataclass(frozen=True)
+class MoveLine:
     """One purchase, as the money moment names it: which pack, from whom, at
     what per kilo, on which invoice - so both sides of a move drill to their
     photos."""
+
+    supplier_item_id: str
+    product_name: str
+    supplier_name: str
+    pack_size: str | None
+    cost_per_base_unit: Decimal
+    per_display_unit: Decimal
+    display_unit: str
+    invoice_id: str
+    invoice_line_id: str
+    position: int
+    purchased_on: datetime.date | None
+    invoice_date: datetime.date | None
+    #: The line's own costing quality (`cost_basis.quality`): `estimated`
+    #: when a person typed the pack conversion the price rests on.
+    quality: str | None = None
+
+
+@dataclass(frozen=True)
+class MoveImpact:
+    """What one material's move did to one plate: the exact AED per portion
+    and the margin either side of it."""
+
+    menu_item_id: str
+    name: str
+    impact_per_portion: Decimal
+    margin_before: Decimal
+    margin_after: Decimal
+    margin_pct_before: Decimal
+    margin_pct_after: Decimal
+
+
+@dataclass(frozen=True)
+class PriceMove:
+    """A material's latest move: its newest costed line against what set the
+    price before it. `moved` carries the delta and the plates it touched;
+    `basis_changed` carries both packs and no delta at all."""
+
+    ingredient_id: str
+    ingredient_name: str
+    base_unit: str
+    kind: str
+    current: MoveLine
+    previous: MoveLine
+    delta_per_base_unit: Decimal | None
+    delta_per_display_unit: Decimal | None
+    items: tuple[MoveImpact, ...]
+
+    @property
+    def worst_impact(self) -> Decimal:
+        """The largest per-plate impact among the items it touched; zero for
+        a basis change, which carries no number."""
+        return max((abs(item.impact_per_portion) for item in self.items), default=Decimal(0))
+
+
+def _move_line(line) -> MoveLine:
     per_display, display_unit = costing.per_display_unit(
         line["cost_per_base_unit"], line["base_unit"]
     )
-    return {
-        "supplier_item_id": line["supplier_item_id"],
-        "product_name": line["canonical_name"],
-        "supplier_name": line["supplier_name"],
-        "pack_size": line["pack_size"],
-        "per_display_unit": _dec(per_display),
-        "display_unit": display_unit,
-        "invoice_id": line["invoice_id"],
-        "invoice_line_id": line["invoice_line_id"],
+    basis = line["cost_basis"] or {}
+    return MoveLine(
+        supplier_item_id=line["supplier_item_id"],
+        product_name=line["canonical_name"],
+        supplier_name=line["supplier_name"],
+        pack_size=line["pack_size"],
+        cost_per_base_unit=line["cost_per_base_unit"],
+        per_display_unit=per_display,
+        display_unit=display_unit,
+        invoice_id=line["invoice_id"],
+        invoice_line_id=line["invoice_line_id"],
         # The printed line position, for the /invoices/<id>#line-<position>
         # anchor contract (design review): the drill lands on the row itself.
-        "position": line["position"],
-        "purchased_on": _iso(line["purchased_on"]),
-        "invoice_date": _iso(line["invoice_date"]),
-    }
+        position=line["position"],
+        purchased_on=line["purchased_on"],
+        invoice_date=line["invoice_date"],
+        quality=basis.get("quality") if isinstance(basis, dict) else None,
+    )
 
 
-@router.get("/price-moves")
-async def list_price_moves(request: Request, ctx: Context) -> dict:
-    """The money moment (WP-63): when a material's price moves, which menu
-    items just lost margin and by how much - M2's price alert finally carried
-    through to the plate. The alert names cartons; this names cups.
+def price_moves(
+    pairs: Mapping[str, Sequence],
+    rows: Sequence,
+    components_by_item: Mapping[str, Sequence],
+    plate_by_item: Mapping[str, plates.Plate],
+) -> list[PriceMove]:
+    """The money moment, pure: each material's latest move and what it did
+    to every costed plate that uses it.
 
-    Each material contributes at most its **latest** move: its newest costed
-    line against what set the price before it. Same pack -> a real move, with
-    the delta and the per-plate impact (delta x the recipe's quantity in base
-    units / the batch yield); a different pack -> "price basis changed", both
-    packs named, **no delta** - a delta across packs is a pack artifact
-    wearing a percent sign, and the demo's money moment must not lie (D3,
-    WP-28's rule one layer up).
+    `pairs` is `db.list_price_move_pairs` grouped by ingredient (newest
+    first); `rows`, `components_by_item` and `plate_by_item` are
+    `_menu_context`'s bundle. Same pack -> a real move, with the delta and
+    the per-plate impact (delta x the recipe's quantity in base units / the
+    batch yield); a different pack -> "price basis changed", both packs
+    named, **no delta** - a delta across packs is a pack artifact wearing a
+    percent sign (D3, WP-28's rule one layer up). A first purchase is a
+    price, not a move; the same price again is not a move; a material no
+    current recipe uses belongs to M2's alert, not here; and only costed,
+    unarchived items carry before/after margins.
 
-    Only materials on the current menu appear (a moved material feeding no
-    recipe belongs to M2's alert, not this screen), and only costed items
-    carry before/after margins - an incomplete item has no margin to move.
-    A selling-price change also moves margin and lives in the audit trail;
-    this endpoint attributes cost moves only, and the screen says so.
-
-    Derived on every read like everything above the invoice line: confirming
-    the rehearsal invoice at a new milk price re-ranks the karak on the next
-    read - no cache, no recompute job, nothing to invalidate. Margin history
-    over time needs sales periods and is deliberately absent (M8/M9)."""
-    db: Database = request.app.state.db
-    tenant_id = ctx.tenant_id
-    pairs: dict[str, list[asyncpg.Record]] = {}
-    for line in await db.list_price_move_pairs(tenant_id=tenant_id):
-        pairs.setdefault(line["ingredient_id"], []).append(line)
-    rows, components_by_item, plate_by_item, _ = await _menu_context(db, tenant_id)
-
-    moves: list[dict] = []
+    Newest first, and **within one day, the one that costs the most per
+    plate** (WP-66): a delivery brings five materials at once, so ties on
+    the date are the ordinary case, and the screen reads the first of these
+    out as its second callout. A basis change carries no number, so it
+    sorts behind any real move of the same day, and the name breaks what is
+    left - the order is the same on every run.
+    """
+    moves: list[PriceMove] = []
     for ingredient_id, lines in pairs.items():
         if len(lines) < 2:
             continue  # a first purchase is a price, not a move
@@ -763,8 +829,8 @@ async def list_price_moves(request: Request, ctx: Context) -> dict:
         )
         if not used:
             continue
-        current, previous = lines
-        move = {
+        current, previous = lines[0], lines[1]
+        head = {
             "ingredient_id": ingredient_id,
             "ingredient_name": current["ingredient_name"],
             "base_unit": current["base_unit"],
@@ -774,7 +840,13 @@ async def list_price_moves(request: Request, ctx: Context) -> dict:
 
         if current["supplier_item_id"] != previous["supplier_item_id"]:
             moves.append(
-                {**move, "kind": "basis_changed", "delta_per_display_unit": None, "items": []}
+                PriceMove(
+                    **head,
+                    kind="basis_changed",
+                    delta_per_base_unit=None,
+                    delta_per_display_unit=None,
+                    items=(),
+                )
             )
             continue
 
@@ -783,7 +855,7 @@ async def list_price_moves(request: Request, ctx: Context) -> dict:
             continue
         factor = costing.DISPLAY_UNITS[current["base_unit"]][1]
 
-        items: list[dict] = []
+        items: list[MoveImpact] = []
         for row in rows:
             if row["archived_at"] is not None:
                 continue
@@ -810,43 +882,101 @@ async def list_price_moves(request: Request, ctx: Context) -> dict:
                 plates.PCT_QUANTUM, rounding=ROUND_HALF_UP
             )
             items.append(
-                {
-                    "menu_item_id": row["id"],
-                    "name": row["name"],
-                    "impact_per_portion": _dec(impact),
-                    "margin_before": _dec(margin_before),
-                    "margin_after": _dec(plate.margin),
-                    "margin_pct_before": _dec(pct_before),
-                    "margin_pct_after": _dec(plate.margin_pct),
-                }
+                MoveImpact(
+                    menu_item_id=row["id"],
+                    name=row["name"],
+                    impact_per_portion=impact,
+                    margin_before=margin_before,
+                    margin_after=plate.margin,
+                    margin_pct_before=pct_before,
+                    margin_pct_after=plate.margin_pct,
+                )
             )
-        items.sort(key=lambda item: abs(Decimal(item["impact_per_portion"])), reverse=True)
+        items.sort(key=lambda item: abs(item.impact_per_portion), reverse=True)
         moves.append(
-            {
-                **move,
-                "kind": "moved",
-                "delta_per_display_unit": _dec(
-                    (delta * factor).quantize(costing.DISPLAY_QUANTUM, rounding=ROUND_HALF_UP)
+            PriceMove(
+                **head,
+                kind="moved",
+                delta_per_base_unit=delta,
+                delta_per_display_unit=(delta * factor).quantize(
+                    costing.DISPLAY_QUANTUM, rounding=ROUND_HALF_UP
                 ),
-                "items": items,
+                items=tuple(items),
+            )
+        )
+
+    moves.sort(key=lambda m: m.ingredient_name)
+    moves.sort(
+        key=lambda m: (m.current.purchased_on or datetime.date.min, m.worst_impact),
+        reverse=True,
+    )
+    return moves
+
+
+def _move_line_payload(line: MoveLine) -> dict:
+    return {
+        "supplier_item_id": line.supplier_item_id,
+        "product_name": line.product_name,
+        "supplier_name": line.supplier_name,
+        "pack_size": line.pack_size,
+        "per_display_unit": _dec(line.per_display_unit),
+        "display_unit": line.display_unit,
+        "invoice_id": line.invoice_id,
+        "invoice_line_id": line.invoice_line_id,
+        "position": line.position,
+        "purchased_on": _iso(line.purchased_on),
+        "invoice_date": _iso(line.invoice_date),
+    }
+
+
+def _move_payload(move: PriceMove) -> dict:
+    """The wire shape the screen has read since WP-63, unchanged."""
+    return {
+        "ingredient_id": move.ingredient_id,
+        "ingredient_name": move.ingredient_name,
+        "base_unit": move.base_unit,
+        "current": _move_line_payload(move.current),
+        "previous": _move_line_payload(move.previous),
+        "kind": move.kind,
+        "delta_per_display_unit": _dec(move.delta_per_display_unit),
+        "items": [
+            {
+                "menu_item_id": item.menu_item_id,
+                "name": item.name,
+                "impact_per_portion": _dec(item.impact_per_portion),
+                "margin_before": _dec(item.margin_before),
+                "margin_after": _dec(item.margin_after),
+                "margin_pct_before": _dec(item.margin_pct_before),
+                "margin_pct_after": _dec(item.margin_pct_after),
             }
-        )
+            for item in move.items
+        ],
+    }
 
-    # Newest first, and **within one day, the one that costs the most per
-    # plate** (WP-66). A delivery brings five materials at once, so ties on the
-    # date are the ordinary case rather than the edge - and the screen reads
-    # the first of these out as its second callout. Breaking that tie on the
-    # ingredient's name put "White sugar is up 5 fils a kilo" on the demo's
-    # closing image ahead of the milk powder the WhatsApp alert had just named.
-    # Most money first is the rule everywhere else here; it belongs here too.
-    # A basis change carries no number at all, so it sorts behind any real
-    # move of the same day, and the name breaks what is left - the order is
-    # the same on every run.
-    def _worst_impact(move: dict) -> Decimal:
-        return max(
-            (abs(Decimal(item["impact_per_portion"])) for item in move["items"]), default=Decimal(0)
-        )
 
-    moves.sort(key=lambda m: m["ingredient_name"])
-    moves.sort(key=lambda m: (m["current"]["purchased_on"] or "", _worst_impact(m)), reverse=True)
-    return {"moves": moves}
+@router.get("/price-moves")
+async def list_price_moves(request: Request, ctx: Context) -> dict:
+    """The money moment (WP-63): when a material's price moves, which menu
+    items just lost margin and by how much - M2's price alert finally carried
+    through to the plate. The alert names cartons; this names cups.
+
+    The rules are `price_moves`' (pure, above); this route feeds it the pairs
+    and the costed menu and serialises what comes back. Only materials on
+    the current menu appear (a moved material feeding no recipe belongs to
+    M2's alert, not this screen), and only costed items carry before/after
+    margins - an incomplete item has no margin to move. A selling-price
+    change also moves margin and lives in the audit trail; this endpoint
+    attributes cost moves only, and the screen says so.
+
+    Derived on every read like everything above the invoice line: confirming
+    the rehearsal invoice at a new milk price re-ranks the karak on the next
+    read - no cache, no recompute job, nothing to invalidate. Margin history
+    over time is M9's, and lives on the dashboard's signals."""
+    db: Database = request.app.state.db
+    tenant_id = ctx.tenant_id
+    pairs: dict[str, list[asyncpg.Record]] = {}
+    for line in await db.list_price_move_pairs(tenant_id=tenant_id):
+        pairs.setdefault(line["ingredient_id"], []).append(line)
+    rows, components_by_item, plate_by_item, _ = await _menu_context(db, tenant_id)
+    moves = price_moves(pairs, rows, components_by_item, plate_by_item)
+    return {"moves": [_move_payload(move) for move in moves]}
