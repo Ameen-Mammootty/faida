@@ -636,6 +636,17 @@ predate that rule and can drift on their own.
 
 **Depends on:** WP-99. Trigger: the third copied sentence.
 
+### Sub-fil per-plate impacts and a trailing full stop in the price-move sentences
+
+**What:** Drop bracketed per-plate figures that round to `(-0.00)` from the "also ..." clause, and stop a supplier name
+that ends in a full stop ("Gulf Foods Trading L.L.C.") producing a double stop in the basis-change sentence - on
+the Menu screen's card and in `signals.move_plates` / the evidence sentence together, since Wave 1 made them one wording.
+
+**Why:** Both are the Menu screen's shipped behaviour today; the WP-99 lane matched it rather than fixing one screen
+and not the other. One rule in Python now moves both.
+
+**Depends on:** WP-99. Trigger: the founder sees `(-0.00)` on the demo stage, or the first real supplier name ending in a full stop.
+
 ### A price-move history inside a window
 
 **What:** Every move a material made inside the period, not only its latest: a new read over every costed line in
