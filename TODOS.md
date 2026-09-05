@@ -443,10 +443,10 @@ have sales, because a free range is two inputs nobody asked for.
 
 ## Contribution, signals, dashboards (deferred by the M9 decomposition, 2026-09-05)
 
-M9 was decomposed in `Docs/M9_DECOMPOSITION.md` and reviewed with one outside voice on 2026-09-05; the
-founder has not yet answered its §5. The entries below are what the decomposition and its review
-consciously left out, each with the trigger that brings it back; they stand whichever way the founder
-decides, except where an entry names the proposal it hangs on.
+M9 was decomposed in `Docs/M9_DECOMPOSITION.md`, reviewed twice on 2026-09-05 (once unattended, once
+with the founder present, three outside voices between them) and approved to build; the founder decided
+every §5 proposal that day. The entries below are what the decomposition and its reviews consciously
+left out, each with the trigger that brings it back and the decision it hangs on where there is one.
 
 ### Versioned calculation runs and stored results
 
@@ -479,7 +479,8 @@ no packaging (M9 §5 P2 option (b)).
 carry a cup or a container; what nothing can do is tell a recipe with no cup from a dish that needs none.
 The recommendation is one standing sentence, and this is the flag the founder may prefer.
 
-**Depends on:** M9's P2. Trigger: the founder or a consultant wants the count on the screen.
+**Depends on:** M9's P2, decided (a) on 2026-09-05. Trigger: the founder or a consultant wants the count on
+the screen.
 
 ### Waste and directly attributable variable fees in branch contribution
 
@@ -494,7 +495,9 @@ they are absent.
 ### Per-tenant signal thresholds and a settings screen
 
 **What:** The three signal thresholds as a per-tenant setting rather than constants in one module
-(M9 §5 P5).
+(M9 §5 P5). The price spike has no absolute money floor by the second review's decision: the ranking by
+money and the cap at five do the floor's job, and a measured per-display-unit floor is the first thing to
+add here if a real panel shows the cap is not enough.
 
 **Why:** There is no settings table anywhere in the schema, and the first customer who says a threshold
 is wrong for their menu is also the first evidence about what the right one is.
@@ -532,7 +535,9 @@ day the branch role lands that link becomes the manager's landing page with no n
 **What:** Which Tuesdays the karak sells: a per-day array on an item row.
 
 **Why:** The branch drill on `/sales` already shows the days a branch's money came from, and an item's
-day array would make the dashboard payload thirty times its size for a question nobody has asked.
+day array would make the dashboard payload thirty times its size for a question nobody has asked. Since
+the second review the database read carries the days (grouped by branch, till item and day); the wire
+does not, so the day this is asked the answer is a payload field, not a query.
 
 **Depends on:** WP-92. Trigger: a customer asks.
 
@@ -558,6 +563,41 @@ detail payload is a variant of the whole screen for a question nobody has asked.
 
 **Depends on:** WP-90. Trigger: a consultant asks why a past figure differs from today's plate and the
 row's two costs do not answer it.
+
+### An audit read of menu price changes behind the discount sentence
+
+**What:** One query over `audit_events` (`menu_item.price_changed`, by subject and date, fixed count) so
+the item drill can withhold "sold at an average AED X against today's menu price of AED Y" when the
+menu price changed after the period's end, instead of relying on the word *today's*.
+
+**Why:** There is no price history table (M9 §5 P1, P4); the drill compares against today's price and
+says so, which is honest and can still be misread as a discount on a closed month with a price rise
+since.
+
+**Depends on:** WP-94. Trigger: a consultant reads a price rise as a discount despite the word *today's*.
+
+### Costing each day at the price in force that day
+
+**What:** A price series per material over the window (a new read) and a plate per day, so a delivery
+late in the window reprices only the days after it; PRD §19's latest-purchase-price policy changes
+with it (M9 second review, D19; both outside voices).
+
+**Why:** The period is costed at one price per material, the latest in force on its last day - PRD §19's
+policy and `/menu`'s - and the lineage says so; the spike's money at stake is a since-landed figure and
+the two are never added. Exact per-day economics is a different policy nobody has asked for.
+
+**Depends on:** WP-90. Trigger: a customer asks why a late delivery moved the whole month.
+
+### A per-branch material price
+
+**What:** A branch key on `list_mapped_pack_costs` and a plate per branch, so the league compares branches
+at what each actually paid (M9 second review; Codex 3).
+
+**Why:** The plate is a tenant-level fact (M6): the tenant's latest purchase prices a material whichever
+branch bought it, which is right for central buying and a stated limit otherwise.
+
+**Depends on:** WP-90. Trigger: a chain whose branches buy the same material at different prices asks why
+the league does not show it.
 
 ### An index on the sales tables
 
