@@ -14,6 +14,7 @@ import type {
   PriceMoveLine,
 } from "@/lib/types";
 import { AlertIcon, ChevronIcon, TrendDownIcon, TrendUpIcon } from "./icons";
+import LossFigure from "./LossFigure";
 
 /**
  * M6 WP-62/63: the menu screen - the demo's closing image, variant C
@@ -110,19 +111,15 @@ function EstimatedChip() {
 }
 
 /** A negative margin, in Critical Plum with icon and label - never colour
- * alone, and never mistakable for a thin-but-positive figure. */
-function LossFigure({ margin }: { margin: string }) {
+ * alone, and never mistakable for a thin-but-positive figure. The shared
+ * component since M9 WP-98; the words and the fils are still this screen's. */
+function MarginLoss({ margin }: { margin: string }) {
   return (
-    // The figure and its icon never split: in a fixed-width margin column the
-    // label is what wraps to the next line, not "-AED 0.40" away from the
-    // symbol that says it is bad news.
-    <span className="inline-flex flex-wrap items-center justify-end gap-x-1.5 font-medium text-plum">
-      <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-        <AlertIcon className="h-3.5 w-3.5" />
-        <span className="tabular-nums">-AED {summaryMoney(margin.replace("-", ""))}</span>
-      </span>
-      <span className="text-xs font-normal">this plate loses money</span>
-    </span>
+    <LossFigure
+      figure={`-AED ${summaryMoney(margin.replace("-", ""))}`}
+      noun="this plate"
+      align="end"
+    />
   );
 }
 
@@ -370,7 +367,7 @@ function DrillContent({
 /** Margin cell contents: the AED figure with %% beside, the loss treatment,
  * or the estimated chip - words and icons, never colour alone. */
 function MarginFigure({ item }: { item: MenuItemSummary }) {
-  if (marginIsLoss(item)) return <LossFigure margin={item.plate.margin ?? "0"} />;
+  if (marginIsLoss(item)) return <MarginLoss margin={item.plate.margin ?? "0"} />;
   return (
     <span className="tabular-nums">
       <span className="font-display font-semibold text-ink">

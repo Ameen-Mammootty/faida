@@ -50,14 +50,38 @@ export function quantity(value: string): string {
 /**
  * A headline figure, rounded to whole dirhams (plan.md section 3: rounded
  * headline numbers, exact figures only in detail). String operations only -
- * money is never parsed to a number on these screens - so this truncates
- * rather than rounds, which can only ever understate a ranking figure by
- * under a dirham. Lived in RawMaterials until the menu screen needed it too.
+ * money is never parsed to a number on these screens. Lived in RawMaterials
+ * until the menu screen needed it too.
+ *
+ * It rounds half up, the way every sentence the API composes already rounds
+ * (M9 D7, decided by the founder 2026-09-05). It truncated until then, which
+ * put a headline a dirham under the sentence printed beside it, and made a
+ * loss read smaller than it is. The sign is decided first and the magnitude
+ * rounds, so "-411.50" is 412 short of nothing, never 411.
  */
 export function roundedAed(value: string): string {
-  const whole = value.split(".")[0].replace("-", "");
-  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-  return `AED ${value.startsWith("-") ? "-" : ""}${grouped}`;
+  const negative = value.startsWith("-");
+  const magnitude = negative ? value.slice(1) : value;
+  const dot = magnitude.indexOf(".");
+  const whole = dot === -1 ? magnitude : magnitude.slice(0, dot);
+  const firstDecimal = dot === -1 ? "" : magnitude.slice(dot + 1, dot + 2);
+  const rounded = firstDecimal >= "5" && firstDecimal <= "9" ? addOneDirham(whole) : whole;
+  const grouped = rounded.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return `AED ${negative ? "-" : ""}${grouped}`;
+}
+
+/** "999" plus a dirham is "1000", carried digit by digit so no headline is
+ * ever parsed into a number. */
+function addOneDirham(whole: string): string {
+  const digits = whole.split("");
+  let at = digits.length - 1;
+  while (at >= 0 && digits[at] === "9") {
+    digits[at] = "0";
+    at -= 1;
+  }
+  if (at < 0) return `1${digits.join("")}`;
+  digits[at] = String.fromCharCode(digits[at].charCodeAt(0) + 1);
+  return digits.join("");
 }
 
 /** Plain English for the header fields C8 keys provenance by. */
