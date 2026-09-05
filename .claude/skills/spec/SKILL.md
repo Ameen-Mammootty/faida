@@ -1,1 +1,1 @@
-/Users/mohammedameen/conductor/repos/faida/.claude/skills/gstack/spec/SKILL.md
+/Users/mohammedameen/Documents/GitHub/faida/.claude/skills/gstack/spec/SKILL.md

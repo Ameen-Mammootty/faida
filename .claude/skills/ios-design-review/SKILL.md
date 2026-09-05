@@ -1,1 +1,1 @@
-/Users/mohammedameen/conductor/repos/faida/.claude/skills/gstack/ios-design-review/SKILL.md
+/Users/mohammedameen/Documents/GitHub/faida/.claude/skills/gstack/ios-design-review/SKILL.md

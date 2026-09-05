@@ -1,1 +1,1 @@
-/Users/mohammedameen/conductor/repos/faida/.claude/skills/gstack/devex-review/SKILL.md
+/Users/mohammedameen/Documents/GitHub/faida/.claude/skills/gstack/devex-review/SKILL.md

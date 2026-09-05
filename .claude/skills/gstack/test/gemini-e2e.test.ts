@@ -15,10 +15,11 @@
  */
 
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
+import { JUDGE_MS } from './helpers/eval-budgets';
 import { runGeminiSkill } from './helpers/gemini-session-runner';
 import type { GeminiResult } from './helpers/gemini-session-runner';
 import { EvalCollector } from './helpers/eval-store';
-import { selectTests, detectBaseBranch, getChangedFiles, GLOBAL_TOUCHFILES } from './helpers/touchfiles';
+import { selectTests, detectBaseBranch, getChangedFiles, E2E_TOUCHFILES, GLOBAL_TOUCHFILES } from './helpers/touchfiles';
 import { createTestWorktree, harvestAndCleanup } from './helpers/e2e-helpers';
 import * as path from 'path';
 
@@ -28,31 +29,61 @@ const ROOT = path.resolve(import.meta.dir, '..');
 
 const GEMINI_AVAILABLE = (() => {
   try {
-    const result = Bun.spawnSync(['which', 'gemini']);
+    const result = Bun.spawnSync(['which', 'gemini'], { timeout: 30_000 });
+    return result.exitCode === 0;
+  } catch { return false; }
+})();
+
+// A binary on PATH is not enough: the CLI can be present but UNUSABLE — the
+// individual code-assist auth path was deprecated upstream ("migrate to the
+// Antigravity suite"), which fails every run before any model call, and flag
+// churn (--skip-trust removed in 0.34) errors at argv parse. Probe with a
+// bare --help: a CLI that can't even print usage is unusable, and a working
+// one is cheap to confirm. Deeper auth failures are classified per-run.
+const GEMINI_USABLE = GEMINI_AVAILABLE && (() => {
+  try {
+    const result = Bun.spawnSync(['gemini', '--help'], { timeout: 15_000 });
     return result.exitCode === 0;
   } catch { return false; }
 })();
 
 const evalsEnabled = !!process.env.EVALS;
 
-// Skip all tests if gemini is not available or EVALS is not set.
-const SKIP = !GEMINI_AVAILABLE || !evalsEnabled;
+// External-service tests are periodic-tier (CLAUDE.md tiering rule 3):
+// "Requires external service (Codex, Gemini)? -> periodic". The positive
+// form below is the canonical whole-file guard shape — the sharded runner's
+// classifyPaidTestFile greps for it to exclude this file from gate.
+const tierOk = process.env.EVALS_TIER === 'periodic';
+
+// Skip all tests if gemini is not available/usable, EVALS is not set, or
+// we're in the gate tier.
+const SKIP = !GEMINI_USABLE || !evalsEnabled || !tierOk;
 
 const describeGemini = SKIP ? describe.skip : describe;
 
 // Log why we're skipping (helpful for debugging CI)
 if (!evalsEnabled) {
   // Silent — same as Claude E2E tests, EVALS=1 required
+} else if (!tierOk) {
+  process.stderr.write('\nGemini E2E: SKIPPED — external-service test, periodic tier only (EVALS_TIER === \'periodic\')\n');
 } else if (!GEMINI_AVAILABLE) {
   process.stderr.write('\nGemini E2E: SKIPPED — gemini binary not found (install: npm i -g @google/gemini-cli)\n');
+} else if (!GEMINI_USABLE) {
+  process.stderr.write('\nGemini E2E: SKIPPED — gemini CLI present but unusable (auth path deprecated upstream or CLI broken; try updating @google/gemini-cli)\n');
 }
 
 // --- Diff-based test selection ---
 
-// Gemini E2E touchfiles — keyed by test name
-const GEMINI_E2E_TOUCHFILES: Record<string, string[]> = {
-  'gemini-smoke':  ['.agents/skills/**', 'test/helpers/gemini-session-runner.ts'],
-};
+// Gemini E2E touchfiles — DERIVED from the canonical map, never a local fork
+// (the old hand-copy kept a gitignored '.agents/skills/**' pattern that can
+// never match a git diff and missed canonical deps — same drift class as the
+// codex copy).
+const GEMINI_E2E_TOUCHFILES: Record<string, string[]> = Object.fromEntries(
+  (['gemini-smoke'] as const).map((key) => {
+    if (!E2E_TOUCHFILES[key]) throw new Error(`canonical E2E_TOUCHFILES lost key '${key}' — fix the map, not this file`);
+    return [key, E2E_TOUCHFILES[key]];
+  }),
+);
 
 let selectedTests: string[] | null = null; // null = run all
 
@@ -127,7 +158,7 @@ describeGemini('Gemini E2E', () => {
     // Uses a simple prompt that doesn't require skill invocation or complex navigation.
     const result = await runGeminiSkill({
       prompt: 'What is this project? Answer in one sentence based on the README.',
-      timeoutMs: 90_000,
+      timeoutMs: JUDGE_MS,
       cwd: testWorktree,
     });
 
@@ -139,5 +170,5 @@ describeGemini('Gemini E2E', () => {
     recordGeminiE2E('gemini-smoke', result, passed);
 
     expect(result.output.length, 'Gemini should produce output').toBeGreaterThan(10);
-  }, 120_000);
+  }, JUDGE_MS);
 });

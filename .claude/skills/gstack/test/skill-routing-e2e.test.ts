@@ -1,9 +1,11 @@
 import { describe, test, expect, afterAll } from 'bun:test';
+import { JUDGE_MS, CAPTURE_MS } from './helpers/eval-budgets';
 import { runSkillTest } from './helpers/session-runner';
 import type { SkillTestResult } from './helpers/session-runner';
 import { EvalCollector } from './helpers/eval-store';
 import type { EvalTestEntry } from './helpers/eval-store';
 import { selectTests, detectBaseBranch, getChangedFiles, E2E_TOUCHFILES, E2E_TIERS, GLOBAL_TOUCHFILES } from './helpers/touchfiles';
+import { extractSkillHead } from './helpers/skill-fixture';
 import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -59,10 +61,14 @@ if (evalsEnabled && process.env.EVALS_TIER) {
 
 // --- Helper functions ---
 
-/** Copy all SKILL.md files for auto-discovery.
+/** Install SKILL.md fixtures for auto-discovery.
  *  Installs to project-level (.claude/skills/) only. Writing to the user's
  *  ~/.claude/skills/ is unsafe: it may contain symlinks from the real gstack
- *  install that point to different worktrees or dangling targets. */
+ *  install that point to different worktrees or dangling targets.
+ *
+ *  ROUTING tests only read each skill's frontmatter (name + description) to
+ *  pick a skill, so install frontmatter + the first ~30 body lines instead
+ *  of ~20 full 1000-1900-line files (CLAUDE.md: "extract, don't copy"). */
 function installSkills(tmpDir: string) {
   const skillDirs = [
     '', // root gstack SKILL.md
@@ -81,13 +87,17 @@ function installSkills(tmpDir: string) {
     const skillName = skill || 'gstack';
     const destDir = path.join(targetBase, skillName);
     fs.mkdirSync(destDir, { recursive: true });
-    fs.copyFileSync(srcPath, path.join(destDir, 'SKILL.md'));
+    fs.writeFileSync(path.join(destDir, 'SKILL.md'), extractSkillHead(srcPath));
   }
 
-  // Write a CLAUDE.md with explicit routing instructions.
-  // The skill descriptions in system-reminder aren't strong enough to override
-  // Claude's default behavior of answering directly. A CLAUDE.md instruction
-  // puts routing rules in project context which Claude weighs more heavily.
+  // Write a CLAUDE.md with a GENERIC invoke-skills nudge — deliberately NO
+  // per-skill routing table. These journey tests exist to catch skill
+  // DESCRIPTION regressions (their touchfiles key on */SKILL.md.tmpl), and
+  // the old fixture shipped an explicit prompt→skill answer key: with the
+  // lookup table in context, a badly regressed frontmatter description
+  // still routed correctly and the tests could not fail on the regression
+  // class they select for (2026-08 audit). The generic nudge keeps Claude's
+  // reach-for-a-skill posture; the FRONTMATTER carries the routing load.
   fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), `# Project Instructions
 
 ## Skill routing
@@ -95,18 +105,7 @@ function installSkills(tmpDir: string) {
 When the user's request matches an available skill, ALWAYS invoke it using the Skill
 tool as your FIRST action. Do NOT answer directly, do NOT use other tools first.
 The skill has specialized workflows that produce better results than ad-hoc answers.
-
-Key routing rules:
-- Product ideas, "is this worth building", brainstorming → invoke office-hours
-- Bugs, errors, "why is this broken", 500 errors → invoke investigate
-- Ship, deploy, push, create PR → invoke ship
-- QA, test the site, find bugs → invoke qa
-- Code review, check my diff → invoke review
-- Update docs after shipping → invoke document-release
-- Weekly retro → invoke retro
-- Design system, brand → invoke design-consultation
-- Visual audit, design polish → invoke design-review
-- Architecture review → invoke plan-eng-review
+Choose the skill by matching the request against each skill's description.
 `);
 }
 
@@ -190,9 +189,13 @@ describeE2E('Skill Routing E2E — Developer Journey', () => {
       const result = await runSkillTest({
         prompt: "I've been thinking about building a waitlist management tool for restaurants. The existing solutions are expensive and overcomplicated. I want something simple — a tablet app where hosts can add parties, see wait times, and text customers when their table is ready. Help me think through whether this is worth building and what the key design decisions are.",
         workingDirectory: tmpDir,
-        maxTurns: 5,
-        allowedTools: ['Skill', 'Read', 'Bash', 'Glob', 'Grep'],
-        timeout: 60_000,
+        // Turn/tool cap (2026-08 audit): only the FIRST Skill call is
+        // asserted, so 5 turns of Read/Bash/Glob/Grep was pure spend — the
+        // session ends at the routing decision, roughly halving each
+        // journey's cost.
+        maxTurns: 2,
+        allowedTools: ['Skill', 'Read'],
+        timeout: JUDGE_MS,
         testName,
         runId,
       });
@@ -208,7 +211,7 @@ describeE2E('Skill Routing E2E — Developer Journey', () => {
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
-  }, 150_000);
+  }, CAPTURE_MS);
 
   testIfSelected('journey-plan-eng', async () => {
     const tmpDir = createRoutingWorkDir('plan-eng');
@@ -240,9 +243,13 @@ describeE2E('Skill Routing E2E — Developer Journey', () => {
       const result = await runSkillTest({
         prompt: "I wrote up a plan for the waitlist app in plan.md. Can you take a look at the architecture and make sure I'm not missing any edge cases or failure modes before I start coding?",
         workingDirectory: tmpDir,
-        maxTurns: 5,
-        allowedTools: ['Skill', 'Read', 'Bash', 'Glob', 'Grep'],
-        timeout: 60_000,
+        // Turn/tool cap (2026-08 audit): only the FIRST Skill call is
+        // asserted, so 5 turns of Read/Bash/Glob/Grep was pure spend — the
+        // session ends at the routing decision, roughly halving each
+        // journey's cost.
+        maxTurns: 2,
+        allowedTools: ['Skill', 'Read'],
+        timeout: JUDGE_MS,
         testName,
         runId,
       });
@@ -258,7 +265,7 @@ describeE2E('Skill Routing E2E — Developer Journey', () => {
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
-  }, 150_000);
+  }, CAPTURE_MS);
 
   // Removed: journey-think-bigger
   // Tested ambiguous routing ("think bigger" → plan-ceo-review) but Claude
@@ -302,9 +309,13 @@ export default app;
       const result = await runSkillTest({
         prompt: "The GET /api/waitlist endpoint was working fine yesterday but now it's returning 500 errors. The tests are passing locally but the endpoint fails when I hit it with curl. Can you figure out what's going on?",
         workingDirectory: tmpDir,
-        maxTurns: 5,
-        allowedTools: ['Skill', 'Read', 'Bash', 'Glob', 'Grep'],
-        timeout: 60_000,
+        // Turn/tool cap (2026-08 audit): only the FIRST Skill call is
+        // asserted, so 5 turns of Read/Bash/Glob/Grep was pure spend — the
+        // session ends at the routing decision, roughly halving each
+        // journey's cost.
+        maxTurns: 2,
+        allowedTools: ['Skill', 'Read'],
+        timeout: JUDGE_MS,
         testName,
         runId,
       });
@@ -321,7 +332,7 @@ export default app;
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
-  }, 150_000);
+  }, CAPTURE_MS);
 
   testIfSelected('journey-qa', async () => {
     const tmpDir = createRoutingWorkDir('qa');
@@ -338,9 +349,13 @@ export default app;
       const result = await runSkillTest({
         prompt: "I think the app is mostly working now. Can you go through the site and test everything — find any bugs and fix them?",
         workingDirectory: tmpDir,
-        maxTurns: 5,
-        allowedTools: ['Skill', 'Read', 'Bash', 'Glob', 'Grep'],
-        timeout: 60_000,
+        // Turn/tool cap (2026-08 audit): only the FIRST Skill call is
+        // asserted, so 5 turns of Read/Bash/Glob/Grep was pure spend — the
+        // session ends at the routing decision, roughly halving each
+        // journey's cost.
+        maxTurns: 2,
+        allowedTools: ['Skill', 'Read'],
+        timeout: JUDGE_MS,
         testName,
         runId,
       });
@@ -357,7 +372,7 @@ export default app;
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
-  }, 150_000);
+  }, CAPTURE_MS);
 
   testIfSelected('journey-code-review', async () => {
     const tmpDir = createRoutingWorkDir('code-review');
@@ -379,9 +394,13 @@ export default app;
       const result = await runSkillTest({
         prompt: "I'm about to merge this into main. Can you look over my changes and flag anything risky before I land it?",
         workingDirectory: tmpDir,
-        maxTurns: 5,
-        allowedTools: ['Skill', 'Read', 'Bash', 'Glob', 'Grep'],
-        timeout: 120_000,
+        // Turn/tool cap (2026-08 audit): only the FIRST Skill call is
+        // asserted, so 5 turns of Read/Bash/Glob/Grep was pure spend — the
+        // session ends at the routing decision, roughly halving each
+        // journey's cost.
+        maxTurns: 2,
+        allowedTools: ['Skill', 'Read'],
+        timeout: JUDGE_MS,
         testName,
         runId,
       });
@@ -397,7 +416,7 @@ export default app;
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
-  }, 150_000);
+  }, CAPTURE_MS);
 
   testIfSelected('journey-ship', async () => {
     const tmpDir = createRoutingWorkDir('ship');
@@ -418,9 +437,13 @@ export default app;
       const result = await runSkillTest({
         prompt: "This looks good. Let's get it deployed — push the code up and create a PR.",
         workingDirectory: tmpDir,
-        maxTurns: 5,
-        allowedTools: ['Skill', 'Read', 'Bash', 'Glob', 'Grep'],
-        timeout: 60_000,
+        // Turn/tool cap (2026-08 audit): only the FIRST Skill call is
+        // asserted, so 5 turns of Read/Bash/Glob/Grep was pure spend — the
+        // session ends at the routing decision, roughly halving each
+        // journey's cost.
+        maxTurns: 2,
+        allowedTools: ['Skill', 'Read'],
+        timeout: JUDGE_MS,
         testName,
         runId,
       });
@@ -436,7 +459,7 @@ export default app;
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
-  }, 150_000);
+  }, CAPTURE_MS);
 
   testIfSelected('journey-docs', async () => {
     const tmpDir = createRoutingWorkDir('docs');
@@ -455,9 +478,13 @@ export default app;
       const result = await runSkillTest({
         prompt: "We just shipped the waitlist feature. Can you go through the README and any other docs and make sure they match what we actually built?",
         workingDirectory: tmpDir,
-        maxTurns: 5,
-        allowedTools: ['Skill', 'Read', 'Bash', 'Glob', 'Grep'],
-        timeout: 60_000,
+        // Turn/tool cap (2026-08 audit): only the FIRST Skill call is
+        // asserted, so 5 turns of Read/Bash/Glob/Grep was pure spend — the
+        // session ends at the routing decision, roughly halving each
+        // journey's cost.
+        maxTurns: 2,
+        allowedTools: ['Skill', 'Read'],
+        timeout: JUDGE_MS,
         testName,
         runId,
       });
@@ -473,7 +500,7 @@ export default app;
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
-  }, 150_000);
+  }, CAPTURE_MS);
 
   testIfSelected('journey-retro', async () => {
     const tmpDir = createRoutingWorkDir('retro');
@@ -498,9 +525,13 @@ export default app;
       const result = await runSkillTest({
         prompt: "It's Friday. What did we ship this week? I want to do a quick retrospective on what the team accomplished.",
         workingDirectory: tmpDir,
-        maxTurns: 5,
-        allowedTools: ['Skill', 'Read', 'Bash', 'Glob', 'Grep'],
-        timeout: 120_000,
+        // Turn/tool cap (2026-08 audit): only the FIRST Skill call is
+        // asserted, so 5 turns of Read/Bash/Glob/Grep was pure spend — the
+        // session ends at the routing decision, roughly halving each
+        // journey's cost.
+        maxTurns: 2,
+        allowedTools: ['Skill', 'Read'],
+        timeout: JUDGE_MS,
         testName,
         runId,
       });
@@ -516,7 +547,7 @@ export default app;
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
-  }, 150_000);
+  }, CAPTURE_MS);
 
   testIfSelected('journey-design-system', async () => {
     const tmpDir = createRoutingWorkDir('design-system');
@@ -527,9 +558,13 @@ export default app;
       const result = await runSkillTest({
         prompt: "Before we build the UI, I want to establish a design system — typography, colors, spacing, the whole thing. Can you put together brand guidelines for this project?",
         workingDirectory: tmpDir,
-        maxTurns: 5,
-        allowedTools: ['Skill', 'Read', 'Bash', 'Glob', 'Grep'],
-        timeout: 60_000,
+        // Turn/tool cap (2026-08 audit): only the FIRST Skill call is
+        // asserted, so 5 turns of Read/Bash/Glob/Grep was pure spend — the
+        // session ends at the routing decision, roughly halving each
+        // journey's cost.
+        maxTurns: 2,
+        allowedTools: ['Skill', 'Read'],
+        timeout: JUDGE_MS,
         testName,
         runId,
       });
@@ -545,7 +580,7 @@ export default app;
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
-  }, 150_000);
+  }, CAPTURE_MS);
 
   testIfSelected('journey-visual-qa', async () => {
     const tmpDir = createRoutingWorkDir('visual-qa');
@@ -578,9 +613,13 @@ body { font-family: sans-serif; }
       const result = await runSkillTest({
         prompt: "Something looks off on the site. The spacing between sections is inconsistent and the font sizes don't feel right. Can you audit the visual design and fix anything that doesn't look polished?",
         workingDirectory: tmpDir,
-        maxTurns: 5,
-        allowedTools: ['Skill', 'Read', 'Bash', 'Glob', 'Grep'],
-        timeout: 60_000,
+        // Turn/tool cap (2026-08 audit): only the FIRST Skill call is
+        // asserted, so 5 turns of Read/Bash/Glob/Grep was pure spend — the
+        // session ends at the routing decision, roughly halving each
+        // journey's cost.
+        maxTurns: 2,
+        allowedTools: ['Skill', 'Read'],
+        timeout: JUDGE_MS,
         testName,
         runId,
       });
@@ -597,5 +636,5 @@ body { font-family: sans-serif; }
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
-  }, 150_000);
+  }, CAPTURE_MS);
 });

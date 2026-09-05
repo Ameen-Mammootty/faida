@@ -30,6 +30,13 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 # GSTACK_STATE_ROOT takes precedence over GSTACK_HOME (test isolation per D16).
 GSTACK_HOME="${GSTACK_STATE_ROOT:-${GSTACK_HOME:-$HOME/.gstack}}"
+# Windows git-bash: GSTACK_HOME resolves to an MSYS path (/c/Users/...), which
+# Bun on Windows cannot open as a filesystem path (bites --derive). Normalize
+# once, here, before PROFILE_FILE/LEGACY_FILE are derived from it below —
+# doing it after would leave those two on the stale MSYS form.
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*) command -v cygpath >/dev/null 2>&1 && GSTACK_HOME="$(cygpath -m "$GSTACK_HOME")" ;;
+esac
 PROFILE_FILE="$GSTACK_HOME/developer-profile.json"
 LEGACY_FILE="$GSTACK_HOME/builder-profile.jsonl"
 eval "$("$SCRIPT_DIR/gstack-slug" 2>/dev/null || true)"
@@ -55,7 +62,7 @@ do_migrate() {
 
   # Run migration in a temp file, then atomic rename.
   local TMPOUT
-  TMPOUT=$(mktemp "$GSTACK_HOME/developer-profile.json.XXXXXX.tmp")
+  TMPOUT=$(mktemp "$GSTACK_HOME/developer-profile.json.tmp.XXXXXX")
   trap 'rm -f "$TMPOUT"' EXIT
 
   cat "$LEGACY_FILE" | bun -e "
@@ -115,7 +122,7 @@ do_migrate() {
   mv "$LEGACY_FILE" "$LEGACY_FILE.migrated-$TS"
 
   local COUNT
-  COUNT=$(bun -e "console.log(JSON.parse(require('fs').readFileSync('$PROFILE_FILE','utf-8')).sessions.length)" 2>/dev/null || echo "?")
+  COUNT=$(PROFILE_FILE_PATH="$PROFILE_FILE" bun -e "console.log(JSON.parse(require('fs').readFileSync(process.env.PROFILE_FILE_PATH,'utf-8')).sessions.length)" 2>/dev/null || echo "?")
   echo "MIGRATE: ok — migrated $COUNT sessions from builder-profile.jsonl"
 }
 
@@ -182,7 +189,7 @@ do_log_session() {
   ensure_profile
 
   local TMPOUT
-  TMPOUT=$(mktemp "$GSTACK_HOME/developer-profile.json.XXXXXX.tmp")
+  TMPOUT=$(mktemp "$GSTACK_HOME/developer-profile.json.tmp.XXXXXX")
   trap 'rm -f "$TMPOUT"' EXIT
 
   PROFILE_FILE_PATH="$PROFILE_FILE" RECORD_INPUT="$INPUT" TMPOUT_PATH="$TMPOUT" bun -e "
@@ -225,17 +232,19 @@ do_read() {
   cat "$PROFILE_FILE" | bun -e "
     const p = JSON.parse(await Bun.stdin.text());
     const sessions = p.sessions || [];
-    const count = sessions.length;
+
+    // SESSION_COUNT / TIER / CROSS_PROJECT / NUDGE must reflect real sessions, not
+    // resource-tracking events (the Phase 6 auto-append). Without this filter, a
+    // session's resources entry written immediately after the real session inflates
+    // the count (bumping TIER), clobbers LAST_PROJECT/LAST_ASSIGNMENT/LAST_DESIGN_TITLE,
+    // and pushes NUDGE_ELIGIBLE over its threshold from bookkeeping alone.
+    const realSessions = sessions.filter(e => e.mode !== 'resources');
+
+    const count = realSessions.length;
     let tier = 'introduction';
     if (count >= 8) tier = 'inner_circle';
     else if (count >= 4) tier = 'regular';
     else if (count >= 1) tier = 'welcome_back';
-
-    // LAST_* / CROSS_PROJECT must reflect real sessions, not resource-tracking
-    // events (the Phase 6 auto-append). Without this filter, a session's
-    // resources entry written immediately after the real session would clobber
-    // LAST_PROJECT/LAST_ASSIGNMENT/LAST_DESIGN_TITLE.
-    const realSessions = sessions.filter(e => e.mode !== 'resources');
     const last = realSessions[realSessions.length - 1] || {};
     const prev = realSessions[realSessions.length - 2] || {};
     const crossProject = prev.project_slug && last.project_slug
@@ -252,7 +261,11 @@ do_read() {
     for (const v of Object.values(signalCounts)) totalSignals += v;
     const signalStr = Object.entries(signalCounts).map(([k,v]) => k + ':' + v).join(',');
 
-    const builderSessions = sessions.filter(e => e.mode !== 'startup').length;
+    // Builder-mode design sessions only — the builder->founder nudge is about
+    // someone who keeps returning to *build*, not startup-mode diagnostics and not
+    // resources bookkeeping. (Was \`e.mode !== 'startup'\`, which counted resources
+    // entries and excluded real startup sessions.)
+    const builderSessions = realSessions.filter(e => e.mode === 'builder').length;
     const nudgeEligible = builderSessions >= 3 && totalSignals >= 5;
 
     const resources = p.resources_shown || [];
