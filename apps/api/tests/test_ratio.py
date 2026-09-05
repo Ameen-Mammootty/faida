@@ -263,6 +263,55 @@ def test_precedence_is_unavailable_over_incomplete_over_estimated():
     assert "1 invoice awaiting confirm" in both.notes
 
 
+def test_the_merged_word_is_the_worse_of_the_sales_side_and_the_purchase_side():
+    """M9 C9 extended: `period_row` now carries the sales half of its own
+    label beside the merged one, because a contribution is a fact about sales
+    and plates and never about papers - a pending delivery must not mark a
+    fully loaded, fully costed week incomplete.
+
+    The merged word and the merged notes are unchanged, and every sentence in
+    `sales_notes` is one of the sentences in `notes`: `contribution.py` reads
+    these two fields and re-words nothing.
+    """
+    # A full week and a pending paper: the sales side is clean, the purchase
+    # side is not, and the merged word follows the worse of the two.
+    pending = _row(
+        _week(),
+        [_paper("2026-08-26", "700.00"), _paper("2026-08-27", "1", status="awaiting_confirm")],
+    )
+    assert pending.sales_quality is ratio.Quality.RELIABLE
+    assert pending.sales_notes == ()
+    assert pending.quality is ratio.Quality.ESTIMATED
+
+    # A hand-typed total does the same, and is equally not the sales side's.
+    asserted = _row(_week(), [_paper("2026-08-26", "700.00", asserted=True)])
+    assert asserted.sales_quality is ratio.Quality.RELIABLE
+    assert asserted.quality is ratio.Quality.ESTIMATED
+
+    # A gap in the week is the sales side's own, and both words move.
+    gapped = _row(
+        [_day(i, "1000.00") for i in (0, 1, 2, 3, 5, 6)], [_paper("2026-08-26", "700.00")]
+    )
+    assert gapped.sales_quality is ratio.Quality.INCOMPLETE
+    assert gapped.quality is ratio.Quality.INCOMPLETE
+    assert "1 of 7 days has no sales" in gapped.sales_notes
+
+    # Sales that are not positive are the sales side's too.
+    refunded = _row([_day(0, "-50.00")], [_paper("2026-08-25", "100.00")])
+    assert refunded.sales_quality is ratio.Quality.INCOMPLETE
+    assert "net sales are not positive this period" in refunded.sales_notes
+
+    # Nothing loaded is the sales side's `unavailable`, papers or no papers.
+    for row in (
+        _row([], []),
+        _row([], [_paper("2026-08-26", "700.00")]),
+    ):
+        assert row.sales_quality is ratio.Quality.UNAVAILABLE
+
+    for row in (pending, asserted, gapped, refunded, _row([], []), _row(_week(), [])):
+        assert set(row.sales_notes) <= set(row.notes)
+
+
 def test_a_lagging_branch_counts_purchases_to_its_own_newest_day_only():
     days = [_day(i, "1000.00") for i in range(3)]  # 25-27 Aug loaded, the rest not yet
     papers = [_paper("2026-08-26", "500.00"), _paper("2026-08-30", "9999.00")]

@@ -38,6 +38,7 @@ back as strings, never floats (C4/C6). Writes return the full item detail,
 the C6 convention.
 """
 
+import datetime
 import uuid
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Annotated
@@ -236,21 +237,27 @@ async def _validated_components(
 
 
 async def _pricing(
-    db: Database, tenant_id: str
+    db: Database, tenant_id: str, *, as_of: datetime.date | None = None
 ) -> tuple[dict[str, asyncpg.Record], dict[str, asyncpg.Record], Decimal | None]:
     """The three facts every plate reads, fetched once per request whatever
     the menu's length (D10): each material's current price (the newest costed
     line among its packs, WP-54), the materials whose newest purchase could
     not be costed (the D11 stale flag), and the VAT rate inside this tenant's
-    menu prices."""
+    menu prices.
+
+    `as_of` costs the menu at the prices **in force on a date** instead of
+    today's (M9 C12.4), so a period figure stops moving when an unrelated
+    paper lands after the period it covers. Omitted or None, every answer is
+    today's, unchanged: `/menu` never passes it, and the dashboard passes it
+    for the period's plates and omits it for today's."""
     currency = await db.tenant_currency(tenant_id)
     vat_rate = VAT_RATE_BY_CURRENCY.get(currency or "")
     prices: dict[str, asyncpg.Record] = {}
-    for row in await db.list_mapped_pack_costs(tenant_id=tenant_id):
+    for row in await db.list_mapped_pack_costs(tenant_id=tenant_id, as_of=as_of):
         prices.setdefault(row["ingredient_id"], row)
     stale = {
         row["ingredient_id"]: row
-        for row in await db.list_newest_purchases(tenant_id=tenant_id)
+        for row in await db.list_newest_purchases(tenant_id=tenant_id, as_of=as_of)
         if not row["costed"]
     }
     return prices, stale, vat_rate
@@ -294,7 +301,7 @@ def _cost_component(
 
 
 async def _menu_context(
-    db: Database, tenant_id: str
+    db: Database, tenant_id: str, *, as_of: datetime.date | None = None
 ) -> tuple[
     list[asyncpg.Record],
     dict[str, list[asyncpg.Record]],
@@ -304,8 +311,14 @@ async def _menu_context(
     """The whole menu, costed, from a fixed number of queries (D10): every
     item row, each item's current components, each item's plate answer, and
     the VAT rate. Both menu reads - the list and the money moment - derive
-    from this same bundle, so they can never disagree on what a plate earns."""
-    prices, stale, vat_rate = await _pricing(db, tenant_id)
+    from this same bundle, so they can never disagree on what a plate earns.
+
+    `as_of` is passed straight to `_pricing` (M9 C12.4). The **recipe** is
+    always the current version even then, by decision: recipes are loaded at
+    onboarding after the sales they cost, so an as-of recipe read would mark
+    every onboarding month incomplete. A period row says *recipe version N*
+    so a reader can see which one costed it."""
+    prices, stale, vat_rate = await _pricing(db, tenant_id, as_of=as_of)
     components_by_item: dict[str, list[asyncpg.Record]] = {}
     for row in await db.list_current_recipe_components(tenant_id=tenant_id):
         components_by_item.setdefault(row["menu_item_id"], []).append(row)
