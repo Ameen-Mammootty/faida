@@ -1,9 +1,10 @@
-# Faida Demo Runbook (three acts; M4 loop gate, M6 demo gate, M8 act three)
+# Faida Demo Runbook (four acts; M4 loop gate, M6 demo gate, M8 act three, M9 act four)
 
 This is the operating manual for the demo (plan.md §6) and for the rehearsals before its two gates.
 Since 2026-08-28 the full demo is two acts and gates at M6 (§1: the loop, then materials and menu margins).
 **Act one** (sections A-E) is the invoice loop on WhatsApp and stands on its own as the M4 loop gate: it runs end to end twice in a row with zero intervention before anything is built on its numbers.
 **Act two** (section F, added 2026-08-31 by WP-66) is the screens - materials, then menu margins, closing on "push this, fix that".
+**Act three** (section G) is the branches, and **act four** (section H, added 2026-09-05 by WP-95) is the dashboard: what the chain kept, the dish that sells and does not earn, and what one delivery did to both.
 Every reply quoted below is the exact template from `apps/api/src/faida_api/replies.py`, so if the phone shows different words, something is wrong.
 
 > **What gates and what only rehearses.** The staged menu in `supabase/demo_seed.sql` exists so act two can be practised today, on a laptop, without waiting on anything. It is **not** what the milestone closes on: M6's done-when ("one real menu loads in under a day of consultant time") and the demo gate both close on F7's real menu, loaded through `/menu/load`. Rehearse on the seed; gate on the real one.
@@ -43,7 +44,7 @@ Run through this list the day before, and again 30 minutes before going on.
       anywhere in our system.
 - [ ] The stage is reset (see section C for which file): `supabase/demo_seed.sql` on a practice database, `supabase/demo_reset_loop.sql` on the real stage. Never `demo_seed.sql` on the real stage - it deletes the loaded menu, and it now refuses to run when it sees one.
 - [ ] The founder phone is mapped to the demo chain: the commented UPDATE at the bottom of `supabase/demo_seed.sql` has been run once, so the sender resolves to Al Qusais Branch of Karak Al Khaleej Cafeterias.
-- [ ] Signed in on the demo laptop as the founder's account (Supabase Auth, email and password; sign-ups are off, accounts are created in the dashboard and given a `memberships` row), and the invoice list for the demo chain carries no rehearsal leftovers - on the practice stage that means empty; on the real stage it means only the KAS-1..4 preparation purchases and the chain's own real invoices, nothing from a previous run of the props (DEMO-1..3, KAS-5). The list hides dismissed rows by default, so open `/invoices?status=dismissed` as well: a dismissed leftover passes the eye test and still needs the reset.
+- [ ] Signed in on the demo laptop as the founder's account (Supabase Auth, email and password; sign-ups are off, accounts are created in the dashboard and given a `memberships` row). **A sign-in now lands on `/dashboard`, not on the invoice list** (WP-93), so click **Invoices** in the nav to run the rest of this check. The invoice list for the demo chain carries no rehearsal leftovers - on the practice stage that means empty; on the real stage it means only the KAS-1..4 preparation purchases and the chain's own real invoices, nothing from a previous run of the props (DEMO-1..3, KAS-5). The list hides dismissed rows by default, so open `/invoices?status=dismissed` as well: a dismissed leftover passes the eye test and still needs the reset.
 - [ ] The right papers are on the demo phone, first in the gallery: on the practice stage, the 3 curated invoice photos and the meme; on the real stage, **KAS-5** and the meme (KAS-1..4 were confirmed once during preparation and are not forwarded again - a re-forward trips the duplicate hold).
 - [x] **Act three's week is loaded and its layout saved** (added 2026-09-04, WP-85; the screen
       built 2026-09-05, WP-84; loaded once at the §C4 sitting, 2026-09-05 - done). On the real stage, `Docs/demo-invoices/koukh-al-shay/sales-week.csv`
@@ -442,9 +443,119 @@ If the screen disagrees: the week on the stage is not the committed file (re-upl
 
 **If asked where the sales came from, say it plainly: the demo's sales are invented; its purchases are not; the screen's honesty claim is about the second.** The week is a till export in the shape a pilot's till prints, generated from the real menu so the ratio sits where a cafeteria's does.
 
+Then go straight into **act four (section H)** in the same browser: the ratio says what went out, and the dashboard says what stayed.
+
 ### Act three preconditions
 
 - [ ] §A's week check: loaded, the layout saved, the three aliases taught, `/sales` at 30.3% for Al Qusais before act one.
 - [ ] `/sales` open in a third tab before going on, signed in.
 - [ ] Act one's KAS-5 confirm has happened in this reset cycle, or step 4 has nothing to move.
 - [ ] Run act three once immediately after act two in every rehearsal: the loop reset takes KAS-5 with it and the ratio goes back to 30.3% by itself.
+
+## H. Act four: the dashboard (added 2026-09-05, WP-95)
+
+Act three ends on a ratio - what went out to suppliers against what came in. Act four answers the question underneath it: *of what the chain took, how much did it keep, and which dish is eating it?*
+One screen, `/dashboard`, read straight after act three, in the same browser. It is one read: the sentence, the league, the items, the signals. Nothing on it is stored and nothing recomputes in the background.
+
+**Every figure quoted below is printed, not typed.** `Docs/demo-invoices/koukh-al-shay/act_four.py` stages the chain through the same doors a person uses - the menu through the loader, the four preparation papers through the typed-invoice door and the confirm, each pack mapped to its material, the committed week through `POST /api/sales/days`, one keystroke per till name - and then reads `GET /api/dashboard` and prints exactly what comes back:
+
+```bash
+apps/api/.venv/bin/python Docs/demo-invoices/koukh-al-shay/act_four.py --migrate \
+    --database-url postgresql://localhost:5432/faida_act_four --stage real
+```
+
+Two things about that script are worth knowing before you quote it on stage. It types the four preparation papers instead of photographing them, and a typed price is *asserted* (C8), which caps every plate at **estimated** - so the script's quality words are one notch below the real stage's, where the same papers were read from photographs and read *reliable with limitations*. **The money is identical**; only the word moves. And it stages a throwaway database, never the live one.
+
+**1. The one sentence (about 30 seconds).** Open `/dashboard`. (The tab was opened before act one, so it still shows the week before KAS-5 - that is what step 4 moves, exactly as it did on `/sales`.) Read the two lines above the table out loud:
+
+```
+Look at Al Nahda first: it keeps about AED 66 of every 100 it takes, the least of the three.
+Hot Chocolate - Large 250 ml sells more than any item that earns under the menu's average.
+```
+
+Say: "Act three told you where the money went out. This tells you what stayed - and it names the branch and the dish before you have read a single number."
+Point at the freshness line ("Sales loaded to Mon 31 Aug") and at "45 live items, 45 costed": the screen says what it is built on before it says anything else.
+
+**2. The league, with contribution beside the ratio (about 40 seconds).** The table, ordered by what each branch keeps, least first - **not** by the ratio, which is `/sales`' key:
+
+```
+Al Nahda    net sales 23,066.47   kept 15,028.97   65.7%   costed 100%   ratio    -
+Rolla       net sales 18,608.45   kept 12,148.63   65.8%   costed 100%   ratio    -
+Al Qusais   net sales 30,267.43   kept 19,843.16   66.0%   costed 100%   ratio 30.3%
+The chain   net sales 71,942.35   kept 47,020.76   65.8%   costed 100%   ratio 12.7%
+```
+
+Say: "This is contribution before overheads - ingredients and packaging out of what the till took. It is **not** net profit: rent, wages and electricity are not in it, and neither is waste, because nobody records waste yet and this screen does not invent it."
+Then point at Al Nahda and Rolla: "Those two have no invoices yet, so act three could not give them a ratio. They still have a contribution, because contribution needs sales and a costed menu, not papers. That is the same discipline in the other direction: it says what it knows."
+And be straight about the spread: the three branches sit within a third of a point of each other, because the demo's sales are invented from one distribution. On a real chain that column is where the differences show up.
+
+**3. The item that sells and does not earn (about 40 seconds).** The item panel, best five and worst five, expanding in place. Read the bottom of it:
+
+```
+Karak Delivery - Large 400 ml   kept   521.79   28.2%
+Lotus Cake - slice              kept   510.24   46.8%
+Honey Cake - slice              kept   483.53   41.6%
+Karak Delivery - Medium 250 ml  kept   353.46   22.8%
+Karak Delivery - Small 120 ml   kept   135.58   19.3%   on 492 cups and AED 702.86 of sales
+```
+
+Say: "The small delivery karak sold 492 cups this week and kept AED 136 of the AED 703 it took."
+Then open the row - the drill opens in place, the ranking never leaves the screen - and read the reason off it:
+
+```
+sold at an average of AED 1.429 net of VAT; AED 1.153 of ingredients and packaging; recipe version 1
+  Evaporated milk        47 ml   0.541     Condensed milk    10 g   0.199
+  Delivery cup S + lid    1 ea   0.230     Saffron         0.006 g  0.056
+  CTC black tea         3.3 g    0.056     Green cardamom   0.27 g  0.051
+  Cinnamon stick       0.09 g    0.008     White sugar         5 g   0.013
+```
+
+Say: "A 47 ml pour of evaporated milk and a 23-fils cup and lid, against a sale of AED 1.43 net of VAT. Nobody had that number before: the till knows what sold, the invoice knows what a lid costs, and nothing joined them."
+Every one of those component lines carries the invoice line its price came from - three clicks to a photograph of a piece of paper.
+
+**4. The reload, one layer up (about 25 seconds).** KAS-5 was confirmed in act one, and act three reloaded `/sales` to watch Al Qusais move from 30.3% to 39.3%. Act four is the same gesture one layer up. **Reload `/dashboard`.**
+
+```
+The chain   kept 47,020.76   65.8%      ->   kept 46,908.73   65.7%
+Al Qusais   kept 19,843.16   66.0%      ->   kept 19,796.71   65.8%   (and its ratio, 30.3% -> 39.3%)
+Karak Delivery - Small 120 ml  kept 135.58  19.3%   ->   kept 116.40  16.6%
+```
+
+Say: "One delivery, confirmed from a phone, moved what the whole chain kept by AED 112, moved every branch, and reordered the bottom of the item table. Nothing was stored and nothing recomputed in the background - the page was read again, and it derived the lot."
+Open the small delivery karak again to show where the AED 19 went: its evaporated milk line reads **0.541, bought 25 Aug** before the reload and **0.580, bought 31 Aug** after it. One line on one paper, on one plate, on 492 cups.
+
+**5. The milk move, in money (about 30 seconds).** The reload also put two new lines on the signals panel, which is ranked by the money at stake and capped at five:
+
+```
+1. Hot Chocolate - Large 250 ml sold AED 3,010 and kept 52.3%; the menu keeps 65.7%.
+   At the menu's average it would have contributed AED 403 more.
+2. Hot Chocolate - Small 150 ml sold AED 1,981 and kept 53.4%; the menu keeps 65.7%.
+   At the menu's average it would have contributed AED 244 more.
+3. Evaporated milk is up AED 0.83 per litre since 31 Aug.
+   AED 26 off contribution on the 211 portions sold since it landed, across 9 items.
+4. Milk powder is up AED 1.06 per kg since 31 Aug.
+   AED 1 off contribution on the 105 portions sold since it landed, across 2 items.
+```
+
+(Before the reload the panel held lines 1 and 2 only, at AED 406 and AED 246 - there was no move to compare.)
+
+Say: "The phone said milk powder is up. The menu screen said what that costs a cup. This says what it has cost the business since the delivery landed - and it ranks both milk moves **below** two dishes that quietly keep twelve and thirteen points less than the rest of the menu. A price alert is not the biggest thing happening to you."
+**The AED 26 and the AED 1 are small on purpose, and say why if asked:** KAS-5 is printed on 31 August, the last day of the week, so only that one day's cups were sold at the new price. The signal answers "what has this move cost since it landed", not "what would a week of it cost".
+
+> **Why the chain moved by AED 112 and the signals name AED 27.** They are answers to two different questions. The signals price the cups sold *after* the delivery landed; the column reprices the whole week, because a period is costed at one price per material - the latest in force on its last day (C12.4, PRD §19's policy, the same one `/menu` applies) - so a delivery on the last day reprices all seven days. **The two are never added.**
+
+**6. The founder's line, and it is not optional.** Close act four with it:
+
+> "The volumes here are invented - the till never exported a week for this chain, so we generated one. **The prices and the recipes are real**, and the papers are real. So read the shape and the discipline, not the headline: a real chain's contribution figure is its own."
+
+`build_sales_week.py` generates the week at `VOLUME = 0.49`, which is what makes Al Qusais's ratio land in a plausible band - and it is the one constant that would move every figure on this screen.
+
+> **The plate on this screen equals `/menu`'s only while no confirmed paper is dated after 31 Aug.** The dashboard costs the week at the prices in force on the week's last day; `/menu` always costs at today's. They agree today because KAS-5 is printed **on** 31 August and nothing is printed after it. Confirm a paper dated 1 September and they part company: the item row then carries today's cost beside its own and says which is which, with a "See today's plate" link. Never promise on stage that the two screens agree - say that they agree *today, and the row will tell you the day they stop*.
+
+### Act four preconditions
+
+- [ ] Act three has just run, in the same browser, with KAS-5 confirmed in this reset cycle - or step 4 has nothing to move and step 5's panel never gains its milk moves.
+- [ ] `/dashboard` open in a fourth tab **before act one**, signed in, and not reloaded since - the reload in step 4 is the whole beat. A sign-in lands there now (§A).
+- [ ] The whole week's till names are mapped and `DELIVERY CHARGE` is marked "not a menu item" (§C4 step 6), or the coverage line reads under 100% and the league's `costed` column says so.
+- [ ] Run `act_four.py --stage real` once before a rehearsal week and read its figures against the screen. If they disagree, the stage is not the committed week and the papers are not KAS-1..5.
+- [ ] **On the practice stage act four is a walk-through, not the script.** `demo_seed.sql`'s five items are all tea, every one keeps between 81% and 86%, and the seed's own price history moves nothing by 5% - so no dish is ten points below the average, no branch is five points below the chain, and **the signals panel is empty**, correctly. `act_four.py --stage practice` prints exactly that, and `tests/test_demo_seed.py` pins it. Rehearse the sentence, the league and the item panel there; gate act four on the real stage.
