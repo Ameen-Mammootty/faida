@@ -48,6 +48,7 @@ from .conftest import (
     FakeStorage,
     requires_db,
     wa_image_payload,
+    wa_text_payload,
 )
 
 pytestmark = requires_db
@@ -672,3 +673,137 @@ async def test_another_suppliers_same_number_is_not_held(api, db):
     assert "Note:" not in reply
     statuses = await db.pool.fetch("select status from invoices")
     assert [row["status"] for row in statuses] == ["awaiting_confirm", "awaiting_confirm"]
+
+
+# -- the supplier word check, end to end (2026-09-05 eng review) --------------
+
+
+async def test_a_lookalike_supplier_name_with_an_extra_word_is_a_new_supplier(api, db):
+    """The founder's question, walked the way a cafeteria would: "Gulf Foods
+    Trading L.L.C." is in the catalog and a new vendor prints "Gulf Foods ABC
+    Trading LLC". On characters alone the two score over the bar and the new
+    vendor's milk went into Gulf Foods' price history for good. Now the
+    extra word refuses the match: nothing snaps, no alert fires, the OK from
+    the phone creates the vendor's own row and leaves Gulf Foods untouched,
+    and the vendor's second paper books under that row and snaps to the
+    items its first paper created."""
+    app, client, fake_meta, _ = api
+    _, item_ids = await seed_supplier_with_items(
+        db,
+        [
+            {
+                "canonical_name": "Milk Powder 2.5kg",
+                "unit": "sack",
+                "pack_size": "2.5kg",
+                "last_price": Decimal("50.50"),
+            }
+        ],
+    )
+    paper = good_invoice().model_copy(update={"supplier_name": "Gulf Foods ABC Trading LLC"})
+    provider = FakeExtraction(result=invoice_result(paper))
+
+    await post_webhook(client, wa_image_payload())
+    await drain_jobs(db, app, provider)
+
+    doc = await db.get_document_by_wa_message("wamid.in1")
+    invoice = await db.get_invoice_by_document(str(doc["id"]), tenant_id=DEMO_TENANT_ID)
+    assert invoice["supplier_id"] is None
+    lines = await db.pool.fetch(
+        "select * from invoice_lines where invoice_id = $1 order by position", invoice["id"]
+    )
+    # Snapping never ran (no supplier), so no line could have raised an alert
+    # against Gulf Foods' 50.50, and the read stays green.
+    assert [line["supplier_item_id"] for line in lines] == [None, None]
+    assert [line["checks"]["snapped"] for line in lines] == [None, None]
+    assert invoice["confidence"]["lines"] == ["green", "green"]
+
+    await post_webhook(client, wa_text_payload("OK", message_id="wamid.ok1"))
+    await drain_jobs(db, app, provider)
+
+    names = [row["name"] for row in await db.pool.fetch("select name from suppliers order by name")]
+    assert names == ["Gulf Foods ABC Trading LLC", "Gulf Foods Trading L.L.C."]
+    milk = await db.pool.fetchrow(
+        "select last_price, prev_price from supplier_items where id = $1",
+        item_ids["Milk Powder 2.5kg"],
+    )
+    assert (milk["last_price"], milk["prev_price"]) == (Decimal("50.50"), None)
+    new_supplier_id = await db.pool.fetchval(
+        "select id from suppliers where name = 'Gulf Foods ABC Trading LLC'"
+    )
+
+    # The vendor's second paper, a different photo: its own row, its own items.
+    fake_meta.media_bytes = b"\xff\xd8second-paper-bytes"
+    provider.result = invoice_result(
+        paper.model_copy(
+            update={"invoice_no": "INV-1042", "invoice_date": datetime.date(2026, 8, 21)}
+        )
+    )
+    await post_webhook(client, wa_image_payload(message_id="wamid.in2"))
+    await drain_jobs(db, app, provider)
+
+    doc2 = await db.get_document_by_wa_message("wamid.in2")
+    invoice2 = await db.get_invoice_by_document(str(doc2["id"]), tenant_id=DEMO_TENANT_ID)
+    assert invoice2["supplier_id"] == new_supplier_id
+    lines2 = await db.pool.fetch(
+        "select * from invoice_lines where invoice_id = $1 order by position", invoice2["id"]
+    )
+    own_items = await db.pool.fetch(
+        "select id from supplier_items where supplier_id = $1", new_supplier_id
+    )
+    assert lines2[0]["supplier_item_id"] in {row["id"] for row in own_items}
+    assert lines2[0]["checks"]["snapped"] is True
+
+
+async def test_two_papers_from_a_new_vendor_read_together_become_one_supplier(api, db):
+    """D21: two papers from a vendor the catalog has never seen arrive before
+    either is confirmed, printed two ways ("Al Madina ABC LLC", "AL MADINA
+    ABC L.L.C."). Neither finds a supplier at extraction - the row does not
+    exist yet - and `unique (tenant_id, name)` would have let the two confirms
+    create two suppliers with split price history. Confirm matches again
+    against the catalog as it stands, so the second paper attaches to the row
+    the first created, and its trail entry says so."""
+    app, client, fake_meta, _ = api
+    first = good_invoice().model_copy(update={"supplier_name": "Al Madina ABC LLC"})
+    second = good_invoice().model_copy(
+        update={
+            "supplier_name": "AL MADINA ABC L.L.C.",
+            "invoice_no": "INV-2000",
+            "invoice_date": datetime.date(2026, 8, 21),
+        }
+    )
+    provider = FakeExtraction(result=invoice_result(first))
+    await post_webhook(client, wa_image_payload())
+    await drain_jobs(db, app, provider)
+    fake_meta.media_bytes = b"\xff\xd8second-paper-bytes"
+    provider.result = invoice_result(second)
+    await post_webhook(client, wa_image_payload(message_id="wamid.in2"))
+    await drain_jobs(db, app, provider)
+
+    first_row = await db.get_invoice_by_document(
+        str((await db.get_document_by_wa_message("wamid.in1"))["id"]), tenant_id=DEMO_TENANT_ID
+    )
+    second_row = await db.get_invoice_by_document(
+        str((await db.get_document_by_wa_message("wamid.in2"))["id"]), tenant_id=DEMO_TENANT_ID
+    )
+    assert (first_row["supplier_id"], second_row["supplier_id"]) == (None, None)
+
+    actor = f"whatsapp:{DEMO_PHONE}"
+    assert await db.confirm_invoice(str(first_row["id"]), tenant_id=DEMO_TENANT_ID, actor=actor)
+    assert await db.confirm_invoice(str(second_row["id"]), tenant_id=DEMO_TENANT_ID, actor=actor)
+
+    suppliers = await db.pool.fetch("select id, name from suppliers")
+    assert [row["name"] for row in suppliers] == ["Al Madina ABC LLC"]
+    owners = await db.pool.fetch("select supplier_id from invoices order by created_at")
+    assert {row["supplier_id"] for row in owners} == {suppliers[0]["id"]}
+    audit = await db.pool.fetchrow(
+        "select detail from audit_events where subject_id = $1 and action = 'invoice.confirmed'",
+        second_row["id"],
+    )
+    assert audit["detail"]["supplier_attached_at_confirm"] == {
+        "supplier_id": str(suppliers[0]["id"]),
+        "name": "Al Madina ABC LLC",
+    }
+    # One catalog, one price history: the milk line of both papers is one item
+    # with two observations.
+    assert await db.pool.fetchval("select count(*) from supplier_items") == 2
+    assert await db.pool.fetchval("select count(*) from supplier_item_prices") == 4
