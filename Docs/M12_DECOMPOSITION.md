@@ -1,9 +1,9 @@
 # M12 decomposition - theoretical usage vs purchases (drafted 2026-09-05)
 
-Status: **drafted 2026-09-05, reviewed once the same day by one outside voice (Codex at medium reasoning against the file path: 16 findings, 12 folded, 4 kept with reasons), and awaiting the founder's answers to §5.**
+Status: **drafted 2026-09-05, reviewed the same day by one outside voice (Codex at medium reasoning against the file path: 16 findings, 12 folded, 4 kept with reasons), and approved to build by the founder that evening, every §5 proposal decided as recommended; Wave 0 done.**
 The report is at the end of this file.
 Two of Codex's findings corrected outright errors in the draft and two reversed its own recommendations, all named in the report; M8 and M9 each had this review before the founder decided, and then the founder's sitting.
-Nothing in §4 is approved to build.
+The rows in §4 are now the rows in `plan.md` §7.3, approved to build; C14 and the block are pinned in §7.2; the build starts on the plan's trigger (P7).
 M12 entered the plan on 2026-09-05 by the founder's call after a question about how inventory is handled; the customer sentence §2 rule 8 asks for was the gate on Wave 0 (Codex 6), and **the founder opened it the same evening by amending the rule for M12 alone** (`plan.md` §2 rule 8, Decision Log 2026-09-05), with the first pilot's words still to be added to the row when they come. Wave 0 now waits only on the §5 answers.
 `plan.md` §8 names the trigger to build as the pilot's till file showing a quantity column.
 
@@ -277,6 +277,8 @@ No wireframe board yet; this is one recommended direction, calibrated against th
 
 ## 5. Proposals for the founder (each with a recommendation)
 
+**Every proposal below was decided by the founder on 2026-09-05, as recommended, at the sitting that followed the Codex review; the rule 8 gate was opened at the same sitting. The rows keep the reasoning; each recommendation is now the decision, and `plan.md`'s Decision Log carries one row per proposal.**
+
 | # | Proposal | Recommendation and why |
 |---|---|---|
 | P1 | **Where it lives.** (a) A `usage` block on `GET /api/dashboard` and a new panel on `/dashboard`; (b) the material's row on `/materials` gaining a period picker, a branch filter and a second read - the direction `plan.md` §8 named before this decomposition; (c) a new `/usage` route and screen | **(a), the dashboard.** Five of C14's six inputs are already in the dashboard read's memory - the windows, the costed menu with its components and as-of prices, the item sales with their portions - and the sixth is one query; the period, the branch filter and the picker are already on the screen; and the question is the owner's, which is the dashboard's reader. (b) would put an owner's period question on the consultant's screen, give that screen a period it has never had, and resolve the period and build `_menu_context` a second time for figures that must agree with the panel above them. (c) is a sixth nav word at 390 px, which the shell already cannot fit (`AppShell.tsx:44-47`), for a screen whose every input is the dashboard's. The cost of (a) is a longer dashboard and a larger payload - the drill lines ride on it - and §4.1 puts the panel last with its own heading so the five-second read is unchanged, while C14.4 names the size trigger and the drill route it would split to |
@@ -420,7 +422,7 @@ Synthesized from this decomposition and its review. Each task derives from a spe
 |--------|---------|-----|------|--------|----------|
 | CEO Review | `/plan-ceo-review` | Scope & strategy | 0 | - | not run: the milestone entered the plan by the founder's call on 2026-09-05, and the founder amended §2 rule 8 for it the same evening (Codex 6, P7) |
 | Codex Review | `/codex review` | Independent 2nd opinion | 1 | issues_found (folded) | 16 findings (6 blockers, 9 should-fix, 1 nit): 12 folded, 4 kept with reasons; two reversed the draft's own recommendations (P2, P6) |
-| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 0 | - | not yet run; the founder's sitting with §5 is the next step, as it was for M9's second review |
+| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 0 | - | not run as a separate sitting: the founder decided §5 on 2026-09-05 straight after the Codex review; whether a sitting and a board run before Wave 1 remains the founder's call |
 | Design Review | `/plan-design-review` | UI/UX gaps | 0 | - | no board; §4.1 is one recommended direction and a review before WP-122 is the founder's call |
 | DX Review | `/plan-devex-review` | Developer experience gaps | 0 | - | - |
 
@@ -455,14 +457,7 @@ Every finding was verified against the code before its disposition; the disposit
 
 **One process note:** the reviewer opened its own installed plan-review rubric before reading the repository; every finding above cites the repository and was verified there.
 
+**DECISIONS (the founder, 2026-09-05, after the Codex review):** P1 the dashboard block and panel; P2 measurement at read time by `costing.resolve_pack`; P3 no fourth signal; P4 recipe coverage as its own share from the raw rows; P5 absolute money, the answer waiting for a material bought twice; P6 the panel's own purchase word, `ratio.py` untouched; P7 the plan's trigger; P8 days of use deferred; P9 refunds counted as made and named; and §2 rule 8 amended for M12 alone.
+
 **UNRESOLVED DECISIONS:**
-- P1 the home (recommended: the dashboard block and panel)
-- P2 how a line is measured (recommended: `costing.resolve_pack` at read time, reversed from the draft)
-- P3 a fourth signal (recommended: none)
-- P4 recipe coverage as a third share (recommended: yes, from the raw rows)
-- P5 the ranking and the two-purchase rule for the answer (recommended: absolute money; the answer waits for a rate)
-- P6 where the purchase-side word comes from (recommended: `usage.py`'s own, reversed from the draft)
-- P7 when to build (recommended: the plan's trigger; the rule 8 gate is open)
-- P8 days of use (recommended: defer)
-- P9 refunds on the used side (recommended: counted as made and named)
-- Whether a `/plan-eng-review` sitting and a `/plan-design-review` board run before Wave 1, as they did for M9
+- Whether a `/plan-eng-review` sitting and a `/plan-design-review` board run before Wave 1, as they did for M9 - the founder's call, not a default

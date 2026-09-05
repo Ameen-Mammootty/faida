@@ -336,6 +336,10 @@ history (PRD §14).
 **Priority:** P3
 **Depends on:** M8 shipped. Trigger: the first transaction-level sales source.
 
+**Since M12 (2026-09-05):** the usage panel inherits the rule as every other screen does - an undated paper
+confirmed after midnight in Dubai lands on the previous UTC `purchased_on` - and names the case rather than
+changing a rule five screens share (M12 §9; the review's finding 12). Fixing it is this entry's work.
+
 ### Excel parsing in the loaders
 
 **What:** Read `.xlsx` in the browser (one library, the first sheet, the same header rules) so a till
@@ -612,6 +616,11 @@ branch bought it, which is right for central buying and a stated limit otherwise
 **Depends on:** WP-90. Trigger: a chain whose branches buy the same material at different prices asks why
 the league does not show it.
 
+**Since M12 (2026-09-05):** the same entry covers a per-branch valuation date. A usage row's money is the gap at
+the tenant's price on the period's end for every branch, C12.4's rule across clipped windows, so a delivery
+dated between a branch's window end and the period's end reprices that branch's gap; the row names the date
+(M12 C14.7; the review's finding 11). A second trigger: a chain whose branches' windows routinely end days apart.
+
 ### An index on the sales tables
 
 **What:** The first index beyond the uniques on `sales_lines` and `sales_daily`, in a 0020.
@@ -665,8 +674,9 @@ change, so it is the founder's call (the 2026-08-30 design review pinned the rou
 
 ## Theoretical usage vs purchases (deferred by the M12 decomposition, 2026-09-05)
 
-M12 was decomposed in `Docs/M12_DECOMPOSITION.md` on 2026-09-05 and reviewed the same evening by one
-outside voice (Codex, 16 findings, 12 folded); the founder decides its §5 before a line is coded. The entries below are what the decomposition consciously
+M12 was decomposed in `Docs/M12_DECOMPOSITION.md` on 2026-09-05, reviewed the same evening by one
+outside voice (Codex, 16 findings, 12 folded), and approved to build that evening, the founder deciding
+every §5 proposal as recommended. The entries below are what the decomposition consciously
 left out, each with the trigger that brings it back and the decision it hangs on where there is one.
 
 ### Stock on hand, counts, and a count sheet through WhatsApp
