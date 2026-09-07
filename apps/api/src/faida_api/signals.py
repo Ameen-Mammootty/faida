@@ -100,7 +100,8 @@ MAX_SIGNALS = 5
 
 #: How many other plates the "plates" clause names before it counts the rest.
 #: `/menu`'s own `ALSO_NAMED`, one layer up: a comma-run of nine items read as
-#: three lines of grey, and the whole list lives on `/materials` anyway.
+#: three lines of grey, and the whole list lives on `/materials` anyway. Only
+#: plates that moved a whole fil are eligible to be named (`_sub_fil`).
 MOVE_ALSO_NAMED = 3
 
 KIND_POPULAR_LOW_MARGIN = "popular_low_margin"
@@ -414,6 +415,27 @@ def _plate_figure(impact: Decimal) -> str:
     return str((-impact).quantize(FILS, rounding=ROUND_DOWN))
 
 
+def _sub_fil(impact: Decimal) -> bool:
+    """True when `_plate_figure` would print "-0.00" or "0.00": at the fils
+    precision both screens show, this plate did not move.
+
+    Naming it costs a reader a name and a bracket and tells them nothing -
+    "also Sulaimani (-0.00)" is a row of grey saying the item exists. It is
+    still counted in the tail, so the number of plates the move touched
+    stays true."""
+    return abs(impact).quantize(FILS, rounding=ROUND_DOWN) == 0
+
+
+def _stop(sentence: str) -> str:
+    """A sentence closed with exactly one full stop.
+
+    A supplier or product name may end in one of its own ("Gulf Foods Trading
+    L.L.C."), and when it ends the sentence the stop is already there;
+    appending a second gives "L.L.C..", which reads as a typo in the owner's
+    own supplier list. Every sentence this module composes is closed here."""
+    return sentence if sentence.endswith(".") else f"{sentence}."
+
+
 def move_plates(move: "PriceMove", *, currency: str = DEFAULT_CURRENCY) -> str | None:
     """Which plates felt it, named and counted, with no action verb: each
     screen keeps its own action line ("check the price or the recipe" on
@@ -422,6 +444,10 @@ def move_plates(move: "PriceMove", *, currency: str = DEFAULT_CURRENCY) -> str |
     None when no costed item uses the material, and for a basis change, whose
     items are empty by construction - there is nothing to attribute across a
     pack change.
+
+    Behind the lead, a plate is named only when its figure would print at all
+    (`_sub_fil`); a plate the move did not move by a whole fil is counted in
+    the tail instead of being named beside "(-0.00)".
     """
     if not move.items:
         return None
@@ -431,15 +457,20 @@ def move_plates(move: "PriceMove", *, currency: str = DEFAULT_CURRENCY) -> str |
         f"{top.name} earns {_plate_words(abs(top.impact_per_portion), currency)} "
         f"{'less' if up else 'more'} a portion"
     )
-    named = [f"{item.name} ({_plate_figure(item.impact_per_portion)})" for item in rest]
-    counted = named[MOVE_ALSO_NAMED:]
-    named = named[:MOVE_ALSO_NAMED]
+    # The lead is the largest impact and always keeps its figure, even when it
+    # is itself under a fil: dropping it would leave a move with nothing said
+    # about any plate. Behind it, only the plates that moved a fil are named;
+    # the rest join the tail, so the count is still every plate the move
+    # touched and no bracket says "(-0.00)".
+    movers = [item for item in rest if not _sub_fil(item.impact_per_portion)][:MOVE_ALSO_NAMED]
+    named = [f"{item.name} ({_plate_figure(item.impact_per_portion)})" for item in movers]
+    counted = len(rest) - len(named)
     if counted:
-        named.append(f"{len(counted)} more")
+        named.append(f"{counted} more")
     if not named:
-        return f"{lead}."
+        return _stop(lead)
     listed = named[0] if len(named) == 1 else f"{', '.join(named[:-1])} and {named[-1]}"
-    return f"{lead}; also {listed}."
+    return _stop(f"{lead}; also {listed}")
 
 
 def move_sentence(move: "PriceMove", *, period: Period, currency: str = DEFAULT_CURRENCY) -> str:
@@ -448,9 +479,9 @@ def move_sentence(move: "PriceMove", *, period: Period, currency: str = DEFAULT_
     and a move whose baseline is older than the window names that date instead
     of thresholding it - a recency cutoff would be an invented number."""
     if move.kind == "basis_changed":
-        return (
+        return _stop(
             f"{move.ingredient_name} is priced from a different pack now, so there is "
-            "no before and after to show."
+            "no before and after to show"
         )
     up = (move.delta_per_base_unit or Decimal(0)) > 0
     rise = _price_words(abs(move.delta_per_display_unit or Decimal(0)), currency)
@@ -463,7 +494,7 @@ def move_sentence(move: "PriceMove", *, period: Period, currency: str = DEFAULT_
     previous_on = move.previous.purchased_on
     if previous_on is not None and previous_on < period.start:
         sentence += f", against its last purchase on {_short_date(previous_on)}"
-    return sentence + "."
+    return _stop(sentence)
 
 
 def move_evidence(
@@ -475,22 +506,24 @@ def move_evidence(
     calling both "at stake" would read as a bill. A basis change names both
     packs instead - that is the whole evidence it has."""
     if move.kind == "basis_changed":
-        return (
+        # The sentence ends on a supplier name, which is exactly where a name
+        # carrying its own full stop would double it.
+        return _stop(
             f"Now {move.current.product_name} from {move.current.supplier_name}, "
-            f"was {move.previous.product_name} from {move.previous.supplier_name}."
+            f"was {move.previous.product_name} from {move.previous.supplier_name}"
         )
     was = (
         f"was {_price_words(move.previous.per_display_unit, currency)} "
         f"{_per_unit_words(move.previous.display_unit)}"
     )
     if weighing is None or weighing.portions <= 0:
-        return f"{was} · no sales of items using it since it landed."
+        return _stop(f"{was} · no sales of items using it since it landed")
     verb = "saved" if weighing.money_at_stake < 0 else "at stake"
     moved_on = move.current.purchased_on
     since = "since it landed" if moved_on is None else f"since {_short_date(moved_on)}"
-    return (
+    return _stop(
         f"{was} · {_money_words(abs(weighing.money_at_stake), currency)} {verb} on the "
-        f"{_portions_words(weighing.portions)} portions sold {since}."
+        f"{_portions_words(weighing.portions)} portions sold {since}"
     )
 
 
