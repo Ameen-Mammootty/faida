@@ -20,7 +20,7 @@ from faida_api.api import UPLOAD_MAX_BYTES
 from faida_api.api import router as api_router
 from faida_api.config import Settings
 from faida_api.confirm import handle_inbound_text
-from faida_api.replies import compose_cash_approved_notice
+from faida_api.replies import Reply, compose_cash_approved_notice
 from faida_api.storage import Storage
 from faida_api.wa import WhatsAppClient
 from faida_api.webhook import router as webhook_router
@@ -496,17 +496,20 @@ async def test_approve_tells_the_phone_that_forwarded_the_paper_once_it_is_recor
     assert len(new_messages) == 1
     assert new_messages[0]["to"] == DEMO_PHONE
     assert new_messages[0]["text"]["body"] == (
-        "Recorded: Gulf Foods Trading LLC INV-1041, approved by the owner."
+        "✅ Recorded\n*Gulf Foods Trading LLC* INV-1041, approved by the owner."
     )
     assert new_messages[0]["text"]["body"] == compose_cash_approved_notice(
         "Gulf Foods Trading LLC", "INV-1041"
     )
+    # WP-125: the notice quotes the photo it is about.
+    assert new_messages[0]["context"] == {"message_id": "wamid.in1"}
     # The notice is on the record as an outbound message, after the audit row.
     outbound = await db.pool.fetchrow(
         "select payload, created_at from wa_messages where direction = 'out' "
         "order by id desc limit 1"
     )
     assert outbound["payload"]["text"] == new_messages[0]["text"]["body"]
+    assert outbound["payload"]["context"] == {"message_id": "wamid.in1"}
     events = await db.audit_events_for_subject(
         "invoice", str(invoice["id"]), tenant_id=DEMO_TENANT_ID
     )
@@ -1275,7 +1278,7 @@ async def test_wp28_screen_confirm_of_a_foreign_invoice_leaves_price_memory_alon
     assert await db.pool.fetchval("select count(*) from supplier_items") == 0
 
 
-async def apply_chat_correction(db, text: str) -> str:
+async def apply_chat_correction(db, text: str) -> Reply:
     """One chat correction through its own front door, so a screen test can set
     up state the chat grammar owns (WP-26's reconstruction)."""
     return await handle_inbound_text(db, DEMO_PHONE, text, datetime.datetime.now(datetime.UTC))

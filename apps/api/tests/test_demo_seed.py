@@ -26,7 +26,7 @@ from faida_api import costing, plates, takings
 from faida_api.extraction.pipeline import price_alerts
 from faida_api.extraction.schema import ExtractedInvoice, ExtractedLine
 from faida_api.matching import match_supplier, snap_item
-from faida_api.replies import render_price_alert
+from faida_api.replies import ICON_DOWN, ICON_UP, render_price_alert
 from faida_api.sales import router as sales_router
 from faida_api.storage import Storage
 
@@ -139,8 +139,8 @@ async def test_staged_state_snaps_and_fires_the_demo_alerts(db):
     )
     alerts = price_alerts(invoice, [milk_snap, karak_snap])
     assert [render_price_alert(a) for a in alerts] == [
-        "Milk Powder 2.5kg up AED 4.00 (50.50 to 54.50) since your last purchase.",
-        "Karak Tea Dust down AED 3.25 (22.00 to 18.75) since your last purchase.",
+        f"{ICON_UP} Milk Powder 2.5kg up AED 4.00 (50.50 to 54.50, +7.9%)",
+        f"{ICON_DOWN} Karak Tea Dust down AED 3.25 (22.00 to 18.75, -14.8%)",
     ]
 
     # Three weeks of history: 3 observations per item, oldest ~21 days back,
@@ -259,7 +259,7 @@ async def test_reapply_resets_a_rehearsal_and_spares_other_tenants(db):
         CHAIN_TENANT_ID,
         stray_supplier,
     )
-    await db.record_outbound_message("wamid.demo.out1", DEMO_HANDSET, "Reply OK to confirm.")
+    await db.record_outbound_message("wamid.demo.out1", DEMO_HANDSET, "Reply *OK* to confirm.")
 
     # --- canary: seed.sql's original demo tenant gets rows of every kind ------
     await db.record_inbound_message("wamid.keep1", "971500000000", "image", {"type": "image"})
@@ -763,7 +763,7 @@ async def _forward_and_confirm_a_prop(
         CHAIN_TENANT_ID,
         invoice_id,
     )
-    await db.record_outbound_message("out-" + wamid, DEMO_HANDSET, "Reply OK to confirm.")
+    await db.record_outbound_message("out-" + wamid, DEMO_HANDSET, "Reply *OK* to confirm.")
     return {"document": str(doc_id), "invoice": str(invoice_id)}
 
 

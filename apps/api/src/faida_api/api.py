@@ -728,8 +728,9 @@ async def _tell_the_phone_it_is_recorded(request: Request, invoice, ctx: AuthCon
         if not to_phone:
             return
         body = compose_cash_approved_notice(invoice["supplier_name"], invoice["invoice_no"])
-        out_id = await request.app.state.wa.send_text(to_phone, body)
-        await db.record_outbound_message(out_id, to_phone, body)
+        photo = document["wa_message_id"]
+        out_id = await request.app.state.wa.send_text(to_phone, body, reply_to=photo)
+        await db.record_outbound_message(out_id, to_phone, body, reply_to=photo)
     except Exception:
         logger.exception(
             "approval notice for invoice %s failed; the approval stands and is not retried",

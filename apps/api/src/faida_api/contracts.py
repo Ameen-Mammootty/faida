@@ -57,6 +57,10 @@ class JobKind(StrEnum):
 # ignore the phone is recorded whether or not Meta ever delivered the reply,
 # and the 24 h silence is derived from rows carrying it.
 WA_STATUS_IGNORED_UNKNOWN_SENDER = "ignored_unknown_sender"
+# wa_messages.status for an inbound reaction (a thumbs-up on one of our
+# replies). A reaction is a receipt, not a message: stamped so the log says
+# why nothing happened, and never answered - not even for an unknown phone.
+WA_STATUS_IGNORED_REACTION = "ignored_reaction"
 
 
 class JobRefused(RuntimeError):

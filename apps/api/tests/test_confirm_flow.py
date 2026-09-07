@@ -33,7 +33,6 @@ from faida_api.confirm import (
     SupplierEdit,
     SupplierNameEdit,
     TotalsEdit,
-    _with_booked_under,
     apply_edits,
     edited_field_keys,
     parse_reply,
@@ -43,9 +42,15 @@ from faida_api.confirm import (
 from faida_api.contracts import InvoiceStatus
 from faida_api.db import Database
 from faida_api.extraction.schema import ExtractedInvoice, ExtractedLine, LineKind
-from faida_api.matching import match_supplier, normalize
+from faida_api.matching import filed_under, match_supplier, normalize
 from faida_api.replies import (
     CASH_HOLD_NOTE,
+    CHECK_HEADING,
+    CLOSING_ALL_GREEN,
+    CLOSING_TOTAL_NEEDED,
+    CLOSING_WITH_AMBERS,
+    ICON_UP,
+    PRICE_MOVES_HEADING,
     QUESTION_MISSING_DATE,
     QUESTION_MISSING_INVOICE_NO,
     REPLY_CASH_HOLD_OK,
@@ -370,9 +375,35 @@ def madina_invoice() -> ExtractedInvoice:
 
 
 ACK_GULF = (
-    "Confirmed - Gulf Foods Trading LLC, AED 745.76 recorded. I'll watch these prices for you."
+    "✅ Confirmed\n*Gulf Foods Trading LLC*, AED 745.76 recorded.\nI'll watch these prices for you."
 )
-ACK_MADINA = "Confirmed - Al Madina Trading, AED 120.00 recorded. I'll watch these prices for you."
+ACK_MADINA = (
+    "✅ Confirmed\n*Al Madina Trading*, AED 120.00 recorded.\nI'll watch these prices for you."
+)
+
+
+def read_it(
+    total: str | None = "745.76", currency: str = "AED", *, booked_under: str | None = None
+) -> str:
+    """The header block of good_invoice()'s read-out (WP-125)."""
+    lines = [
+        "✅ Read it",
+        "*Gulf Foods Trading LLC*",
+        "Invoice INV-1041 · 20 Aug 2026 · 2 lines",
+        "Total unreadable" if total is None else f"Total *{currency} {total}*",
+    ]
+    if booked_under is not None:
+        lines.append(f"_Booked under {booked_under}_")
+    return "\n".join(lines)
+
+
+async def quoted_photos(db) -> list[str | None]:
+    """Per outbound reply, the message it was sent as a quoted reply to."""
+    rows = await db.pool.fetch(
+        "select payload->'context'->>'message_id' as photo from wa_messages "
+        "where direction = 'out' order by id"
+    )
+    return [row["photo"] for row in rows]
 
 
 # --- e2e: confirm -----------------------------------------------------------
@@ -404,8 +435,9 @@ async def test_full_confirm_flow_records_prices_and_acks(api, db):
     assert [row["price"] for row in prices] == [Decimal("18.75"), Decimal("54.50")]
     assert all(row["invoice_id"] == invoice["id"] for row in prices)
 
-    # The receipt moment: supplier and total in the ack.
+    # The receipt moment: supplier and total in the ack, quoting the photo.
     assert (await outbound_bodies(db))[-1] == ACK_GULF
+    assert (await quoted_photos(db))[-1] == "wamid.in1"
 
 
 @requires_db
@@ -416,19 +448,17 @@ async def test_correction_rereplies_then_ok_confirms_the_corrected_values(api, d
     await post_webhook(client, wa_image_payload())
     await drain_jobs(db, app, FakeExtraction(result=invoice_result(misread)))
 
-    assert (
-        "Line 1: the math doesn't add up (2 x 54.50 = 109.00 but the line says 654.00) "
-        "- which is right?"
-    ) in (await outbound_bodies(db))[-1]
+    assert ("- *Line 1*: 2 x 54.50 = 109.00 but the line says 654.00. Which is right?") in (
+        await outbound_bodies(db)
+    )[-1].splitlines()
 
     await post_webhook(client, wa_text_payload("line 1 qty 12", message_id="wamid.fix1"))
     await drain_jobs(db, app, None)
 
-    # The re-reply is the composed reply of the corrected, now all-green state.
-    assert (await outbound_bodies(db))[-1] == (
-        "Read it: Gulf Foods Trading LLC, 2 lines, total AED 745.76, dated 20 Aug 2026.\n"
-        "Reply OK to confirm."
-    )
+    # The re-reply is the composed reply of the corrected, now all-green
+    # state, quoting the photo the correction was about.
+    assert (await outbound_bodies(db))[-1] == f"{read_it()}\n\n{CLOSING_ALL_GREEN}"
+    assert (await quoted_photos(db))[-1] == "wamid.in1"
     doc = await db.get_document_by_wa_message("wamid.in1")
     invoice = await db.get_invoice_by_document(str(doc["id"]), tenant_id=DEMO_TENANT_ID)
     assert invoice["status"] == "awaiting_confirm"  # corrections never confirm
@@ -477,6 +507,7 @@ async def test_ok_with_nothing_pending_gets_onboarding(api, db):
     await post_webhook(client, wa_text_payload("OK"))
     await drain_jobs(db, app, None)
     assert await outbound_bodies(db) == [REPLY_TEXT_ONBOARDING]
+    assert await quoted_photos(db) == [None]  # about no paper, so it quotes none
 
 
 @requires_db
@@ -496,6 +527,7 @@ async def test_ok_on_a_cash_hold_never_confirms_and_says_why(api, db):
 
     assert (await outbound_bodies(db))[-1] == REPLY_CASH_HOLD_OK
     assert REPLY_CASH_HOLD_OK.startswith(CASH_HOLD_NOTE)
+    assert (await quoted_photos(db))[-1] == "wamid.in1"
     doc = await db.get_document_by_wa_message("wamid.in1")
     invoice = await db.get_invoice_by_document(str(doc["id"]), tenant_id=DEMO_TENANT_ID)
     assert invoice["status"] == "needs_review"
@@ -519,10 +551,7 @@ async def test_payment_credit_from_chat_lifts_a_cash_hold(api, db):
     await post_webhook(client, wa_text_payload("payment credit", message_id="wamid.fix1"))
     await drain_jobs(db, app, None)
 
-    assert (await outbound_bodies(db))[-1] == (
-        "Read it: Gulf Foods Trading LLC, 2 lines, total AED 745.76, dated 20 Aug 2026.\n"
-        "Reply OK to confirm."
-    )
+    assert (await outbound_bodies(db))[-1] == f"{read_it()}\n\n{CLOSING_ALL_GREEN}"
     doc = await db.get_document_by_wa_message("wamid.in1")
     invoice = await db.get_invoice_by_document(str(doc["id"]), tenant_id=DEMO_TENANT_ID)
     assert invoice["status"] == "awaiting_confirm"
@@ -561,10 +590,7 @@ async def test_payment_cash_from_chat_holds_an_awaiting_paper(api, db):
     await post_webhook(client, wa_text_payload("paid cash", message_id="wamid.fix1"))
     await drain_jobs(db, app, None)
 
-    assert (await outbound_bodies(db))[-1] == (
-        "Read it: Gulf Foods Trading LLC, 2 lines, total AED 745.76, dated 20 Aug 2026.\n"
-        + CASH_HOLD_NOTE
-    )
+    assert (await outbound_bodies(db))[-1] == f"{read_it()}\n\n{CASH_HOLD_NOTE}"
     doc = await db.get_document_by_wa_message("wamid.in1")
     invoice = await db.get_invoice_by_document(str(doc["id"]), tenant_id=DEMO_TENANT_ID)
     assert invoice["status"] == "needs_review"
@@ -593,10 +619,7 @@ async def test_a_line_fix_on_a_cash_hold_applies_and_keeps_the_hold(api, db):
     await post_webhook(client, wa_text_payload("line 1 qty 12", message_id="wamid.fix1"))
     await drain_jobs(db, app, None)
 
-    assert (await outbound_bodies(db))[-1] == (
-        "Read it: Gulf Foods Trading LLC, 2 lines, total AED 745.76, dated 20 Aug 2026.\n"
-        + CASH_HOLD_NOTE
-    )
+    assert (await outbound_bodies(db))[-1] == f"{read_it()}\n\n{CASH_HOLD_NOTE}"
     doc = await db.get_document_by_wa_message("wamid.in1")
     invoice = await db.get_invoice_by_document(str(doc["id"]), tenant_id=DEMO_TENANT_ID)
     assert invoice["status"] == "needs_review"
@@ -613,6 +636,7 @@ async def test_unparseable_text_with_a_pending_invoice_gets_the_clarify(api, db)
     await drain_jobs(db, app, None)
 
     assert (await outbound_bodies(db))[-1] == REPLY_CLARIFY
+    assert (await quoted_photos(db))[-1] is None  # the clarify is about the text, not a paper
     doc = await db.get_document_by_wa_message("wamid.in1")
     invoice = await db.get_invoice_by_document(str(doc["id"]), tenant_id=DEMO_TENANT_ID)
     assert invoice["status"] == "awaiting_confirm"  # a clarify never confirms
@@ -653,10 +677,12 @@ async def two_pending(client, db, app) -> None:
 
 
 DISAMBIGUATION = (
-    "You have 2 invoices waiting - which one?\n"
-    "1. Al Madina Trading, AED 120.00, 22 Aug 11:30\n"
-    "2. Gulf Foods Trading LLC, AED 745.76, 22 Aug 10:05\n"
-    "Reply with the number first, like: 1 OK, or 1 line 2 qty 16."
+    "You have 2 invoices waiting. Which one?\n"
+    "\n"
+    "1. *Al Madina Trading*, AED 120.00, 22 Aug 11:30\n"
+    "2. *Gulf Foods Trading LLC*, AED 745.76, 22 Aug 10:05\n"
+    "\n"
+    "Reply with the number first, like `1 OK` or `1 line 2 qty 16`."
 )
 
 
@@ -669,6 +695,7 @@ async def test_two_pending_disambiguates_then_the_number_confirms_the_right_one(
     await post_webhook(client, wa_text_payload("OK", message_id="wamid.ok1"))
     await drain_jobs(db, app, None)
     assert (await outbound_bodies(db))[-1] == DISAMBIGUATION
+    assert (await quoted_photos(db))[-1] is None  # about two papers, so it quotes neither
     await post_webhook(client, wa_text_payload("line 1 qty 9", message_id="wamid.fix1"))
     await drain_jobs(db, app, None)
     assert (await outbound_bodies(db))[-1] == DISAMBIGUATION
@@ -710,10 +737,7 @@ async def test_selector_routes_a_correction_to_the_numbered_invoice(api, db):
     )
     await drain_jobs(db, app, None)
 
-    assert (await outbound_bodies(db))[-1] == (
-        "Read it: Gulf Foods Trading LLC, 2 lines, total AED 745.76, dated 20 Aug 2026.\n"
-        "Reply OK to confirm."
-    )
+    assert (await outbound_bodies(db))[-1] == f"{read_it()}\n\n{CLOSING_ALL_GREEN}"
     gulf = await db.pool.fetchrow(
         "select * from invoices where supplier_name = 'Gulf Foods Trading LLC'"
     )
@@ -815,7 +839,8 @@ async def test_m2_gate_price_alert_over_a_week(api, db):
     await post_webhook(client, wa_text_payload("OK", message_id="wamid.ok1"))
     await drain_jobs(db, app, None)
     assert (await outbound_bodies(db))[-1] == (
-        "Confirmed - Gulf Foods Trading LLC, AED 695.36 recorded. I'll watch these prices for you."
+        "✅ Confirmed\n*Gulf Foods Trading LLC*, AED 695.36 recorded.\n"
+        "I'll watch these prices for you."
     )
 
     # Age the first confirm by a week so the history really is a week apart.
@@ -832,9 +857,9 @@ async def test_m2_gate_price_alert_over_a_week(api, db):
 
     # The money moment: the extraction reply carries the correct alert.
     assert (await outbound_bodies(db))[-1] == (
-        "Read it: Gulf Foods Trading LLC, 2 lines, total AED 745.76, dated 20 Aug 2026.\n"
-        "MILK PWDR 2.5KG NIDO up AED 4.00 (50.50 to 54.50) since your last purchase.\n"
-        "Reply OK to confirm."
+        f"{read_it()}\n\n{PRICE_MOVES_HEADING}\n"
+        f"{ICON_UP} MILK PWDR 2.5KG NIDO up AED 4.00 (50.50 to 54.50, +7.9%)\n\n"
+        f"{CLOSING_ALL_GREEN}"
     )
 
     await post_webhook(client, wa_text_payload("OK", message_id="wamid.ok2"))
@@ -864,7 +889,7 @@ async def test_missing_date_is_asked_and_the_answer_lands_via_the_grammar(api, d
     await post_webhook(client, wa_image_payload())
     await drain_jobs(db, app, FakeExtraction(result=invoice_result(dateless)))
     reply = (await outbound_bodies(db))[-1]
-    assert QUESTION_MISSING_DATE in reply.splitlines()
+    assert f"- {QUESTION_MISSING_DATE}" in reply.splitlines()
 
     # "5/7" has no year: the specific year question, and nothing applied.
     await post_webhook(client, wa_text_payload("date 5/7", message_id="wamid.amb"))
@@ -876,8 +901,8 @@ async def test_missing_date_is_asked_and_the_answer_lands_via_the_grammar(api, d
     await post_webhook(client, wa_text_payload("date 5/7/26", message_id="wamid.date"))
     await drain_jobs(db, app, None)
     reply = (await outbound_bodies(db))[-1]
-    assert "dated 5 Jul 2026" in reply.splitlines()[0]
-    assert QUESTION_MISSING_DATE not in reply.splitlines()
+    assert reply.splitlines()[2] == "Invoice INV-1041 · 5 Jul 2026 · 2 lines"
+    assert f"- {QUESTION_MISSING_DATE}" not in reply.splitlines()
     assert (await db.pool.fetchval("select invoice_date from invoices")) == datetime.date(
         2026, 7, 5
     )
@@ -898,12 +923,12 @@ async def test_missing_invoice_no_is_asked_and_corrected(api, db):
     numberless = good_invoice().model_copy(update={"invoice_no": None})
     await post_webhook(client, wa_image_payload())
     await drain_jobs(db, app, FakeExtraction(result=invoice_result(numberless)))
-    assert QUESTION_MISSING_INVOICE_NO in (await outbound_bodies(db))[-1].splitlines()
+    assert f"- {QUESTION_MISSING_INVOICE_NO}" in (await outbound_bodies(db))[-1].splitlines()
 
     await post_webhook(client, wa_text_payload("invoice no INV-1041", message_id="wamid.no1"))
     await drain_jobs(db, app, None)
     reply = (await outbound_bodies(db))[-1]
-    assert QUESTION_MISSING_INVOICE_NO not in reply.splitlines()
+    assert f"- {QUESTION_MISSING_INVOICE_NO}" not in reply.splitlines()
     assert (await db.pool.fetchval("select invoice_no from invoices")) == "INV-1041"
 
 
@@ -942,14 +967,14 @@ async def test_correction_keeps_discount_and_charge_lines_in_validation(api, db)
     )
     await post_webhook(client, wa_image_payload())
     await drain_jobs(db, app, FakeExtraction(result=invoice_result(invoice)))
-    assert (await outbound_bodies(db))[-1].endswith("Reply OK to confirm.")
+    assert (await outbound_bodies(db))[-1].endswith(CLOSING_ALL_GREEN)
 
     await post_webhook(client, wa_text_payload("line 1 qty 2", message_id="wamid.fix"))
     await drain_jobs(db, app, None)
     reply = (await outbound_bodies(db))[-1]
-    assert "don't add up" not in reply
-    assert "doesn't match" not in reply
-    assert reply.endswith("Reply OK to confirm.")
+    assert "*Totals*" not in reply
+    assert "*Subtotal*" not in reply
+    assert reply.endswith(CLOSING_ALL_GREEN)
 
 
 # --- parser: WP-26 reconstruction and WP-28 currency ------------------------
@@ -1075,11 +1100,14 @@ async def test_wp26_a_totals_less_invoice_is_reconstructed_by_asking(api, db):
     # the "or OK to confirm the rest" that recorded a null total live.
     reply = (await outbound_bodies(db))[-1]
     assert reply.splitlines() == [
-        "Read it: Gulf Foods Trading LLC, 2 lines, total unreadable, dated 20 Aug 2026.",
-        "I couldn't read the invoice total. The lines come to AED 710.25. Is that the whole "
-        "invoice, VAT included? (reply like: total 710.25 inc vat 5%, or total 710.25 no vat, "
-        "or the printed total: total 976.50)",
-        "Send me the total and I'll finish this one off.",
+        *read_it(None).splitlines(),
+        "",
+        CHECK_HEADING,
+        "- *Total*: I couldn't read it. The lines come to AED 710.25. Is that the whole "
+        "invoice, VAT included? Reply like `total 710.25 inc vat 5%` or `total 710.25 no vat`, "
+        "or the printed total, like `total 976.50`.",
+        "",
+        CLOSING_TOTAL_NEEDED,
     ]
 
     # A bare OK does not confirm: the same question again, never silence and
@@ -1121,15 +1149,17 @@ async def test_wp26_a_totals_less_invoice_is_reconstructed_by_asking(api, db):
 
     # The reply is now the ordinary all-green one, and OK confirms.
     assert (await outbound_bodies(db))[-1].splitlines() == [
-        "Read it: Gulf Foods Trading LLC, 2 lines, total AED 710.25, dated 20 Aug 2026.",
-        "Reply OK to confirm.",
+        *read_it("710.25").splitlines(),
+        "",
+        CLOSING_ALL_GREEN,
     ]
     await post_webhook(client, wa_text_payload("ok", message_id="wamid.ok2"))
     await drain_jobs(db, app, None)
     invoice = await db.pool.fetchrow("select * from invoices")
     assert invoice["status"] == "confirmed"
     assert (await outbound_bodies(db))[-1] == (
-        "Confirmed - Gulf Foods Trading LLC, AED 710.25 recorded. I'll watch these prices for you."
+        "✅ Confirmed\n*Gulf Foods Trading LLC*, AED 710.25 recorded.\n"
+        "I'll watch these prices for you."
     )
     # C4 net-canonical: the reconstruction said the prices carry VAT, so price
     # memory records them ex-VAT - the treatment travelled with the correction.
@@ -1171,7 +1201,9 @@ async def test_wp26_a_total_read_off_the_page_is_a_correction_not_a_reconstructi
     assert invoice["provenance"]["total"]["origin"] == "corrected_chat"
     # 710.25 + no tax != 745.76, so the totals question comes back rather than
     # anything being quietly reconciled - the tax is off the page too.
-    assert "The totals don't add up" in (await outbound_bodies(db))[-1]
+    assert (
+        "- *Totals*: the lines come to 710.25 but the invoice total says 745.76. Which is right?"
+    ) in (await outbound_bodies(db))[-1].splitlines()
 
     await post_webhook(client, wa_text_payload("tax 35.51", message_id="wamid.tax"))
     await drain_jobs(db, app, None)
@@ -1196,10 +1228,14 @@ async def test_wp28_a_usd_invoice_is_asked_about_and_kept_out_of_price_memory(ap
     await drain_jobs(db, app, FakeExtraction(result=invoice_result(usd_invoice())))
 
     assert (await outbound_bodies(db))[-1].splitlines() == [
-        "Read it: Gulf Foods Trading LLC, 2 lines, total USD 745.76, dated 20 Aug 2026.",
-        "This invoice is in USD, not your usual AED - is that right? I'll record it as printed "
-        "and keep it out of your price history. (if it's a misread, reply: currency AED)",
-        "Reply with fixes (like: line 4 qty 16) or OK to confirm the rest.",
+        *read_it(currency="USD").splitlines(),
+        "",
+        CHECK_HEADING,
+        "- *Currency*: this invoice is in USD, not your usual AED. Is that right? I'll record "
+        "it as printed and keep it out of your price history. If it's a misread, reply "
+        "`currency AED`.",
+        "",
+        CLOSING_WITH_AMBERS,
     ]
 
     # Confirming is allowed - the invoice itself is real and stores as printed.
@@ -1217,8 +1253,8 @@ async def test_wp28_a_usd_invoice_is_asked_about_and_kept_out_of_price_memory(ap
     assert (await db.pool.fetchval("select name from suppliers")) == "Gulf Foods Trading LLC"
     # And the ack says so, rather than promising to watch prices it dropped.
     assert (await outbound_bodies(db))[-1] == (
-        "Confirmed - Gulf Foods Trading LLC, USD 745.76 recorded. It's in USD, not AED, "
-        "so I've kept it out of your price history."
+        "✅ Confirmed\n*Gulf Foods Trading LLC*, USD 745.76 recorded.\n"
+        "It's in USD, not AED, so I've kept it out of your price history."
     )
 
 
@@ -1228,10 +1264,7 @@ async def test_wp28_an_aed_invoice_replies_exactly_as_before(api, db):
     app, client, *_ = api
     await post_webhook(client, wa_image_payload())
     await drain_jobs(db, app, FakeExtraction(result=invoice_result(good_invoice())))
-    assert (await outbound_bodies(db))[-1] == (
-        "Read it: Gulf Foods Trading LLC, 2 lines, total AED 745.76, dated 20 Aug 2026.\n"
-        "Reply OK to confirm."
-    )
+    assert (await outbound_bodies(db))[-1] == f"{read_it()}\n\n{CLOSING_ALL_GREEN}"
     await post_webhook(client, wa_text_payload("OK", message_id="wamid.ok1"))
     await drain_jobs(db, app, None)
     assert (await outbound_bodies(db))[-1] == ACK_GULF
@@ -1250,7 +1283,7 @@ async def test_wp28_a_misread_currency_is_corrected_from_chat_and_prices_flow_ag
     assert invoice["provenance"]["currency"]["origin"] == "corrected_chat"
     reply = (await outbound_bodies(db))[-1]
     assert "not your usual AED" not in reply
-    assert reply.endswith("Reply OK to confirm.")
+    assert reply.endswith(CLOSING_ALL_GREEN)
 
     await post_webhook(client, wa_text_payload("OK", message_id="wamid.ok1"))
     await drain_jobs(db, app, None)
@@ -1275,9 +1308,7 @@ async def test_wp28_a_foreign_invoice_raises_no_price_alerts(api, db):
     # The same invoice in the tenant's own money does alert.
     await post_webhook(client, wa_image_payload(message_id="wamid.in2"))
     await drain_jobs(db, app, FakeExtraction(result=invoice_result(good_invoice())))
-    assert (
-        "up AED 14.50 (40.00 to 54.50) since your last purchase." in (await outbound_bodies(db))[-1]
-    )
+    assert "up AED 14.50 (40.00 to 54.50, +36.3%)" in (await outbound_bodies(db))[-1]
 
 
 def test_a_pack_size_correction_applies_and_can_clear():
@@ -1355,17 +1386,17 @@ def test_a_re_pointed_paper_takes_the_status_the_new_duplicate_answer_implies():
         )
 
 
-def test_the_booked_under_line_appears_exactly_when_the_names_differ():
-    # The line is the answer to "whose price history did this move", and it is
-    # worth a line only when that is not the name printed on the paper.
-    reply = "Read it: Gulf Foods Trading LLC, 2 lines."
-    assert _with_booked_under(reply, "Gulf Foods Trading LLC", "Gulf Foods Trading L.L.C.") == (
-        f"{reply}\nBooked under Gulf Foods Trading L.L.C."
+def test_the_filing_note_is_worth_a_line_exactly_when_the_names_differ():
+    # The note is the answer to "whose price history did this move", and it is
+    # worth a line only when that is not the name printed on the paper. One
+    # rule for the pipeline's reply and the correction re-reply alike.
+    assert filed_under("Gulf Foods Trading LLC", "Gulf Foods Trading L.L.C.") == (
+        "Gulf Foods Trading L.L.C."
     )
     # Same name, however it is punctuated or cased: nothing to say.
-    assert _with_booked_under(reply, "GULF FOODS TRADING LLC", "Gulf Foods Trading LLC") == reply
+    assert filed_under("GULF FOODS TRADING LLC", "Gulf Foods Trading LLC") is None
     # No supplier yet: nothing to say either.
-    assert _with_booked_under(reply, "Gulf Foods Trading LLC", None) == reply
+    assert filed_under("Gulf Foods Trading LLC", None) is None
 
 
 @requires_db
@@ -1440,4 +1471,4 @@ async def test_a_correction_reply_still_says_where_the_paper_was_filed(api, db):
     await post_webhook(client, wa_text_payload("line 1 qty 12", message_id="wamid.fix"))
     await drain_jobs(db, app, None)
     reply = (await outbound_bodies(db))[-1]
-    assert reply.endswith("Reply OK to confirm.\nBooked under Gulf Foods Trading L.L.C.")
+    assert reply == f"{read_it(booked_under='Gulf Foods Trading L.L.C.')}\n\n{CLOSING_ALL_GREEN}"

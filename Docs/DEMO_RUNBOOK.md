@@ -6,6 +6,7 @@ Since 2026-08-28 the full demo is two acts and gates at M6 (§1: the loop, then 
 **Act two** (section F, added 2026-08-31 by WP-66) is the screens - materials, then menu margins, closing on "push this, fix that".
 **Act three** (section G) is the branches, and **act four** (section H, added 2026-09-05 by WP-95) is the dashboard: what the chain kept, the dish that sells and does not earn, and what one delivery did to both.
 Every reply quoted below is the exact template from `apps/api/src/faida_api/replies.py`, so if the phone shows different words, something is wrong.
+Since WP-125 (2026-09-07) every reply about a paper arrives as a WhatsApp quoted reply above that invoice's photo, with the supplier and total in bold and the closing line last; the blank lines in the blocks below are part of the message.
 
 > **What gates and what only rehearses.** The staged menu in `supabase/demo_seed.sql` exists so act two can be practised today, on a laptop, without waiting on anything. It is **not** what the milestone closes on: M6's done-when ("one real menu loads in under a day of consultant time") and the demo gate both close on F7's real menu, loaded through `/menu/load`. Rehearse on the seed; gate on the real one.
 
@@ -83,7 +84,7 @@ AED amounts; credit terms or no terms line at all.
 **The printed date must be fresh - within the last three weeks, and newer than the chain's newest confirmed purchase of the same materials (ideally the demo week itself).**
 Costing and the money moment rank purchases by the printed date, not by when the confirm happened, so a prop that has aged past the purchase evidence slots in as history: the plates never move after the on-stage confirm, or the callout reads "down" while the phone just said "up".
 The staged purchase evidence sits 35 and 28 days back to give the props four weeks of headroom, but a curated paper is a prop with a shelf life - re-print it when it goes stale.
-Curate credit invoices only: an invoice marked cash gets the cash-hold closing instead of "Reply OK to confirm", and OK will not confirm it from chat.
+Curate credit invoices only: an invoice marked cash gets the cash-hold closing ("⏸️ Marked cash, so it needs the owner's approval before it's recorded...") instead of "Reply *OK* to confirm.", and OK will not confirm it from chat.
 
 ## B. The 4-minute script
 
@@ -94,25 +95,31 @@ The script from plan.md §6 M4, verbatim: forward invoice, reply appears with pr
 1. Open WhatsApp on the demo phone with the chat to the Faida number already on screen.
 2. Say: "This is a supplier invoice from this morning's delivery. Watch what the salesman does with it."
 3. Forward curated invoice 1.
-4. Within a couple of seconds the ack arrives: `Got it - invoice received and saved. I'll reply with the details here soon.`
+4. Within a couple of seconds the ack arrives, quoted above the photo: `Got it - invoice received and saved. I'll reply with the details here soon.`
 5. Now extraction runs, which takes roughly 10-15 seconds on Gemini 3 Flash (9.5 s average
    model time on the corpus; the Opus-era measurement was 13.3-17.2 s end to end); do not
    stand in silence.
 6. While waiting, say: "It is reading the photo now: every line item, every price, and checking that the math on the page actually adds up. No typing, no app, and it compares every price against what this cafeteria paid last week."
-7. The parsed reply arrives, exactly (the date is whatever invoice 1 prints, read out in words):
+7. The parsed reply arrives, exactly, quoted above the photo (the invoice number and date are whatever invoice 1 prints, the date read out in words; the supplier and total render bold; the blank lines are part of the message):
    ```
-   Read it: Gulf Foods Trading LLC, 2 lines, total AED 745.76, dated 20 Aug 2026.
-   Milk Powder 2.5kg up AED 4.00 (50.50 to 54.50) since your last purchase.
-   Karak Tea Dust down AED 3.25 (22.00 to 18.75) since your last purchase.
-   Reply OK to confirm.
+   ✅ Read it
+   *Gulf Foods Trading LLC*
+   Invoice INV-1041 · 20 Aug 2026 · 2 lines
+   Total *AED 745.76*
+
+   *Price moves since your last purchase*
+   📈 Milk Powder 2.5kg up AED 4.00 (50.50 to 54.50, +7.9%)
+   📉 Karak Tea Dust down AED 3.25 (22.00 to 18.75, -14.8%)
+
+   Reply *OK* to confirm.
    ```
-8. Point at the alert line and say: "That is the money moment: milk powder went up four dirhams and the owner knows before the invoice is even filed."
+8. Point at the price-moves lines and say: "That is the money moment: milk powder went up four dirhams, nearly eight percent, and the owner knows before the invoice is even filed."
 9. Reply `OK`.
-10. The confirmation arrives: `Confirmed - Gulf Foods Trading LLC, AED 745.76 recorded. I'll watch these prices for you.`
+10. The confirmation arrives, quoted above the photo, in three lines: `✅ Confirmed` / `*Gulf Foods Trading LLC*, AED 745.76 recorded.` / `I'll watch these prices for you.`
 11. Open the review screen: the invoice photo sits on the left, the extracted fields on the right, every field green with its check icon.
 12. Open the Milk Powder 2.5kg sparkline: three weeks of gentle drift, then today's jump to 54.50.
 13. Back in WhatsApp, forward the meme and say: "And when someone sends it nonsense?"
-14. First the same ack arrives (`Got it - invoice received and saved. I'll reply with the details here soon.`), then after the read, the decline, exactly: `That doesn't look like a supplier invoice, so I'll leave it - forward an invoice photo and I'll read it.`
+14. First the same ack arrives (`Got it - invoice received and saved. I'll reply with the details here soon.`), then after the read, the decline, exactly and quoted above the meme: `That doesn't look like a supplier invoice, so I'll leave it - forward an invoice photo and I'll read it.`
 15. Say: "It refuses politely instead of inventing numbers. That discipline is why you can trust the numbers it does record."
 16. Close on the plan's line: "no app, no login, no training - the salesman already knows how to do this." Then go straight into **act two (section F)** without changing rooms: the screens are already open in the same browser.
 
@@ -141,7 +148,7 @@ Regenerating a prop with a new number means updating the list in that file in th
 `demo_seed.sql` must NEVER run against the live project once the real menu is loaded - its reset would delete the menu, its 82 materials and every mapping.
 
 `$DATABASE_URL` is the same session-pooler URI Railway uses (README §M0 step 2).
-Run the reset after EVERY rehearsal run, confirmed or not (this got stricter 2026-08-28): confirming moves `last_price` to 54.50 so the alert will not fire again, and even without confirming, re-forwarding the same paper now trips the duplicate hold (WP-44) - the second copy is held with "This one is already recorded..." instead of being read out. Both are correct product behavior and both ruin a rehearsal that expected the full reply.
+Run the reset after EVERY rehearsal run, confirmed or not (this got stricter 2026-08-28): confirming moves `last_price` to 54.50 so the alert will not fire again, and even without confirming, re-forwarding the same paper now trips the duplicate hold (WP-44) - the second copy is held with "⏸️ Already recorded" and the earlier paper's name instead of being read out. Both are correct product behavior and both ruin a rehearsal that expected the full reply.
 Rehearsal images stay in the storage bucket; that is intended, since originals are immutable and nothing references them after the reset.
 
 Re-check after the reset:
@@ -297,7 +304,7 @@ Then the record, in one commit: this file's §H in the compact screen's words wi
 Rule one, from plan.md §7.3 WP-41: every flake found in rehearsal gets fixed, never retried around.
 
 **Extraction is slow or fails on stage.**
-If the second reply has not arrived after about 60 seconds, or the failure reply arrives (`Couldn't read this one - try a straighter photo, or type the total.`), do not fumble.
+If the second reply has not arrived after about 60 seconds, or the failure reply arrives (`⚠️ Couldn't read this one - try a straighter photo, or enter it on the review screen.`), do not fumble.
 The pivot line: "And that is the honest path: when it cannot read something, it says so and asks, instead of quietly guessing a number into your books."
 Then show the review screen's manual entry as the fallback, which is a feature, not an apology.
 
@@ -307,7 +314,7 @@ Almost always this means a rehearsal confirm moved the baseline: check `last_pri
 If `last_price` is already 54.50, the previous run was confirmed and not reset.
 
 **The duplicate hold fired instead of the read-out.**
-The reply says `This one is already recorded: ...` - a previous rehearsal of the same paper was not reset.
+The reply opens `⏸️ Already recorded` and names the earlier paper - a previous rehearsal of the same paper was not reset.
 Run the section C reset and forward again; if it happens on stage, the pivot line writes itself: "and if a salesman sends the same invoice twice, it refuses to count it twice" - then forward the backup invoice.
 
 **WhatsApp is silent (no ack at all).**

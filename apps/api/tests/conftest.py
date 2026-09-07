@@ -292,3 +292,18 @@ def wa_text_payload(
     msg.update({"type": "text", "text": {"body": body}})
     del msg["image"]
     return payload
+
+
+def wa_reaction_payload(
+    reacted_to: str,
+    emoji: str = "\U0001f44d",
+    message_id: str = "wamid.react1",
+    from_phone: str = DEMO_PHONE,
+) -> dict:
+    """The same envelope carrying a reaction to one of our messages - a
+    thumbs-up on a reply. An empty emoji is how Meta reports a removal."""
+    payload = wa_image_payload(message_id=message_id, from_phone=from_phone)
+    msg = payload["entry"][0]["changes"][0]["value"]["messages"][0]
+    msg.update({"type": "reaction", "reaction": {"message_id": reacted_to, "emoji": emoji}})
+    del msg["image"]
+    return payload

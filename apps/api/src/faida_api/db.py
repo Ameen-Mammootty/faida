@@ -405,7 +405,14 @@ class Database:
         )
         return row is not None
 
-    async def record_outbound_message(self, message_id: str, to_phone: str, body: str) -> None:
+    async def record_outbound_message(
+        self, message_id: str, to_phone: str, body: str, *, reply_to: str | None = None
+    ) -> None:
+        """The record of what left the building: the words, and the message
+        they were sent as a quoted reply to (the invoice photo, WP-125)."""
+        payload: dict = {"text": body}
+        if reply_to is not None:
+            payload["context"] = {"message_id": reply_to}
         await self.pool.execute(
             """
             insert into wa_messages (message_id, direction, to_phone, msg_type, payload, status)
@@ -414,7 +421,7 @@ class Database:
             """,
             message_id,
             to_phone,
-            {"text": body},
+            payload,
         )
 
     async def get_inbound_message(self, message_id: str) -> asyncpg.Record | None:
@@ -3063,7 +3070,7 @@ class Database:
             """
             select i.id, i.tenant_id::text as tenant_id, i.supplier_name, i.currency, i.total,
                    i.status, i.payment_kind, i.created_at, b.timezone,
-                   t.currency as tenant_currency
+                   t.currency as tenant_currency, d.wa_message_id
             from invoices i
             join tenants t on t.id = i.tenant_id
             join documents d on d.id = i.document_id
@@ -3094,7 +3101,7 @@ class Database:
         return await self.pool.fetchrow(
             """
             select i.id, i.tenant_id::text as tenant_id, i.supplier_name, i.currency, i.total,
-                   i.confirmed_at, t.currency as tenant_currency
+                   i.confirmed_at, t.currency as tenant_currency, d.wa_message_id
             from invoices i
             join tenants t on t.id = i.tenant_id
             join documents d on d.id = i.document_id

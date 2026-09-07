@@ -278,7 +278,7 @@ footer {{ margin-top:56px; padding-top:18px; border-top:1px solid var(--line);
         <tr><td><code>invoice</code><div class="sub2">a supplier invoice or delivery note
           charging you for goods</div></td>
           <td>read in full, checked, saved as a draft</td>
-          <td>the parsed summary, any price alert, and "Reply OK to confirm"</td></tr>
+          <td>the read-out card: the supplier and total, any price move, and "Reply *OK* to confirm"</td></tr>
         <tr><td><code>z_report</code><div class="sub2">a till or POS end-of-day sales
           summary</div></td>
           <td>nothing extracted, photo still stored</td>

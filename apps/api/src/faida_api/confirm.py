@@ -99,7 +99,7 @@ from .extraction.normalize import blank_to_none
 from .extraction.pipeline import find_duplicate, price_alerts
 from .extraction.schema import ExtractedInvoice, ExtractedLine
 from .extraction.validate import validate_invoice
-from .matching import Row, same_name, snap_item
+from .matching import Row, filed_under, snap_item
 from .provenance import Origin, line_key, mark
 from .replies import (
     REPLY_CASH_HOLD_OK,
@@ -107,6 +107,7 @@ from .replies import (
     REPLY_CORRECTION_REFUSED,
     REPLY_TEXT_ONBOARDING,
     PendingInvoice,
+    Reply,
     compose_ambiguous_date_reply,
     compose_cash_hold_reply,
     compose_confirmation_ack,
@@ -115,7 +116,6 @@ from .replies import (
     compose_line_out_of_range,
     compose_total_needed_reply,
     compose_vat_rate_reply,
-    render_booked_under,
 )
 
 logger = logging.getLogger(__name__)
@@ -684,8 +684,11 @@ async def handle_inbound_text(
     received_at: datetime.datetime,
     *,
     message_id: str | None = None,
-) -> str:
-    """Resolve one inbound text per C5 and return the reply to send.
+) -> Reply:
+    """Resolve one inbound text per C5 and return the reply to send - the
+    words, and the photo they are about when they are about one paper
+    (WP-125: the ack, the holds and the refusals quote it; onboarding, the
+    clarify and the list of waiting papers do not).
     `received_at` is the wa_messages arrival time of this text: the retry
     guard compares it against invoices.confirmed_at so a re-run job re-sends
     the ack instead of confirming a second invoice.
@@ -698,7 +701,7 @@ async def handle_inbound_text(
     two decisions, which is cheaper and more honest than a dedupe guard for
     something that costs a duplicate line in a log."""
     if not from_phone:
-        return REPLY_TEXT_ONBOARDING
+        return Reply(body=REPLY_TEXT_ONBOARDING)
     parsed = parse_reply(text)
 
     if isinstance(parsed, Confirm):
@@ -712,7 +715,7 @@ async def handle_inbound_text(
             # confirm atomic, has nothing left to heal on a row confirmed by
             # this code - it stays for rows confirmed before that merge.
             await db.record_confirmed_prices(str(already["id"]), tenant_id=already["tenant_id"])
-            return _ack(already)
+            return Reply(body=_ack(already), reply_to=already["wa_message_id"])
 
     pending = await db.pending_invoices_for_phone(from_phone)
     if not pending:
@@ -720,31 +723,35 @@ async def handle_inbound_text(
             last = await db.latest_confirmed_invoice_for_phone(from_phone)
             if last is not None:
                 # A duplicate "OK": the ack again, nothing re-recorded.
-                return _ack(last)
-        return REPLY_TEXT_ONBOARDING
+                return Reply(body=_ack(last), reply_to=last["wa_message_id"])
+        return Reply(body=REPLY_TEXT_ONBOARDING)
     if parsed is None:
-        return REPLY_CLARIFY
+        return Reply(body=REPLY_CLARIFY)
     if isinstance(parsed, Corrections):
         # An answer that is still missing a fact cannot apply anywhere - ask
         # for the missing half before any invoice-picking, since no pick would
         # make "5/7" a date or "inc vat" a rate.
         ambiguous = next((e for e in parsed.edits if isinstance(e, AmbiguousDateEdit)), None)
         if ambiguous is not None:
-            return compose_ambiguous_date_reply(ambiguous.text)
+            return Reply(body=compose_ambiguous_date_reply(ambiguous.text))
         rateless = next((e for e in parsed.edits if isinstance(e, MissingVatRateEdit)), None)
         if rateless is not None:
-            return compose_vat_rate_reply(rateless.total)
+            return Reply(body=compose_vat_rate_reply(rateless.total))
 
     if parsed.selector is not None:
         if not 1 <= parsed.selector <= len(pending):
-            return _disambiguation(pending)
+            return Reply(body=_disambiguation(pending))
         target = pending[parsed.selector - 1]
     elif len(pending) > 1:
         # C5: several pending and no number - list them; the sender resends
         # with the number in front (stateless, nothing to remember).
-        return _disambiguation(pending)
+        return Reply(body=_disambiguation(pending))
     else:
         target = pending[0]
+
+    def about(body: str) -> Reply:
+        """Everything from here on is about one paper: quote its photo."""
+        return Reply(body=body, reply_to=target["wa_message_id"])
 
     # The chat path's tenant is the invoice's own, reached through the
     # sender's phone (branch -> tenant, C5); it is passed explicitly from here
@@ -755,13 +762,13 @@ async def handle_inbound_text(
             # A cash hold (the only needs_review the resolver hands back):
             # the owner approves it on the screen, with a reason (WP-74). The
             # phone is told so, and told the one correction that lifts it.
-            return REPLY_CASH_HOLD_OK
+            return about(REPLY_CASH_HOLD_OK)
         if target["total"] is None:
             # WP-26: open ambers still confirm - the closing promised "OK to
             # confirm the rest" - but a missing total is not one of them. It is
             # the invoice's headline number, invisible to everything
             # downstream, and by M5 it is a plate cost nobody can check.
-            return await _total_needed(db, str(target["id"]), tenant_id)
+            return about(await _total_needed(db, str(target["id"]), tenant_id))
         # One call, one transaction: the status flip, the audit row and the
         # price baseline commit together or not at all (WP-50).
         try:
@@ -774,10 +781,10 @@ async def handle_inbound_text(
             # back, and the phone that sent the paper is told why in the same
             # sentence the screen shows - a failed job and a silence would be
             # the dead end this flow keeps promising not to be.
-            return clash.message
-        return _ack(target)
+            return about(clash.message)
+        return about(_ack(target))
     try:
-        return await _apply_correction(
+        body = await _apply_correction(
             db,
             str(target["id"]),
             parsed.edits,
@@ -786,7 +793,8 @@ async def handle_inbound_text(
             message_id=message_id,
         )
     except CorrectionRefused as refused:
-        return REPLY_CORRECTION_REFUSED.format(status=refused.status or "gone")
+        body = REPLY_CORRECTION_REFUSED.format(status=refused.status or "gone")
+    return about(body)
 
 
 async def _apply_correction(
@@ -950,27 +958,24 @@ async def _apply_correction(
         # and the person is told rather than shown a reply that pretends.
         fresh = await db.get_invoice(invoice_id, tenant_id=tenant_id)
         raise CorrectionRefused(None if fresh is None else fresh["status"])
+    # WP-87's filing note, and only when it says something: the paper is
+    # booked under a supplier whose catalog name is not the name printed on
+    # it. When the two read the same the line is noise, and a reply nobody
+    # reads is a reply that hides the one that matters.
+    compose = compose_invoice_reply
     if status is InvoiceStatus.NEEDS_REVIEW and invoice.payment_kind == "cash":
-        reply = compose_cash_hold_reply(
-            invoice, validation, alerts, tenant_currency=tenant_currency
-        )
-    else:
-        reply = compose_invoice_reply(invoice, validation, alerts, tenant_currency=tenant_currency)
-    return _with_booked_under(reply, invoice.supplier_name, booked_under)
+        compose = compose_cash_hold_reply
+    return compose(
+        invoice,
+        validation,
+        alerts,
+        tenant_currency=tenant_currency,
+        booked_under=filed_under(invoice.supplier_name, booked_under),
+    )
 
 
 def _maybe_id(value: object) -> str | None:
     return None if value is None else str(value)
-
-
-def _with_booked_under(reply: str, printed_name: str | None, catalog_name: str | None) -> str:
-    """Append WP-87's "Booked under <name>." line, and only when it says
-    something: the paper is booked under a supplier whose catalog name is not
-    the name printed on it. When the two read the same the line is noise, and
-    a reply nobody reads is a reply that hides the one that matters."""
-    if catalog_name is None or same_name(printed_name, catalog_name):
-        return reply
-    return f"{reply}\n{render_booked_under(catalog_name)}"
 
 
 async def _resolve_supplier(db: Database, choice: Edit, *, tenant_id: str) -> asyncpg.Record:

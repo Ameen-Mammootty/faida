@@ -110,8 +110,11 @@ async def test_image_message_full_flow(api, db):
     # Canned reply sent to the sender and recorded outbound.
     assert fake_meta.sent[-1]["to"] == DEMO_PHONE
     assert fake_meta.sent[-1]["text"]["body"] == REPLY_MEDIA_RECEIVED
+    # WP-125: the ack is a quoted reply to the photo, and the record says so.
+    assert fake_meta.sent[-1]["context"] == {"message_id": "wamid.in1"}
     out = await db.pool.fetchrow("select * from wa_messages where direction='out'")
     assert out is not None and out["to_phone"] == DEMO_PHONE
+    assert out["payload"]["context"] == {"message_id": "wamid.in1"}
 
     assert await db.pool.fetchval("select count(*) from jobs where status='done'") == 1
 
@@ -141,6 +144,7 @@ async def test_text_message_gets_onboarding_reply(api, db):
     await post_webhook(client, payload)
     assert await run_one_job(db, app.state.wa, app.state.storage) is True
     assert fake_meta.sent[-1]["text"]["body"] == REPLY_TEXT_ONBOARDING
+    assert "context" not in fake_meta.sent[-1]  # about no paper, so it quotes none
     assert await db.pool.fetchval("select count(*) from documents") == 0
 
 
@@ -157,6 +161,7 @@ async def test_unknown_sender_is_stamped_and_creates_nothing(api, db):
     assert await db.pool.fetchval("select count(*) from jobs where kind = 'extract_document'") == 0
     assert fake_storage.objects == {}
     assert [m["text"]["body"] for m in fake_meta.sent] == [REPLY_UNKNOWN_SENDER]
+    assert "context" not in fake_meta.sent[-1]
 
 
 async def test_failed_job_requeues_then_fails(api, db):

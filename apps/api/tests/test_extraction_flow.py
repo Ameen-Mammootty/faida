@@ -27,10 +27,14 @@ from faida_api.replies import (
     CASH_HOLD_NOTE,
     CLOSING_ALL_GREEN,
     CLOSING_WITH_AMBERS,
+    ICON_DOWN,
+    ICON_UP,
+    PRICE_MOVES_HEADING,
     REPLY_EXTRACTION_FAILED,
     REPLY_MEDIA_RECEIVED,
     REPLY_NOT_INVOICE,
     REPLY_Z_REPORT,
+    SimilarPaper,
     compose_duplicate_hold_reply,
     render_duplicate_note,
 )
@@ -75,6 +79,30 @@ def api(settings, db):
 
     client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
     return app, client, fake_meta, fake_storage
+
+
+def read_it(
+    total: str = "745.76", *, invoice_no: str = "INV-1041", booked_under: str | None = None
+) -> str:
+    """The header block of good_invoice()'s read-out (WP-125), with the
+    filing note when the paper is booked under another name."""
+    lines = [
+        "✅ Read it",
+        "*Gulf Foods Trading LLC*",
+        f"Invoice {invoice_no} · 20 Aug 2026 · 2 lines",
+        f"Total *AED {total}*",
+    ]
+    if booked_under is not None:
+        lines.append(f"_Booked under {booked_under}_")
+    return "\n".join(lines)
+
+
+async def last_quoted_photo(db) -> str | None:
+    """The message the newest outbound reply was sent as a quoted reply to."""
+    return await db.pool.fetchval(
+        "select payload->'context'->>'message_id' from wa_messages "
+        "where direction = 'out' order by id desc limit 1"
+    )
 
 
 async def post_webhook(client, payload: dict) -> httpx.Response:
@@ -223,13 +251,11 @@ async def test_happy_path_photo_to_draft_invoice(api, db):
     # Exactly two outbound messages: the ack, then compose_invoice_reply's
     # output - summary plus the confirm prompt (WP-20 composer swap).
     bodies = await outbound_bodies(db)
-    assert bodies == [
-        REPLY_MEDIA_RECEIVED,
-        "Read it: Gulf Foods Trading LLC, 2 lines, total AED 745.76, dated 20 Aug 2026.\n"
-        "Reply OK to confirm.",
-    ]
+    assert bodies == [REPLY_MEDIA_RECEIVED, f"{read_it()}\n\n{CLOSING_ALL_GREEN}"]
     assert [m["text"]["body"] for m in fake_meta.sent] == bodies
     assert fake_meta.sent[-1]["to"] == DEMO_PHONE
+    # WP-125: the ack and the read-out are both quoted replies to the photo.
+    assert [m["context"]["message_id"] for m in fake_meta.sent] == ["wamid.in1", "wamid.in1"]
 
 
 async def test_repair_path_fixes_wrong_line_with_one_call(api, db):
@@ -267,10 +293,7 @@ async def test_repair_path_fixes_wrong_line_with_one_call(api, db):
     # Tokens and latency summed across the extract + repair calls.
     assert (run["input_tokens"], run["output_tokens"], run["latency_ms"]) == (200, 100, 14)
 
-    assert (await outbound_bodies(db))[-1] == (
-        "Read it: Gulf Foods Trading LLC, 2 lines, total AED 745.76, dated 20 Aug 2026.\n"
-        "Reply OK to confirm."
-    )
+    assert (await outbound_bodies(db))[-1] == f"{read_it()}\n\n{CLOSING_ALL_GREEN}"
 
 
 async def test_meme_is_declined_without_an_invoice_row(api, db):
@@ -290,6 +313,7 @@ async def test_meme_is_declined_without_an_invoice_row(api, db):
     assert run["repair_applied"] is False
 
     assert await outbound_bodies(db) == [REPLY_MEDIA_RECEIVED, REPLY_NOT_INVOICE]
+    assert await last_quoted_photo(db) == "wamid.in1"  # the decline quotes the photo too
 
 
 async def test_z_report_is_held_until_m5(api, db):
@@ -334,6 +358,7 @@ async def test_provider_down_retries_then_fails_with_one_reply(api, db):
 
     # The §5 layer 6 reply goes out exactly once, on the final attempt.
     assert await outbound_bodies(db) == [REPLY_MEDIA_RECEIVED, REPLY_EXTRACTION_FAILED]
+    assert await last_quoted_photo(db) == "wamid.in1"
 
 
 async def test_truncated_read_fails_loudly_and_persists_no_partial_invoice(api, db):
@@ -357,6 +382,7 @@ async def test_truncated_read_fails_loudly_and_persists_no_partial_invoice(api, 
     assert await db.pool.fetchval("select count(*) from invoices") == 0
     assert await db.pool.fetchval("select count(*) from invoice_lines") == 0
     assert await outbound_bodies(db) == [REPLY_MEDIA_RECEIVED, REPLY_EXTRACTION_FAILED]
+    assert await last_quoted_photo(db) == "wamid.in1"
 
 
 async def test_reextract_of_extracted_document_is_a_noop(api, db):
@@ -469,16 +495,19 @@ async def test_price_alert_fires_in_the_extraction_reply(api, db):
 
     # Alerts ordered by absolute delta descending: karak's 3.25 (a falling
     # price - still signal) before milk's 2.60, regardless of line order.
+    # WP-87: the paper prints "LLC" and the catalog row is "L.L.C.", so the
+    # reply says where it filed this one, under the total, while it is still
+    # one keystroke to move. WP-125: the demo reply, byte-exact, and quoted.
     assert (await outbound_bodies(db))[-1] == (
-        "Read it: Gulf Foods Trading LLC, 2 lines, total AED 745.76, dated 20 Aug 2026.\n"
-        "Karak Tea Dust down AED 3.25 (22.00 to 18.75) since your last purchase.\n"
-        "Milk Powder 2.5kg up AED 2.60 (51.90 to 54.50) since your last purchase.\n"
-        "Reply OK to confirm.\n"
-        # WP-87: the paper prints "LLC" and the catalog row is "L.L.C.", so
-        # the reply says where it filed this one while it is still one
-        # keystroke to move.
-        "Booked under Gulf Foods Trading L.L.C."
+        f"{read_it(booked_under='Gulf Foods Trading L.L.C.')}\n"
+        "\n"
+        f"{PRICE_MOVES_HEADING}\n"
+        f"{ICON_DOWN} Karak Tea Dust down AED 3.25 (22.00 to 18.75, -14.8%)\n"
+        f"{ICON_UP} Milk Powder 2.5kg up AED 2.60 (51.90 to 54.50, +5.0%)\n"
+        "\n"
+        f"{CLOSING_ALL_GREEN}"
     )
+    assert await last_quoted_photo(db) == "wamid.in1"
 
     # The baseline rule: alerting must not move last_price/prev_price or
     # append history - only confirm does (record_confirmed_prices, WP-21).
@@ -537,9 +566,8 @@ async def test_no_alert_when_either_threshold_is_unmet(api, db):
     assert all(line["supplier_item_id"] is not None for line in lines)
 
     assert (await outbound_bodies(db))[-1] == (
-        "Read it: Gulf Foods Trading LLC, 2 lines, total AED 704.34, dated 20 Aug 2026.\n"
-        "Reply OK to confirm.\n"
-        "Booked under Gulf Foods Trading L.L.C."
+        f"{read_it('704.34', invoice_no='INV-2044', booked_under='Gulf Foods Trading L.L.C.')}"
+        f"\n\n{CLOSING_ALL_GREEN}"
     )
 
 
@@ -563,10 +591,7 @@ async def test_cash_invoice_is_held_for_review(api, db):
     assert row["payment_kind"] == "cash"
 
     reply = (await outbound_bodies(db))[-1]
-    assert reply == (
-        "Read it: Gulf Foods Trading LLC, 2 lines, total AED 745.76, dated 20 Aug 2026.\n"
-        + CASH_HOLD_NOTE
-    )
+    assert reply == f"{read_it()}\n\n{CASH_HOLD_NOTE}"
     assert CLOSING_ALL_GREEN not in reply  # a cash invoice cannot confirm from chat
 
 
@@ -592,9 +617,8 @@ async def test_unrepaired_failure_asks_the_amber_question(api, db):
 
     reply = (await outbound_bodies(db))[-1]
     assert (
-        "Line 2: the math doesn't add up (3 x 18.75 = 56.25 but the line says 65.25) "
-        "- which is right?"
-    ) in reply
+        "- *Line 2*: 3 x 18.75 = 56.25 but the line says 65.25. Which is right?"
+    ) in reply.splitlines()
     assert reply.splitlines()[-1] == CLOSING_WITH_AMBERS
 
 
@@ -613,7 +637,7 @@ async def test_printed_currency_is_stored_and_replied_as_iso_code(api, db):
     invoice = await db.get_invoice_by_document(str(doc["id"]), tenant_id=DEMO_TENANT_ID)
     assert invoice["currency"] == "AED"
     reply = (await outbound_bodies(db))[-1]
-    assert "total AED 745.76" in reply
+    assert "Total *AED 745.76*" in reply
     assert "dirhams" not in reply
 
 
@@ -658,11 +682,17 @@ async def test_similar_paper_gets_a_note_never_a_hold(api, db):
 
     rows = await db.pool.fetch("select * from invoices order by created_at, id")
     assert [row["status"] for row in rows] == ["awaiting_confirm", "awaiting_confirm"]
-    reply = (await outbound_bodies(db))[-1]
-    assert reply.splitlines()[-1] == render_duplicate_note(
-        "Gulf Foods Trading LLC", "INV-1041", rows[0]["created_at"].date()
+    # The note is its own section above the closing, which stays last (WP-125).
+    lines = (await outbound_bodies(db))[-1].splitlines()
+    assert lines[-1] == CLOSING_ALL_GREEN
+    assert lines[-2] == ""
+    assert lines[-3] == render_duplicate_note(
+        SimilarPaper(
+            supplier_name="Gulf Foods Trading LLC",
+            invoice_no="INV-1041",
+            received_on=rows[0]["created_at"].date(),
+        )
     )
-    assert reply.splitlines()[-2] == CLOSING_ALL_GREEN
 
 
 async def test_another_suppliers_same_number_is_not_held(api, db):

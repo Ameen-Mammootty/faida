@@ -15,11 +15,16 @@ import logging
 import time
 
 from .confirm import handle_inbound_text
-from .contracts import MEDIA_TYPES, WA_STATUS_IGNORED_UNKNOWN_SENDER, JobKind
+from .contracts import (
+    MEDIA_TYPES,
+    WA_STATUS_IGNORED_REACTION,
+    WA_STATUS_IGNORED_UNKNOWN_SENDER,
+    JobKind,
+)
 from .db import Database
 from .extraction.pipeline import extract_document
 from .extraction.provider import ExtractionProvider
-from .replies import REPLY_MEDIA_RECEIVED, REPLY_UNKNOWN_SENDER, REPLY_UNSUPPORTED_TYPE
+from .replies import REPLY_MEDIA_RECEIVED, REPLY_UNKNOWN_SENDER, REPLY_UNSUPPORTED_TYPE, Reply
 from .storage import Storage
 from .wa import WhatsAppClient
 
@@ -46,6 +51,13 @@ async def process_wa_message(
     from_phone = msg_row["from_phone"]
     msg_type = msg_row["msg_type"]
 
+    if msg_type == "reaction":
+        # A thumbs-up on one of our replies (or its removal) is a receipt,
+        # not a message: stamped and left alone, before the phone is even
+        # looked up, so an unknown phone's reaction costs it no reply either.
+        await db.set_inbound_message_status(msg_row["message_id"], WA_STATUS_IGNORED_REACTION)
+        return
+
     # Branch is resolved from the sender phone number, never from document
     # text - and never from a default. No branch means no tenant, and no
     # tenant means nothing is created.
@@ -68,7 +80,9 @@ async def process_wa_message(
             JobKind.EXTRACT_DOCUMENT,
             {"document_id": document_id, "tenant_id": tenant_id, "branch_id": branch_id},
         )
-        reply = REPLY_MEDIA_RECEIVED
+        # The ack quotes the photo it is about (WP-125), as every reply
+        # about a paper does from here on.
+        reply = Reply(body=REPLY_MEDIA_RECEIVED, reply_to=msg_row["message_id"])
     elif msg_type == "text":
         # WP-21 (C5): the text may confirm or correct an awaiting invoice;
         # onboarding stays the fallback when nothing is pending.
@@ -77,10 +91,10 @@ async def process_wa_message(
             db, from_phone, text, msg_row["created_at"], message_id=msg_row["message_id"]
         )
     else:
-        reply = REPLY_UNSUPPORTED_TYPE
+        reply = Reply(body=REPLY_UNSUPPORTED_TYPE)
 
-    out_id = await wa.send_text(from_phone, reply)
-    await db.record_outbound_message(out_id, from_phone, reply)
+    out_id = await wa.send_text(from_phone, reply.body, reply_to=reply.reply_to)
+    await db.record_outbound_message(out_id, from_phone, reply.body, reply_to=reply.reply_to)
 
 
 async def _ignore_unknown_sender(db: Database, wa: WhatsAppClient, msg_row) -> None:

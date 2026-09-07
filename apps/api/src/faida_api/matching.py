@@ -584,3 +584,13 @@ def snap_item(items: Sequence[Row], raw_name: str) -> Row | None:
     # split by one bad read attracts the next clean read instead of growing a
     # third row.
     return _best_item(items, strip_delivery_note(raw_name) or raw_name, strip_notes=True)
+
+
+def filed_under(printed_name: str | None, catalog_name: str | None) -> str | None:
+    """WP-87: the catalog name a paper is booked under, when that is worth a
+    line in the reply - None when there is no supplier yet, or when the two
+    names read the same however they are cased or punctuated. A line
+    repeating the name already above it teaches nothing."""
+    if catalog_name is None or same_name(printed_name, catalog_name):
+        return None
+    return catalog_name

@@ -912,6 +912,49 @@ by invoice date.
 
 **Depends on:** WP-120. Trigger: the read passes 500 ms, or a tenant's confirmed stock lines pass 100,000.
 
+## WhatsApp channel (deferred by the chat polish, WP-125, 2026-09-07)
+
+### A reaction as the receipt
+
+**What:** A 👀 reaction on the invoice photo (`type: reaction`, `reaction.message_id` the photo's
+wamid) instead of, or beside, the "Got it - invoice received and saved" bubble, so a forward produces
+one reply bubble instead of two.
+
+**Why:** Five forwards in a row are ten bubbles; WP-125's quoted replies tie each reply to its photo,
+and the receipt is the one bubble left that says nothing the read-out does not. A reaction needs no
+24-hour window and no template.
+
+**Context:** `worker.process_wa_message` sends the ack; `wa.py` would gain `send_reaction`, and
+`db.record_outbound_message` a `msg_type` argument (it hardcodes `'text'`). The founder kept the text
+ack on 2026-09-07 because the demo narrates it ("within a couple of seconds the ack arrives"); revisit
+with the pilot's phones in hand.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** WP-125; the founder's call.
+
+### Tap-to-confirm buttons
+
+**What:** The read-out as an interactive `button` message with a *Confirm* button (and a cash hold
+with *Paid on credit*), the tap fed through the same text grammar as typing `OK` or `payment credit`.
+
+**Why:** A tap is the lowest-friction confirm for a salesman on a phone, and the grammar already
+exists: the button's `id` can be the grammar text itself, so `handle_inbound_text` needs no second
+door.
+
+**Context:** Meta's interactive messages are free-form inside the 24-hour window (no approval): body
+max 1024 characters, so the read-out needs a text fallback when longer (three questions plus a
+foreign currency runs close); up to three buttons of 20 characters; the tap arrives as an inbound
+`interactive.button_reply {id, title}` with `context.id` naming the message tapped, which
+`worker.process_wa_message` would route to the text branch with the id as the text. Whether the
+quote (`context`) is honoured on an interactive send is not in Meta's docs and has to be proved on
+the live number first. A tap on an old read-out while a newer paper waits resolves like a typed OK
+(C5: the list of waiting papers), no worse and no better.
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** WP-125, and a customer quote (§2 rule 8) or the pilot's first week of real forwards.
+
 ## Extraction & matching
 
 ### A handwritten margin note gets folded into an item name and splits the catalog

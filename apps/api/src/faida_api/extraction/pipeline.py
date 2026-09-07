@@ -19,6 +19,7 @@ from ..contracts import DocumentStatus, InvoiceStatus, JobKind, JobRefused, job_
 from ..db import RETRY_LIMIT, Database
 from ..matching import (
     Row,
+    filed_under,
     match_supplier,
     normalize_invoice_no,
     same_name,
@@ -31,11 +32,10 @@ from ..replies import (
     REPLY_NOT_INVOICE,
     REPLY_Z_REPORT,
     PriceAlert,
+    SimilarPaper,
     compose_cash_hold_reply,
     compose_duplicate_hold_reply,
     compose_invoice_reply,
-    render_booked_under,
-    render_duplicate_note,
 )
 from ..storage import Storage
 from ..wa import WhatsAppClient
@@ -155,12 +155,14 @@ async def extract_document(
         if attempts >= RETRY_LIMIT:
             await db.set_document_status(document_id, DocumentStatus.FAILED, tenant_id=tenant_id)
             if from_phone:
-                await _reply(db, wa, from_phone, REPLY_EXTRACTION_FAILED)
+                await _reply(
+                    db, wa, from_phone, REPLY_EXTRACTION_FAILED, photo=doc["wa_message_id"]
+                )
         raise
 
     if from_phone:
         started = time.monotonic()
-        await _reply(db, wa, from_phone, reply)
+        await _reply(db, wa, from_phone, reply, photo=doc["wa_message_id"])
         stage_ms["reply"] = int((time.monotonic() - started) * 1000)
         logger.info("latency stage=reply document=%s elapsed_ms=%d", document_id, stage_ms["reply"])
 
@@ -322,28 +324,36 @@ async def _persist_extracted(
             duplicate["created_at"].date(),
         )
     else:
-        if invoice.payment_kind == "cash":
-            status = InvoiceStatus.NEEDS_REVIEW
-            reply = compose_cash_hold_reply(
-                invoice, validation, alerts, tenant_currency=tenant_currency
-            )
-        else:
-            status = InvoiceStatus.AWAITING_CONFIRM
-            reply = compose_invoice_reply(
-                invoice, validation, alerts, tenant_currency=tenant_currency
-            )
         # WP-87: which supplier's price history this paper moves, said out
         # loud when it is not the name printed on the paper - the one moment
         # before confirm where a wrong booking is still one keystroke to fix.
         # A duplicate hold skips it on purpose: that reply is about a copy
-        # nobody is going to record, and a filing note on it is noise.
-        if supplier is not None and not same_name(invoice.supplier_name, supplier["name"]):
-            reply = f"{reply}\n{render_booked_under(supplier['name'])}"
+        # nobody is going to record, and a filing note on it is noise. Both
+        # notes are the composer's inputs, so the closing stays last.
+        booked_under = None
+        if supplier is not None:
+            booked_under = filed_under(invoice.supplier_name, supplier["name"])
+        similar_to = None
         if similar is not None:
-            note = render_duplicate_note(
-                similar["supplier_name"], similar["invoice_no"], similar["created_at"].date()
+            similar_to = SimilarPaper(
+                supplier_name=similar["supplier_name"],
+                invoice_no=similar["invoice_no"],
+                received_on=similar["created_at"].date(),
             )
-            reply = f"{reply}\n{note}"
+        if invoice.payment_kind == "cash":
+            status = InvoiceStatus.NEEDS_REVIEW
+            compose = compose_cash_hold_reply
+        else:
+            status = InvoiceStatus.AWAITING_CONFIRM
+            compose = compose_invoice_reply
+        reply = compose(
+            invoice,
+            validation,
+            alerts,
+            tenant_currency=tenant_currency,
+            booked_under=booked_under,
+            similar_to=similar_to,
+        )
 
     started = time.monotonic()
     await db.insert_draft_invoice(
@@ -517,6 +527,10 @@ async def _record_run(
     )
 
 
-async def _reply(db: Database, wa: WhatsAppClient, to_phone: str, body: str) -> None:
-    out_id = await wa.send_text(to_phone, body)
-    await db.record_outbound_message(out_id, to_phone, body)
+async def _reply(
+    db: Database, wa: WhatsAppClient, to_phone: str, body: str, *, photo: str | None
+) -> None:
+    """Every reply the pipeline sends is about one paper, so it is sent as a
+    quoted reply to that paper's photo (WP-125)."""
+    out_id = await wa.send_text(to_phone, body, reply_to=photo)
+    await db.record_outbound_message(out_id, to_phone, body, reply_to=photo)

@@ -17,7 +17,11 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
-from faida_api.contracts import WA_STATUS_IGNORED_UNKNOWN_SENDER, JobKind
+from faida_api.contracts import (
+    WA_STATUS_IGNORED_REACTION,
+    WA_STATUS_IGNORED_UNKNOWN_SENDER,
+    JobKind,
+)
 from faida_api.replies import REPLY_MEDIA_RECEIVED, REPLY_UNKNOWN_SENDER
 from faida_api.storage import Storage
 from faida_api.wa import WhatsAppClient
@@ -32,6 +36,7 @@ from .conftest import (
     FakeStorage,
     requires_db,
     wa_image_payload,
+    wa_reaction_payload,
 )
 from .test_extraction_flow import drain_jobs, good_invoice, invoice_result, post_webhook
 
@@ -235,6 +240,34 @@ async def test_unknown_sender_reply_failure_keeps_the_stamp_and_the_job_succeeds
     # Nothing is left in the queue to retry: there is nothing to retry for a
     # phone we do not know.
     assert await db.pool.fetchval("select count(*) from jobs where status = 'queued'") == 0
+
+
+async def test_a_reaction_is_stamped_and_answered_with_silence(rig, db):
+    """WP-125: a thumbs-up on one of our replies is a receipt, not a message.
+    Stamped so the log says why nothing happened, nothing sent, nothing
+    created - from a known phone, from an unknown one (which must not be
+    told to ask the owner for reacting), and for a removal alike."""
+    app, client, fake_meta, fake_storage = rig
+    cases = [
+        ("wamid.react1", DEMO_PHONE, "\U0001f44d"),
+        ("wamid.react2", UNKNOWN_PHONE, "\U0001f44d"),
+        ("wamid.react3", DEMO_PHONE, ""),
+    ]
+    for message_id, phone, emoji in cases:
+        payload = wa_reaction_payload(
+            "wamid.out1", emoji=emoji, message_id=message_id, from_phone=phone
+        )
+        await post_webhook(client, payload)
+        assert await run_one_job(db, app.state.wa, app.state.storage) is True
+        assert await inbound_status(db, message_id) == WA_STATUS_IGNORED_REACTION
+
+    assert fake_meta.sent == []
+    assert await db.pool.fetchval("select count(*) from documents") == 0
+    assert fake_storage.objects == {}
+    assert await jobs_of_kind(db, JobKind.EXTRACT_DOCUMENT) == []
+    assert all(
+        job["status"] == "done" for job in await jobs_of_kind(db, JobKind.PROCESS_WA_MESSAGE)
+    )
 
 
 # --- one extract job per document, ever -------------------------------------
