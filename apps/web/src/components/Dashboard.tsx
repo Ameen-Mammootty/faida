@@ -9,7 +9,9 @@ import {
   DEFAULT_CHOICE,
   ITEMS_LINK,
   LEAGUE_LINK,
+  MOVES_LINK,
   NO_ITEMS,
+  NO_PRICE_MOVES,
   NO_SIGNALS,
   SCREEN_ABOUT,
   answerChip,
@@ -46,7 +48,14 @@ import {
   percent,
   periodBounds,
   portionsWords,
+  priceMoveLink,
+  priceMoveMoney,
+  priceMovePanel,
+  priceMoveTag,
+  priceMoveTip,
+  priceMovesCaption,
   showAllLabel,
+  showAllMovesLabel,
   showAllSignalsLabel,
   soldCount,
   signalHref,
@@ -61,17 +70,25 @@ import {
   totalTip,
   withBranch,
   type PeriodChoice,
+  type PriceMoveTag,
+  type PriceMoveTone,
   type Tile,
 } from "@/lib/dashboardScreen";
 import { roundedAed } from "@/lib/format";
 import type {
   Branch,
   DashboardItemRow,
+  DashboardPriceMove,
   DashboardResult,
   DashboardSignal,
   LeagueRow,
 } from "@/lib/types";
-import { ChevronIcon } from "./icons";
+import {
+  ChevronIcon,
+  PendingIcon,
+  TrendDownIcon,
+  TrendUpIcon,
+} from "./icons";
 import InfoTip from "./InfoTip";
 import LossFigure from "./LossFigure";
 import QualityChip from "./QualityChip";
@@ -712,6 +729,80 @@ function SignalLine({ signal }: { signal: DashboardSignal }) {
   );
 }
 
+/**
+ * M9 WP-99, the web half: supplier price moves, beside "what to look at".
+ *
+ * Every row is the API's: it ranked the list by the money the move moved and
+ * it wrote the sentence, the plates and the evidence. This panel tags each
+ * one, right-aligns the money the way the signals do, puts the plates and
+ * the evidence behind the row's one icon, and links the line on the paper.
+ * It never re-ranks, never re-words and never divides.
+ */
+
+/** The tag's three tones. Each is paired with its own word and its own glyph,
+ * so the colour is the third cue and never the only one. */
+const MOVE_TONE: Record<PriceMoveTone, string> = {
+  caution: "bg-gold-soft text-caution",
+  verified: "bg-mist text-verified",
+  stone: "bg-mist text-stone",
+};
+
+function MoveTag({ tag }: { tag: PriceMoveTag }) {
+  const Icon =
+    tag.direction === "up"
+      ? TrendUpIcon
+      : tag.direction === "down"
+        ? TrendDownIcon
+        : PendingIcon;
+  return (
+    <span
+      className={`mr-1.5 inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[11px] font-medium whitespace-nowrap ${MOVE_TONE[tag.tone]}`}
+    >
+      <Icon className="h-3 w-3" />
+      {tag.label}
+    </span>
+  );
+}
+
+/** One move: the tag, the API's sentence, its plates and evidence behind one
+ * icon, the line on the paper, and the money it moved on the right. */
+function MoveLine({ move }: { move: DashboardPriceMove }) {
+  const money = priceMoveMoney(move);
+  const link = priceMoveLink(move);
+  return (
+    <li className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-2 first:pt-0 last:pb-0">
+      <p className="flex min-w-0 flex-1 items-center gap-1.5 text-sm text-ink">
+        <span className="min-w-0">
+          <MoveTag tag={priceMoveTag(move)} />
+          {move.sentence}
+          {link ? (
+            <>
+              {" "}
+              <Link
+                href={link.href}
+                className="text-xs font-medium whitespace-nowrap text-palm underline-offset-2 hover:underline"
+              >
+                {link.label}
+              </Link>
+            </>
+          ) : null}
+        </span>
+        <InfoTip lines={priceMoveTip(move)} label="More about this move" />
+      </p>
+      {money ? (
+        <p className="shrink-0 text-right">
+          <span className="block font-display text-[15px] font-semibold text-ink tabular-nums">
+            {money.figure}
+          </span>
+          <span className="block text-[11px] leading-tight text-stone">
+            {money.words}
+          </span>
+        </p>
+      ) : null}
+    </li>
+  );
+}
+
 // --- the screen -----------------------------------------------------------------
 
 export default function Dashboard() {
@@ -729,6 +820,7 @@ export default function Dashboard() {
   const [open, setOpen] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [allSignals, setAllSignals] = useState(false);
+  const [allMoves, setAllMoves] = useState(false);
   const drillRef = useRef<HTMLDivElement>(null);
   const rowButtons = useRef<Map<string, HTMLButtonElement>>(new Map());
   const lastOpened = useRef<string | null>(null);
@@ -886,6 +978,9 @@ export default function Dashboard() {
   const footnote = signalsFootnote(result);
   const signals = signalPanel(result.signals, allSignals);
   const moreSignals = showAllSignalsLabel(result.signals.length, allSignals);
+  const moves = priceMovePanel(result.price_moves.moves, allMoves);
+  const moreMoves = showAllMovesLabel(result.price_moves.moves.length, allMoves);
+  const movesCaption = priceMovesCaption(result.price_moves);
   const toggle = (id: string) =>
     setOpen((current) => (current === id ? null : id));
 
@@ -1205,48 +1300,101 @@ export default function Dashboard() {
             </ul>
           </section>
 
-          {/* What to look at: prose, ranked by money, never a widget. */}
-          <section className="space-y-2">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h2 className="font-display text-lg font-semibold text-ink">
-                What to look at
-              </h2>
-              {signalsCount(result.signals) ? (
-                <span className="text-xs text-stone">
-                  {signalsCount(result.signals)}
-                </span>
-              ) : null}
-            </div>
-            <div className="rounded-md border border-ink/10 bg-paper px-4 py-3">
-              {result.signals.length === 0 ? (
-                <p className="text-sm text-stone">{footnote ?? NO_SIGNALS}</p>
-              ) : (
-                <>
+          {/* Two panels, side by side from a laptop and one under the other
+              below it: what to look at, and what the suppliers did to the
+              prices behind it. */}
+          <div className="grid gap-5 lg:grid-cols-2">
+            {/* What to look at: prose, ranked by money, never a widget. */}
+            <section className="space-y-2">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <h2 className="font-display text-lg font-semibold text-ink">
+                  What to look at
+                </h2>
+                {signalsCount(result.signals) ? (
+                  <span className="text-xs text-stone">
+                    {signalsCount(result.signals)}
+                  </span>
+                ) : null}
+              </div>
+              <div className="rounded-md border border-ink/10 bg-paper px-4 py-3">
+                {result.signals.length === 0 ? (
+                  <p className="text-sm text-stone">{footnote ?? NO_SIGNALS}</p>
+                ) : (
+                  <>
+                    <ul className="divide-y divide-ink/5">
+                      {signals.map((signal) => (
+                        <SignalLine
+                          key={`${signal.kind}-${signal.sentence}`}
+                          signal={signal}
+                        />
+                      ))}
+                    </ul>
+                    {moreSignals ? (
+                      <button
+                        type="button"
+                        onClick={() => setAllSignals((value) => !value)}
+                        aria-expanded={allSignals}
+                        className="mt-2 text-xs font-medium text-palm underline-offset-2 hover:underline"
+                      >
+                        {moreSignals}
+                      </button>
+                    ) : null}
+                    {footnote ? (
+                      <p className="mt-2 text-xs text-stone">{footnote}</p>
+                    ) : null}
+                  </>
+                )}
+              </div>
+            </section>
+
+            {/* Supplier price moves: each material's latest move inside the
+                window, ranked by the money it moved. The API wrote every
+                sentence and set the order; the panel tags, links and counts. */}
+            <section className="space-y-2">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <h2 className="font-display text-lg font-semibold text-ink">
+                  Supplier price moves
+                </h2>
+                {movesCaption ? (
+                  <span className="text-xs text-stone">{movesCaption}</span>
+                ) : null}
+              </div>
+              <div className="rounded-md border border-ink/10 bg-paper px-4 py-3">
+                {moves.length === 0 ? null : (
                   <ul className="divide-y divide-ink/5">
-                    {signals.map((signal) => (
-                      <SignalLine
-                        key={`${signal.kind}-${signal.sentence}`}
-                        signal={signal}
-                      />
+                    {moves.map((move) => (
+                      <MoveLine key={move.ingredient_id} move={move} />
                     ))}
                   </ul>
-                  {moreSignals ? (
+                )}
+                {/* The way out of a short list and the way to the whole one
+                    share the foot, so the head stays one line beside "what
+                    to look at" and an empty panel is one row, exactly as
+                    the panel next to it is. */}
+                <div
+                  className={`flex flex-wrap items-baseline gap-x-3 gap-y-1 ${
+                    moves.length === 0 ? "" : "mt-2"
+                  }`}
+                >
+                  {moves.length === 0 ? (
+                    <p className="text-sm text-stone">{NO_PRICE_MOVES}</p>
+                  ) : moreMoves ? (
                     <button
                       type="button"
-                      onClick={() => setAllSignals((value) => !value)}
-                      aria-expanded={allSignals}
-                      className="mt-2 text-xs font-medium text-palm underline-offset-2 hover:underline"
+                      onClick={() => setAllMoves((value) => !value)}
+                      aria-expanded={allMoves}
+                      className="text-xs font-medium text-palm underline-offset-2 hover:underline"
                     >
-                      {moreSignals}
+                      {moreMoves}
                     </button>
                   ) : null}
-                  {footnote ? (
-                    <p className="mt-2 text-xs text-stone">{footnote}</p>
-                  ) : null}
-                </>
-              )}
-            </div>
-          </section>
+                  <span className="ml-auto">
+                    <SectionLink href={MOVES_LINK.href} label={MOVES_LINK.label} />
+                  </span>
+                </div>
+              </div>
+            </section>
+          </div>
 
           {/* The items: five and five, expanding in place. */}
           <section className="space-y-2">

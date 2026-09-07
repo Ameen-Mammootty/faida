@@ -30,6 +30,8 @@ import type {
   Branch,
   DashboardItemRow,
   DashboardItems,
+  DashboardPriceMove,
+  DashboardPriceMoves,
   DashboardResult,
   DashboardScope,
   DashboardSignal,
@@ -753,6 +755,124 @@ export function signalsFootnote(result: DashboardResult): string | null {
   return `Based on ${based} ${based === 1 ? "branch" : "branches"}; ${list} ${
     names.length === 1 ? "has" : "have"
   } no sales loaded.`;
+}
+
+// --- the supplier price moves -------------------------------------------------
+
+/**
+ * M9 WP-99's web half: each material's latest move inside the window, beside
+ * "what to look at" on a laptop and under it on a phone.
+ *
+ * Everything with meaning in it arrived composed. The API ranks the list by
+ * the money the move actually moved, and `sentence`, `plates` and `evidence`
+ * are its own words carried whole (C13.5). The screen's own words are the
+ * tag, the caption's joins, the toggle and the empty state - four small
+ * things, each a function here rather than a string inside the component, so
+ * vitest pins them. Nothing below re-ranks, re-words or divides.
+ */
+
+/** Never an empty card: the panel says there were none. */
+export const NO_PRICE_MOVES = "No price moves in this window.";
+
+/** Where the whole list lives - both directions, both packs named, and the
+ * moves this panel's window left out. */
+export const MOVES_LINK = { href: "/menu", label: "Every price move on Menu" };
+
+/** The tag's tone: caution for a rise, the confirmed green for a fall, and
+ * the quietest pair in the palette for a basis change, which is evidence and
+ * not a warning. Each one always carries its own word - nothing on this
+ * screen means anything by colour alone. */
+export type PriceMoveTone = "caution" | "verified" | "stone";
+
+export interface PriceMoveTag {
+  label: string;
+  tone: PriceMoveTone;
+  /** Which arrow the tag wears; null for a basis change, which has none. */
+  direction: "up" | "down" | null;
+}
+
+/** The one thing this panel names for itself: what kind of move this is. A
+ * fall is called a fall and a basis change is never dressed as a rise. */
+export function priceMoveTag(move: DashboardPriceMove): PriceMoveTag {
+  if (move.kind === "basis_changed") {
+    return { label: "Price basis changed", tone: "stone", direction: null };
+  }
+  if (move.direction === "down") {
+    return { label: "Price fell", tone: "verified", direction: "down" };
+  }
+  return { label: "Price moved", tone: "caution", direction: "up" };
+}
+
+export interface PriceMoveMoney {
+  /** The API's signed figure, rounded for a headline off its magnitude. */
+  figure: string;
+  /** Which way it went, in the word the API's own evidence line uses. */
+  words: string;
+}
+
+/** The money the move moved, in the signals' style: the magnitude as the
+ * figure, the direction as the small word under it. A basis change carries
+ * no number at all, so the column stays empty rather than printing a zero
+ * that would read as "nothing happened". */
+export function priceMoveMoney(move: DashboardPriceMove): PriceMoveMoney | null {
+  if (move.money_at_stake === null) return null;
+  return {
+    figure: roundedAed(move.money_at_stake.replace("-", "")),
+    words: move.direction === "down" ? "saved" : "at stake",
+  };
+}
+
+/** Three rows and a toggle, the items panel's own pattern: the list arrives
+ * ranked by the money it moved, so the three at the top are the three that
+ * matter. */
+export const MOVES_SHOWN = 3;
+
+export function priceMovePanel(
+  moves: DashboardPriceMove[],
+  expanded: boolean,
+): DashboardPriceMove[] {
+  return expanded ? moves : moves.slice(0, MOVES_SHOWN);
+}
+
+/** The toggle counts the rows the panel holds, never the API's whole count:
+ * "show all" may not promise moves that were never sent. */
+export function showAllMovesLabel(count: number, expanded: boolean): string | null {
+  if (count <= MOVES_SHOWN) return null;
+  return expanded ? `Show the top ${MOVES_SHOWN} only` : `Show all ${count}`;
+}
+
+/** The count in the section head, with the clause that keeps it honest: the
+ * read behind it holds each material's *latest* move, never every move in
+ * the window. Where the API capped its list, the caption says how many of
+ * them are printed instead. */
+export function priceMovesCaption(moves: DashboardPriceMoves): string | null {
+  if (moves.count === 0) return null;
+  const head = `${moves.count} moved this window`;
+  if (moves.moves.length < moves.count) {
+    return `${head} · the ${moves.moves.length} largest listed`;
+  }
+  return `${head} · latest move each`;
+}
+
+/** The paper behind the move: the newest line, at the app's one anchor idiom
+ * (`lib/anchor.ts`). The API sends the position with the id or neither, so
+ * the id is the one thing worth asking about. */
+export function priceMoveLink(
+  move: DashboardPriceMove,
+): { href: string; label: string } | null {
+  if (!move.invoice_id) return null;
+  return {
+    href: `/invoices/${move.invoice_id}#line-${move.line_position}`,
+    label: "See the invoice",
+  };
+}
+
+/** Behind the icon after the sentence: which plates felt it and the evidence
+ * for the figure beside it, both in the API's own words, one to a line. */
+export function priceMoveTip(move: DashboardPriceMove): string[] {
+  return [move.plates, move.evidence].filter(
+    (line): line is string => line !== null && line !== "",
+  );
 }
 
 // --- the items ----------------------------------------------------------------
