@@ -728,6 +728,26 @@ first" without claiming one.
 periods that each hold at least two purchases - the pattern that makes the reading a recipe rather than a
 shelf, at which point the threshold is measured rather than guessed.
 
+### A per-material default usable share
+
+**What:** A material-level default for the conversion yield WP-119 sets per recipe component ("chicken is 85%
+usable wherever it appears"), and a yield table a consultant maintains once (M12 D13).
+
+**Why:** The per-component share is the smallest fact that makes a recipe say what leaves the storeroom; a
+default is a second place for the same fact until three recipes carry the same share for one material.
+
+**Depends on:** WP-119. Trigger: a consultant sets the same share on the same material in three recipes.
+
+### A headline sentence on the materials panel
+
+**What:** One sentence above the ranked table naming a material and a branch (M12 P5 as first decided, removed
+by D9 on the outside voice's finding 1).
+
+**Why:** No number of purchase dates says what was on the shelf, so a promoted sentence promotes restocking as
+over-buying; the ranked table and each row's own caveat carry the reader until a count exists.
+
+**Depends on:** a stock count. Trigger: a count exists, so a difference can be read against a shelf.
+
 ### "Days of use" beside the gap
 
 **What:** Bought ÷ (used per day), so two sacks on the last day of a week read as "34 days of use" (M12 §5 P8).
@@ -770,14 +790,36 @@ passes 200 KB on the wire (recorded by `test_dashboard.py`).
 ### A frozen quantity basis per line, written at confirm
 
 **What:** A per-line pack quantity frozen at confirm independent of price and currency - a migration and a
-change to `db._cost_stock_lines` (M12 §5 P2 option (c); the review's finding 1).
+change to `db._cost_stock_lines` (M12 §5 P2 option (c); the Codex review's finding 1).
 
-**Why:** M12 measures a line at read time with `costing.resolve_pack` over the line's own printed cells and its
-pack's override, the resolver that costed it, and pins that a costed line's measure equals its frozen basis.
-Nothing derived is stored anywhere in this product, and the resolver's inputs are immutable.
+**Why:** M12 measures a line by its frozen cost factor where it has one and by `costing.resolve_pack` over the
+line's own printed cells only where it has none (the engineering review's D2), and pins that a fresh resolution
+equals the frozen factor on every costed line as a drift alarm. That is most of what a frozen quantity basis
+would buy; nothing derived is stored anywhere in this product.
 
-**Depends on:** WP-120. Trigger: a line's printed pack cells ever become mutable, or `resolve_pack` ever takes an
-input that is not on the line - the equality test would say so first.
+**Depends on:** WP-120. Trigger: the drift-alarm test fails on live data, or a real chain's uncosted lines become
+a material share of its purchases.
+
+### A catalog product for every stock line at confirm
+
+**What:** Split identity from price in `db.record_confirmed_prices`: create the supplier-item row for every
+confirmed stock line, and keep skipping price memory for a foreign-currency paper and a line with no price
+(M12 engineering review D3) - **and a one-off backfill door that attaches the lines confirmed before the fix to
+the products the fixed path would create** (D20), because the very line that triggers the fix is one of them.
+
+**Why:** The function returns before its line loop on a foreign-currency paper (the WP-28 guard) and skips a
+line with no quantity or no unit price, so such lines have no product unless extraction snapped them to a known
+one - and a product is the only path from a purchase to a material. M12 reports them as *orphans* with their
+paper linked, in no row and no queue, and marks that code as the accepted shortcut it is: the confirm
+transaction is the most sensitive code in the product and the case is rare on an AED chain.
+
+**Context:** the supplier link is already kept for a foreign paper ("identity, not price"); the product row is
+identity too. The change is inside one shared function, with `test_currency.py` and the WP-28 cases as the
+guard that price memory still records nothing for those lines.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** WP-120 shipped. Trigger: a foreign-currency or priceless line on a real pilot paper.
 
 ### An index on `invoice_lines` for the period read
 
