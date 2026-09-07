@@ -520,10 +520,11 @@ describe("the supplier price moves", () => {
     expect(
       priceMoveMoney(priceMove({ direction: "down", money_at_stake: "-43.65" })),
     ).toEqual({ figure: "AED 44", words: "saved" });
-    // A move nothing sold after still moved: the API sent a zero, not a null.
+    // A move nothing sold after still moved: the API sent a zero, not a null,
+    // and the words say why the figure is zero.
     expect(priceMoveMoney(priceMove({ money_at_stake: "0.00" }))).toEqual({
       figure: "AED 0",
-      words: "at stake",
+      words: "nothing sold since",
     });
     // A basis change carries no number at all, so the column is empty.
     expect(

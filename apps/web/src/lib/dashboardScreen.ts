@@ -816,8 +816,15 @@ export interface PriceMoveMoney {
  * that would read as "nothing happened". */
 export function priceMoveMoney(move: DashboardPriceMove): PriceMoveMoney | null {
   if (move.money_at_stake === null) return null;
+  const magnitude = move.money_at_stake.replace("-", "");
+  // A move nothing sold after carries a zero, not a null (the API's call): the
+  // figure is honest and the words say why it is zero, so "AED 0 at stake"
+  // never reads as a move that cost nothing. The full sentence is in the tip.
+  if (/^0(\.0+)?$/.test(magnitude)) {
+    return { figure: roundedAed(magnitude), words: "nothing sold since" };
+  }
   return {
-    figure: roundedAed(move.money_at_stake.replace("-", "")),
+    figure: roundedAed(magnitude),
     words: move.direction === "down" ? "saved" : "at stake",
   };
 }

@@ -227,7 +227,7 @@ function FixCallout({ loss, move }: { loss: MenuItemSummary | null; move: PriceM
         </p>
         <p className="mt-0.5 text-sm text-stone">
           Now {move.current.product_name} from {move.current.supplier_name}, was{" "}
-          {move.previous.product_name} from {move.previous.supplier_name}.
+          {move.previous.product_name} from {move.previous.supplier_name.replace(/\.$/, "")}.
         </p>
         <p className="mt-1 text-xs text-stone">
           <Link
