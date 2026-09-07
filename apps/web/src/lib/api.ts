@@ -11,6 +11,7 @@
  *   POST  /api/invoices/{id}/dismiss        a duplicate copy leaves the working list; the detail
  *   POST  /api/documents                    manual upload (multipart file [+ branch_id])
  *   GET   /api/supplier-items/{id}/prices   item header + confirmed prices, oldest first
+ *   GET   /api/suppliers                    {"suppliers": [...]}, each with its aliases (WP-87)
  *
  * PATCH and confirm return the full updated detail payload - callers use it
  * directly and never refetch after a write.
@@ -64,6 +65,7 @@ import {
   mockMapTillItem,
   mockPostSalesDays,
   mockPostSalesFile,
+  mockRemoveBranchAlias,
   mockSaveSalesLayout,
   mockUnmapTillItem,
 } from "./mock/sales";
@@ -75,6 +77,7 @@ import {
   mockCreateManualInvoice,
   mockGetInvoice,
   mockGetSupplierItemPrices,
+  mockGetSuppliers,
   mockListInvoices,
   mockPatchInvoiceFields,
   mockUploadDocument,
@@ -110,6 +113,7 @@ import type {
   SalesFileResult,
   SalesLayout,
   SalesLayoutInput,
+  Supplier,
   TillItem,
   UnmappedSupplierItem,
   UploadResult,
@@ -255,6 +259,16 @@ export async function uploadDocument(file: File, branchId?: string): Promise<Upl
 export async function createManualInvoice(body: ManualInvoiceInput): Promise<InvoiceDetail> {
   if (MOCK) return mockCreateManualInvoice(body);
   return request<InvoiceDetail>("/api/invoices/manual", jsonInit("POST", body));
+}
+
+/**
+ * The tenant's suppliers with the printed names each already answers to (M9
+ * WP-87): what the review screen's "Booked under" picker is built from.
+ */
+export async function getSuppliers(): Promise<Supplier[]> {
+  if (MOCK) return mockGetSuppliers();
+  const body = await request<{ suppliers: Supplier[] }>("/api/suppliers");
+  return body.suppliers;
 }
 
 export async function getSupplierItemPrices(supplierItemId: string): Promise<PriceHistory> {
@@ -460,6 +474,20 @@ export async function addBranchAlias(branchId: string, alias: string): Promise<B
   const body = await request<{ alias: BranchAlias }>(
     `/api/branches/${encodeURIComponent(branchId)}/aliases`,
     jsonInit("POST", { alias }),
+  );
+  return body.alias;
+}
+
+/** Un-teach one till label from one branch (TODOS.md, "Correcting a wrongly
+ * taught branch alias"): the row goes with its audit line, the loaded days
+ * stay where they landed, and 404 is the answer outside the tenant or under
+ * another branch. The screen's re-teach is this and then `addBranchAlias`,
+ * in that order, never a second write door. */
+export async function removeBranchAlias(branchId: string, aliasId: string): Promise<BranchAlias> {
+  if (MOCK) return mockRemoveBranchAlias(branchId, aliasId);
+  const body = await request<{ alias: BranchAlias }>(
+    `/api/branches/${encodeURIComponent(branchId)}/aliases/${encodeURIComponent(aliasId)}`,
+    { method: "DELETE" },
   );
   return body.alias;
 }

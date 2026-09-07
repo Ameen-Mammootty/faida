@@ -133,6 +133,48 @@ describe("the sales door in mock mode", () => {
     expect((await door.mockAddBranchAlias("br-01", "QUSAIS 1")).id).toBe(alias.id);
   });
 
+  it("un-teaches an alias through its id and answers 404 for one that is not at that address", async () => {
+    // The incident, on the mock: AL NAHDA taught to Al Quoz by mistake, the
+    // screen's re-teach is DELETE then POST, and a re-read of the branches
+    // resolves the label to the right one. The loaded days are not touched.
+    const door = await freshDoor();
+    const { readSalesCsv } = await import("../salesLoad");
+    const wrong = await door.mockAddBranchAlias("br-01", "AL NAHDA");
+    let branches = await door.mockGetBranches();
+    expect(branches.find((branch) => branch.id === "br-01")).toMatchObject({
+      aliases: ["AL NAHDA"],
+      alias_rows: [{ id: wrong.id, branch_id: "br-01", alias: "AL NAHDA", alias_key: "al nahda" }],
+    });
+    await expect(door.mockRemoveBranchAlias("br-01", "alias-9999")).rejects.toMatchObject({ status: 404 });
+    await expect(door.mockRemoveBranchAlias("br-02", wrong.id)).rejects.toMatchObject({ status: 404 });
+    await expect(door.mockRemoveBranchAlias("br-99", wrong.id)).rejects.toMatchObject({ status: 404 });
+
+    expect(await door.mockRemoveBranchAlias("br-01", wrong.id)).toMatchObject({ id: wrong.id, alias: "AL NAHDA" });
+    const right = await door.mockAddBranchAlias("br-02", "AL NAHDA");
+    branches = await door.mockGetBranches();
+    expect(branches.find((branch) => branch.id === "br-01")).toMatchObject({ aliases: [], alias_rows: [] });
+    expect(branches.find((branch) => branch.id === "br-02")).toMatchObject({
+      aliases: ["AL NAHDA"],
+      alias_rows: [{ id: right.id, branch_id: "br-02", alias: "AL NAHDA" }],
+    });
+    const read = readSalesCsv(
+      ["Outlet", "Date", "Item", "Amount"],
+      [["AL NAHDA", "25/08/2026", "KARAK", "35.00"]],
+      [],
+      {
+        columns: { branch: "Outlet", date: "Date", item: "Item", amount: "Amount" },
+        dateOrder: "dmy",
+        branches,
+        fileBranchId: null,
+        today: "2026-09-07",
+      },
+    );
+    if (!read.ok) throw new Error(read.error);
+    expect(read.days[0]).toMatchObject({ branchId: "br-02", branchName: "Karama", branchLabel: "AL NAHDA" });
+    // Removed once: the second DELETE finds nothing at that address.
+    await expect(door.mockRemoveBranchAlias("br-01", wrong.id)).rejects.toMatchObject({ status: 404 });
+  });
+
   it("keeps the file under its own hash and answers the same hash for the same bytes", async () => {
     const door = await freshDoor();
     const bytes = "Outlet,Date,Amount\nA,25/08/2026,1\n";

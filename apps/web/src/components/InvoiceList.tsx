@@ -7,6 +7,7 @@ import { dismissInvoice, listInvoices } from "@/lib/api";
 import { ApiError } from "@/lib/errors";
 import { formatDate, money } from "@/lib/format";
 import { branchOptions as deriveBranches, supplierOptions as deriveSuppliers } from "@/lib/options";
+import { bookedUnderLine } from "@/lib/supplierChoice";
 import type { InvoiceFilters, InvoiceListRow, InvoiceStatus, InvoiceSummary } from "@/lib/types";
 import DuplicateChip from "./DuplicateChip";
 import { AlertIcon } from "./icons";
@@ -401,6 +402,13 @@ export default function InvoiceList() {
                     >
                       {invoice.supplier_name ?? "Supplier not read"}
                     </Link>
+                    {/* WP-87: where the paper is filed, only when that is not
+                        the name printed on it. Nothing else on the row moves. */}
+                    {bookedUnderLine(invoice) ? (
+                      <span className="mt-0.5 block text-xs font-normal text-stone">
+                        {bookedUnderLine(invoice)}
+                      </span>
+                    ) : null}
                   </td>
                   <td className="px-4 py-3 text-stone tabular-nums">
                     {invoice.invoice_no ?? "-"}

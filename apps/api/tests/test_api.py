@@ -1618,7 +1618,8 @@ async def test_list_and_detail_both_say_who_the_paper_was_booked_under(api, db):
     # point of the field is that they do not always read the same.
     assert listed["supplier_name"] == "Gulf Foods Trading LLC"
     detail = (await client.get(f"/api/invoices/{invoice['id']}", headers=AUTH)).json()
-    assert detail["booked_under"] == booked
+    # The detail adds the one word the review screen's sentence needs.
+    assert detail["booked_under"] == {**booked, "learns_printed_name": False}
 
 
 @requires_db
@@ -1651,7 +1652,11 @@ async def test_a_paper_is_re_pointed_before_confirm_and_the_vendor_is_learnt(api
     )
     assert resp.status_code == 200
     detail = resp.json()
-    assert detail["booked_under"] == {"id": abc, "name": "Gulf Foods ABC Trading LLC"}
+    assert detail["booked_under"] == {
+        "id": abc,
+        "name": "Gulf Foods ABC Trading LLC",
+        "learns_printed_name": True,
+    }
     # The printed name is evidence and is never overwritten by the choice.
     assert detail["supplier_name"] == "Gulf Foods Trading LLC"
     # The lines snapped again, against the catalog they now belong to.
@@ -1727,6 +1732,68 @@ async def test_a_misclick_corrected_before_confirm_teaches_nothing(api, db):
     assert await aliases_of(db, abc) == []
     assert await aliases_of(db, gulf) == []  # the name it printed is already this supplier's
     assert await db.pool.fetchval("select count(*) from supplier_aliases") == 0
+
+
+@requires_db
+async def test_the_detail_says_whether_confirm_will_learn_the_printed_name(api, db):
+    """The review screen's "When you confirm ..." sentence reads one flag the
+    API computes with its own rule, so the sentence and the confirm can never
+    disagree: false for the machine's own booking, true once a person has
+    re-pointed the paper at a supplier that does not answer to the printed
+    name, false once the paper is confirmed and the name learnt, and false
+    on the vendor's next paper even when a person picks that supplier again,
+    because by then it answers to the name."""
+    app, client, *_ = api
+    gulf, _ = await seed_supplier_with_items(db, [{"canonical_name": "Milk Powder 2.5kg"}])
+    gulf = str(gulf)
+    abc = await seed_lookalike_supplier(db, "Gulf Foods ABC Trading LLC", "Milk Powder 2.5kg")
+    invoice = await extracted_invoice(api, db)
+    url = f"/api/invoices/{invoice['id']}"
+
+    # The machine booked it: a confirm teaches nothing, and the flag says so.
+    detail = (await client.get(url, headers=AUTH)).json()
+    assert detail["booked_under"] == {
+        "id": gulf,
+        "name": "Gulf Foods Trading L.L.C.",
+        "learns_printed_name": False,
+    }
+    # The list carries the pointer and not the flag: it has no sentence to
+    # say it in, and the read it costs belongs to one paper.
+    listed = (await client.get("/api/invoices", headers=AUTH)).json()["invoices"][0]
+    assert listed["booked_under"] == {"id": gulf, "name": "Gulf Foods Trading L.L.C."}
+
+    def pick(invoice_url: str, supplier_id: str):
+        return client.patch(
+            f"{invoice_url}/fields",
+            headers=AUTH,
+            json={"corrections": [{"field": "supplier", "value": supplier_id}]},
+        )
+
+    # A person moves it to a supplier that has never seen this name.
+    assert (await pick(url, abc)).json()["booked_under"]["learns_printed_name"] is True
+
+    confirmed = await client.post(f"{url}/confirm", headers=AUTH)
+    assert confirmed.status_code == 200
+    # Learnt now, so there is nothing left for a confirm to teach - and the
+    # paper is no longer editable anyway.
+    assert confirmed.json()["booked_under"] == {
+        "id": abc,
+        "name": "Gulf Foods ABC Trading LLC",
+        "learns_printed_name": False,
+    }
+    assert await aliases_of(db, abc) == ["Gulf Foods Trading LLC"]
+
+    # The vendor's next paper lands under ABC by itself, and stays false even
+    # when a person picks ABC again by hand: it answers to the name now.
+    second = good_invoice()
+    second.invoice_no = "INV-1042"
+    landed = await extracted_invoice(api, db, second, message_id="wamid.in2")
+    assert str(landed["supplier_id"]) == abc
+    second_url = f"/api/invoices/{landed['id']}"
+    assert (await client.get(second_url, headers=AUTH)).json()["booked_under"][
+        "learns_printed_name"
+    ] is False
+    assert (await pick(second_url, abc)).json()["booked_under"]["learns_printed_name"] is False
 
 
 @requires_db

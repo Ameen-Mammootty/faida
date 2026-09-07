@@ -5,14 +5,22 @@ import {
   committable,
   dayKey,
   driftSentence,
+  forgetNote,
   guessColumns,
   guessDateOrder,
   headerKey,
   layoutKey,
   planDays,
+  planForget,
+  planReteach,
   readDate,
   readSalesCsv,
+  reasonSentence,
   requestGroups,
+  reteachNote,
+  reteachPicker,
+  taughtLabels,
+  teachRefusal,
   toDayInput,
   type PlannedDay,
   type ReadDay,
@@ -27,9 +35,30 @@ import type { Branch, SalesDay, SalesLayout } from "../types";
  */
 
 const BRANCHES: Branch[] = [
-  { id: "b1", name: "Al Qusais Branch", timezone: "Asia/Dubai", aliases: ["QUSAIS 1"] },
-  { id: "b2", name: "Al Nahda Branch", timezone: "Asia/Dubai", aliases: [] },
-  { id: "b3", name: "Rolla Branch", timezone: "Asia/Dubai", aliases: [] },
+  {
+    id: "b1",
+    name: "Al Qusais Branch",
+    timezone: "Asia/Dubai",
+    aliases: ["QUSAIS 1"],
+    alias_rows: [{ id: "a1", branch_id: "b1", alias: "QUSAIS 1", alias_key: "qusais 1" }],
+  },
+  { id: "b2", name: "Al Nahda Branch", timezone: "Asia/Dubai", aliases: [], alias_rows: [] },
+  { id: "b3", name: "Rolla Branch", timezone: "Asia/Dubai", aliases: [], alias_rows: [] },
+];
+
+/** The incident's shape (2026-09-05): the till's AL NAHDA answered with Al
+ * Qusais Branch, so both outlets read as one branch. */
+const WRONGLY_TAUGHT: Branch[] = [
+  {
+    ...BRANCHES[0],
+    aliases: ["QUSAIS 1", "AL NAHDA"],
+    alias_rows: [
+      ...BRANCHES[0].alias_rows,
+      { id: "a2", branch_id: "b1", alias: "AL NAHDA", alias_key: "al nahda" },
+    ],
+  },
+  BRANCHES[1],
+  BRANCHES[2],
 ];
 
 const HEADER = ["Outlet", "Date", "PLU", "Item", "Qty", "Amount"];
@@ -368,5 +397,193 @@ describe("requestGroups and toDayInput", () => {
     const zero = toDayInput(groups[0][2], "inclusive", "l1", { sha256: "abc", filename: "w.csv" });
     expect(zero).toMatchObject({ granularity: "summary", amount: "0.00" });
     expect("lines" in zero).toBe(false);
+  });
+});
+
+/**
+ * The alias correction door's screen half (TODOS.md, "Correcting a wrongly
+ * taught branch alias"): which labels can be re-taught and what branch they
+ * show, the picker with the current branch preselected, the two-step
+ * sequence and each way its second step can fail, the forget path, and the
+ * way out of a 409 on a first-time teach.
+ */
+describe("a label taught to the wrong branch", () => {
+  const WEEK =
+    "Outlet,Date,PLU,Item,Qty,Amount\n" +
+    "AL NAHDA,25/08/2026,52a,KARAK TEA FLASK 1L,14,490.00\n" +
+    "AL NAHDA,26/08/2026,52a,KARAK TEA FLASK 1L,12,420.00\n" +
+    "QUSAIS 1,25/08/2026,52a,KARAK TEA FLASK 1L,1,35.00\n" +
+    "Rolla Branch,25/08/2026,52a,KARAK TEA FLASK 1L,2,70.00\n" +
+    "MUWAILAH,25/08/2026,52a,KARAK TEA FLASK 1L,1,35.00\n";
+
+  it("lists the taught labels once each, with the branch they read as, and never a branch's own name", () => {
+    const result = read(WEEK, { branches: WRONGLY_TAUGHT });
+    if (!result.ok) throw new Error(result.error);
+    // Both outlets' rows landed in Al Qusais's days - the incident: the
+    // QUSAIS 1 row of the 25th is inside the AL NAHDA day, one branch-day.
+    expect(result.days.filter((day) => day.branchLabel === "AL NAHDA").map((day) => day.branchId)).toEqual([
+      "b1",
+      "b1",
+    ]);
+    expect(result.days.find((day) => day.key === "b1|2026-08-25")?.rows).toEqual([2, 4]);
+    expect(result.knownBranches).toEqual(["AL NAHDA", "QUSAIS 1", "Rolla Branch"]);
+    expect(taughtLabels(result.knownBranches, WRONGLY_TAUGHT)).toEqual([
+      { label: "AL NAHDA", aliasId: "a2", branchId: "b1", branchName: "Al Qusais Branch" },
+      { label: "QUSAIS 1", aliasId: "a1", branchId: "b1", branchName: "Al Qusais Branch" },
+    ]);
+    // "Rolla Branch" is the branch's own name: nothing to un-teach. MUWAILAH
+    // is unknown: the first-time question's, not this list's.
+    expect(result.unknownBranches).toEqual(["MUWAILAH"]);
+  });
+
+  it("opens the picker on the branch the label reads as today, every branch offered", () => {
+    expect(reteachPicker("AL NAHDA", WRONGLY_TAUGHT)).toEqual({
+      label: "AL NAHDA",
+      current: { id: "b1", name: "Al Qusais Branch" },
+      options: [
+        { id: "b1", name: "Al Qusais Branch" },
+        { id: "b2", name: "Al Nahda Branch" },
+        { id: "b3", name: "Rolla Branch" },
+      ],
+    });
+    // Case and spacing are the resolver's own key, so "al  nahda" is the same label.
+    expect(reteachPicker("al  nahda", WRONGLY_TAUGHT)?.current.id).toBe("b1");
+    expect(reteachPicker("MUWAILAH", WRONGLY_TAUGHT)).toBeNull();
+  });
+
+  it("plans the re-teach as remove then teach, and nothing for the same branch or an untaught label", () => {
+    expect(planReteach("AL NAHDA", "b2", WRONGLY_TAUGHT)).toEqual({
+      kind: "reteach",
+      remove: { branchId: "b1", branchName: "Al Qusais Branch", aliasId: "a2" },
+      teach: { branchId: "b2", branchName: "Al Nahda Branch", label: "AL NAHDA" },
+    });
+    expect(planReteach("AL NAHDA", "b1", WRONGLY_TAUGHT)).toEqual({ kind: "same_branch" });
+    expect(planReteach("MUWAILAH", "b2", WRONGLY_TAUGHT)).toEqual({ kind: "not_taught" });
+    expect(planReteach("AL NAHDA", "b9", WRONGLY_TAUGHT)).toEqual({ kind: "not_taught" });
+  });
+
+  it("re-reads the file under the new branch once both doors have answered", () => {
+    // What the API answers after DELETE a2 then POST AL NAHDA for b2.
+    const after: Branch[] = [
+      BRANCHES[0],
+      {
+        ...BRANCHES[1],
+        aliases: ["AL NAHDA"],
+        alias_rows: [{ id: "a3", branch_id: "b2", alias: "AL NAHDA", alias_key: "al nahda" }],
+      },
+      BRANCHES[2],
+    ];
+    const result = read(WEEK, { branches: after });
+    if (!result.ok) throw new Error(result.error);
+    expect(result.days.filter((day) => day.branchLabel === "AL NAHDA").map((day) => day.branchId)).toEqual([
+      "b2",
+      "b2",
+    ]);
+    expect(taughtLabels(result.knownBranches, after)).toEqual([
+      { label: "AL NAHDA", aliasId: "a3", branchId: "b2", branchName: "Al Nahda Branch" },
+      { label: "QUSAIS 1", aliasId: "a1", branchId: "b1", branchName: "Al Qusais Branch" },
+    ]);
+  });
+
+  it("says what happened in the plan's own names: done, the first door refused, the second door refused", () => {
+    const plan = planReteach("AL NAHDA", "b2", WRONGLY_TAUGHT);
+    if (plan.kind !== "reteach") throw new Error(plan.kind);
+    expect(reteachNote(plan, null)).toEqual({
+      label: "AL NAHDA",
+      tone: "done",
+      sentence:
+        '"AL NAHDA" now reads as Al Nahda Branch. Its days have moved in the grid, and every ' +
+        "export after this one reads it the same way.",
+    });
+    expect(reteachNote(plan, { step: "remove", reason: "alias not found." })).toEqual({
+      label: "AL NAHDA",
+      tone: "stop",
+      sentence:
+        '"AL NAHDA" still reads as Al Qusais Branch - Faida could not un-teach it: alias not ' +
+        "found. Nothing has changed.",
+    });
+    // The DELETE landed and the POST was refused: the label is left unteached,
+    // said so, and never re-taught to the old branch behind the consultant.
+    expect(
+      reteachNote(plan, { step: "teach", reason: "'AL NAHDA' already names Rolla Branch." }),
+    ).toEqual({
+      label: "AL NAHDA",
+      tone: "stop",
+      sentence:
+        '"AL NAHDA" no longer reads as Al Qusais Branch, but Faida could not teach it as Al ' +
+        "Nahda Branch: 'AL NAHDA' already names Rolla Branch. It is back in the question below - " +
+        "say which branch it is.",
+    });
+  });
+
+  it("plans the forget path as the remove door alone, and words both outcomes", () => {
+    expect(planForget("AL NAHDA", WRONGLY_TAUGHT)).toEqual({
+      branchId: "b1",
+      branchName: "Al Qusais Branch",
+      aliasId: "a2",
+    });
+    expect(planForget("MUWAILAH", WRONGLY_TAUGHT)).toBeNull();
+    const plan = planForget("AL NAHDA", WRONGLY_TAUGHT);
+    if (!plan) throw new Error("nothing to forget");
+    expect(forgetNote(plan, "AL NAHDA", null)).toEqual({
+      label: "AL NAHDA",
+      tone: "done",
+      sentence:
+        '"AL NAHDA" is forgotten - it no longer reads as Al Qusais Branch, and it is back in the ' +
+        "question below.",
+    });
+    expect(forgetNote(plan, "AL NAHDA", { reason: "Couldn't reach the Faida API." })).toEqual({
+      label: "AL NAHDA",
+      tone: "stop",
+      sentence:
+        '"AL NAHDA" still reads as Al Qusais Branch - Faida could not forget it: Couldn\'t reach ' +
+        "the Faida API. Nothing has changed.",
+    });
+    // Once forgotten, the label is unknown again and the first-time question has it.
+    const result = read(WEEK, { branches: BRANCHES });
+    if (!result.ok) throw new Error(result.error);
+    expect(result.unknownBranches).toEqual(["AL NAHDA", "MUWAILAH"]);
+    expect(taughtLabels(result.knownBranches, BRANCHES)).toEqual([
+      { label: "QUSAIS 1", aliasId: "a1", branchId: "b1", branchName: "Al Qusais Branch" },
+    ]);
+  });
+
+  it("ends the door's sentence so it can sit inside one of ours", () => {
+    expect(reasonSentence("alias not found")).toBe("alias not found.");
+    expect(reasonSentence("The API returned 500.")).toBe("The API returned 500.");
+    expect(reasonSentence("  ")).toBe("Faida could not reach the door.");
+  });
+
+  it("turns a 409 on a first-time teach into the API's sentence plus the same 'Not this branch?' offer", () => {
+    // The screen taught AL NAHDA a minute ago in another tab; this one still
+    // thought it unknown. The door refuses, the branches are read again, and
+    // the offer is the taught list's own control on that label.
+    const refusal = teachRefusal(
+      "AL NAHDA",
+      409,
+      "'AL NAHDA' already names Al Qusais Branch",
+      WRONGLY_TAUGHT,
+    );
+    expect(refusal).toEqual({
+      note: {
+        label: "AL NAHDA",
+        tone: "stop",
+        sentence: "'AL NAHDA' already names Al Qusais Branch. Not this branch? Say which one it is.",
+      },
+      offer: { label: "AL NAHDA", aliasId: "a2", branchId: "b1", branchName: "Al Qusais Branch" },
+    });
+    // The door's key and this screen's disagree about the label (punctuation):
+    // the sentence stands, and no control is offered on a row it cannot point at.
+    expect(teachRefusal("AL-NAHDA", 409, "'AL-NAHDA' already names Al Qusais Branch", BRANCHES)).toEqual({
+      note: {
+        label: "AL-NAHDA",
+        tone: "stop",
+        sentence: "'AL-NAHDA' already names Al Qusais Branch. Ask Faida to look at it.",
+      },
+      offer: null,
+    });
+    // Any other refusal is not this door's 409 and is left to the general path.
+    expect(teachRefusal("AL NAHDA", 500, "The API returned 500.", WRONGLY_TAUGHT)).toBeNull();
+    expect(teachRefusal("AL NAHDA", 404, "branch not found", WRONGLY_TAUGHT)).toBeNull();
   });
 });

@@ -9,8 +9,10 @@ import {
   getSalesLayouts,
   postSalesDays,
   postSalesFile,
+  removeBranchAlias,
   saveSalesLayout,
 } from "@/lib/api";
+import { ApiError } from "@/lib/errors";
 import { formatDate, groupedMoney } from "@/lib/format";
 import {
   COLUMN_HELP,
@@ -21,17 +23,26 @@ import {
   committable,
   dateRange,
   driftSentence,
+  forgetNote,
   guessColumns,
   guessDateOrder,
   isoToday,
   nameKey,
   normalizeHeader,
   planDays,
+  planForget,
+  planReteach,
   planWords,
   readDate,
   readSalesCsv,
+  reasonSentence,
   requestGroups,
+  reteachNote,
+  reteachPicker,
+  taughtLabels,
+  teachRefusal,
   toDayInput,
+  type LabelNote,
   type LayoutApply,
   type PlannedDay,
 } from "@/lib/salesLoad";
@@ -73,6 +84,22 @@ import { useCsvFile, type ParsedCsv } from "./useCsvFile";
  * taken out - is a division the browser must not own, and it appears on a
  * day only when the door has answered with it.
  *
+ * The till's names for the branches are the chain's facts, taught once
+ * through the first-time question and read on every export after. The way
+ * back from a wrong answer (TODOS.md, "Correcting a wrongly taught branch
+ * alias" - the first live upload filed AL NAHDA under Al Qusais and only SQL
+ * could undo it) is on this screen too: every label the file uses that Faida
+ * reads through an alias is listed with the branch it reads as and one
+ * control, "Not this branch?", which opens the first-time question's own
+ * picker with the current branch preselected. Saving another branch goes
+ * through the two doors in order - un-teach, then teach - and re-reads the
+ * file, so the days move in the grid before anything is written; "Forget
+ * this label" is the first door alone, and the label is back in the
+ * question. When the first door answers and the second refuses, the label is
+ * left unteached and the sentence says so - never re-taught to the old
+ * branch behind the consultant's back. Every one of those decisions is a
+ * pure function in `salesLoad.ts`; this component renders them.
+ *
  * Desktop-only, stated rather than discovered, like the menu loader.
  */
 
@@ -98,6 +125,13 @@ interface ReadInfo {
   skippedNoDate: number;
   ignoredColumns: string[];
   unknownBranches: string[];
+  knownBranches: string[];
+}
+
+/** One alias write in flight: the label, and the verb its button shows. */
+interface BusyAlias {
+  label: string;
+  verb: "Saving" | "Forgetting";
 }
 
 /** The one summary line. `refused` is what the door turned down; `skipped`
@@ -130,6 +164,22 @@ function StatusChip({ tone, label }: { tone: "ready" | "wait" | "stop" | "done";
       <Icon className="h-3 w-3" />
       {label}
     </span>
+  );
+}
+
+/** The one sentence about a label, on its row: an icon and the words, so
+ * colour never carries it alone. A `stop` is announced; a `done` is a status. */
+function NoteLine({ note }: { note: LabelNote | null }) {
+  if (!note) return null;
+  const Icon = note.tone === "done" ? CheckIcon : AlertIcon;
+  return (
+    <p
+      role={note.tone === "stop" ? "alert" : "status"}
+      className={`mt-2 flex items-start gap-2 text-sm ${note.tone === "done" ? "text-verified" : "text-plum"}`}
+    >
+      <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+      <span>{note.sentence}</span>
+    </p>
   );
 }
 
@@ -174,7 +224,14 @@ export default function SalesLoader() {
   const [days, setDays] = useState<PlannedDay[] | null>(null);
   const [info, setInfo] = useState<ReadInfo | null>(null);
   const [aliasPick, setAliasPick] = useState<Record<string, string>>({});
-  const [busyAlias, setBusyAlias] = useState<string | null>(null);
+  const [busyAlias, setBusyAlias] = useState<BusyAlias | null>(null);
+  /** The label whose "Not this branch?" picker is open, and each label's
+   * pick in it (preselected to the branch it reads as when it opens). */
+  const [reteachOpen, setReteachOpen] = useState<string | null>(null);
+  const [reteachPick, setReteachPick] = useState<Record<string, string>>({});
+  /** The one sentence about a label - what a door said, or refused - shown
+   * on that label's own row. */
+  const [labelNote, setLabelNote] = useState<LabelNote | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
   /** Only the newest plan is ever applied, and none once a commit has begun
@@ -246,6 +303,7 @@ export default function SalesLoader() {
       skippedNoDate: read.skippedNoDate,
       ignoredColumns: read.ignoredColumns,
       unknownBranches: read.unknownBranches,
+      knownBranches: read.knownBranches,
     });
     setDays(planDays(read.days, stored, next.amountBasis));
     setMapping(next);
@@ -261,6 +319,8 @@ export default function SalesLoader() {
       setOpen(null);
       setApplied(null);
       setMappingOpen(false);
+      setLabelNote(null);
+      setReteachOpen(null);
       committed.current = false;
       setPhase("idle");
     },
@@ -353,6 +413,7 @@ export default function SalesLoader() {
       skippedNoDate: read.skippedNoDate,
       ignoredColumns: read.ignoredColumns,
       unknownBranches: read.unknownBranches,
+      knownBranches: read.knownBranches,
     });
     setDays(planDays(read.days, stored, next.amountBasis));
     setMapping(next);
@@ -360,22 +421,118 @@ export default function SalesLoader() {
     setPhase("ready");
   }
 
-  /** Teach the till's label for a branch, once, then re-read the file. */
+  /** After any alias door has spoken: the branches fresh, the file re-read
+   * against them, so the days re-plan under the branch each label reads as
+   * now. Returns the fresh branches for a decision that needs them. */
+  async function rereadBranches(next: Mapping): Promise<Branch[]> {
+    const branchRows = await getBranches();
+    setBranches(branchRows);
+    await readAndPlan(next, branchRows);
+    return branchRows;
+  }
+
+  const messageOf = (error: unknown, fallback: string) =>
+    error instanceof Error ? error.message : fallback;
+
+  /** Teach the till's label for a branch, once, then re-read the file. A 409
+   * - the label already names another branch, which this screen did not know
+   * - is the door's sentence on the label's own row, the branches read
+   * again, and the same "Not this branch?" picker opened on it, so the
+   * consultant who typed the wrong answer a minute ago fixes it here. */
   async function onSaveAlias(label: string) {
     const branchId = aliasPick[label];
     if (!branchId || !mapping) return;
-    setBusyAlias(label);
+    setBusyAlias({ label, verb: "Saving" });
     setLoadError(null);
+    setLabelNote(null);
     try {
-      await addBranchAlias(branchId, label);
-      const branchRows = await getBranches();
-      setBranches(branchRows);
-      await readAndPlan(mapping, branchRows);
+      try {
+        await addBranchAlias(branchId, label);
+      } catch (error) {
+        if (!(error instanceof ApiError) || error.status !== 409) throw error;
+        const branchRows = await rereadBranches(mapping);
+        const refusal = teachRefusal(label, error.status, error.message, branchRows);
+        if (refusal) {
+          setLabelNote(refusal.note);
+          if (refusal.offer) openReteach(label, refusal.offer.branchId);
+        }
+        return;
+      }
+      await rereadBranches(mapping);
     } catch (error) {
-      setLoadError(error instanceof Error ? error.message : "Could not save that alias.");
+      setLoadError(messageOf(error, "Could not save that alias."));
     } finally {
       setBusyAlias(null);
     }
+  }
+
+  /** Re-teach a label the file already reads: the two doors in order -
+   * un-teach the old branch, teach the new one - then the re-read. The
+   * sentence names what happened; when the first door answered and the
+   * second refused, the label is left unteached, said so, and is back in the
+   * first-time question after the re-read - never silently re-taught to the
+   * old branch. */
+  async function onReteach(label: string) {
+    if (!mapping) return;
+    const plan = planReteach(label, reteachPick[label] ?? "", branches);
+    if (plan.kind !== "reteach") return;
+    setBusyAlias({ label, verb: "Saving" });
+    setLoadError(null);
+    setLabelNote(null);
+    try {
+      let failed: { step: "remove" | "teach"; reason: string } | null = null;
+      try {
+        await removeBranchAlias(plan.remove.branchId, plan.remove.aliasId);
+      } catch (error) {
+        failed = { step: "remove", reason: reasonSentence(messageOf(error, "")) };
+      }
+      if (failed === null) {
+        try {
+          await addBranchAlias(plan.teach.branchId, label);
+        } catch (error) {
+          failed = { step: "teach", reason: reasonSentence(messageOf(error, "")) };
+        }
+      }
+      // The sentence says the days have moved: it is shown once they have.
+      await rereadBranches(mapping);
+      setReteachOpen(null);
+      setLabelNote(reteachNote(plan, failed));
+    } catch (error) {
+      setLoadError(messageOf(error, "Could not reach Faida."));
+    } finally {
+      setBusyAlias(null);
+    }
+  }
+
+  /** Forget a label: the un-teach door alone, then the re-read puts the
+   * label back in the first-time question. */
+  async function onForget(label: string) {
+    if (!mapping) return;
+    const plan = planForget(label, branches);
+    if (!plan) return;
+    setBusyAlias({ label, verb: "Forgetting" });
+    setLoadError(null);
+    setLabelNote(null);
+    try {
+      let failed: { reason: string } | null = null;
+      try {
+        await removeBranchAlias(plan.branchId, plan.aliasId);
+      } catch (error) {
+        failed = { reason: reasonSentence(messageOf(error, "")) };
+      }
+      await rereadBranches(mapping);
+      setReteachOpen(null);
+      setLabelNote(forgetNote(plan, label, failed));
+    } catch (error) {
+      setLoadError(messageOf(error, "Could not reach Faida."));
+    } finally {
+      setBusyAlias(null);
+    }
+  }
+
+  function openReteach(label: string, currentBranchId: string) {
+    setReteachPick((current) => ({ ...current, [label]: currentBranchId }));
+    setReteachOpen(label);
   }
 
   function onConfirm(key: string, confirmed: boolean) {
@@ -459,6 +616,18 @@ export default function SalesLoader() {
   );
   const needBranch = (days ?? []).filter((day) => day.branchId === null && day.branchLabel !== null);
   const ticks = (days ?? []).filter((day) => day.plan.shrinking && !day.confirmed);
+  /** The labels the file uses that Faida reads through an alias: each with
+   * the branch it reads as and the way to say "not this branch". */
+  const taught = info && days ? taughtLabels(info.knownBranches, branches) : [];
+  const noteFor = (label: string) =>
+    labelNote && nameKey(labelNote.label) === nameKey(label) ? labelNote : null;
+  /** A note about a label neither list carries any more is still said. */
+  const orphanNote =
+    labelNote &&
+    !(info?.unknownBranches ?? []).some((label) => nameKey(label) === nameKey(labelNote.label)) &&
+    !taught.some((entry) => nameKey(entry.label) === nameKey(labelNote.label))
+      ? labelNote
+      : null;
 
   return (
     <div className="space-y-8">
@@ -655,42 +824,143 @@ export default function SalesLoader() {
                 </p>
                 <ul className="space-y-2">
                   {info.unknownBranches.map((label) => (
-                    <li
-                      key={label}
-                      className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-ink/10 bg-paper px-4 py-2"
-                    >
-                      <span className="text-sm text-ink">
-                        &ldquo;{label}&rdquo; <span className="text-stone">is</span>
-                      </span>
-                      <span className="flex items-center gap-2">
-                        <select
-                          aria-label={`Which branch is ${label}`}
-                          value={aliasPick[label] ?? ""}
-                          onChange={(event) =>
-                            setAliasPick({ ...aliasPick, [label]: event.target.value })
-                          }
-                          className="min-h-11 rounded-sm border border-ink/20 bg-paper px-2 text-sm text-ink"
-                        >
-                          <option value="">Choose a branch</option>
-                          {branches.map((branch) => (
-                            <option key={branch.id} value={branch.id}>
-                              {branch.name}
-                            </option>
-                          ))}
-                        </select>
-                        <button
-                          type="button"
-                          onClick={() => void onSaveAlias(label)}
-                          disabled={!aliasPick[label] || busyAlias !== null}
-                          className="min-h-11 rounded-sm border border-palm/30 px-3 py-1.5 text-sm font-medium text-palm hover:border-palm disabled:opacity-40"
-                        >
-                          {busyAlias === label ? "Saving" : "Save"}
-                        </button>
-                      </span>
+                    <li key={label} className="rounded-md border border-ink/10 bg-paper px-4 py-2">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <span className="text-sm text-ink">
+                          &ldquo;{label}&rdquo; <span className="text-stone">is</span>
+                        </span>
+                        <span className="flex items-center gap-2">
+                          <select
+                            aria-label={`Which branch is ${label}`}
+                            value={aliasPick[label] ?? ""}
+                            onChange={(event) =>
+                              setAliasPick({ ...aliasPick, [label]: event.target.value })
+                            }
+                            className="min-h-11 rounded-sm border border-ink/20 bg-paper px-2 text-sm text-ink"
+                          >
+                            <option value="">Choose a branch</option>
+                            {branches.map((branch) => (
+                              <option key={branch.id} value={branch.id}>
+                                {branch.name}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => void onSaveAlias(label)}
+                            disabled={!aliasPick[label] || busyAlias !== null}
+                            className="min-h-11 rounded-sm border border-palm/30 px-3 py-1.5 text-sm font-medium text-palm hover:border-palm disabled:opacity-40"
+                          >
+                            {busyAlias?.label === label ? "Saving" : "Save"}
+                          </button>
+                        </span>
+                      </div>
+                      <NoteLine note={noteFor(label)} />
                     </li>
                   ))}
                 </ul>
               </section>
+            ) : null}
+
+            {info && taught.length > 0 && !summary ? (
+              <section className="space-y-3 rounded-md bg-mist p-4">
+                <h2 className="font-display text-lg font-semibold text-ink">
+                  {taught.length === 1 ? "A name" : "Names"} the till uses that Faida already
+                  knows
+                </h2>
+                <p className="max-w-2xl text-sm text-stone">
+                  Each was taught once, so its days are filed without asking. If one is filed
+                  under the wrong branch, say so here: the days move in the grid before anything
+                  is written, and every export after this one reads the name the new way.
+                </p>
+                <ul className="space-y-2">
+                  {taught.map((entry) => {
+                    const picker =
+                      reteachOpen === entry.label ? reteachPicker(entry.label, branches) : null;
+                    const pick = reteachPick[entry.label] ?? entry.branchId;
+                    const busyHere = busyAlias?.label === entry.label;
+                    return (
+                      <li
+                        key={entry.label}
+                        className="rounded-md border border-ink/10 bg-paper px-4 py-2"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <span className="text-sm text-ink">
+                            &ldquo;{entry.label}&rdquo;{" "}
+                            <span className="text-stone">reads as</span> {entry.branchName}
+                          </span>
+                          {picker ? (
+                            <span className="flex flex-wrap items-center gap-2">
+                              <select
+                                aria-label={`Which branch is ${entry.label}`}
+                                value={pick}
+                                onChange={(event) =>
+                                  setReteachPick({ ...reteachPick, [entry.label]: event.target.value })
+                                }
+                                className="min-h-11 rounded-sm border border-ink/20 bg-paper px-2 text-sm text-ink"
+                              >
+                                {picker.options.map((option) => (
+                                  <option key={option.id} value={option.id}>
+                                    {option.name}
+                                  </option>
+                                ))}
+                              </select>
+                              <button
+                                type="button"
+                                onClick={() => void onReteach(entry.label)}
+                                disabled={pick === entry.branchId || busyAlias !== null}
+                                className="min-h-11 rounded-sm bg-palm px-3 py-1.5 text-sm font-medium text-cream hover:bg-palm-deep disabled:opacity-40"
+                              >
+                                {busyHere && busyAlias?.verb === "Saving" ? "Saving" : "Save"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void onForget(entry.label)}
+                                disabled={busyAlias !== null}
+                                className="min-h-11 rounded-sm border border-palm/30 px-3 py-1.5 text-sm font-medium text-palm hover:border-palm disabled:opacity-40"
+                              >
+                                {busyHere && busyAlias?.verb === "Forgetting"
+                                  ? "Forgetting"
+                                  : "Forget this label"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setReteachOpen(null)}
+                                disabled={busyAlias !== null}
+                                className="min-h-11 rounded-sm px-3 py-1.5 text-sm font-medium text-palm underline-offset-2 hover:underline disabled:opacity-40"
+                              >
+                                Keep it
+                              </button>
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => openReteach(entry.label, entry.branchId)}
+                              disabled={busyAlias !== null}
+                              className="min-h-11 rounded-sm border border-palm/30 px-3 py-1.5 text-sm font-medium text-palm hover:border-palm disabled:opacity-40"
+                            >
+                              Not this branch?
+                            </button>
+                          )}
+                        </div>
+                        {picker ? (
+                          <p className="mt-1 text-xs text-stone">
+                            Pick the branch &ldquo;{entry.label}&rdquo; belongs to and save, or
+                            forget the name and Faida asks about it again.
+                          </p>
+                        ) : null}
+                        <NoteLine note={noteFor(entry.label)} />
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            ) : null}
+
+            {orphanNote ? (
+              <div className="rounded-md bg-mist p-4">
+                <NoteLine note={orphanNote} />
+              </div>
             ) : null}
 
             {ticks.length > 0 && !summary ? (
