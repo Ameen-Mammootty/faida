@@ -480,10 +480,17 @@ with Al Qusais Branch, both outlets' rows landed in one branch's days, and nothi
 The fix was one row deleted in SQL and a re-upload - acceptable once, with an engineer at the keyboard, and
 not for a pilot chain's consultant.
 
-**Done in part 2026-09-07:** the API half - `DELETE /api/branches/{id}/aliases/{alias_id}` with its audit row and `alias_rows` on the branches list (`m8-branch-alias-door`). Open: the loader offering to re-teach a label it already knows (the screen half).
+**Done 2026-09-07, in two halves:** the API half - `DELETE /api/branches/{id}/aliases/{alias_id}` with its audit row and `alias_rows` on the branches list (`m8-branch-alias-door`) - and the screen half (`m8-branch-alias-screen`).
+The loader lists every label it reads through an alias with the branch it reads as and one control, "Not this branch?", which un-teaches then teaches through the two doors and re-reads the file so the days move before anything is written.
+A second step that fails leaves the label unteached and says so.
+"Forget this label" is the first door alone.
+A 409 on a first-time teach opens the same picker on that label's row.
+Walked on the mock at 1280 and 390: the incident's shape reproduced and undone without a reload.
 
-**Depends on:** WP-80, WP-83. Trigger: already fired once; build it before the first pilot upload (M11) or the
-moment a consultant asks.
+**Left behind it, small:** the screen's `nameKey` (lowercase, spaces collapsed) and the API's `takings.name_key` (`matching.normalize`, punctuation stripped too) disagree on a label with punctuation, so "AL-NAHDA" is unknown to the loader yet collides with a taught "AL NAHDA" on the API.
+The screen shows the door's 409 sentence and, with no alias row to point at, offers no control - said, never guessed.
+The fix is one function: the web's `nameKey` (and the mock, which shares it) taking the API's rule, with the till-item keys re-checked, because `till_items.name_key` is minted by the API's rule too.
+Trigger: the first 409 a consultant meets on a label the screen calls unknown.
 
 ## Contribution, signals, dashboards (deferred by the M9 decomposition, 2026-09-05)
 
