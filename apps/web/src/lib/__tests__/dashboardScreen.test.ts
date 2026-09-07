@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   ANSWER_EMPTY,
   ANSWER_NO_MENU,
+  MOVES_LINK,
   NO_CHAIN_AVERAGE,
+  NO_PRICE_MOVES,
   SCREEN_ABOUT,
   SPLIT_AT,
   answerCaveat,
@@ -37,7 +39,14 @@ import {
   noRatioWords,
   points,
   portionsWords,
+  priceMoveLink,
+  priceMoveMoney,
+  priceMovePanel,
+  priceMoveTag,
+  priceMoveTip,
+  priceMovesCaption,
   showAllLabel,
+  showAllMovesLabel,
   showAllSignalsLabel,
   signalHref,
   signalMoney,
@@ -56,6 +65,7 @@ import { anchorBranchId, anchorItemId } from "../anchor";
 import { SCENARIOS, mockGetDashboard } from "../mock/dashboard";
 import type {
   DashboardItemRow,
+  DashboardPriceMove,
   DashboardResult,
   DashboardSignal,
   LeagueRow,
@@ -155,6 +165,30 @@ function signal(overrides: Partial<DashboardSignal> = {}): DashboardSignal {
     ingredient_name: null,
     invoice_id: null,
     moved_on: null,
+    ...overrides,
+  };
+}
+
+/**
+ * A price move of this test's own making, never the mock's words: the lane
+ * that owns `mock/dashboard` regenerates its sentences, and a test that
+ * pinned one of them would be pinning that lane's prose rather than this
+ * screen's decisions. What is asserted against the mock below is counts,
+ * kinds, ordering and the empty state.
+ */
+function priceMove(overrides: Partial<DashboardPriceMove> = {}): DashboardPriceMove {
+  return {
+    ingredient_id: "ing-nido",
+    ingredient_name: "Milk Powder",
+    kind: "moved",
+    direction: "up",
+    moved_on: "2026-08-21",
+    invoice_id: "inv-1001",
+    line_position: 1,
+    money_at_stake: "108.58",
+    sentence: "A sentence the API composed.",
+    plates: "A plates clause the API composed.",
+    evidence: "An evidence line the API composed.",
     ...overrides,
   };
 }
@@ -461,6 +495,123 @@ describe("the signals", () => {
     const quiet = await scenario("quiet");
     expect(quiet.signals).toEqual([]);
     expect(signalsFootnote(quiet)).toBeNull();
+  });
+});
+
+describe("the supplier price moves", () => {
+  it("names the kind in the screen's own words, with a tone and a glyph beside each", () => {
+    expect(priceMoveTag(priceMove())).toEqual({
+      label: "Price moved",
+      tone: "caution",
+      direction: "up",
+    });
+    expect(priceMoveTag(priceMove({ direction: "down" }))).toEqual({
+      label: "Price fell",
+      tone: "verified",
+      direction: "down",
+    });
+    expect(
+      priceMoveTag(priceMove({ kind: "basis_changed", direction: null })),
+    ).toEqual({ label: "Price basis changed", tone: "stone", direction: null });
+  });
+
+  it("prints the money off its magnitude and lets the direction choose the word", () => {
+    expect(priceMoveMoney(priceMove())).toEqual({ figure: "AED 109", words: "at stake" });
+    expect(
+      priceMoveMoney(priceMove({ direction: "down", money_at_stake: "-43.65" })),
+    ).toEqual({ figure: "AED 44", words: "saved" });
+    // A move nothing sold after still moved: the API sent a zero, not a null,
+    // and the words say why the figure is zero.
+    expect(priceMoveMoney(priceMove({ money_at_stake: "0.00" }))).toEqual({
+      figure: "AED 0",
+      words: "nothing sold since",
+    });
+    // A basis change carries no number at all, so the column is empty.
+    expect(
+      priceMoveMoney(priceMove({ kind: "basis_changed", direction: null, money_at_stake: null })),
+    ).toBeNull();
+  });
+
+  it("shows three then all, in the order the API ranked them", () => {
+    const five = ["a", "b", "c", "d", "e"].map((id) => priceMove({ ingredient_id: id }));
+    expect(priceMovePanel(five, false)).toEqual(five.slice(0, 3));
+    expect(priceMovePanel(five, true)).toEqual(five);
+    expect(showAllMovesLabel(five.length, false)).toBe("Show all 5");
+    expect(showAllMovesLabel(five.length, true)).toBe("Show the top 3 only");
+    expect(showAllMovesLabel(3, false)).toBeNull();
+    expect(showAllMovesLabel(0, false)).toBeNull();
+  });
+
+  it("counts the window in the head, and says when the list it holds is capped", () => {
+    const moves = ["a", "b", "c", "d"].map((id) => priceMove({ ingredient_id: id }));
+    expect(priceMovesCaption({ count: 4, moves })).toBe("4 moved this window · latest move each");
+    expect(priceMovesCaption({ count: 6, moves: [...moves, priceMove({ ingredient_id: "e" })] })).toBe(
+      "6 moved this window · the 5 largest listed",
+    );
+    expect(priceMovesCaption({ count: 0, moves: [] })).toBeNull();
+  });
+
+  it("links the newest line on its paper, at the app's one anchor idiom", () => {
+    expect(priceMoveLink(priceMove())).toEqual({
+      href: "/invoices/inv-1001#line-1",
+      label: "See the invoice",
+    });
+    expect(priceMoveLink(priceMove({ line_position: 0 }))?.href).toBe("/invoices/inv-1001#line-0");
+    expect(priceMoveLink(priceMove({ invoice_id: "" }))).toBeNull();
+    expect(MOVES_LINK).toEqual({ href: "/menu", label: "Every price move on Menu" });
+  });
+
+  it("puts the plates and the evidence behind the icon, in the API's own words", () => {
+    const move = priceMove();
+    expect(priceMoveTip(move)).toEqual([move.plates, move.evidence]);
+    expect(priceMoveTip(priceMove({ plates: null }))).toEqual([move.evidence]);
+  });
+
+  it("arrives with every kind the panel has to render, ranked, the basis change last", async () => {
+    const full = await scenario("full");
+    const moves = full.price_moves.moves;
+    expect(full.price_moves.count).toBe(moves.length);
+    expect(moves.length).toBeGreaterThanOrEqual(3);
+    const tags = moves.map((move) => priceMoveTag(move).label);
+    expect(new Set(tags)).toEqual(
+      new Set(["Price moved", "Price fell", "Price basis changed"]),
+    );
+    expect(tags[tags.length - 1]).toBe("Price basis changed");
+    // Ranked by the money it moved whichever way, with the moneyless last.
+    const weighed = moves
+      .filter((move) => move.money_at_stake !== null)
+      .map((move) => Math.abs(Number(move.money_at_stake)));
+    expect(weighed).toEqual([...weighed].sort((a, b) => b - a));
+    // A move nothing sold after: no plates to name, and the panel still lists it.
+    expect(moves.some((move) => move.plates === null)).toBe(true);
+    expect(moves.some((move) => priceMoveMoney(move) === null)).toBe(true);
+    // The panel never re-orders what it was given.
+    expect(priceMovePanel(moves, false)).toEqual(moves.slice(0, 3));
+  });
+
+  it("says there were none on a quiet week rather than showing an empty card", async () => {
+    for (const name of ["quiet", "nomenu", "empty"] as const) {
+      const result = await scenario(name);
+      expect(result.price_moves).toEqual({ count: 0, moves: [] });
+      expect(priceMovesCaption(result.price_moves)).toBeNull();
+      expect(priceMovePanel(result.price_moves.moves, false)).toEqual([]);
+    }
+    expect(NO_PRICE_MOVES).toBe("No price moves in this window.");
+  });
+
+  it("renders what the branch filter sent, weighed by the API and never here", async () => {
+    const chain = await scenario("full");
+    const rolla = await scenario("full", "br-01");
+    // Same materials in the same order - the screen weighs nothing itself.
+    expect(rolla.price_moves.moves.map((move) => move.ingredient_id)).toEqual(
+      chain.price_moves.moves.map((move) => move.ingredient_id),
+    );
+    // One branch's portions can never carry more money than the chain's.
+    for (const [at, move] of rolla.price_moves.moves.entries()) {
+      const whole = chain.price_moves.moves[at].money_at_stake;
+      if (move.money_at_stake === null || whole === null) continue;
+      expect(Math.abs(Number(move.money_at_stake))).toBeLessThanOrEqual(Math.abs(Number(whole)));
+    }
   });
 });
 

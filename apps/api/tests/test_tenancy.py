@@ -298,6 +298,15 @@ async def seed_tenant_a(db, fake_storage: FakeStorage) -> Rows:
         tenant_id=TENANT_A, name="Karak", selling_price=Decimal("5.00"), actor="test"
     )
     rows.ids["menu_item"] = item["id"]
+    # A till label already taught to A's branch, for the alias correction door.
+    rows.ids["branch_alias"] = str(
+        await db.pool.fetchval(
+            "insert into branch_aliases (tenant_id, branch_id, alias, alias_key) "
+            "values ($1, $2, 'NAHDA 1', 'nahda 1') returning id",
+            TENANT_A,
+            BRANCH_A,
+        )
+    )
     # A till name the loader minted, for the mapping doors (WP-82).
     rows.ids["till_item"] = str(
         await db.pool.fetchval(
@@ -473,6 +482,11 @@ MATRIX: list[dict] = [
         "url": lambda r: f"/api/branches/{r['branch']}/aliases",
         "json": {"alias": "QUSAIS 1"},
         "expect": 201,
+    },
+    {
+        "method": "DELETE",
+        "path": "/api/branches/{branch_id}/aliases/{alias_id}",
+        "url": lambda r: f"/api/branches/{r['branch']}/aliases/{r['branch_alias']}",
     },
     {
         "method": "POST",

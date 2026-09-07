@@ -162,6 +162,28 @@ function TopEarnerCallout({ item }: { item: MenuItemSummary }) {
  */
 const ALSO_NAMED = 3;
 
+/**
+ * M9 WP-99: the API now composes that same clause once, for both screens
+ * (`signals.move_plates`), so the card reads it rather than building a second
+ * copy of it - one wording on `/menu` and on the dashboard's price-moves
+ * panel, and the names, the figures and the count it stops at are the API's.
+ *
+ * What it takes is the clause from its own "also" onward: `plates` opens with
+ * the worst plate's sentence, which this card has already printed one line
+ * above with its action verb, and printing it twice would be the card saying
+ * the same thing in two type sizes. A split at the API's own semicolon, never
+ * a rewrite. Null when the clause names one plate only - there is no "also" -
+ * and null when the field is absent, which is an older API and leaves the
+ * shipped composition below in charge.
+ */
+function alsoPlates(plates: string | null | undefined): string | null {
+  if (!plates) return null;
+  const at = plates.indexOf("; also ");
+  if (at === -1) return null;
+  const rest = plates.slice(at + "; also ".length);
+  return `Also ${rest}`;
+}
+
 /** Callout two, priority loss > price move > absent (D8). Two lines in the
  * operator voice: the finding, then the action. */
 function FixCallout({ loss, move }: { loss: MenuItemSummary | null; move: PriceMove | null }) {
@@ -205,7 +227,7 @@ function FixCallout({ loss, move }: { loss: MenuItemSummary | null; move: PriceM
         </p>
         <p className="mt-0.5 text-sm text-stone">
           Now {move.current.product_name} from {move.current.supplier_name}, was{" "}
-          {move.previous.product_name} from {move.previous.supplier_name}.
+          {move.previous.product_name} from {move.previous.supplier_name.replace(/\.$/, "")}.
         </p>
         <p className="mt-1 text-xs text-stone">
           <Link
@@ -225,6 +247,7 @@ function FixCallout({ loss, move }: { loss: MenuItemSummary | null; move: PriceM
     move.current.display_unit === "each" ? "each" : `per ${move.current.display_unit}`;
   const top = move.items[0];
   const rest = move.items.slice(1);
+  const also = alsoPlates(move.plates);
   const Trend = up ? TrendUpIcon : TrendDownIcon;
   return (
     <div className="rounded-md bg-gold-soft p-4">
@@ -244,7 +267,11 @@ function FixCallout({ loss, move }: { loss: MenuItemSummary | null; move: PriceM
       ) : (
         <p className="mt-0.5 text-sm text-stone">No costed menu item uses it yet.</p>
       )}
-      {rest.length > 0 ? (
+      {move.plates !== undefined ? (
+        also === null ? null : (
+          <p className="mt-1 text-xs text-stone">{also}</p>
+        )
+      ) : rest.length > 0 ? (
         <p className="mt-1 text-xs text-stone">
           Also earning {up ? "less" : "more"}:{" "}
           {rest.slice(0, ALSO_NAMED).map((item, index) => (

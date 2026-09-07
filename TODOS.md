@@ -458,6 +458,8 @@ with Al Qusais Branch, both outlets' rows landed in one branch's days, and nothi
 The fix was one row deleted in SQL and a re-upload - acceptable once, with an engineer at the keyboard, and
 not for a pilot chain's consultant.
 
+**Done in part 2026-09-07:** the API half - `DELETE /api/branches/{id}/aliases/{alias_id}` with its audit row and `alias_rows` on the branches list (`m8-branch-alias-door`). Open: the loader offering to re-teach a label it already knows (the screen half).
+
 **Depends on:** WP-80, WP-83. Trigger: already fired once; build it before the first pilot upload (M11) or the
 moment a consultant asks.
 
@@ -655,6 +657,16 @@ the Menu screen's card and in `signals.move_plates` / the evidence sentence toge
 and not the other. One rule in Python now moves both.
 
 **Depends on:** WP-99. Trigger: the founder sees `(-0.00)` on the demo stage, or the first real supplier name ending in a full stop.
+
+**Done 2026-09-07:** both rules live in `signals.py`'s composer (`m9-price-move-words`), the Menu card reads the API's `plates` clause (Wave 2) and strips a name's own stop on its basis-change line (`dd87038`).
+
+### The invoice mock lacks the lines the dashboard mock's moves point at
+
+**What:** Give `mock/fixtures.ts`'s invoices the lines the dashboard mock's price moves cite (cream on `inv-1002`, chicken on `inv-1006`, ghee on `inv-1001`), or generate both mocks from one source.
+
+**Why:** "See the invoice" in mock mode lands on a row that exists (positions are 0-based in the pipeline and the mock store alike, fixed 2026-09-07) but, for three of five moves, on a row named for another material. The real API cannot do this: both sides come from the same invoice line.
+
+**Depends on:** WP-99. Trigger: a QA walk or a demo on the mock reads the wrong line name.
 
 ### A price-move history inside a window
 

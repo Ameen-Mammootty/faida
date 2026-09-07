@@ -356,6 +356,9 @@ NO_APPROVALS = {k: {"count": 0, "duplicates": 0, "awaiting_confirm": 0} for k in
 # --- price moves --------------------------------------------------------------
 
 
+# Positions are 0-based, as the pipeline's and the invoice mock's are (`store.ts`
+# assigns `position: index`), and each newest line points at a line the invoice
+# mock actually has, so "See the invoice" lands on a row in mock mode too.
 def line(cost, on, *, pack, product, supplier, invoice, position, unit, quality=None):
     per_display, display_unit = M.costing.per_display_unit(D(cost), unit)
     return M.MoveLine(supplier_item_id=pack, product_name=product, supplier_name=supplier, pack_size=None,
@@ -389,12 +392,12 @@ def impact(mid, name, per_portion):
 FULL_MOVES = [
     move("ing-nido", "Milk Powder", "g",
          line("0.0580", MARCH, pack="sitem-1", product="Milk Powder 2.5kg", supplier="Al Madina Foodstuff Trading LLC", invoice="inv-0912", position=1, unit="g"),
-         line("0.0614", A21, pack="sitem-1", product="Milk Powder 2.5kg", supplier="Al Madina Foodstuff Trading LLC", invoice="inv-1001", position=1, unit="g"),
+         line("0.0614", A21, pack="sitem-1", product="Milk Powder 2.5kg", supplier="Al Madina Foodstuff Trading LLC", invoice="inv-1001", position=0, unit="g"),
          [impact("menu-3", "Nido Shake", "0.136"), impact("menu-2", "Karak Tea (Flask 1 L)", "0.102"),
           impact("menu-14", "Masala Chai", "0.020"), impact("menu-1", "Karak Tea (Cup)", "0.017")]),
     move("ing-sugar", "White Sugar", "g",
          line("0.0038", datetime.date(2026, 8, 10), pack="sitem-7", product="White Sugar 25kg", supplier="Gulf Fresh Vegetables & Fruits", invoice="inv-0998", position=1, unit="g"),
-         line("0.0040", A28, pack="sitem-7", product="White Sugar 25kg", supplier="Gulf Fresh Vegetables & Fruits", invoice="inv-1005", position=1, unit="g"),
+         line("0.0040", A28, pack="sitem-7", product="White Sugar 25kg", supplier="Gulf Fresh Vegetables & Fruits", invoice="inv-1001", position=2, unit="g"),
          [impact("menu-2", "Karak Tea (Flask 1 L)", "0.016"), impact("menu-3", "Nido Shake", "0.004"),
           impact("menu-1", "Karak Tea (Cup)", "0.002"), impact("menu-6", "Sulaimani", "0.002"),
           impact("menu-14", "Masala Chai", "0.002")]),
@@ -403,7 +406,7 @@ FULL_MOVES = [
     # the dirhams it saved - the case the panel exists for.
     move("ing-cream", "Cream", "ml",
          line("0.0165", datetime.date(2026, 8, 12), pack="sitem-12", product="Cooking Cream 1L", supplier="Al Seeb Trading Co LLC", invoice="inv-0994", position=4, unit="ml"),
-         line("0.0150", A26, pack="sitem-12", product="Cooking Cream 1L", supplier="Al Seeb Trading Co LLC", invoice="inv-1002", position=4, unit="ml"),
+         line("0.0150", A26, pack="sitem-12", product="Cooking Cream 1L", supplier="Al Seeb Trading Co LLC", invoice="inv-1002", position=1, unit="ml"),
          [impact("menu-7", "Butter Chicken", "-0.075"), impact("menu-8", "Paneer Butter Masala", "-0.075"),
           impact("menu-10", "Mutter Mushroom", "-0.075")]),
     # A rise of 11.1% on 27 Aug on a material only Chicken Mandi uses, and
@@ -411,7 +414,7 @@ FULL_MOVES = [
     # evidence says so instead of quoting a number it does not have.
     move("ing-chicken", "Chicken", "g",
          line("0.0180", datetime.date(2026, 7, 28), pack="sitem-13", product="Fresh Chicken", supplier="Al Madina Foodstuff Trading LLC", invoice="inv-0998", position=2, unit="g"),
-         line("0.0200", A27, pack="sitem-13", product="Fresh Chicken", supplier="Al Madina Foodstuff Trading LLC", invoice="inv-1006", position=2, unit="g"),
+         line("0.0200", A27, pack="sitem-13", product="Fresh Chicken", supplier="Al Madina Foodstuff Trading LLC", invoice="inv-1006", position=1, unit="g"),
          []),
     # 2.5% on 29 Aug: under the gate both ways, so it is in neither panel -
     # the drift the gate exists to keep off the screen.

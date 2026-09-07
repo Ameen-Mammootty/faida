@@ -147,12 +147,14 @@ def _line(
     invoice: str = "inv-current",
     quality: str | None = None,
     unit: str = "g",
+    product: str = "Milk Powder 2.5kg",
+    supplier: str = "Al Madina Trading Co.",
 ) -> menu.MoveLine:
     per_display, display_unit = costing.per_display_unit(D(cost), unit)
     return menu.MoveLine(
         supplier_item_id=pack,
-        product_name="Milk Powder 2.5kg",
-        supplier_name="Al Madina Trading Co.",
+        product_name=product,
+        supplier_name=supplier,
         pack_size="2.5kg",
         cost_per_base_unit=D(cost),
         per_display_unit=per_display,
@@ -166,10 +168,10 @@ def _line(
     )
 
 
-def _impact(menu_item_id: str, per_portion: str) -> menu.MoveImpact:
+def _impact(menu_item_id: str, per_portion: str, *, name: str | None = None) -> menu.MoveImpact:
     return menu.MoveImpact(
         menu_item_id=menu_item_id,
-        name=menu_item_id,
+        name=name or menu_item_id,
         impact_per_portion=D(per_portion),
         margin_before=D("9.000"),
         margin_after=D("9.000") - D(per_portion),
@@ -478,6 +480,108 @@ def test_the_weighing_signs_a_rise_positive_and_a_fall_negative():
     assert signals.moved_enough(_milk_move()) is True
     assert signals.moved_enough(fall) is True
     assert signals.moved_enough(_milk_move(current_cost="0.0419")) is False  # 4.75%
+
+
+# --- the plates clause and its full stop (WP-99, the wording warts) ---------
+
+
+def test_a_plate_the_move_did_not_move_by_a_fil_is_counted_not_named():
+    """ "also Sulaimani (-0.00)" is a name and a bracket that say only that the
+    item exists: at the fils precision both screens print, that plate did not
+    move. It is still counted, so the tail's number stays every plate the move
+    touched."""
+    move = _milk_move(
+        items=(
+            _impact("m-flask", "0.060", name="Karak Tea (Flask 1 L)"),
+            _impact("m-shake", "0.004", name="Nido Shake"),
+            _impact("m-sulaimani", "0.001", name="Sulaimani"),
+        )
+    )
+    assert signals.move_plates(move) == (
+        "Karak Tea (Flask 1 L) earns AED 0.06 less a portion; also 2 more."
+    )
+
+
+def test_a_move_every_plate_felt_by_less_than_a_fil_still_names_its_worst():
+    """The largest impact keeps its figure whatever it is - dropping it would
+    leave a move saying nothing about any plate at all - and the rest are
+    counted."""
+    move = _milk_move(
+        items=(
+            _impact("m-cup", "0.004", name="Karak Tea (Cup)"),
+            _impact("m-shake", "0.002", name="Nido Shake"),
+        )
+    )
+    assert (
+        signals.move_plates(move) == "Karak Tea (Cup) earns AED 0.00 less a portion; also 1 more."
+    )
+
+
+def test_a_move_every_plate_felt_by_a_fil_reads_as_it_always_did():
+    """Nothing about the shipped clause moves when no figure is under a fil:
+    three named with their brackets, the rest counted."""
+    move = _milk_move(
+        items=(
+            _impact("m-flask", "0.195", name="Karak Tea (Flask 1 L)"),
+            _impact("m-shake", "0.050", name="Nido Shake"),
+            _impact("m-masala", "0.024", name="Masala Chai"),
+            _impact("m-cup", "0.019", name="Karak Tea (Cup)"),
+            _impact("m-sulaimani", "0.011", name="Sulaimani"),
+        )
+    )
+    assert signals.move_plates(move) == (
+        "Karak Tea (Flask 1 L) earns AED 0.19 less a portion; also Nido Shake (-0.05), "
+        "Masala Chai (-0.02), Karak Tea (Cup) (-0.01) and 1 more."
+    )
+
+
+def _basis_change(*, was_supplier: str) -> menu.PriceMove:
+    """The one sentence that ends on a supplier name: a pack change, whose
+    whole evidence is naming both packs and where they came from."""
+    return _move(
+        previous=_line(
+            "0.040",
+            MARCH,
+            pack="s-milk-500g",
+            invoice="inv-march",
+            product="EVAP MILK 1L",
+            supplier=was_supplier,
+        ),
+        current=_line(
+            "0.050",
+            DAY_ONE,
+            pack="s-milk-2.5kg",
+            product="EVAP MILK 24x400ML",
+            supplier="Gulf Foods Trading",
+        ),
+        name="Evaporated Milk",
+        kind="basis_changed",
+    )
+
+
+def test_a_supplier_name_that_ends_in_a_full_stop_does_not_get_a_second():
+    """ "Gulf Foods Trading L.L.C.." reads as a typo in the owner's own
+    supplier list. The name already closed the sentence."""
+    words = signals.move_words(
+        _basis_change(was_supplier="Gulf Foods Trading L.L.C."), period=PERIOD
+    )
+    assert words.evidence == (
+        "Now EVAP MILK 24x400ML from Gulf Foods Trading, was EVAP MILK 1L from "
+        "Gulf Foods Trading L.L.C."
+    )
+    assert words.plates is None
+
+
+def test_a_supplier_name_without_one_still_gets_its_full_stop():
+    words = signals.move_words(_basis_change(was_supplier="Al Seeb Trading Co LLC"), period=PERIOD)
+    assert words.evidence == (
+        "Now EVAP MILK 24x400ML from Gulf Foods Trading, was EVAP MILK 1L from "
+        "Al Seeb Trading Co LLC."
+    )
+    assert words.sentence == (
+        "Evaporated Milk is priced from a different pack now, so there is no before "
+        "and after to show."
+    )
 
 
 # --- branch gap -------------------------------------------------------------

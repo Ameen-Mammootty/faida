@@ -16,14 +16,15 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
+from faida_api import takings
 from faida_api.api import router as api_router
 from faida_api.menu import router as menu_router
 from faida_api.sales import router as sales_router
 from faida_api.storage import Storage
 
-from .conftest import AUTH, DEMO_TENANT_ID, FakeStorage, requires_db, wire_auth
+from .conftest import AUTH, DEMO_TENANT_ID, TEST_ACTOR, FakeStorage, requires_db, wire_auth
 from .test_plates import _karak, _menu_item
-from .test_sales_load import _item_day, _line
+from .test_sales_load import BRANCH_B, TENANT_B, _audit, _item_day, _line, _other_tenant
 
 pytestmark = requires_db
 
@@ -440,3 +441,115 @@ async def test_coverage_with_no_sales_is_empty_not_wrong(api, db):
     assert payload["sales_value"] == "0.00"
     assert payload["costed_pct"] is None
     assert payload["queue"] == [] and payload["mapped"] == [] and payload["excluded"] == []
+
+
+# --- the branch alias correction door (TODOS.md) --------------------------------------
+
+
+async def _alias_rows(api, branch_id: str) -> list[dict]:
+    """The till labels taught to one branch, with their ids: what a screen
+    points a delete at."""
+    response = await api.get("/api/branches", headers=AUTH)
+    assert response.status_code == 200, response.text
+    branch = next(row for row in response.json()["branches"] if row["id"] == branch_id)
+    assert branch["aliases"] == [row["alias"] for row in branch["alias_rows"]]
+    return branch["alias_rows"]
+
+
+async def _teach(api, branch_id: str, label: str) -> dict:
+    response = await api.post(
+        f"/api/branches/{branch_id}/aliases", json={"alias": label}, headers=AUTH
+    )
+    assert response.status_code == 201, response.text
+    return response.json()["alias"]
+
+
+async def test_a_label_taught_to_the_wrong_branch_is_removed_and_taught_again(api, db):
+    """The go-live incident of 2026-09-05, end to end: AL NAHDA was answered
+    with the wrong branch and there was no way back. There is now - one
+    delete, one audit row, and the label is free for the right branch."""
+    await _branches(db)
+    alias = await _teach(api, BRANCH, "AL NAHDA")
+    assert await _alias_rows(api, BRANCH) == [alias]
+
+    response = await api.delete(f"/api/branches/{BRANCH}/aliases/{alias['id']}", headers=AUTH)
+    assert response.status_code == 200, response.text
+    assert response.json()["alias"] == alias
+    assert await _alias_rows(api, BRANCH) == []
+
+    [event] = await _audit(db, "branch_alias.removed")
+    assert event["actor"] == TEST_ACTOR
+    assert event["subject_id"] == alias["id"]
+    assert event["detail"] == {
+        "branch_id": BRANCH,
+        "alias": "AL NAHDA",
+        "alias_key": "al nahda",
+    }
+
+    # Removing it a second time: it is not there, so 404 and no second row.
+    response = await api.delete(f"/api/branches/{BRANCH}/aliases/{alias['id']}", headers=AUTH)
+    assert response.status_code == 404, response.text
+    assert len(await _audit(db, "branch_alias.removed")) == 1
+
+    # The label is free, so the branch it actually names can take it - which
+    # is the 409 the delete exists to clear.
+    taught = await _teach(api, BRANCH_2, "AL NAHDA")
+    assert await _alias_rows(api, BRANCH_2) == [taught]
+
+    # And the next upload resolves the label there: the loader matches a
+    # file's branch cell on these labels, and the day lands on that branch.
+    response = await api.get("/api/branches", headers=AUTH)
+    cell = takings.name_key(" al nahda ")
+    assert [
+        row["id"]
+        for row in response.json()["branches"]
+        if any(takings.name_key(label) == cell for label in row["aliases"])
+    ] == [BRANCH_2]
+    day = _item_day(_iso(0), [_line(0, "KARAK", "105.00")], branch=BRANCH_2)
+    response = await api.post("/api/sales/days", json={"days": [day]}, headers=AUTH)
+    assert response.status_code == 200, response.text
+    assert response.json()["days"][0]["outcome"] == "loaded"
+
+
+async def test_removing_a_label_leaves_the_days_it_already_sent_where_they_landed(api, db):
+    """The days landed where the label sent them, and a delete is not a
+    move: correcting them is the loader's re-upload, not this door's job."""
+    await _branches(db)
+    alias = await _teach(api, BRANCH, "AL NAHDA")
+    await _week(api, BRANCH)
+    before = _row(await _branches_read(api), BRANCH)
+    assert before["net_sales"] == "7000.00" and before["days_loaded"] == 7
+
+    response = await api.delete(f"/api/branches/{BRANCH}/aliases/{alias['id']}", headers=AUTH)
+    assert response.status_code == 200, response.text
+
+    assert _row(await _branches_read(api), BRANCH) == before
+    assert await db.pool.fetchval("select count(*) from sales_daily") == 7
+    assert await db.pool.fetchval("select count(*) from branch_aliases") == 0
+
+
+async def test_another_tenants_label_or_another_branchs_label_is_not_at_this_address(api, db):
+    """404, never 403: a row outside the caller's tenant does not exist for
+    them, and neither does one under a branch that is not in the path."""
+    await _branches(db)
+    await _other_tenant(db)
+    theirs = str(
+        await db.pool.fetchval(
+            "insert into branch_aliases (tenant_id, branch_id, alias, alias_key) "
+            "values ($1, $2, 'ELSEWHERE', 'elsewhere') returning id",
+            TENANT_B,
+            BRANCH_B,
+        )
+    )
+    mine = await _teach(api, BRANCH, "BARSHA 1")
+
+    for url in (
+        f"/api/branches/{BRANCH}/aliases/{theirs}",  # their row, our branch
+        f"/api/branches/{BRANCH_B}/aliases/{theirs}",  # their row, their branch
+        f"/api/branches/{BRANCH_2}/aliases/{mine['id']}",  # our row, the wrong branch
+    ):
+        response = await api.delete(url, headers=AUTH)
+        assert response.status_code == 404, (url, response.text)
+
+    assert await db.pool.fetchval("select count(*) from branch_aliases") == 2
+    assert await _audit(db, "branch_alias.removed") == []
