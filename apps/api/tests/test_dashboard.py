@@ -604,9 +604,11 @@ async def test_a_basis_change_carries_no_money_and_sorts_behind_every_move(api, 
         "Evaporated Milk is priced from a different pack now, so there is no before "
         "and after to show."
     )
+    # The supplier's own full stop closes the sentence; a second would read as
+    # a typo in the owner's supplier list (`signals._stop`).
     assert basis["evidence"] == (
         "Now EVAP MILK 24x400ML from Gulf Foods Trading L.L.C., "
-        "was EVAP MILK 1L from Gulf Foods Trading L.L.C.."
+        "was EVAP MILK 1L from Gulf Foods Trading L.L.C."
     )
 
 
