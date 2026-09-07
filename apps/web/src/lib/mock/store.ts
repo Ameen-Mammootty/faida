@@ -14,15 +14,18 @@
 import {
   FIXTURES,
   MOCK_BRANCHES,
+  MOCK_SUPPLIERS,
   PRICE_HISTORIES,
   UPLOADED_INVOICE_TEMPLATE,
   type Fixture,
   type FixtureLine,
+  type MockSupplier,
 } from "./fixtures";
 import { checkDocument, checkLine, deriveConfidence } from "./validate";
 import { ApiError } from "../errors";
 import { blankToNone } from "../placeholders";
 import type {
+  BookedUnderDetail,
   Correction,
   DocumentSource,
   PaymentKind,
@@ -39,6 +42,7 @@ import type {
   ManualInvoiceInput,
   PriceHistory,
   Provenance,
+  Supplier,
   UploadResult,
 } from "../types";
 
@@ -53,6 +57,11 @@ const APPROVE_REFUSES_CREDIT = "invoice is paid by credit, not cash; confirm it 
 const APPROVE_REFUSES_UNMARKED = "invoice is not marked cash; confirm it instead";
 const APPROVE_ALREADY_CONFIRMED = "invoice is already confirmed";
 const APPROVE_REFUSES_DISMISSED = "invoice is dismissed; a dismissed copy cannot be approved";
+/** db.SupplierAliasCollision.message (WP-87): the confirm that would have
+ * taught a name another supplier already answers to, refused in words. */
+const aliasCollision = (alias: string, holder: string) =>
+  `"${alias}" is already how ${holder} is known, so this paper cannot teach it ` +
+  "as another supplier's name. Correct the supplier on the paper, or rename it.";
 
 /** C8 field paths, matching faida_api/provenance.py exactly. */
 const PROVENANCE_HEADER_FIELDS = [
@@ -104,6 +113,109 @@ const EDITABLE_STATUSES = new Set<InvoiceStatus>(["awaiting_confirm", "needs_rev
  * mock was claiming a state the product does not have. */
 const DOCUMENT_STATUS: DocumentStatus = "extracted";
 
+/**
+ * The catalog GET /api/suppliers serves and the confirm door teaches (M9
+ * WP-87). Session memory like everything else here: an alias learnt on
+ * confirm, or a supplier minted through "New supplier", lasts until reload.
+ */
+const suppliers = new Map<string, MockSupplier>(
+  MOCK_SUPPLIERS.map((supplier) => [supplier.id, clone(supplier)]),
+);
+let supplierCounter = MOCK_SUPPLIERS.length;
+
+function supplierOrThrow(id: string): MockSupplier {
+  const supplier = suppliers.get(id);
+  // api.py answers 404 for a supplier the tenant does not have; a mock id is
+  // never a uuid, so the 422 for a malformed id has no mock twin.
+  if (!supplier) throw new ApiError(404, `supplier ${id} not found`);
+  return supplier;
+}
+
+/** What a fixture is booked under: machine-booked, so nothing to learn. */
+function bookedUnderOf(supplierId: string | null): BookedUnderDetail | null {
+  if (supplierId === null) return null;
+  const supplier = suppliers.get(supplierId);
+  if (!supplier) throw new Error(`fixture bug: supplier ${supplierId} is not in MOCK_SUPPLIERS`);
+  return { id: supplier.id, name: supplier.name, learns_printed_name: false };
+}
+
+/** matching.clean_name, near enough: whitespace collapsed, edge punctuation
+ * trimmed, case and inner marks kept. */
+function cleanName(name: string): string {
+  return name.split(/\s+/).join(" ").replace(/^[ .,;:\-_]+|[ .,;:\-_]+$/g, "");
+}
+
+/**
+ * The mock's stand-in for matching.normalize: casefold, punctuation and
+ * spacing aside. The screen never reads this - it reads the flag the store
+ * derives with it, exactly the way it reads the API's - so a difference
+ * between this and the real normalizer can only move a mock outcome, never
+ * a product one.
+ */
+function fold(name: string): string {
+  return name.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+}
+
+function knownAs(supplier: MockSupplier, name: string): boolean {
+  const target = fold(name);
+  return (
+    target !== "" && [supplier.name, ...supplier.aliases].some((known) => fold(known) === target)
+  );
+}
+
+/** The tenant's supplier whose catalog name *is* this one, or a new one
+ * (db.resolve_supplier_by_name then create_supplier): normalized equality,
+ * never the fuzzy score - a person's spelling overrides the machine's guess,
+ * and a near miss is allowed to be a different company. */
+function supplierByName(name: string): MockSupplier {
+  const cleaned = cleanName(name);
+  const existing = [...suppliers.values()].find((supplier) => fold(supplier.name) === fold(cleaned));
+  if (existing) return existing;
+  supplierCounter += 1;
+  const minted: MockSupplier = {
+    id: `sup-${String(supplierCounter).padStart(2, "0")}`,
+    name: cleaned,
+    aliases: [],
+    items: {},
+  };
+  suppliers.set(minted.id, minted);
+  return minted;
+}
+
+/**
+ * api.py _learns_printed_name, the question db._learn_supplier_alias asks at
+ * confirm, asked ahead of time: the paper is still editable, a person chose
+ * the supplier (C8 provenance says so - the machine's own booking teaches
+ * nothing), and the supplier does not already answer to the printed name.
+ * The collision is not asked here; the confirm answers it, naming the holder.
+ */
+function learnsPrintedName(detail: InvoiceDetail): boolean {
+  if (detail.booked_under === null || !EDITABLE_STATUSES.has(detail.status)) return false;
+  const origin = detail.provenance.supplier_id?.origin;
+  if (origin !== "corrected_screen" && origin !== "corrected_chat") return false;
+  const printed = cleanName(detail.supplier_name ?? "");
+  if (fold(printed) === "") return false;
+  return !knownAs(supplierOrThrow(detail.booked_under.id), printed);
+}
+
+/**
+ * db._learn_supplier_alias, inside the one write behind confirm and approve:
+ * the printed name becomes the chosen supplier's alias, unless another
+ * supplier already answers to it, in which case nothing is written and the
+ * refusal names the holder. A misclick put right before the OK taught
+ * nothing, because nothing is taught until here.
+ */
+function learnAlias(detail: InvoiceDetail): void {
+  if (!learnsPrintedName(detail)) return;
+  const chosen = supplierOrThrow(detail.booked_under!.id);
+  const printed = cleanName(detail.supplier_name ?? "");
+  const holder = [...suppliers.values()].find(
+    (supplier) => supplier.id !== chosen.id && knownAs(supplier, printed),
+  );
+  if (holder) throw new ApiError(422, aliasCollision(printed, holder.name));
+  chosen.aliases.push(printed);
+}
+
 function buildDetail(fixture: Fixture): InvoiceDetail {
   const lineChecks = fixture.lines.map((line, index) => checkLine(index, line));
   const document = checkDocument(fixture.lines, lineChecks, fixture);
@@ -141,6 +253,7 @@ function buildDetail(fixture: Fixture): InvoiceDetail {
     id: fixture.id,
     supplier_name: fixture.supplier_name,
     supplier_id: fixture.supplier_id,
+    booked_under: bookedUnderOf(fixture.supplier_id),
     invoice_no: fixture.invoice_no,
     invoice_date: fixture.invoice_date,
     currency: fixture.currency,
@@ -208,6 +321,12 @@ function summarize(detail: InvoiceDetail): InvoiceSummary {
     id: detail.id,
     supplier_name: detail.supplier_name,
     supplier_id: detail.supplier_id,
+    // The list's booked_under carries the pointer and not the flag, exactly
+    // as _invoice_summary does: the flag belongs to one paper's detail.
+    booked_under:
+      detail.booked_under === null
+        ? null
+        : { id: detail.booked_under.id, name: detail.booked_under.name },
     invoice_no: detail.invoice_no,
     invoice_date: detail.invoice_date,
     currency: detail.currency,
@@ -308,7 +427,9 @@ type Edit =
   | { kind: "line_name"; line_index: number; name: string }
   | { kind: "line_pack_size"; line_index: number; pack_size: string | null }
   | { kind: "totals"; field: "subtotal" | "tax" | "total"; value: string }
-  | { kind: "payment_kind"; value: PaymentKind };
+  | { kind: "payment_kind"; value: PaymentKind }
+  | { kind: "supplier"; supplier_id: string }
+  | { kind: "supplier_name"; name: string };
 
 /** api.py _to_edit, message for message. */
 function toEdit(correction: Correction): Edit {
@@ -322,6 +443,20 @@ function toEdit(correction: Correction): Edit {
       throw new ApiError(422, `'${value}' is not a payment kind: send "cash" or "credit"`);
     }
     return { kind: "payment_kind", value: kind as PaymentKind };
+  }
+  if (field === "supplier" || field === "supplier_name") {
+    // WP-87, the two spellings of one decision: a supplier id from the
+    // picker, or a name typed beside "New supplier".
+    if (lineIndex !== null) {
+      throw new ApiError(422, `field '${field}' is a header field; line_index must be null`);
+    }
+    const text = value.trim();
+    if (!text) {
+      throw new ApiError(422, `field '${field}' needs a value: a supplier id, or a name`);
+    }
+    return field === "supplier"
+      ? { kind: "supplier", supplier_id: text }
+      : { kind: "supplier_name", name: text };
   }
   if (HEADER_FIELDS.has(field)) {
     if (lineIndex !== null) {
@@ -363,6 +498,9 @@ function toEdit(correction: Correction): Edit {
 function editKey(edit: Edit): string {
   if (edit.kind === "totals") return edit.field;
   if (edit.kind === "payment_kind") return "payment_kind";
+  // Both spellings write the same field: which supplier's history this
+  // paper moves (confirm._apply_correction stamps `supplier_id` for either).
+  if (edit.kind === "supplier" || edit.kind === "supplier_name") return "supplier_id";
   if (edit.kind === "line_name") return lineKey(edit.line_index, "raw_name");
   if (edit.kind === "line_pack_size") return lineKey(edit.line_index, "pack_size");
   return lineKey(edit.line_index, edit.field);
@@ -425,6 +563,23 @@ export async function mockPatchInvoiceFields(
       ) {
         next.status = "awaiting_confirm";
       }
+    } else if (edit.kind === "supplier" || edit.kind === "supplier_name") {
+      const supplier =
+        edit.kind === "supplier" ? supplierOrThrow(edit.supplier_id) : supplierByName(edit.name);
+      next.supplier_id = supplier.id;
+      next.booked_under = { id: supplier.id, name: supplier.name, learns_printed_name: false };
+      // The mock's re-snap: each stock line finds its item in the chosen
+      // supplier's written-out catalog or has none, and its snap state says
+      // which - so a paper moved to the right vendor gets its price history
+      // back and one moved to the wrong vendor loses it. The printed
+      // supplier_name is evidence and is never touched. One knowing
+      // divergence: the API also re-asks whether the paper is a copy of an
+      // earlier one under the new supplier; the mock keeps the pointer it has.
+      next.lines = next.lines.map((line) => {
+        if (line.line_kind !== "stock_item") return line;
+        const item = supplier.items[line.raw_name] ?? null;
+        return { ...line, supplier_item_id: item, checks: { ...line.checks, snapped: item !== null } };
+      });
     } else if (edit.kind === "line_name") {
       next.lines[edit.line_index].raw_name = edit.name;
     } else if (edit.kind === "line_pack_size") {
@@ -436,6 +591,11 @@ export async function mockPatchInvoiceFields(
   const at = new Date().toISOString();
   for (const edit of edits) {
     next.provenance[editKey(edit)] = { origin: "corrected_screen", actor: "console", at };
+  }
+  // Asked after the provenance is stamped, because a person's pick is what
+  // makes a name learnable.
+  if (next.booked_under !== null) {
+    next.booked_under = { ...next.booked_under, learns_printed_name: learnsPrintedName(next) };
   }
   const revalidated = revalidate(next);
   invoices.set(id, revalidated);
@@ -504,11 +664,19 @@ export async function mockApproveInvoice(id: string, reason: string): Promise<In
 /** db._confirm, the one write behind confirm and approve: the status flip,
  * the frozen costs (WP-53) and the price baseline, together. */
 function record(id: string, current: InvoiceDetail): InvoiceDetail {
+  // WP-87: the alias is learnt in the same write as the status flip, and a
+  // collision refuses the whole confirm before anything below happens.
+  learnAlias(current);
   const costs = frozenCosts.get(id);
   const confirmed: InvoiceDetail = {
     ...clone(current),
     status: "confirmed",
     confirmed_at: nowIso(),
+    // Learnt now (or never learnable): nothing is left for a confirm to teach.
+    booked_under:
+      current.booked_under === null
+        ? null
+        : { ...current.booked_under, learns_printed_name: false },
     // The same transaction that flips the status freezes the costs (WP-50 +
     // WP-53); on this screen the two arrive together or not at all.
     lines: clone(current).lines.map((line, index) => ({
@@ -657,6 +825,20 @@ export async function mockCreateManualInvoice(body: ManualInvoiceInput): Promise
   });
   invoices.set(id, detail);
   return respond(detail);
+}
+
+/** GET /api/suppliers (WP-87): every supplier with the printed names it
+ * answers to, by name - the order the matcher breaks its ties on. */
+export async function mockGetSuppliers(): Promise<Supplier[]> {
+  return respond(
+    [...suppliers.values()]
+      .map((supplier) => ({
+        id: supplier.id,
+        name: supplier.name,
+        aliases: [...supplier.aliases],
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name)),
+  );
 }
 
 export async function mockGetSupplierItemPrices(supplierItemId: string): Promise<PriceHistory> {

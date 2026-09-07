@@ -7,11 +7,27 @@ import {
   confirmInvoice,
   dismissInvoice,
   getInvoice,
+  getSuppliers,
   patchInvoiceFields,
 } from "@/lib/api";
 import { ApiError } from "@/lib/errors";
 import { formatDate, money, PAYMENT_LABEL } from "@/lib/format";
-import type { Correction, DocumentSource, InvoiceDetail, PaymentKind } from "@/lib/types";
+import {
+  NEW_SUPPLIER,
+  correctionForName,
+  correctionForPick,
+  newSupplierDefault,
+  refusalText,
+  savedNotice,
+  supplierBlock,
+} from "@/lib/supplierChoice";
+import type {
+  Correction,
+  DocumentSource,
+  InvoiceDetail,
+  PaymentKind,
+  Supplier,
+} from "@/lib/types";
 import { AlertIcon } from "./icons";
 import DuplicateChip from "./DuplicateChip";
 import FieldBadge from "./FieldBadge";
@@ -30,6 +46,9 @@ const SOURCE_LABEL: Record<DocumentSource, string> = {
 interface LoadResult {
   key: string;
   invoice?: InvoiceDetail;
+  /** The tenant's suppliers, for the "Booked under" picker (WP-87). Loaded
+   * with the invoice: the same server, one load, one error path. */
+  suppliers?: Supplier[];
   error?: string;
 }
 
@@ -41,9 +60,17 @@ interface Notice {
 
 const PAYMENT_KINDS: PaymentKind[] = ["cash", "credit"];
 
-function HeaderField({ label, value }: { label: string; value: string | null }) {
+function HeaderField({
+  label,
+  value,
+  className,
+}: {
+  label: string;
+  value: string | null;
+  className?: string;
+}) {
   return (
-    <div>
+    <div className={className}>
       <dt className="text-[11px] font-medium tracking-wider text-stone uppercase">{label}</dt>
       <dd className="mt-0.5 text-sm font-medium text-ink">
         {value ?? <FieldBadge status="amber" label="Not read" />}
@@ -59,12 +86,16 @@ export default function InvoiceReview({ id }: { id: string }) {
   const [dismissing, setDismissing] = useState(false);
   const [approving, setApproving] = useState(false);
   const [savingPayment, setSavingPayment] = useState(false);
+  const [savingSupplier, setSavingSupplier] = useState(false);
+  // The "New supplier" name while that choice is open, null otherwise (WP-87).
+  const [newName, setNewName] = useState<string | null>(null);
   const [reason, setReason] = useState("");
   // One strip for every write action, success and failure alike: only one can
   // be in flight, and whichever finished is the one the reader needs the
   // sentence for. role="status" below, so it is announced as it changes.
   const [notice, setNotice] = useState<Notice | null>(null);
   const imageRefreshedAt = useRef(0);
+  const nameInput = useRef<HTMLInputElement>(null);
 
   const key = `${id}:${reloadKey}`;
 
@@ -72,8 +103,8 @@ export default function InvoiceReview({ id }: { id: string }) {
     let cancelled = false;
     (async () => {
       try {
-        const detail = await getInvoice(id);
-        if (!cancelled) setResult({ key, invoice: detail });
+        const [detail, suppliers] = await Promise.all([getInvoice(id), getSuppliers()]);
+        if (!cancelled) setResult({ key, invoice: detail, suppliers });
       } catch (err) {
         if (!cancelled) {
           setResult({
@@ -91,7 +122,16 @@ export default function InvoiceReview({ id }: { id: string }) {
 
   const current = result?.key === key ? result : null;
   const invoice = current?.invoice ?? null;
+  const suppliers = current?.suppliers ?? [];
   const loadError = current?.error ?? null;
+
+  // DOM only: the name field takes focus when "New supplier" opens it, so
+  // the reader types straight away. Keyed on whether it is open, not on the
+  // draft, so typing never re-focuses.
+  const namingOpen = newName !== null;
+  useEffect(() => {
+    if (namingOpen) nameInput.current?.focus();
+  }, [namingOpen]);
 
   function applyUpdate(updated: InvoiceDetail) {
     setResult((prev) =>
@@ -110,7 +150,7 @@ export default function InvoiceReview({ id }: { id: string }) {
   // beside the state it describes rather than beside a form for a state that
   // no longer exists.
   async function failed(err: unknown, fallback: string) {
-    setNotice({ tone: "error", text: err instanceof ApiError ? err.message : fallback });
+    setNotice({ tone: "error", text: refusalText(err, fallback) });
     if (err instanceof ApiError && err.status === 409) {
       try {
         applyUpdate(await getInvoice(id));
@@ -200,6 +240,46 @@ export default function InvoiceReview({ id }: { id: string }) {
     }
   }
 
+  // "Booked under" goes through the correction door like every other field
+  // (WP-87). The server re-snaps the lines against the chosen supplier's
+  // catalog, re-asks whether the paper is a copy, and may move the status;
+  // the screen re-renders from what comes back, and the strip says where the
+  // paper is filed now. "New supplier" opens the name field instead of
+  // sending anything; the printed name is never rewritten by any of this.
+  async function pickSupplier(value: string) {
+    const detail = current?.invoice;
+    if (!detail) return;
+    if (value === NEW_SUPPLIER) {
+      setNewName(newSupplierDefault(detail));
+      return;
+    }
+    const correction = correctionForPick(value, detail.booked_under);
+    if (correction === null) return;
+    await saveSupplier(correction);
+  }
+
+  async function saveNewSupplier(event: React.FormEvent) {
+    event.preventDefault();
+    const correction = correctionForName(newName ?? "");
+    if (correction === null) return;
+    await saveSupplier(correction);
+  }
+
+  async function saveSupplier(correction: Correction) {
+    setSavingSupplier(true);
+    setNotice(null);
+    try {
+      const updated = await patchInvoiceFields(id, [correction]);
+      applyUpdate(updated);
+      setNewName(null);
+      setNotice({ tone: "ok", text: savedNotice(updated) });
+    } catch (err) {
+      await failed(err, "Couldn't change the supplier. Try again.");
+    } finally {
+      setSavingSupplier(false);
+    }
+  }
+
   // The signed image URL lives ~600 s. When a long-open photo starts failing,
   // refetch the detail quietly for a fresh URL - at most once every 10 s so a
   // permanently broken image can't loop.
@@ -258,7 +338,9 @@ export default function InvoiceReview({ id }: { id: string }) {
   // offered at all, and the cash banner below carries the approve form.
   const confirmable =
     (invoice.status === "awaiting_confirm" || invoice.status === "needs_review") && !cashHold;
-  const busy = confirming || dismissing || approving || savingPayment;
+  const busy = confirming || dismissing || approving || savingPayment || savingSupplier;
+  // Every decision the supplier block renders, from the payload (WP-87).
+  const supplier = supplierBlock(invoice, suppliers);
   const watchItemIds = [
     ...new Set(
       invoice.lines
@@ -449,12 +531,82 @@ export default function InvoiceReview({ id }: { id: string }) {
         <div className="space-y-5">
           <section className="rounded-md border border-ink/10 bg-paper p-4 sm:p-5">
             <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
-              <HeaderField label="Supplier" value={invoice.supplier_name} />
+              {/* WP-87: two fields for two facts. "Supplier" is what the paper
+                  printed, never rewritten. "Booked under" is where it is
+                  filed - a picker in the "Paid by" grammar while the paper is
+                  editable, a plain value once it is not, and then only when
+                  the two names differ. A two-column field, because a supplier
+                  name in one of these columns wraps to three lines. */}
+              <HeaderField label="Supplier" value={supplier.printed} className="col-span-2" />
               <HeaderField label="Invoice no" value={invoice.invoice_no} />
               <HeaderField
                 label="Date"
                 value={invoice.invoice_date ? formatDate(invoice.invoice_date) : null}
               />
+              {supplier.picker ? (
+                // Three of the four columns: a catalog name with the printed
+                // names it answers to in brackets is the longest thing in
+                // these fields, and the closed select shows all of it.
+                <div className="col-span-2 sm:col-span-3">
+                  <dt className="text-[11px] font-medium tracking-wider text-stone uppercase">
+                    <label htmlFor="booked-under">Booked under</label>
+                  </dt>
+                  <dd className="mt-0.5">
+                    <select
+                      id="booked-under"
+                      value={namingOpen ? NEW_SUPPLIER : supplier.picker.value}
+                      disabled={busy}
+                      onChange={(event) => void pickSupplier(event.target.value)}
+                      className="w-full rounded-sm border border-ink/20 bg-paper px-2 py-1 text-sm font-medium text-ink"
+                    >
+                      {supplier.picker.options.map((option) => (
+                        <option key={option.value} value={option.value} disabled={option.disabled}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    {newName !== null ? (
+                      <form onSubmit={(event) => void saveNewSupplier(event)} className="mt-2">
+                        <label className="flex flex-col gap-1 text-xs font-medium text-ink">
+                          Name
+                          <input
+                            ref={nameInput}
+                            type="text"
+                            name="supplier_name"
+                            value={newName}
+                            onChange={(event) => setNewName(event.target.value)}
+                            disabled={busy}
+                            className="w-full rounded-sm border border-ink/20 bg-paper px-2 py-1.5 text-sm font-normal text-ink"
+                          />
+                        </label>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <button
+                            type="submit"
+                            disabled={busy || correctionForName(newName) === null}
+                            className="min-h-11 rounded-sm bg-palm px-4 py-2 text-sm font-semibold text-white hover:bg-palm-deep disabled:opacity-60"
+                          >
+                            {savingSupplier ? "Booking" : "Book under this name"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setNewName(null)}
+                            disabled={busy}
+                            className="min-h-11 rounded-sm border-2 border-palm bg-paper px-4 py-2 text-sm font-semibold text-palm hover:bg-mist disabled:opacity-60"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </form>
+                    ) : null}
+                  </dd>
+                </div>
+              ) : supplier.bookedUnder !== null ? (
+                <HeaderField
+                  label="Booked under"
+                  value={supplier.bookedUnder}
+                  className="col-span-2"
+                />
+              ) : null}
               {editable ? (
                 <div>
                   <dt className="text-[11px] font-medium tracking-wider text-stone uppercase">
@@ -491,6 +643,12 @@ export default function InvoiceReview({ id }: { id: string }) {
                 />
               )}
             </dl>
+            {/* What confirming teaches, exactly when the API says it will
+                (WP-87) - said before the button is pressed, not behind an
+                icon, because it is a consequence and not a qualification. */}
+            {supplier.sentence ? (
+              <p className="mt-3 text-xs leading-snug text-stone">{supplier.sentence}</p>
+            ) : null}
             <div className="mt-4 border-t border-ink/10 pt-1">
               <LinesTable
                 lines={invoice.lines}

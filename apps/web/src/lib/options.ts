@@ -38,11 +38,13 @@ export function branchOptions(invoices: InvoiceSummary[]): FilterOption[] {
   );
 }
 
+/** The filter is by supplier id, so its label is the supplier's catalog name
+ * (WP-87 `booked_under`), not whichever spelling the first paper printed. */
 export function supplierOptions(invoices: InvoiceSummary[]): FilterOption[] {
   return distinctOptions(
     invoices,
     (invoice) => invoice.supplier_id,
-    (invoice) => invoice.supplier_name,
+    (invoice) => invoice.booked_under?.name ?? invoice.supplier_name,
     "Unnamed supplier",
   );
 }
