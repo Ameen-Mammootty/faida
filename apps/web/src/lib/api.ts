@@ -11,6 +11,7 @@
  *   POST  /api/invoices/{id}/dismiss        a duplicate copy leaves the working list; the detail
  *   POST  /api/documents                    manual upload (multipart file [+ branch_id])
  *   GET   /api/supplier-items/{id}/prices   item header + confirmed prices, oldest first
+ *   GET   /api/suppliers                    {"suppliers": [...]}, each with its aliases (WP-87)
  *
  * PATCH and confirm return the full updated detail payload - callers use it
  * directly and never refetch after a write.
@@ -76,6 +77,7 @@ import {
   mockCreateManualInvoice,
   mockGetInvoice,
   mockGetSupplierItemPrices,
+  mockGetSuppliers,
   mockListInvoices,
   mockPatchInvoiceFields,
   mockUploadDocument,
@@ -111,6 +113,7 @@ import type {
   SalesFileResult,
   SalesLayout,
   SalesLayoutInput,
+  Supplier,
   TillItem,
   UnmappedSupplierItem,
   UploadResult,
@@ -256,6 +259,16 @@ export async function uploadDocument(file: File, branchId?: string): Promise<Upl
 export async function createManualInvoice(body: ManualInvoiceInput): Promise<InvoiceDetail> {
   if (MOCK) return mockCreateManualInvoice(body);
   return request<InvoiceDetail>("/api/invoices/manual", jsonInit("POST", body));
+}
+
+/**
+ * The tenant's suppliers with the printed names each already answers to (M9
+ * WP-87): what the review screen's "Booked under" picker is built from.
+ */
+export async function getSuppliers(): Promise<Supplier[]> {
+  if (MOCK) return mockGetSuppliers();
+  const body = await request<{ suppliers: Supplier[] }>("/api/suppliers");
+  return body.suppliers;
 }
 
 export async function getSupplierItemPrices(supplierItemId: string): Promise<PriceHistory> {

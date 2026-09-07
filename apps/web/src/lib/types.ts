@@ -100,11 +100,43 @@ export interface FieldSource {
  */
 export type Provenance = Record<string, FieldSource>;
 
+/**
+ * M9 WP-87: the supplier a paper is filed under - whose price history it
+ * moves - which is not always the name printed on it. Null until one is
+ * attached. `supplier_name` beside it stays what the paper printed, and the
+ * whole reason the field exists is that those two are not always the same.
+ */
+export interface BookedUnder {
+  id: string;
+  name: string;
+}
+
+/**
+ * The detail's `booked_under` carries one word more than the list's: whether
+ * confirming the paper as it stands would teach the printed name to this
+ * supplier as an alias. Computed on the API with its own rule (a person chose
+ * the supplier, and the supplier does not already answer to the name), never
+ * re-derived here - the screen's "When you confirm ..." sentence reads it.
+ */
+export interface BookedUnderDetail extends BookedUnder {
+  learns_printed_name: boolean;
+}
+
+/** One supplier of GET /api/suppliers (the envelope is {"suppliers": [...]}),
+ * with the printed names it already answers to. Ordered by name, the order
+ * the matcher breaks its ties on. */
+export interface Supplier {
+  id: string;
+  name: string;
+  aliases: string[];
+}
+
 /** One row of GET /api/invoices (the list envelope is {"invoices": [...]}). */
 export interface InvoiceSummary {
   id: string;
   supplier_name: string | null;
   supplier_id: string | null;
+  booked_under: BookedUnder | null;
   invoice_no: string | null;
   /** ISO date, e.g. "2026-08-21". */
   invoice_date: string | null;
@@ -228,6 +260,7 @@ export interface InvoiceDocument {
  * same payload, so the screen never refetches after a write.
  */
 export interface InvoiceDetail extends InvoiceSummary {
+  booked_under: BookedUnderDetail | null;
   /** Set only on a held duplicate; the detail read pays for it only then. */
   duplicate_of: DuplicateOf | null;
   subtotal: string | null;
@@ -256,7 +289,9 @@ export type CorrectionField =
   | "subtotal"
   | "tax"
   | "total"
-  | "payment_kind";
+  | "payment_kind"
+  | "supplier"
+  | "supplier_name";
 
 /**
  * One field fix for PATCH /api/invoices/{id}/fields, exactly the chat
@@ -272,6 +307,13 @@ export type CorrectionField =
  * "cash" or "credit", and it is the one correction that moves a status: cash
  * to credit lifts a cash hold back to awaiting_confirm (unless the paper is
  * also a held duplicate), credit to cash holds an awaiting paper.
+ * "supplier" and "supplier_name" (M9 WP-87) are the two spellings of one
+ * decision - which supplier this paper is booked under: an id from
+ * GET /api/suppliers, or a name for a new vendor (a name that already exists
+ * picks that supplier rather than minting a second). Both are header fields;
+ * both re-snap the lines against the chosen supplier's catalog, re-run the
+ * duplicate check and can move the status; neither touches the printed
+ * supplier_name. 409 once the paper is confirmed.
  */
 export interface Correction {
   line_index: number | null;
