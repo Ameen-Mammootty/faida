@@ -1,0 +1,443 @@
+category,item_code,item_name,selling_price_aed,yield_portions,yield_label,ingredient,qty_as_purchased,unit,source_text
+Tea Corner,52a,Karak Tea - Flask 1 L,35.00,1,serving,CTC black tea,27.5,g,500 ml Karak Concentrate
+Tea Corner,52a,Karak Tea - Flask 1 L,35.00,1,serving,Green cardamom,2.25,g,500 ml Karak Concentrate
+Tea Corner,52a,Karak Tea - Flask 1 L,35.00,1,serving,Cinnamon stick,0.75,g,500 ml Karak Concentrate
+Tea Corner,52a,Karak Tea - Flask 1 L,35.00,1,serving,Saffron,0.05,g,500 ml Karak Concentrate
+Tea Corner,52a,Karak Tea - Flask 1 L,35.00,1,serving,Evaporated milk,390,ml,
+Tea Corner,52a,Karak Tea - Flask 1 L,35.00,1,serving,Condensed milk,85,g,
+Tea Corner,52a,Karak Tea - Flask 1 L,35.00,1,serving,White sugar,45,g,
+Tea Corner,52a,Karak Tea - Flask 1 L,35.00,1,serving,Disposable flask 1 L,1,ea,
+Tea Corner,52b,Karak Tea - Flask 2 L,55.00,1,serving,CTC black tea,55,g,1000 ml Karak Concentrate
+Tea Corner,52b,Karak Tea - Flask 2 L,55.00,1,serving,Green cardamom,4.5,g,1000 ml Karak Concentrate
+Tea Corner,52b,Karak Tea - Flask 2 L,55.00,1,serving,Cinnamon stick,1.5,g,1000 ml Karak Concentrate
+Tea Corner,52b,Karak Tea - Flask 2 L,55.00,1,serving,Saffron,0.1,g,1000 ml Karak Concentrate
+Tea Corner,52b,Karak Tea - Flask 2 L,55.00,1,serving,Evaporated milk,780,ml,
+Tea Corner,52b,Karak Tea - Flask 2 L,55.00,1,serving,Condensed milk,170,g,
+Tea Corner,52b,Karak Tea - Flask 2 L,55.00,1,serving,White sugar,90,g,
+Tea Corner,52b,Karak Tea - Flask 2 L,55.00,1,serving,Disposable flask 2 L,1,ea,
+Tea Corner,53a,Coffee Milk - Flask 1 L,50.00,1,serving,Instant coffee,15,g,500 ml Coffee Milk Base
+Tea Corner,53a,Coffee Milk - Flask 1 L,50.00,1,serving,Green cardamom,1,g,500 ml Coffee Milk Base
+Tea Corner,53a,Coffee Milk - Flask 1 L,50.00,1,serving,Evaporated milk,380,ml,
+Tea Corner,53a,Coffee Milk - Flask 1 L,50.00,1,serving,Condensed milk,90,g,
+Tea Corner,53a,Coffee Milk - Flask 1 L,50.00,1,serving,White sugar,40,g,
+Tea Corner,53a,Coffee Milk - Flask 1 L,50.00,1,serving,Disposable flask 1 L,1,ea,
+Tea Corner,53b,Coffee Milk - Flask 2 L,60.00,1,serving,Instant coffee,30,g,1000 ml Coffee Milk Base
+Tea Corner,53b,Coffee Milk - Flask 2 L,60.00,1,serving,Green cardamom,2,g,1000 ml Coffee Milk Base
+Tea Corner,53b,Coffee Milk - Flask 2 L,60.00,1,serving,Evaporated milk,760,ml,
+Tea Corner,53b,Coffee Milk - Flask 2 L,60.00,1,serving,Condensed milk,180,g,
+Tea Corner,53b,Coffee Milk - Flask 2 L,60.00,1,serving,White sugar,80,g,
+Tea Corner,53b,Coffee Milk - Flask 2 L,60.00,1,serving,Disposable flask 2 L,1,ea,
+Tea Corner,54a,Habbat Al Hamra - Flask 1 L,50.00,1,serving,Habbat Al Hamra blend,24.75,g,550 ml Habbat Al Hamra Concentrate
+Tea Corner,54a,Habbat Al Hamra - Flask 1 L,50.00,1,serving,Dry ginger,2.75,g,550 ml Habbat Al Hamra Concentrate
+Tea Corner,54a,Habbat Al Hamra - Flask 1 L,50.00,1,serving,Cinnamon stick,2.063,g,550 ml Habbat Al Hamra Concentrate
+Tea Corner,54a,Habbat Al Hamra - Flask 1 L,50.00,1,serving,Green cardamom,1.65,g,550 ml Habbat Al Hamra Concentrate
+Tea Corner,54a,Habbat Al Hamra - Flask 1 L,50.00,1,serving,Evaporated milk,350,ml,
+Tea Corner,54a,Habbat Al Hamra - Flask 1 L,50.00,1,serving,Condensed milk,80,g,
+Tea Corner,54a,Habbat Al Hamra - Flask 1 L,50.00,1,serving,White sugar,40,g,
+Tea Corner,54a,Habbat Al Hamra - Flask 1 L,50.00,1,serving,Disposable flask 1 L,1,ea,
+Tea Corner,54b,Habbat Al Hamra - Flask 2 L,70.00,1,serving,Habbat Al Hamra blend,49.5,g,1100 ml Habbat Al Hamra Concentrate
+Tea Corner,54b,Habbat Al Hamra - Flask 2 L,70.00,1,serving,Dry ginger,5.5,g,1100 ml Habbat Al Hamra Concentrate
+Tea Corner,54b,Habbat Al Hamra - Flask 2 L,70.00,1,serving,Cinnamon stick,4.125,g,1100 ml Habbat Al Hamra Concentrate
+Tea Corner,54b,Habbat Al Hamra - Flask 2 L,70.00,1,serving,Green cardamom,3.3,g,1100 ml Habbat Al Hamra Concentrate
+Tea Corner,54b,Habbat Al Hamra - Flask 2 L,70.00,1,serving,Evaporated milk,700,ml,
+Tea Corner,54b,Habbat Al Hamra - Flask 2 L,70.00,1,serving,Condensed milk,160,g,
+Tea Corner,54b,Habbat Al Hamra - Flask 2 L,70.00,1,serving,White sugar,80,g,
+Tea Corner,54b,Habbat Al Hamra - Flask 2 L,70.00,1,serving,Disposable flask 2 L,1,ea,
+Tea Corner,55a,Cappuccino - Small 150 ml,5.00,1,serving,Instant coffee,3,g,
+Tea Corner,55a,Cappuccino - Small 150 ml,5.00,1,serving,Fresh milk,130,ml,
+Tea Corner,55a,Cappuccino - Small 150 ml,5.00,1,serving,Milk powder,8,g,
+Tea Corner,55a,Cappuccino - Small 150 ml,5.00,1,serving,White sugar,8,g,
+Tea Corner,55a,Cappuccino - Small 150 ml,5.00,1,serving,Cocoa powder,0.5,g,
+Tea Corner,55a,Cappuccino - Small 150 ml,5.00,1,serving,Paper cup small + lid,1,ea,
+Tea Corner,55b,Cappuccino - Large 250 ml,8.00,1,serving,Instant coffee,5,g,
+Tea Corner,55b,Cappuccino - Large 250 ml,8.00,1,serving,Fresh milk,220,ml,
+Tea Corner,55b,Cappuccino - Large 250 ml,8.00,1,serving,Milk powder,12,g,
+Tea Corner,55b,Cappuccino - Large 250 ml,8.00,1,serving,White sugar,12,g,
+Tea Corner,55b,Cappuccino - Large 250 ml,8.00,1,serving,Cocoa powder,0.8,g,
+Tea Corner,55b,Cappuccino - Large 250 ml,8.00,1,serving,Paper cup large + lid,1,ea,
+Tea Corner,56a,Sahalab - Small 150 ml,5.00,1,serving,Fresh milk,138,ml,150 ml Sahalab Base
+Tea Corner,56a,Sahalab - Small 150 ml,5.00,1,serving,Sahlab powder,4.5,g,150 ml Sahalab Base
+Tea Corner,56a,Sahalab - Small 150 ml,5.00,1,serving,Corn starch,2.7,g,150 ml Sahalab Base
+Tea Corner,56a,Sahalab - Small 150 ml,5.00,1,serving,White sugar,12,g,150 ml Sahalab Base
+Tea Corner,56a,Sahalab - Small 150 ml,5.00,1,serving,Rose water,1.2,ml,150 ml Sahalab Base
+Tea Corner,56a,Sahalab - Small 150 ml,5.00,1,serving,"Pistachio, slivered",4,g,
+Tea Corner,56a,Sahalab - Small 150 ml,5.00,1,serving,Desiccated coconut,2,g,
+Tea Corner,56a,Sahalab - Small 150 ml,5.00,1,serving,Cinnamon stick,0.3,g,
+Tea Corner,56a,Sahalab - Small 150 ml,5.00,1,serving,Paper cup small + lid,1,ea,
+Tea Corner,56b,Sahalab - Large 250 ml,8.00,1,serving,Fresh milk,230,ml,250 ml Sahalab Base
+Tea Corner,56b,Sahalab - Large 250 ml,8.00,1,serving,Sahlab powder,7.5,g,250 ml Sahalab Base
+Tea Corner,56b,Sahalab - Large 250 ml,8.00,1,serving,Corn starch,4.5,g,250 ml Sahalab Base
+Tea Corner,56b,Sahalab - Large 250 ml,8.00,1,serving,White sugar,20,g,250 ml Sahalab Base
+Tea Corner,56b,Sahalab - Large 250 ml,8.00,1,serving,Rose water,2,ml,250 ml Sahalab Base
+Tea Corner,56b,Sahalab - Large 250 ml,8.00,1,serving,"Pistachio, slivered",6,g,
+Tea Corner,56b,Sahalab - Large 250 ml,8.00,1,serving,Desiccated coconut,3,g,
+Tea Corner,56b,Sahalab - Large 250 ml,8.00,1,serving,Cinnamon stick,0.5,g,
+Tea Corner,56b,Sahalab - Large 250 ml,8.00,1,serving,Paper cup large + lid,1,ea,
+Tea Corner,57a,Kashmiri Tea - Small 150 ml,5.00,1,serving,Kashmiri green tea leaves,3,g,60 ml Kashmiri Pink Tea Concentrate
+Tea Corner,57a,Kashmiri Tea - Small 150 ml,5.00,1,serving,Baking soda,0.16,g,60 ml Kashmiri Pink Tea Concentrate
+Tea Corner,57a,Kashmiri Tea - Small 150 ml,5.00,1,serving,Salt,0.1,g,60 ml Kashmiri Pink Tea Concentrate
+Tea Corner,57a,Kashmiri Tea - Small 150 ml,5.00,1,serving,Green cardamom,0.2,g,60 ml Kashmiri Pink Tea Concentrate
+Tea Corner,57a,Kashmiri Tea - Small 150 ml,5.00,1,serving,Cinnamon stick,0.1,g,60 ml Kashmiri Pink Tea Concentrate
+Tea Corner,57a,Kashmiri Tea - Small 150 ml,5.00,1,serving,Fresh milk,110,ml,
+Tea Corner,57a,Kashmiri Tea - Small 150 ml,5.00,1,serving,White sugar,10,g,
+Tea Corner,57a,Kashmiri Tea - Small 150 ml,5.00,1,serving,"Pistachio, slivered",3,g,
+Tea Corner,57a,Kashmiri Tea - Small 150 ml,5.00,1,serving,Paper cup small + lid,1,ea,
+Tea Corner,57b,Kashmiri Tea - Large 250 ml,8.00,1,serving,Kashmiri green tea leaves,5,g,100 ml Kashmiri Pink Tea Concentrate
+Tea Corner,57b,Kashmiri Tea - Large 250 ml,8.00,1,serving,Baking soda,0.267,g,100 ml Kashmiri Pink Tea Concentrate
+Tea Corner,57b,Kashmiri Tea - Large 250 ml,8.00,1,serving,Salt,0.167,g,100 ml Kashmiri Pink Tea Concentrate
+Tea Corner,57b,Kashmiri Tea - Large 250 ml,8.00,1,serving,Green cardamom,0.333,g,100 ml Kashmiri Pink Tea Concentrate
+Tea Corner,57b,Kashmiri Tea - Large 250 ml,8.00,1,serving,Cinnamon stick,0.167,g,100 ml Kashmiri Pink Tea Concentrate
+Tea Corner,57b,Kashmiri Tea - Large 250 ml,8.00,1,serving,Fresh milk,180,ml,
+Tea Corner,57b,Kashmiri Tea - Large 250 ml,8.00,1,serving,White sugar,16,g,
+Tea Corner,57b,Kashmiri Tea - Large 250 ml,8.00,1,serving,"Pistachio, slivered",5,g,
+Tea Corner,57b,Kashmiri Tea - Large 250 ml,8.00,1,serving,Paper cup large + lid,1,ea,
+Tea Corner,58a,Boost - Small 150 ml,5.00,1,serving,Boost powder,12,g,
+Tea Corner,58a,Boost - Small 150 ml,5.00,1,serving,Fresh milk,140,ml,
+Tea Corner,58a,Boost - Small 150 ml,5.00,1,serving,White sugar,5,g,
+Tea Corner,58a,Boost - Small 150 ml,5.00,1,serving,Paper cup small + lid,1,ea,
+Tea Corner,58b,Boost - Large 250 ml,8.00,1,serving,Boost powder,20,g,
+Tea Corner,58b,Boost - Large 250 ml,8.00,1,serving,Fresh milk,240,ml,
+Tea Corner,58b,Boost - Large 250 ml,8.00,1,serving,White sugar,8,g,
+Tea Corner,58b,Boost - Large 250 ml,8.00,1,serving,Paper cup large + lid,1,ea,
+Tea Corner,59a,Horlicks - Small 150 ml,5.00,1,serving,Horlicks powder,14,g,
+Tea Corner,59a,Horlicks - Small 150 ml,5.00,1,serving,Fresh milk,140,ml,
+Tea Corner,59a,Horlicks - Small 150 ml,5.00,1,serving,White sugar,4,g,
+Tea Corner,59a,Horlicks - Small 150 ml,5.00,1,serving,Paper cup small + lid,1,ea,
+Tea Corner,59b,Horlicks - Large 250 ml,8.00,1,serving,Horlicks powder,22,g,
+Tea Corner,59b,Horlicks - Large 250 ml,8.00,1,serving,Fresh milk,240,ml,
+Tea Corner,59b,Horlicks - Large 250 ml,8.00,1,serving,White sugar,6,g,
+Tea Corner,59b,Horlicks - Large 250 ml,8.00,1,serving,Paper cup large + lid,1,ea,
+Tea Corner,60a,Hot Chocolate - Small 150 ml,5.00,1,serving,Drinking chocolate powder,20,g,
+Tea Corner,60a,Hot Chocolate - Small 150 ml,5.00,1,serving,Fresh milk,140,ml,
+Tea Corner,60a,Hot Chocolate - Small 150 ml,5.00,1,serving,White sugar,4,g,
+Tea Corner,60a,Hot Chocolate - Small 150 ml,5.00,1,serving,Paper cup small + lid,1,ea,
+Tea Corner,60b,Hot Chocolate - Large 250 ml,8.00,1,serving,Drinking chocolate powder,32,g,
+Tea Corner,60b,Hot Chocolate - Large 250 ml,8.00,1,serving,Fresh milk,240,ml,
+Tea Corner,60b,Hot Chocolate - Large 250 ml,8.00,1,serving,White sugar,6,g,
+Tea Corner,60b,Hot Chocolate - Large 250 ml,8.00,1,serving,Paper cup large + lid,1,ea,
+Tea Corner,61,Honey Cake - slice,11.00,1,serving,"Honey cake, whole (10 slices)",0.1,ea,
+Tea Corner,61,Honey Cake - slice,11.00,1,serving,Cake box + fork,1,ea,
+Tea Corner,62,Zafran Cake - slice,14.00,1,serving,"Zafran cake, whole (10 slices)",0.1,ea,
+Tea Corner,62,Zafran Cake - slice,14.00,1,serving,Cake box + fork,1,ea,
+Tea Corner,63,Lotus Cake - slice,11.00,1,serving,"Lotus cake, whole (10 slices)",0.1,ea,
+Tea Corner,63,Lotus Cake - slice,11.00,1,serving,Cake box + fork,1,ea,
+Tea Corner,64a,Karak Delivery - Small 120 ml,1.50,1,serving,CTC black tea,3.3,g,60 ml Karak Concentrate
+Tea Corner,64a,Karak Delivery - Small 120 ml,1.50,1,serving,Green cardamom,0.27,g,60 ml Karak Concentrate
+Tea Corner,64a,Karak Delivery - Small 120 ml,1.50,1,serving,Cinnamon stick,0.09,g,60 ml Karak Concentrate
+Tea Corner,64a,Karak Delivery - Small 120 ml,1.50,1,serving,Saffron,0.006,g,60 ml Karak Concentrate
+Tea Corner,64a,Karak Delivery - Small 120 ml,1.50,1,serving,Evaporated milk,47,ml,
+Tea Corner,64a,Karak Delivery - Small 120 ml,1.50,1,serving,Condensed milk,10,g,
+Tea Corner,64a,Karak Delivery - Small 120 ml,1.50,1,serving,White sugar,5,g,
+Tea Corner,64a,Karak Delivery - Small 120 ml,1.50,1,serving,Delivery cup S + lid,1,ea,
+Tea Corner,64b,Karak Delivery - Medium 250 ml,3.00,1,serving,CTC black tea,6.875,g,125 ml Karak Concentrate
+Tea Corner,64b,Karak Delivery - Medium 250 ml,3.00,1,serving,Green cardamom,0.563,g,125 ml Karak Concentrate
+Tea Corner,64b,Karak Delivery - Medium 250 ml,3.00,1,serving,Cinnamon stick,0.188,g,125 ml Karak Concentrate
+Tea Corner,64b,Karak Delivery - Medium 250 ml,3.00,1,serving,Saffron,0.013,g,125 ml Karak Concentrate
+Tea Corner,64b,Karak Delivery - Medium 250 ml,3.00,1,serving,Evaporated milk,98,ml,
+Tea Corner,64b,Karak Delivery - Medium 250 ml,3.00,1,serving,Condensed milk,21,g,
+Tea Corner,64b,Karak Delivery - Medium 250 ml,3.00,1,serving,White sugar,11,g,
+Tea Corner,64b,Karak Delivery - Medium 250 ml,3.00,1,serving,Delivery cup M + lid,1,ea,
+Tea Corner,64c,Karak Delivery - Large 400 ml,5.00,1,serving,CTC black tea,11,g,200 ml Karak Concentrate
+Tea Corner,64c,Karak Delivery - Large 400 ml,5.00,1,serving,Green cardamom,0.9,g,200 ml Karak Concentrate
+Tea Corner,64c,Karak Delivery - Large 400 ml,5.00,1,serving,Cinnamon stick,0.3,g,200 ml Karak Concentrate
+Tea Corner,64c,Karak Delivery - Large 400 ml,5.00,1,serving,Saffron,0.02,g,200 ml Karak Concentrate
+Tea Corner,64c,Karak Delivery - Large 400 ml,5.00,1,serving,Evaporated milk,156,ml,
+Tea Corner,64c,Karak Delivery - Large 400 ml,5.00,1,serving,Condensed milk,34,g,
+Tea Corner,64c,Karak Delivery - Large 400 ml,5.00,1,serving,White sugar,18,g,
+Tea Corner,64c,Karak Delivery - Large 400 ml,5.00,1,serving,Delivery cup L + lid,1,ea,
+Special Gravy,126,Butter Chicken,17.00,1,serving,"Chicken, boneless",130,g,
+Special Gravy,126,Butter Chicken,17.00,1,serving,Tomato,81.522,g,100 ml Mother Gravy A (Makhani Base)
+Special Gravy,126,Butter Chicken,17.00,1,serving,Onion,23.529,g,100 ml Mother Gravy A (Makhani Base)
+Special Gravy,126,Butter Chicken,17.00,1,serving,Cashew nuts,6.25,g,100 ml Mother Gravy A (Makhani Base)
+Special Gravy,126,Butter Chicken,17.00,1,serving,Ginger-garlic paste,3.75,g,100 ml Mother Gravy A (Makhani Base)
+Special Gravy,126,Butter Chicken,17.00,1,serving,Butter,17.5,g,100 ml Mother Gravy A (Makhani Base)
+Special Gravy,126,Butter Chicken,17.00,1,serving,Kashmiri chilli powder,1.5,g,100 ml Mother Gravy A (Makhani Base)
+Special Gravy,126,Butter Chicken,17.00,1,serving,Salt,1.375,g,100 ml Mother Gravy A (Makhani Base)
+Special Gravy,126,Butter Chicken,17.00,1,serving,White sugar,1.5,g,100 ml Mother Gravy A (Makhani Base)
+Special Gravy,126,Butter Chicken,17.00,1,serving,"Cream, cooking",20,ml,
+Special Gravy,126,Butter Chicken,17.00,1,serving,Kasuri methi,1,g,
+Special Gravy,126,Butter Chicken,17.00,1,serving,Garam masala,1,g,
+Special Gravy,126,Butter Chicken,17.00,1,serving,Takeaway container + lid,1,ea,
+Special Gravy,127,Chicken Wings,18.00,1,serving,Chicken wings,250,g,260 g Marinated Wings
+Special Gravy,127,Chicken Wings,18.00,1,serving,Light soy sauce,12.5,ml,260 g Marinated Wings; 40 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,127,Chicken Wings,18.00,1,serving,Garlic,14.744,g,260 g Marinated Wings; 40 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,127,Chicken Wings,18.00,1,serving,Red chilli powder,3,g,260 g Marinated Wings
+Special Gravy,127,Chicken Wings,18.00,1,serving,White pepper,0.75,g,260 g Marinated Wings
+Special Gravy,127,Chicken Wings,18.00,1,serving,Salt,2,g,260 g Marinated Wings
+Special Gravy,127,Chicken Wings,18.00,1,serving,Ginger,2.353,g,40 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,127,Chicken Wings,18.00,1,serving,Green chilli,1.5,g,40 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,127,Chicken Wings,18.00,1,serving,Onion,14.118,g,40 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,127,Chicken Wings,18.00,1,serving,Capsicum,9.756,g,40 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,127,Chicken Wings,18.00,1,serving,Red chilli sauce,6,ml,40 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,127,Chicken Wings,18.00,1,serving,Tomato ketchup,5,ml,40 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,127,Chicken Wings,18.00,1,serving,Vinegar,1.5,ml,40 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,127,Chicken Wings,18.00,1,serving,White sugar,1.2,g,40 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,127,Chicken Wings,18.00,1,serving,Corn flour,0.6,g,40 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,127,Chicken Wings,18.00,1,serving,Oil,20,ml,
+Special Gravy,127,Chicken Wings,18.00,1,serving,Spring onion,7.143,g,5 g Spring onion edible
+Special Gravy,127,Chicken Wings,18.00,1,serving,Takeaway container + lid,1,ea,
+Special Gravy,128,Chicken 65 Dry,17.00,1,serving,"Chicken, boneless",125,g,150 g Chicken 65 Marinated Chicken
+Special Gravy,128,Chicken 65 Dry,17.00,1,serving,Yoghurt,12.5,g,150 g Chicken 65 Marinated Chicken
+Special Gravy,128,Chicken 65 Dry,17.00,1,serving,Ginger-garlic paste,3.75,g,150 g Chicken 65 Marinated Chicken
+Special Gravy,128,Chicken 65 Dry,17.00,1,serving,Red chilli powder,1.875,g,150 g Chicken 65 Marinated Chicken
+Special Gravy,128,Chicken 65 Dry,17.00,1,serving,Corn flour,5,g,150 g Chicken 65 Marinated Chicken
+Special Gravy,128,Chicken 65 Dry,17.00,1,serving,Egg,4.167,g,150 g Chicken 65 Marinated Chicken
+Special Gravy,128,Chicken 65 Dry,17.00,1,serving,Salt,1.25,g,150 g Chicken 65 Marinated Chicken
+Special Gravy,128,Chicken 65 Dry,17.00,1,serving,Lemon,7.143,g,150 g Chicken 65 Marinated Chicken
+Special Gravy,128,Chicken 65 Dry,17.00,1,serving,Curry leaves,3,g,
+Special Gravy,128,Chicken 65 Dry,17.00,1,serving,Dried red chilli,3,g,
+Special Gravy,128,Chicken 65 Dry,17.00,1,serving,Oil,25,ml,
+Special Gravy,128,Chicken 65 Dry,17.00,1,serving,Onion,35.294,g,30 g Onion edible
+Special Gravy,128,Chicken 65 Dry,17.00,1,serving,Lemon,20,g,
+Special Gravy,128,Chicken 65 Dry,17.00,1,serving,Takeaway container + lid,1,ea,
+Special Gravy,129,Dal Fry,10.00,1,serving,Toor dal,42.857,g,250 ml Dal Fry (Pot)
+Special Gravy,129,Dal Fry,10.00,1,serving,Onion,16.807,g,250 ml Dal Fry (Pot)
+Special Gravy,129,Dal Fry,10.00,1,serving,Tomato,15.528,g,250 ml Dal Fry (Pot)
+Special Gravy,129,Dal Fry,10.00,1,serving,Garlic,2.747,g,250 ml Dal Fry (Pot)
+Special Gravy,129,Dal Fry,10.00,1,serving,Cumin seed,0.714,g,250 ml Dal Fry (Pot)
+Special Gravy,129,Dal Fry,10.00,1,serving,Turmeric,0.429,g,250 ml Dal Fry (Pot)
+Special Gravy,129,Dal Fry,10.00,1,serving,Ghee,5.357,g,250 ml Dal Fry (Pot)
+Special Gravy,129,Dal Fry,10.00,1,serving,Salt,1.607,g,250 ml Dal Fry (Pot)
+Special Gravy,129,Dal Fry,10.00,1,serving,"Coriander, fresh",7.381,g,"250 ml Dal Fry (Pot); 3 g Coriander, fresh edible"
+Special Gravy,129,Dal Fry,10.00,1,serving,Butter,5,g,
+Special Gravy,129,Dal Fry,10.00,1,serving,Takeaway container + lid,1,ea,
+Special Gravy,130,Green Peas Masala,10.00,1,serving,Green peas,130,g,
+Special Gravy,130,Green Peas Masala,10.00,1,serving,Onion,97.059,g,100 ml Mother Gravy B (Kadai Base); 20 g Onion edible
+Special Gravy,130,Green Peas Masala,10.00,1,serving,Tomato,40.761,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,130,Green Peas Masala,10.00,1,serving,Ginger-garlic paste,5,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,130,Green Peas Masala,10.00,1,serving,Oil,20,ml,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,130,Green Peas Masala,10.00,1,serving,Coriander powder,2.25,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,130,Green Peas Masala,10.00,1,serving,Turmeric,0.5,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,130,Green Peas Masala,10.00,1,serving,Red chilli powder,1.5,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,130,Green Peas Masala,10.00,1,serving,Garam masala,0.75,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,130,Green Peas Masala,10.00,1,serving,Salt,1.375,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,130,Green Peas Masala,10.00,1,serving,Capsicum,36.585,g,30 g Capsicum edible
+Special Gravy,130,Green Peas Masala,10.00,1,serving,"Coriander seed, crushed",2,g,
+Special Gravy,130,Green Peas Masala,10.00,1,serving,Takeaway container + lid,1,ea,
+Special Gravy,131,Chicken Chilli (Dry/Gravy),17.00,1,serving,"Chicken, boneless",120,g,
+Special Gravy,131,Chicken Chilli (Dry/Gravy),17.00,1,serving,Corn flour,13.2,g,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,131,Chicken Chilli (Dry/Gravy),17.00,1,serving,Egg,5,g,
+Special Gravy,131,Chicken Chilli (Dry/Gravy),17.00,1,serving,Garlic,10.256,g,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,131,Chicken Chilli (Dry/Gravy),17.00,1,serving,Ginger,4.706,g,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,131,Chicken Chilli (Dry/Gravy),17.00,1,serving,Green chilli,3,g,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,131,Chicken Chilli (Dry/Gravy),17.00,1,serving,Onion,28.235,g,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,131,Chicken Chilli (Dry/Gravy),17.00,1,serving,Capsicum,19.512,g,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,131,Chicken Chilli (Dry/Gravy),17.00,1,serving,Light soy sauce,10,ml,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,131,Chicken Chilli (Dry/Gravy),17.00,1,serving,Red chilli sauce,12,ml,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,131,Chicken Chilli (Dry/Gravy),17.00,1,serving,Tomato ketchup,10,ml,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,131,Chicken Chilli (Dry/Gravy),17.00,1,serving,Vinegar,3,ml,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,131,Chicken Chilli (Dry/Gravy),17.00,1,serving,White sugar,2.4,g,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,131,Chicken Chilli (Dry/Gravy),17.00,1,serving,Spring onion,14.286,g,10 g Spring onion edible
+Special Gravy,131,Chicken Chilli (Dry/Gravy),17.00,1,serving,Oil,20,ml,
+Special Gravy,131,Chicken Chilli (Dry/Gravy),17.00,1,serving,Takeaway container + lid,1,ea,
+Special Gravy,132,Beef Masala (Dry/Gravy),17.00,1,serving,"Beef, boneless",217.195,g,120 g Braised Beef Cubes
+Special Gravy,132,Beef Masala (Dry/Gravy),17.00,1,serving,Onion,118.778,g,120 g Braised Beef Cubes; 100 ml Mother Gravy B (Kadai Base); 20 g Onion edible
+Special Gravy,132,Beef Masala (Dry/Gravy),17.00,1,serving,Ginger-garlic paste,11.154,g,120 g Braised Beef Cubes; 100 ml Mother Gravy B (Kadai Base)
+Special Gravy,132,Beef Masala (Dry/Gravy),17.00,1,serving,Salt,3.221,g,120 g Braised Beef Cubes; 100 ml Mother Gravy B (Kadai Base)
+Special Gravy,132,Beef Masala (Dry/Gravy),17.00,1,serving,Curry leaves,2,g,
+Special Gravy,132,Beef Masala (Dry/Gravy),17.00,1,serving,Tomato,40.761,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,132,Beef Masala (Dry/Gravy),17.00,1,serving,Oil,20,ml,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,132,Beef Masala (Dry/Gravy),17.00,1,serving,Coriander powder,2.25,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,132,Beef Masala (Dry/Gravy),17.00,1,serving,Turmeric,0.5,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,132,Beef Masala (Dry/Gravy),17.00,1,serving,Red chilli powder,1.5,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,132,Beef Masala (Dry/Gravy),17.00,1,serving,Garam masala,0.75,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,132,Beef Masala (Dry/Gravy),17.00,1,serving,Capsicum,36.585,g,30 g Capsicum edible
+Special Gravy,132,Beef Masala (Dry/Gravy),17.00,1,serving,"Coriander seed, crushed",2,g,
+Special Gravy,132,Beef Masala (Dry/Gravy),17.00,1,serving,Takeaway container + lid,1,ea,
+Special Gravy,133,Prawns Masala,17.00,1,serving,"Prawns, peeled",100,g,
+Special Gravy,133,Prawns Masala,17.00,1,serving,"Coconut, grated",10,g,
+Special Gravy,133,Prawns Masala,17.00,1,serving,Curry leaves,2,g,
+Special Gravy,133,Prawns Masala,17.00,1,serving,Onion,97.059,g,100 ml Mother Gravy B (Kadai Base); 20 g Onion edible
+Special Gravy,133,Prawns Masala,17.00,1,serving,Tomato,40.761,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,133,Prawns Masala,17.00,1,serving,Ginger-garlic paste,5,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,133,Prawns Masala,17.00,1,serving,Oil,20,ml,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,133,Prawns Masala,17.00,1,serving,Coriander powder,2.25,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,133,Prawns Masala,17.00,1,serving,Turmeric,0.5,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,133,Prawns Masala,17.00,1,serving,Red chilli powder,1.5,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,133,Prawns Masala,17.00,1,serving,Garam masala,0.75,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,133,Prawns Masala,17.00,1,serving,Salt,1.375,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,133,Prawns Masala,17.00,1,serving,Capsicum,36.585,g,30 g Capsicum edible
+Special Gravy,133,Prawns Masala,17.00,1,serving,"Coriander seed, crushed",2,g,
+Special Gravy,133,Prawns Masala,17.00,1,serving,Takeaway container + lid,1,ea,
+Special Gravy,134,Garlic Chicken,17.00,1,serving,"Chicken, boneless",120,g,
+Special Gravy,134,Garlic Chicken,17.00,1,serving,Garlic,23.077,g,10 g Garlic edible; 80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,134,Garlic Chicken,17.00,1,serving,Corn flour,13.2,g,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,134,Garlic Chicken,17.00,1,serving,Egg,5,g,
+Special Gravy,134,Garlic Chicken,17.00,1,serving,Ginger,4.706,g,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,134,Garlic Chicken,17.00,1,serving,Green chilli,3,g,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,134,Garlic Chicken,17.00,1,serving,Onion,28.235,g,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,134,Garlic Chicken,17.00,1,serving,Capsicum,19.512,g,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,134,Garlic Chicken,17.00,1,serving,Light soy sauce,10,ml,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,134,Garlic Chicken,17.00,1,serving,Red chilli sauce,12,ml,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,134,Garlic Chicken,17.00,1,serving,Tomato ketchup,10,ml,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,134,Garlic Chicken,17.00,1,serving,Vinegar,3,ml,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,134,Garlic Chicken,17.00,1,serving,White sugar,2.4,g,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,134,Garlic Chicken,17.00,1,serving,Spring onion,14.286,g,10 g Spring onion edible
+Special Gravy,134,Garlic Chicken,17.00,1,serving,Oil,20,ml,
+Special Gravy,134,Garlic Chicken,17.00,1,serving,Takeaway container + lid,1,ea,
+Special Gravy,135,Mutter Mushroom,15.00,1,serving,Mushroom,84.211,g,80 g Mushroom edible
+Special Gravy,135,Mutter Mushroom,15.00,1,serving,Green peas,50,g,
+Special Gravy,135,Mutter Mushroom,15.00,1,serving,Tomato,81.522,g,100 ml Mother Gravy A (Makhani Base)
+Special Gravy,135,Mutter Mushroom,15.00,1,serving,Onion,23.529,g,100 ml Mother Gravy A (Makhani Base)
+Special Gravy,135,Mutter Mushroom,15.00,1,serving,Cashew nuts,6.25,g,100 ml Mother Gravy A (Makhani Base)
+Special Gravy,135,Mutter Mushroom,15.00,1,serving,Ginger-garlic paste,3.75,g,100 ml Mother Gravy A (Makhani Base)
+Special Gravy,135,Mutter Mushroom,15.00,1,serving,Butter,17.5,g,100 ml Mother Gravy A (Makhani Base)
+Special Gravy,135,Mutter Mushroom,15.00,1,serving,Kashmiri chilli powder,1.5,g,100 ml Mother Gravy A (Makhani Base)
+Special Gravy,135,Mutter Mushroom,15.00,1,serving,Salt,1.375,g,100 ml Mother Gravy A (Makhani Base)
+Special Gravy,135,Mutter Mushroom,15.00,1,serving,White sugar,1.5,g,100 ml Mother Gravy A (Makhani Base)
+Special Gravy,135,Mutter Mushroom,15.00,1,serving,"Cream, cooking",20,ml,
+Special Gravy,135,Mutter Mushroom,15.00,1,serving,Kasuri methi,1,g,
+Special Gravy,135,Mutter Mushroom,15.00,1,serving,Garam masala,1,g,
+Special Gravy,135,Mutter Mushroom,15.00,1,serving,Takeaway container + lid,1,ea,
+Special Gravy,136,Paneer Kadai,15.00,1,serving,Paneer,120,g,
+Special Gravy,136,Paneer Kadai,15.00,1,serving,Onion,97.059,g,100 ml Mother Gravy B (Kadai Base); 20 g Onion edible
+Special Gravy,136,Paneer Kadai,15.00,1,serving,Tomato,40.761,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,136,Paneer Kadai,15.00,1,serving,Ginger-garlic paste,5,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,136,Paneer Kadai,15.00,1,serving,Oil,20,ml,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,136,Paneer Kadai,15.00,1,serving,Coriander powder,2.25,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,136,Paneer Kadai,15.00,1,serving,Turmeric,0.5,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,136,Paneer Kadai,15.00,1,serving,Red chilli powder,1.5,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,136,Paneer Kadai,15.00,1,serving,Garam masala,0.75,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,136,Paneer Kadai,15.00,1,serving,Salt,1.375,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,136,Paneer Kadai,15.00,1,serving,Capsicum,36.585,g,30 g Capsicum edible
+Special Gravy,136,Paneer Kadai,15.00,1,serving,"Coriander seed, crushed",2,g,
+Special Gravy,136,Paneer Kadai,15.00,1,serving,Takeaway container + lid,1,ea,
+Special Gravy,137,Palak Paneer,12.00,1,serving,Spinach,214.286,g,120 g Palak Base
+Special Gravy,137,Palak Paneer,12.00,1,serving,Onion,21.176,g,120 g Palak Base
+Special Gravy,137,Palak Paneer,12.00,1,serving,Garlic,6.154,g,120 g Palak Base
+Special Gravy,137,Palak Paneer,12.00,1,serving,Green chilli,2.4,g,120 g Palak Base
+Special Gravy,137,Palak Paneer,12.00,1,serving,Oil,6,ml,120 g Palak Base
+Special Gravy,137,Palak Paneer,12.00,1,serving,Cumin seed,0.9,g,120 g Palak Base
+Special Gravy,137,Palak Paneer,12.00,1,serving,Salt,1.5,g,120 g Palak Base
+Special Gravy,137,Palak Paneer,12.00,1,serving,Paneer,100,g,
+Special Gravy,137,Palak Paneer,12.00,1,serving,"Cream, cooking",15,ml,
+Special Gravy,137,Palak Paneer,12.00,1,serving,Butter,5,g,
+Special Gravy,137,Palak Paneer,12.00,1,serving,Takeaway container + lid,1,ea,
+Special Gravy,138,Mushroom Masala,10.00,1,serving,Mushroom,136.842,g,130 g Mushroom edible
+Special Gravy,138,Mushroom Masala,10.00,1,serving,Onion,97.059,g,100 ml Mother Gravy B (Kadai Base); 20 g Onion edible
+Special Gravy,138,Mushroom Masala,10.00,1,serving,Tomato,40.761,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,138,Mushroom Masala,10.00,1,serving,Ginger-garlic paste,5,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,138,Mushroom Masala,10.00,1,serving,Oil,20,ml,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,138,Mushroom Masala,10.00,1,serving,Coriander powder,2.25,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,138,Mushroom Masala,10.00,1,serving,Turmeric,0.5,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,138,Mushroom Masala,10.00,1,serving,Red chilli powder,1.5,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,138,Mushroom Masala,10.00,1,serving,Garam masala,0.75,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,138,Mushroom Masala,10.00,1,serving,Salt,1.375,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,138,Mushroom Masala,10.00,1,serving,Capsicum,36.585,g,30 g Capsicum edible
+Special Gravy,138,Mushroom Masala,10.00,1,serving,"Coriander seed, crushed",2,g,
+Special Gravy,138,Mushroom Masala,10.00,1,serving,Takeaway container + lid,1,ea,
+Special Gravy,139,Chicken Kadai,16.00,1,serving,"Chicken, boneless",130,g,
+Special Gravy,139,Chicken Kadai,16.00,1,serving,Onion,97.059,g,100 ml Mother Gravy B (Kadai Base); 20 g Onion edible
+Special Gravy,139,Chicken Kadai,16.00,1,serving,Tomato,40.761,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,139,Chicken Kadai,16.00,1,serving,Ginger-garlic paste,5,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,139,Chicken Kadai,16.00,1,serving,Oil,20,ml,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,139,Chicken Kadai,16.00,1,serving,Coriander powder,2.25,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,139,Chicken Kadai,16.00,1,serving,Turmeric,0.5,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,139,Chicken Kadai,16.00,1,serving,Red chilli powder,1.5,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,139,Chicken Kadai,16.00,1,serving,Garam masala,0.75,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,139,Chicken Kadai,16.00,1,serving,Salt,1.375,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,139,Chicken Kadai,16.00,1,serving,Capsicum,36.585,g,30 g Capsicum edible
+Special Gravy,139,Chicken Kadai,16.00,1,serving,"Coriander seed, crushed",2,g,
+Special Gravy,139,Chicken Kadai,16.00,1,serving,Takeaway container + lid,1,ea,
+Special Gravy,140,Paneer Butter Masala,17.00,1,serving,Paneer,120,g,
+Special Gravy,140,Paneer Butter Masala,17.00,1,serving,Tomato,81.522,g,100 ml Mother Gravy A (Makhani Base)
+Special Gravy,140,Paneer Butter Masala,17.00,1,serving,Onion,23.529,g,100 ml Mother Gravy A (Makhani Base)
+Special Gravy,140,Paneer Butter Masala,17.00,1,serving,Cashew nuts,6.25,g,100 ml Mother Gravy A (Makhani Base)
+Special Gravy,140,Paneer Butter Masala,17.00,1,serving,Ginger-garlic paste,3.75,g,100 ml Mother Gravy A (Makhani Base)
+Special Gravy,140,Paneer Butter Masala,17.00,1,serving,Butter,17.5,g,100 ml Mother Gravy A (Makhani Base)
+Special Gravy,140,Paneer Butter Masala,17.00,1,serving,Kashmiri chilli powder,1.5,g,100 ml Mother Gravy A (Makhani Base)
+Special Gravy,140,Paneer Butter Masala,17.00,1,serving,Salt,1.375,g,100 ml Mother Gravy A (Makhani Base)
+Special Gravy,140,Paneer Butter Masala,17.00,1,serving,White sugar,1.5,g,100 ml Mother Gravy A (Makhani Base)
+Special Gravy,140,Paneer Butter Masala,17.00,1,serving,"Cream, cooking",20,ml,
+Special Gravy,140,Paneer Butter Masala,17.00,1,serving,Kasuri methi,1,g,
+Special Gravy,140,Paneer Butter Masala,17.00,1,serving,Garam masala,1,g,
+Special Gravy,140,Paneer Butter Masala,17.00,1,serving,Takeaway container + lid,1,ea,
+Special Gravy,141,Prawns Chilli,17.00,1,serving,"Prawns, peeled",100,g,
+Special Gravy,141,Prawns Chilli,17.00,1,serving,Corn flour,13.2,g,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,141,Prawns Chilli,17.00,1,serving,Egg,5,g,
+Special Gravy,141,Prawns Chilli,17.00,1,serving,Garlic,10.256,g,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,141,Prawns Chilli,17.00,1,serving,Ginger,4.706,g,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,141,Prawns Chilli,17.00,1,serving,Green chilli,3,g,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,141,Prawns Chilli,17.00,1,serving,Onion,28.235,g,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,141,Prawns Chilli,17.00,1,serving,Capsicum,19.512,g,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,141,Prawns Chilli,17.00,1,serving,Light soy sauce,10,ml,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,141,Prawns Chilli,17.00,1,serving,Red chilli sauce,12,ml,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,141,Prawns Chilli,17.00,1,serving,Tomato ketchup,10,ml,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,141,Prawns Chilli,17.00,1,serving,Vinegar,3,ml,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,141,Prawns Chilli,17.00,1,serving,White sugar,2.4,g,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,141,Prawns Chilli,17.00,1,serving,Spring onion,14.286,g,10 g Spring onion edible
+Special Gravy,141,Prawns Chilli,17.00,1,serving,Oil,20,ml,
+Special Gravy,141,Prawns Chilli,17.00,1,serving,Takeaway container + lid,1,ea,
+Special Gravy,142,Chilli Paneer,17.00,1,serving,Paneer,120,g,
+Special Gravy,142,Chilli Paneer,17.00,1,serving,Garlic,10.256,g,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,142,Chilli Paneer,17.00,1,serving,Ginger,4.706,g,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,142,Chilli Paneer,17.00,1,serving,Green chilli,3,g,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,142,Chilli Paneer,17.00,1,serving,Onion,28.235,g,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,142,Chilli Paneer,17.00,1,serving,Capsicum,19.512,g,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,142,Chilli Paneer,17.00,1,serving,Light soy sauce,10,ml,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,142,Chilli Paneer,17.00,1,serving,Red chilli sauce,12,ml,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,142,Chilli Paneer,17.00,1,serving,Tomato ketchup,10,ml,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,142,Chilli Paneer,17.00,1,serving,Vinegar,3,ml,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,142,Chilli Paneer,17.00,1,serving,White sugar,2.4,g,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,142,Chilli Paneer,17.00,1,serving,Corn flour,13.2,g,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,142,Chilli Paneer,17.00,1,serving,Spring onion,14.286,g,10 g Spring onion edible
+Special Gravy,142,Chilli Paneer,17.00,1,serving,Oil,20,ml,
+Special Gravy,142,Chilli Paneer,17.00,1,serving,Takeaway container + lid,1,ea,
+Special Gravy,143,Mutter Paneer,17.00,1,serving,Paneer,80,g,
+Special Gravy,143,Mutter Paneer,17.00,1,serving,Green peas,50,g,
+Special Gravy,143,Mutter Paneer,17.00,1,serving,Tomato,81.522,g,100 ml Mother Gravy A (Makhani Base)
+Special Gravy,143,Mutter Paneer,17.00,1,serving,Onion,23.529,g,100 ml Mother Gravy A (Makhani Base)
+Special Gravy,143,Mutter Paneer,17.00,1,serving,Cashew nuts,6.25,g,100 ml Mother Gravy A (Makhani Base)
+Special Gravy,143,Mutter Paneer,17.00,1,serving,Ginger-garlic paste,3.75,g,100 ml Mother Gravy A (Makhani Base)
+Special Gravy,143,Mutter Paneer,17.00,1,serving,Butter,17.5,g,100 ml Mother Gravy A (Makhani Base)
+Special Gravy,143,Mutter Paneer,17.00,1,serving,Kashmiri chilli powder,1.5,g,100 ml Mother Gravy A (Makhani Base)
+Special Gravy,143,Mutter Paneer,17.00,1,serving,Salt,1.375,g,100 ml Mother Gravy A (Makhani Base)
+Special Gravy,143,Mutter Paneer,17.00,1,serving,White sugar,1.5,g,100 ml Mother Gravy A (Makhani Base)
+Special Gravy,143,Mutter Paneer,17.00,1,serving,"Cream, cooking",20,ml,
+Special Gravy,143,Mutter Paneer,17.00,1,serving,Kasuri methi,1,g,
+Special Gravy,143,Mutter Paneer,17.00,1,serving,Garam masala,1,g,
+Special Gravy,143,Mutter Paneer,17.00,1,serving,Takeaway container + lid,1,ea,
+Special Gravy,144,Chicken Manchurian,17.00,1,serving,"Chicken, boneless",120,g,
+Special Gravy,144,Chicken Manchurian,17.00,1,serving,Garlic,16.667,g,5 g Garlic edible; 80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,144,Chicken Manchurian,17.00,1,serving,Corn flour,13.2,g,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,144,Chicken Manchurian,17.00,1,serving,Egg,5,g,
+Special Gravy,144,Chicken Manchurian,17.00,1,serving,Ginger,4.706,g,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,144,Chicken Manchurian,17.00,1,serving,Green chilli,3,g,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,144,Chicken Manchurian,17.00,1,serving,Onion,28.235,g,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,144,Chicken Manchurian,17.00,1,serving,Capsicum,19.512,g,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,144,Chicken Manchurian,17.00,1,serving,Light soy sauce,10,ml,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,144,Chicken Manchurian,17.00,1,serving,Red chilli sauce,12,ml,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,144,Chicken Manchurian,17.00,1,serving,Tomato ketchup,10,ml,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,144,Chicken Manchurian,17.00,1,serving,Vinegar,3,ml,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,144,Chicken Manchurian,17.00,1,serving,White sugar,2.4,g,80 ml Mother Gravy C (Indo-Chinese Chilli Base)
+Special Gravy,144,Chicken Manchurian,17.00,1,serving,Spring onion,14.286,g,10 g Spring onion edible
+Special Gravy,144,Chicken Manchurian,17.00,1,serving,Oil,20,ml,
+Special Gravy,144,Chicken Manchurian,17.00,1,serving,Takeaway container + lid,1,ea,
+Special Gravy,145,Gobi Masala,17.00,1,serving,Cauliflower,187.5,g,150 g Cauliflower edible
+Special Gravy,145,Gobi Masala,17.00,1,serving,Onion,97.059,g,100 ml Mother Gravy B (Kadai Base); 20 g Onion edible
+Special Gravy,145,Gobi Masala,17.00,1,serving,Tomato,40.761,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,145,Gobi Masala,17.00,1,serving,Ginger-garlic paste,5,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,145,Gobi Masala,17.00,1,serving,Oil,20,ml,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,145,Gobi Masala,17.00,1,serving,Coriander powder,2.25,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,145,Gobi Masala,17.00,1,serving,Turmeric,0.5,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,145,Gobi Masala,17.00,1,serving,Red chilli powder,1.5,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,145,Gobi Masala,17.00,1,serving,Garam masala,0.75,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,145,Gobi Masala,17.00,1,serving,Salt,1.375,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,145,Gobi Masala,17.00,1,serving,Capsicum,36.585,g,30 g Capsicum edible
+Special Gravy,145,Gobi Masala,17.00,1,serving,"Coriander seed, crushed",2,g,
+Special Gravy,145,Gobi Masala,17.00,1,serving,Takeaway container + lid,1,ea,
+Special Gravy,146,Pepper Chicken,17.00,1,serving,"Chicken, boneless",130,g,
+Special Gravy,146,Pepper Chicken,17.00,1,serving,"Black pepper, crushed",6,g,
+Special Gravy,146,Pepper Chicken,17.00,1,serving,Curry leaves,2,g,
+Special Gravy,146,Pepper Chicken,17.00,1,serving,Onion,97.059,g,100 ml Mother Gravy B (Kadai Base); 20 g Onion edible
+Special Gravy,146,Pepper Chicken,17.00,1,serving,Tomato,40.761,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,146,Pepper Chicken,17.00,1,serving,Ginger-garlic paste,5,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,146,Pepper Chicken,17.00,1,serving,Oil,20,ml,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,146,Pepper Chicken,17.00,1,serving,Coriander powder,2.25,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,146,Pepper Chicken,17.00,1,serving,Turmeric,0.5,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,146,Pepper Chicken,17.00,1,serving,Red chilli powder,1.5,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,146,Pepper Chicken,17.00,1,serving,Garam masala,0.75,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,146,Pepper Chicken,17.00,1,serving,Salt,1.375,g,100 ml Mother Gravy B (Kadai Base)
+Special Gravy,146,Pepper Chicken,17.00,1,serving,Capsicum,36.585,g,30 g Capsicum edible
+Special Gravy,146,Pepper Chicken,17.00,1,serving,"Coriander seed, crushed",2,g,
+Special Gravy,146,Pepper Chicken,17.00,1,serving,Takeaway container + lid,1,ea,
