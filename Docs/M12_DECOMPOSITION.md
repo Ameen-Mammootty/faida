@@ -8,6 +8,7 @@ M12 entered the plan on 2026-09-05 by the founder's call after a question about 
 `plan.md` §8 names both triggers.
 
 Facts in §2 are from master `fb19bef` (the drill live, WP-96 still open), so the review argues about the plan and not about the state.
+Master has since taken M9 Wave 1 - a console shell with a sidebar from 1280 px (WP-97), headline tiles (WP-98), supplier price moves on the dashboard read (WP-99) - and the founder's dashboard redesign (one screen on a laptop, the sentences behind info icons, the kept share as a bar), merged 2026-09-06 and 2026-09-07. §2's screen facts and §4.1's constraints ("no bar") are therefore re-read at the design review D23 places before WP-122; P1's nav argument is weaker with a sidebar, and the home stands on the read's memory, not the nav.
 
 Plan reference: `plan.md` §8 M12 (the checklist and the done-when), §1 (the north star), §2 (the standing rules), §3 (the fixed decisions and the display rules), §7.2 C4 (money), C8 (provenance), C9 and its amendment and extension (derived quality), C11 (the sales row and the ratio), C12 (contribution), C13 (signals), C6 extended (the dashboard read); PRD §17-18 (ingredients and units), §19 (costing), §22 (the inventory ledger, whose theoretical sale consumption this computes and posts nowhere), §24 (data quality), §25.3 (signals), §27.1 (the owner dashboard's "inventory warnings").
 
