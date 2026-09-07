@@ -7,6 +7,7 @@ write names the context's actor, and a row outside the tenant is 404:
 
     GET    /api/branches                    the tenant's branches with their till aliases
     POST   /api/branches/{id}/aliases       teach one till label for one branch
+    DELETE /api/branches/{id}/aliases/{alias_id}   unteach a wrongly taught label
     POST   /api/sales/files                 keep the raw CSV under its server-computed hash
     GET    /api/sales/layouts               the saved column layouts, by till name
     POST   /api/sales/layouts               save or update a layout by name
@@ -235,11 +236,18 @@ def _alias_json(row) -> dict:
 @router.get("/branches")
 async def list_branches(request: Request, ctx: Context) -> dict:
     """The tenant's branches with the till labels taught for each (C6
-    extended): the loader's branch picker and the branch column's resolver."""
+    extended): the loader's branch picker and the branch column's resolver.
+
+    `aliases` stays the plain list of labels the resolver matches on, and
+    `alias_rows` carries the same labels with their ids beside them, because
+    a label taught to the wrong branch can now be removed and a screen needs
+    something to point the delete at."""
     db: Database = request.app.state.db
     aliases: dict[str, list[str]] = defaultdict(list)
+    alias_rows: dict[str, list[dict]] = defaultdict(list)
     for row in await db.list_branch_aliases(tenant_id=ctx.tenant_id):
         aliases[row["branch_id"]].append(row["alias"])
+        alias_rows[row["branch_id"]].append(_alias_json(row))
     return {
         "branches": [
             {
@@ -247,6 +255,7 @@ async def list_branches(request: Request, ctx: Context) -> dict:
                 "name": row["name"],
                 "timezone": row["timezone"],
                 "aliases": aliases.get(row["id"], []),
+                "alias_rows": alias_rows.get(row["id"], []),
             }
             for row in await db.list_branches(tenant_id=ctx.tenant_id)
         ]
@@ -284,6 +293,38 @@ async def save_branch_alias(
         )
     response.status_code = 201 if result["created"] else 200
     return {"alias": _alias_json(result["alias"])}
+
+
+@router.delete("/branches/{branch_id}/aliases/{alias_id}")
+async def remove_branch_alias(
+    branch_id: uuid.UUID, alias_id: uuid.UUID, request: Request, ctx: Context
+) -> dict:
+    """Unteach a till label from a branch (TODOS.md, "Correcting a wrongly
+    taught branch alias"). It happened on the first live upload: AL NAHDA
+    was answered with Al Qusais Branch, both outlets landed in one branch's
+    days, and the only way back was a row deleted in SQL by an engineer.
+
+    One row, one audit line naming the label and the branch it named, in one
+    transaction. An alias belonging to another tenant, or to another branch
+    of this one, is 404 - it does not exist at this address.
+
+    The days already loaded are left exactly where they are. A label only
+    ever decided which branch a file's rows were sent to; the rows were sent,
+    and moving them is a re-upload with the label taught correctly, which is
+    the loader's job. Untaught here, taught again there, upload again."""
+    db: Database = request.app.state.db
+    branch = await db.get_branch(str(branch_id), tenant_id=ctx.tenant_id)
+    if branch is None:
+        raise HTTPException(status_code=404, detail="branch not found")
+    row = await db.remove_branch_alias(
+        str(alias_id),
+        tenant_id=ctx.tenant_id,
+        branch_id=str(branch_id),
+        actor=ctx.actor,
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="alias not found")
+    return {"alias": _alias_json(row)}
 
 
 # --- the raw file -------------------------------------------------------------

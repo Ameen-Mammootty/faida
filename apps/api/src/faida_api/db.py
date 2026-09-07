@@ -1907,6 +1907,49 @@ class Database:
             return {"alias": existing, "created": False, "other_branch_id": None}
         return {"alias": None, "created": False, "other_branch_id": existing["branch_id"]}
 
+    async def remove_branch_alias(
+        self, alias_id: str, *, tenant_id: str, branch_id: str, actor: str
+    ) -> asyncpg.Record | None:
+        """The way back from a label taught to the wrong branch (TODOS.md,
+        the 2026-09-05 go-live: AL NAHDA was answered with Al Qusais and
+        nothing on the screen could undo it). The row goes and one audit row
+        goes with it, in the same transaction, carrying the label and the
+        branch it named - so what the label used to mean is still readable
+        after the row is gone. None when the alias is not this tenant's, or
+        is not under this branch: the API answers 404 either way.
+
+        Days already loaded are not touched. They landed where they landed,
+        under a branch id the file's row resolved to at the time, and
+        re-uploading the file is how they move - which is the loader's job
+        and nobody else's."""
+        async with self.pool.acquire() as conn, conn.transaction():
+            row = await conn.fetchrow(
+                """
+                delete from branch_aliases
+                where id = $1 and tenant_id = $2 and branch_id = $3
+                returning id::text as id, branch_id::text as branch_id, alias, alias_key
+                """,
+                alias_id,
+                tenant_id,
+                branch_id,
+            )
+            if row is None:
+                return None
+            await _insert_audit_event(
+                conn,
+                tenant_id=tenant_id,
+                actor=actor,
+                action="branch_alias.removed",
+                subject_type="branch_alias",
+                subject_id=row["id"],
+                detail={
+                    "branch_id": row["branch_id"],
+                    "alias": row["alias"],
+                    "alias_key": row["alias_key"],
+                },
+            )
+            return row
+
     async def list_sales_layouts(self, *, tenant_id: str) -> list[asyncpg.Record]:
         return await self.pool.fetch(
             """
