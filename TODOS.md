@@ -336,6 +336,10 @@ history (PRD §14).
 **Priority:** P3
 **Depends on:** M8 shipped. Trigger: the first transaction-level sales source.
 
+**Since M12 (2026-09-05):** the usage panel inherits the rule as every other screen does - an undated paper
+confirmed after midnight in Dubai lands on the previous UTC `purchased_on` - and names the case rather than
+changing a rule five screens share (M12 §9; the review's finding 12). Fixing it is this entry's work.
+
 ### Excel parsing in the loaders
 
 **What:** Read `.xlsx` in the browser (one library, the first sheet, the same header rules) so a till
@@ -615,6 +619,11 @@ branch bought it, which is right for central buying and a stated limit otherwise
 **Depends on:** WP-90. Trigger: a chain whose branches buy the same material at different prices asks why
 the league does not show it.
 
+**Since M12 (2026-09-05):** the same entry covers a per-branch valuation date. A usage row's money is the gap at
+the tenant's price on the period's end for every branch, C12.4's rule across clipped windows, so a delivery
+dated between a branch's window end and the period's end reprices that branch's gap; the row names the date
+(M12 C14.7; the review's finding 11). A second trigger: a chain whose branches' windows routinely end days apart.
+
 ### A `tiles` block on the dashboard wire
 
 **What:** The four headline tiles' figures and sentences composed in Python and carried on `GET /api/dashboard`,
@@ -708,6 +717,164 @@ change, so it is the founder's call (the 2026-08-30 design review pinned the rou
 
 **Depends on:** nothing. Trigger: fired, on the dashboard's signal line. **Decided 2026-09-05 (D7 of
 `Docs/M9_MAIN_DASHBOARD.md`): round half up; WP-98 owns the change and the sweep of the four screens that use it.**
+
+## Theoretical usage vs purchases (deferred by the M12 decomposition, 2026-09-05)
+
+M12 was decomposed in `Docs/M12_DECOMPOSITION.md` on 2026-09-05, reviewed the same evening by one
+outside voice (Codex, 16 findings, 12 folded), and approved to build that evening, the founder deciding
+every §5 proposal as recommended. The entries below are what the decomposition consciously
+left out, each with the trigger that brings it back and the decision it hangs on where there is one.
+
+### Stock on hand, counts, and a count sheet through WhatsApp
+
+**What:** An opening balance per material per branch, a stock-count session, and a count sheet photographed
+to the WhatsApp number through the same extraction door (PRD §22).
+
+**Why:** M12 measures what the sales needed against what was bought and says plainly that the difference is on
+the shelf, in the bin or unrecorded. A count is the first thing that asks the cafeteria to change how it works,
+and one lazy count turns every figure built on it into noise.
+
+**Depends on:** M12 shipped. Trigger: a pilot owner asks for a count by name, or says the ratio is useless
+because deliveries are lumpy.
+
+### Waste, spoilage, staff-meal and transfer entries
+
+**What:** Recorded events that explain a gap (PRD §22's event types), through a door with an actor and an audit row.
+
+**Why:** Neither has a schema home and neither is anyone's ask; the panel's standing sentence says they are unrecorded.
+
+**Depends on:** M12 shipped. Trigger: a chain that records waste, or asks why two branches' gaps differ by a transfer.
+
+### The append-only inventory ledger, balances as a projection, goods receipts
+
+**What:** PRD §22 whole: events and event lines, balances rebuilt from the ledger, invoice kept apart from receipt.
+
+**Why:** M12 measures what was billed. Billed 20 cartons and received 18 is a real rule with no paper behind it yet.
+
+**Depends on:** a count and at least one event type above. Trigger: a customer whose received quantities differ
+from billed ones and says so with a paper.
+
+### The word variance, and theoretical against physical
+
+**What:** Variance = physical − theoretical, never auto-labelled theft (PRD §22).
+
+**Why:** There is no physical figure, so the word has no referent; M12's forbidden-word test pins its absence.
+
+**Depends on:** a count. Trigger: the same.
+
+### A fourth signal: a material whose sales needed more than was bought
+
+**What:** A C13 kind with a threshold, ranked by money with the other three (M12 §5 P3).
+
+**Why:** Used above bought is a window that started with stock on the shelf **or** a wrong recipe or pack size,
+and no threshold tells them apart without a count; the ranked panel and its answer sentence say "look here
+first" without claiming one.
+
+**Depends on:** M12 shipped. Trigger: a material reads `under` for the same branch over two consecutive
+periods that each hold at least two purchases - the pattern that makes the reading a recipe rather than a
+shelf, at which point the threshold is measured rather than guessed.
+
+### A per-material default usable share
+
+**What:** A material-level default for the conversion yield WP-119 sets per recipe component ("chicken is 85%
+usable wherever it appears"), and a yield table a consultant maintains once (M12 D13).
+
+**Why:** The per-component share is the smallest fact that makes a recipe say what leaves the storeroom; a
+default is a second place for the same fact until three recipes carry the same share for one material.
+
+**Depends on:** WP-119. Trigger: a consultant sets the same share on the same material in three recipes.
+
+### A headline sentence on the materials panel
+
+**What:** One sentence above the ranked table naming a material and a branch (M12 P5 as first decided, removed
+by D9 on the outside voice's finding 1).
+
+**Why:** No number of purchase dates says what was on the shelf, so a promoted sentence promotes restocking as
+over-buying; the ranked table and each row's own caveat carry the reader until a count exists.
+
+**Depends on:** a stock count. Trigger: a count exists, so a difference can be read against a shelf.
+
+### "Days of use" beside the gap
+
+**What:** Bought ÷ (used per day), so two sacks on the last day of a week read as "34 days of use" (M12 §5 P8).
+
+**Why:** One more derived number on a row that carries four, dividing by a rate a short window has not earned;
+"1 purchase in this window; a single delivery is not a rate" says it in words.
+
+**Depends on:** M12 shipped. Trigger: an owner asks how long a delivery lasts.
+
+### A usage row on `/materials`
+
+**What:** The gap for the period beside a material's price on the consultant's screen (M12 §5 P1 option (b)).
+
+**Why:** `/materials` has no period and no branch filter; the dashboard's row already links to the material's anchor.
+
+**Depends on:** M12 shipped. Trigger: a consultant asks to see the gap while mapping.
+
+### A fifth slot in the daily brief
+
+**What:** `usage.answer` as a brief slot (M9 P8 pinned four).
+
+**Why:** C13.5 makes it free - the sentence is on the wire - and whether the template has room is M10's decision
+when the template is drafted.
+
+**Depends on:** M10, M12. Trigger: the template is drafted and the founder wants the shelf in it.
+
+### A drill route for a material's purchase lines
+
+**What:** `GET /api/materials/{id}/usage?from&to&branch_id` serving one material's purchase lines and dishes,
+backed by the same pure rules, so the dashboard's usage block keeps its summary rows and drops the drill
+(M12 C14.4; the review's finding 13).
+
+**Why:** The drill rides on the dashboard payload by C6 extended's rule - "nothing loads, the payload carries it" -
+and "every number traces to source" needs the line; at pilot scale a chain-month of measured stock lines is a
+few hundred rows.
+
+**Depends on:** WP-121. Trigger: a tenant's confirmed stock lines in one period pass 5,000, or the usage block
+passes 200 KB on the wire (recorded by `test_dashboard.py`).
+
+### A frozen quantity basis per line, written at confirm
+
+**What:** A per-line pack quantity frozen at confirm independent of price and currency - a migration and a
+change to `db._cost_stock_lines` (M12 §5 P2 option (c); the Codex review's finding 1).
+
+**Why:** M12 measures a line by its frozen cost factor where it has one and by `costing.resolve_pack` over the
+line's own printed cells only where it has none (the engineering review's D2), and pins that a fresh resolution
+equals the frozen factor on every costed line as a drift alarm. That is most of what a frozen quantity basis
+would buy; nothing derived is stored anywhere in this product.
+
+**Depends on:** WP-120. Trigger: the drift-alarm test fails on live data, or a real chain's uncosted lines become
+a material share of its purchases.
+
+### A catalog product for every stock line at confirm
+
+**What:** Split identity from price in `db.record_confirmed_prices`: create the supplier-item row for every
+confirmed stock line, and keep skipping price memory for a foreign-currency paper and a line with no price
+(M12 engineering review D3) - **and a one-off backfill door that attaches the lines confirmed before the fix to
+the products the fixed path would create** (D20), because the very line that triggers the fix is one of them.
+
+**Why:** The function returns before its line loop on a foreign-currency paper (the WP-28 guard) and skips a
+line with no quantity or no unit price, so such lines have no product unless extraction snapped them to a known
+one - and a product is the only path from a purchase to a material. M12 reports them as *orphans* with their
+paper linked, in no row and no queue, and marks that code as the accepted shortcut it is: the confirm
+transaction is the most sensitive code in the product and the case is rare on an AED chain.
+
+**Context:** the supplier link is already kept for a foreign paper ("identity, not price"); the product row is
+identity too. The change is inside one shared function, with `test_currency.py` and the WP-28 cases as the
+guard that price memory still records nothing for those lines.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** WP-120 shipped. Trigger: a foreign-currency or priceless line on a real pilot paper.
+
+### An index on `invoice_lines` for the period read
+
+**What:** The first index for `db.list_period_material_purchases`, which walks 0012's two indexes and filters
+by invoice date.
+
+**Why:** 0009's policy refuses an index ahead of the query that needs it.
+
+**Depends on:** WP-120. Trigger: the read passes 500 ms, or a tenant's confirmed stock lines pass 100,000.
 
 ## Extraction & matching
 
