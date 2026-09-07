@@ -449,17 +449,19 @@ Explicitly retained. These are foundations, not features to defer.
 
 ## 27. Dashboards & the daily brief
 
+> **Aligned to the shipped M9 on 2026-09-07.** Four wordings changed to what was decided and built: the owner dashboard opens on the newest loaded day, named and aged, not "yesterday" (M9 P6); the branch view is the same screen filtered by `?branch=`, not a second route (P7); the brief's second slot is purchases ÷ net sales (cash basis), never "estimated food-cost %" (P8, §3's display rule and C11.6, corrected 2026-09-05); and the quality vocabulary is reliable with limitations / estimated / incomplete / unavailable, never verified (C9, pinned 2026-08-29). The screen is `/dashboard`, served by one read, `GET /api/dashboard`.
+
 ### 27.1 Tenant / owner dashboard
-Yesterday's net sales (tenant-wide and per branch); contribution estimate + completeness; **branch league table** (which branch has the best/worst food-cost % this week — the hero view for chains); top-performing and popular-low-margin items; major supplier cost changes; inventory warnings; pending cash approvals; data freshness.
+Opens on the newest loaded day, named and aged - the day the till last gave us, with its takings, not "yesterday": a chain that stopped uploading is told so rather than quietly served a stale figure (M9 P6). Then the answer sentences; four headline figures for the row in view - net sales, purchases ÷ net sales (cash basis), contribution before overheads (estimate) with the share of sales it covers, and the costed share of sales with the till names still waiting for a dish; the **branch league table**, ranked by the share each branch keeps, lowest first, with its ratio beside it (the hero view for chains, backed by real plate costing from M6); the items that sell well and keep the least, and the ones that keep the most; major supplier cost changes; inventory warnings (not built; M12); pending cash approvals; and data freshness. Every figure carries its own quality word with the sentences that made it, behind an info icon beside the figure, and a league row carries two - one about the ratio, one about the contribution. Contribution is never labelled net profit, and the share of sales behind it is said to be costed, never complete.
 
 ### 27.2 Brand dashboard
-Same, scoped to one brand's branches.
+Same, scoped to one brand's branches. Not built: there is one tenant level today, and a brand layer enters the plan only with a customer who asks for it.
 
 ### 27.3 Branch dashboard
-This branch's sales, contribution, invoices needing confirm, stock counts due, high variance, waste concentration.
+The same screen filtered to one branch, `/dashboard?branch=<id>` - never a second route (M9 P7). Every headline figure becomes that branch's own, with the chain's figure named beside it for comparison; the league, the items and the signals follow the filter while the chain total never does; the branch's invoices needing confirm sit in the same papers-waiting block. Stock counts and the recorded difference between what the recipes needed and what was bought arrive with M12, and are never called variance or waste (C14).
 
 ### 27.4 Daily WhatsApp brief
-A templated utility message each morning to the owner (and optionally each branch manager): net sales, estimated food-cost %, biggest supplier price move, and one flagged issue. Tapping through opens the dashboard. This is the primary consumption surface for a non-tech owner who will never open a BI dashboard unprompted.
+A templated utility message each morning to the owner (and optionally each branch manager): net sales, **purchases ÷ net sales (cash basis)**, the biggest supplier price move, and one flagged issue. Tapping through opens the dashboard. The four slots are already composed and on the wire, so the brief fills them and words nothing itself: `freshness.sentence`, `latest_day`, `league[0]` and `signals[0..1]` from `GET /api/dashboard` (M9 P8). Fixed sentence shapes, number slots, no generation. This is the primary consumption surface for a non-tech owner who will never open a BI dashboard unprompted.
 
 ---
 
