@@ -3,9 +3,12 @@ import {
   ANSWER_EMPTY,
   ANSWER_NO_MENU,
   NO_CHAIN_AVERAGE,
+  SCREEN_ABOUT,
   SPLIT_AT,
   answerCaveat,
+  answerChip,
   answerLines,
+  answerTip,
   approvalsHref,
   branchOptions,
   branchParam,
@@ -15,28 +18,37 @@ import {
   daysInclusive,
   filteredEmpty,
   firstRun,
+  footnoteTip,
   freshnessLine,
   incompleteItems,
   isFirstRun,
   itemCaption,
   itemPanel,
   itemsHeading,
+  itemsTip,
+  keptBar,
   leagueFootnote,
   leagueLine,
   leagueLink,
   leagueStatus,
+  leagueTip,
   noContributionWords,
   noMenuSentence,
   noRatioWords,
   points,
   portionsWords,
   showAllLabel,
+  showAllSignalsLabel,
   signalHref,
   signalMoney,
+  signalPanel,
+  signalTip,
   signalWhen,
   signalsCount,
   signalsFootnote,
+  statusTip,
   tiles,
+  totalTip,
   todaysPlateLink,
   withBranch,
 } from "../dashboardScreen";
@@ -223,8 +235,10 @@ describe("the first run", () => {
 describe("the freshness line", () => {
   it("carries the API's sentence, the newest day's takings and the papers link", async () => {
     const line = freshnessLine(await scenario("full"));
+    // The API's own stop goes when a middle dot joins the next piece on:
+    // "5 days ago. · AED 9,493" is a punctuation mistake, not a sentence.
     expect(line).toEqual({
-      sentence: "Sales loaded to Mon 31 Aug, 5 days ago.",
+      sentence: "Sales loaded to Mon 31 Aug, 5 days ago",
       estimated: false,
       takings: "AED 9,493 taken that day across 3 branches",
       papers: { label: "2 papers waiting for you", href: "/invoices?status=needs_review" },
@@ -233,7 +247,14 @@ describe("the freshness line", () => {
 
   it("carries the word past seven days, and that branch's own day under the filter", async () => {
     const partial = freshnessLine(await scenario("partial"));
-    expect(partial?.sentence).toBe("Sales loaded to Mon 31 Aug, 12 days ago.");
+    expect(partial?.sentence).toBe("Sales loaded to Mon 31 Aug, 12 days ago");
+    // Nothing joins on, so the sentence keeps the stop the API printed.
+    const alone = freshnessLine({
+      ...(await scenario("full")),
+      latest_day: null,
+      approvals: { count: 0, duplicates: 0, awaiting_confirm: 0, invoices: [] },
+    });
+    expect(alone?.sentence).toBe("Sales loaded to Mon 31 Aug, 5 days ago.");
     expect(partial?.estimated).toBe(true);
     const karama = freshnessLine(await scenario("full", "br-02"));
     expect(karama?.takings).toBe("AED 2,987 taken that day at Karama");
@@ -557,6 +578,9 @@ describe("the headline tiles", () => {
       words: null,
       loss: false,
       sentence: "from the till, net of VAT · loaded to Mon 31 Aug",
+      line: "to Mon 31 Aug",
+      tip: ["From the till, net of VAT."],
+      bar: null,
       caption: null,
       status: null,
       link: null,
@@ -581,10 +605,63 @@ describe("the headline tiles", () => {
       words: null,
       loss: false,
       sentence: "3 till names worth AED 8,320 have no dish yet.",
+      line: "3 till names unmapped",
+      tip: [
+        "These figures cover 84.2% of what was sold.",
+        "3 till names worth AED 8,320 have no dish yet.",
+      ],
+      bar: 84.2,
       caption: null,
       status: null,
-      link: { href: "/sales", label: "Map them on Sales" },
+      link: { href: "/sales", label: "Map them" },
     });
+  });
+
+  // The founder's redesign (2026-09-07): the tile prints one short line and
+  // the clauses it drops go behind the icon. Nothing is rewritten to get
+  // there - every word below is a word the tile's own sentence already used.
+  it("prints one short line and puts the clauses it drops behind the icon", async () => {
+    const [netSales, ratio, contribution, share] = tiles(await scenario("full"));
+    expect(netSales.line).toBe("to Mon 31 Aug");
+    expect(netSales.tip).toEqual(["From the till, net of VAT."]);
+    expect(ratio.line).toBe("AED 16,019 of confirmed papers");
+    expect(ratio.tip).toEqual(["1 of 3 branches incomplete."]);
+    expect(contribution.line).toBe("keeps 67.4% of costed sales");
+    expect(contribution.tip).toEqual([
+      "After ingredients and packaging.",
+      "Covers 84% of the chain's sales value.",
+    ]);
+    // The strip that used to close the screen, whole, in its only home.
+    expect(share.tip).toEqual([
+      "These figures cover 84.2% of what was sold.",
+      "3 till names worth AED 8,320 have no dish yet.",
+    ]);
+    expect(share.bar).toBe(84.2);
+  });
+
+  it("names the chain in one word on the line, and the whole clause behind the icon", async () => {
+    const [netSales, ratio, contribution, share] = tiles(await scenario("full", "br-01"));
+    expect(netSales.caption).toBe("Al Quoz");
+    expect(ratio.line).toBe("AED 11,898 of confirmed papers · chain 23.7%");
+    expect(contribution.line).toBe("keeps 69.9% of costed sales · chain 67.4%");
+    expect(contribution.tip[0]).toBe("After ingredients and packaging.");
+    expect(share.line).toBe("1 till name unmapped");
+    expect(share.tip).toEqual([
+      "These figures cover 86.0% of what was sold.",
+      "1 till name worth AED 3,120 has no dish yet.",
+    ]);
+  });
+
+  it("has no line and no tip on the tiles a missing menu empties", async () => {
+    const nomenu = tiles(await scenario("nomenu"));
+    for (const tile of [nomenu[2], nomenu[3]]) {
+      expect(tile.line).toBe("");
+      expect(tile.tip).toEqual([]);
+      expect(tile.bar).toBeNull();
+    }
+    const quiet = tiles(await scenario("quiet"));
+    expect(quiet[3].line).toBe("Every till name is mapped.");
+    expect(quiet[3].bar).toBe(100);
   });
 
   it("carries the word beside the date when the sales are old", async () => {
@@ -661,6 +738,122 @@ describe("the headline tiles", () => {
     expect(contribution.sentence).toBe(
       "keeps -1.4% of costed sales · after ingredients and packaging",
     );
+  });
+});
+
+// The founder's redesign (2026-09-07). Every line a tooltip prints is a
+// sentence the API sent or a join this module already made: these cases pin
+// that the words survived the move off the flow, and that a bar is a
+// percentage the API sent and never a division done here.
+describe("the info tips", () => {
+  it("holds the screen's own subtitle behind the icon beside the title", () => {
+    expect(SCREEN_ABOUT).toBe(
+      "What each branch and each dish kept after ingredients and packaging, over the days you have loaded.",
+    );
+  });
+
+  it("puts the answer's word inline and the API's notes behind the icon", async () => {
+    const full = await scenario("full");
+    expect(answerChip(full)).toBe("estimated");
+    expect(answerTip(full)).toEqual([
+      "Covers 82% of this branch's sales value.",
+      "1 item cannot be costed yet.",
+      "1 till name with sales is not mapped to a menu item.",
+    ]);
+    // The one-line caveat is still what the notes join into.
+    expect(answerCaveat(full)).toBe(
+      "Estimated: covers 82% of this branch's sales value · 1 item cannot be costed yet · 1 till name with sales is not mapped to a menu item",
+    );
+
+    const partial = await scenario("partial");
+    expect(answerChip(partial)).toBe("incomplete");
+    expect(answerTip(partial)[0]).toBe("1 of 7 days has no sales.");
+
+    const quiet = await scenario("quiet");
+    expect(answerChip(quiet)).toBeNull();
+    expect(answerTip(quiet)).toEqual([]);
+    expect(answerChip(await scenario("nomenu"))).toBeNull();
+  });
+
+  it("puts a league row's whole story behind its one icon", async () => {
+    const full = await scenario("full");
+    const [deira, karama] = full.league;
+    expect(leagueTip(deira)).toEqual([
+      "25-31 Aug, 7 days · 1 delivery",
+      "AED 4,121 purchases",
+      "Covers 82% of this branch's sales value.",
+      "1 item cannot be costed yet.",
+      "1 till name with sales is not mapped to a menu item.",
+    ]);
+    // Karama bought nothing in the window, and the line says so in the cell's
+    // own words rather than printing AED 0.
+    expect(karama.ratio_pct).toBeNull();
+    expect(leagueTip(karama).slice(0, 2)).toEqual([leagueLine(karama), "No confirmed purchases"]);
+    expect(leagueTip(karama).slice(2)).toEqual(statusTip(karama));
+    // The chain has no window of its own to name.
+    expect(totalTip(full.total)).toEqual([
+      "AED 16,019 purchases",
+      ...statusTip(full.total),
+    ]);
+    const nothing = { ...full.total, purchases: "0.00", ratio_pct: null };
+    expect(totalTip(nothing)[0]).toBe("No confirmed purchases");
+  });
+
+  it("cuts the status sentences and the footnote into one line each", async () => {
+    const full = await scenario("full");
+    expect(statusTip(full.league[0])).toEqual([
+      "Covers 82% of this branch's sales value.",
+      "1 item cannot be costed yet.",
+      "1 till name with sales is not mapped to a menu item.",
+    ]);
+    // Nothing is dropped in the cutting: the lines join back into the sentence.
+    expect(statusTip(full.total)).toHaveLength(4);
+    expect(statusTip(full.total).join(" ")).toBe(leagueStatus(full.total).sentence);
+    const tip = footnoteTip(full);
+    expect(tip).toHaveLength(3);
+    expect(tip.join(" ")).toBe(leagueFootnote(full));
+    expect(tip[1]).toMatch(/^It is not profit/);
+  });
+
+  it("puts a signal's detail behind the icon, and the date a price moved on", () => {
+    const popular = signal();
+    expect(signalTip(popular)).toEqual([popular.detail]);
+    const spike = signal({
+      kind: "price_spike",
+      invoice_id: "inv-1001",
+      moved_on: "2026-08-21",
+      menu_item_id: null,
+      detail: "Milk Powder is AED 2.10 a kg dearer than the last paper. (estimated)",
+    });
+    expect(signalTip(spike)).toEqual([spike.detail, "since 21 Aug"]);
+  });
+
+  it("keeps the item panel's paragraph, word for word, behind its heading", () => {
+    expect(itemsTip()).toEqual([
+      "Contribution is the till's own net takings for the item less what its recipe costs at the prices in force on the period's last day; it is not profit, and cost covers what the recipe lists.",
+    ]);
+  });
+
+  it("shows three signals, then the rest", async () => {
+    const full = await scenario("full");
+    expect(signalPanel(full.signals, false)).toHaveLength(3);
+    expect(signalPanel(full.signals, false)).toEqual(full.signals.slice(0, 3));
+    expect(signalPanel(full.signals, true)).toEqual(full.signals);
+    expect(showAllSignalsLabel(5, false)).toBe("Show all 5");
+    expect(showAllSignalsLabel(5, true)).toBe("Show the top 3 only");
+    expect(showAllSignalsLabel(3, false)).toBeNull();
+    expect(showAllSignalsLabel(0, false)).toBeNull();
+  });
+
+  it("draws a bar from the percentage the API sent, and never divides one", () => {
+    expect(keptBar("60.9")).toBe(60.9);
+    expect(keptBar("100.0")).toBe(100);
+    expect(keptBar("0.0")).toBe(0);
+    // A branch that lost money gets an empty track; the words beside it say so.
+    expect(keptBar("-1.4")).toBe(0);
+    expect(keptBar("140.2")).toBe(100);
+    expect(keptBar(null)).toBeNull();
+    expect(keptBar("not a number")).toBeNull();
   });
 });
 

@@ -58,6 +58,36 @@ export {
 } from "./salesScreen";
 export { points };
 
+// --- the words behind the info icons ------------------------------------------
+
+/**
+ * The founder's redesign (2026-09-07): the screen fits a laptop and the
+ * sentences that qualify a figure move behind a circled "i" beside it. None
+ * of them is rewritten to get there - a tooltip prints the sentence the API
+ * sent or the join this module already made, one to a line - and no line of
+ * this screen is ever colour alone: every bar carries its own number.
+ */
+
+/** The h1's own sentence, off the flow and behind the icon beside the title. */
+export const SCREEN_ABOUT =
+  "What each branch and each dish kept after ingredients and packaging, over the days you " +
+  "have loaded.";
+
+/** A run of sentences cut into the lines a tooltip prints. A split, never a
+ * rewrite: the words and their order are the author's. */
+function sentences(text: string): string[] {
+  return text
+    .split(/(?<=\.)\s+/)
+    .map((part) => part.trim())
+    .filter((part) => part !== "");
+}
+
+/** The API's notes as tooltip lines - capitalised and closed, the shape
+ * `drillNotes` has printed since WP-93. */
+function noteLines(notes: string[]): string[] {
+  return notes.map((note) => `${note.charAt(0).toUpperCase()}${note.slice(1)}.`);
+}
+
 // --- which screen -------------------------------------------------------------
 
 /** The one fact the first-run state is decided on: nothing was ever loaded. */
@@ -154,8 +184,12 @@ export function freshnessLine(result: DashboardResult): FreshnessLine | null {
     }
   }
   const count = approvals.count;
+  // A full stop and a middle dot side by side - "5 days ago. · AED 9,493" -
+  // is a punctuation mistake, not a sentence. The stop goes when something
+  // joins on after it, and stays when the sentence stands alone.
+  const joined = takings !== null || count > 0;
   return {
-    sentence: freshness.sentence,
+    sentence: joined ? freshness.sentence.replace(/\.$/, "") : freshness.sentence,
     estimated: freshness.quality === "estimated",
     takings,
     papers:
@@ -201,6 +235,24 @@ export function answerCaveat(result: DashboardResult): string | null {
   return notes.length === 0 ? word : `${word}: ${notes.join(" · ")}`;
 }
 
+/** The word that rides at the end of the answer, where the answer has one to
+ * carry: estimated or incomplete, never the reliable word (it would be four
+ * lines of chrome saying nothing). */
+export function answerChip(result: DashboardResult): PeriodQuality | null {
+  const { quality, branch, item } = result.answer;
+  if (branch === null && item === null) return null;
+  return quality === "estimated" || quality === "incomplete" ? quality : null;
+}
+
+/** The caveat, behind the icon at the end of the answer: the API's notes one
+ * to a line, or the bare word when it sent none. */
+export function answerTip(result: DashboardResult): string[] {
+  const caveat = answerCaveat(result);
+  if (caveat === null) return [];
+  const { notes } = result.answer;
+  return notes.length === 0 ? [caveat] : noteLines(notes);
+}
+
 // --- the tiles ----------------------------------------------------------------
 
 export type TileKey = "net_sales" | "ratio" | "contribution" | "costed_share";
@@ -217,6 +269,15 @@ export interface Tile {
   loss: boolean;
   /** The one sentence beneath the figure; empty when the words say it all. */
   sentence: string;
+  /** What the tile actually prints under the figure since the redesign: the
+   * same sentence with the clauses that moved into `tip` taken out. */
+  line: string;
+  /** The lines behind the tile's info icon: the clauses the short line drops
+   * and the note that earned the quality word. */
+  tip: string[];
+  /** The bar under the figure, 0-100, where the figure is a share of sales;
+   * null on the three tiles that are money or a ratio. */
+  bar: number | null;
   /** Whose row this is, named once under a branch filter. */
   caption: string | null;
   /** The quality word, and the note that earned it where there is one. */
@@ -282,7 +343,20 @@ function unmappedWords(unmapped: DashboardUnmapped): string {
   } no dish yet.`;
 }
 
+/** The same queue in the tile's one short line, which has 223 px at 1366 and
+ * has to hold the link to the queue too: "unmapped" is the API's own note
+ * ("3 till names with sales are not mapped to a menu item") in one word, and
+ * both full sentences are behind the tile's icon. */
+function unmappedLine(unmapped: DashboardUnmapped): string {
+  const { names } = unmapped;
+  if (names === 0) return "Every till name is mapped.";
+  return `${names} till ${names === 1 ? "name" : "names"} unmapped`;
+}
+
 const MAP_THEM = { href: "/sales", label: "Map them on Sales" };
+/** The same door in the tile's one line, where "on Sales" wrapped it onto
+ * a second. */
+const MAP_THEM_SHORT = { href: MAP_THEM.href, label: "Map them" };
 
 /**
  * The four headline tiles (M9 WP-98), in reading order: what the till took,
@@ -314,11 +388,19 @@ export function tiles(result: DashboardResult): Tile[] {
     chain.ratio_pct === null ? chainRatioWords(chain).toLowerCase() : percent(chain.ratio_pct);
   const contribution = row.contribution;
   const loss = contribution !== null && contribution.startsWith("-");
+  const keptWords =
+    row.contribution_pct === null ? "" : `keeps ${percent(row.contribution_pct)} of costed sales`;
   const keeps =
-    row.contribution_pct === null
+    keptWords === ""
       ? "after ingredients and packaging"
-      : `keeps ${percent(row.contribution_pct)} of costed sales · after ingredients and packaging`;
+      : `${keptWords} · after ingredients and packaging`;
+  const chainKeeps =
+    filtered && chain.contribution_pct !== null ? percent(chain.contribution_pct) : null;
   const share = costedShare(result);
+  const ratioStatus = tileStatus(row.ratio_quality, row.ratio_notes);
+  const contributionStatus =
+    noMenu !== null ? null : tileStatus(row.contribution_quality, row.contribution_notes);
+  const strip = coverageStrip(result);
 
   return [
     {
@@ -331,6 +413,12 @@ export function tiles(result: DashboardResult): Tile[] {
         loadedTo === null
           ? "from the till, net of VAT"
           : `from the till, net of VAT · loaded to ${weekdayDate(loadedTo)}`,
+      // The date is the only thing on this tile the freshness line above it
+      // does not already say, so the date is the line and the standing clause
+      // goes behind the icon.
+      line: loadedTo === null ? "from the till, net of VAT" : `to ${weekdayDate(loadedTo)}`,
+      tip: loadedTo === null ? [] : ["From the till, net of VAT."],
+      bar: null,
       caption,
       // Past seven days the API says estimated, and the word rides beside the
       // date it qualifies; there is no note behind it to print.
@@ -349,8 +437,15 @@ export function tiles(result: DashboardResult): Tile[] {
       sentence: `${roundedAed(row.purchases)} of confirmed papers in this window${
         filtered ? ` · the chain reads ${chainRatio}` : ""
       }`,
+      // "in this window" is the picker's own word, and the chain's figure
+      // needs one word, not four.
+      line: `${roundedAed(row.purchases)} of confirmed papers${
+        filtered ? ` · chain ${chainRatio}` : ""
+      }`,
+      tip: [ratioStatus.sentence],
+      bar: null,
       caption: null,
-      status: tileStatus(row.ratio_quality, row.ratio_notes),
+      status: ratioStatus,
       link: null,
     },
     {
@@ -372,15 +467,25 @@ export function tiles(result: DashboardResult): Tile[] {
       sentence:
         noMenu !== null
           ? ""
-          : `${keeps}${
-              filtered && chain.contribution_pct !== null
-                ? ` · the chain keeps ${percent(chain.contribution_pct)}`
-                : ""
+          : `${keeps}${chainKeeps === null ? "" : ` · the chain keeps ${chainKeeps}`}`,
+      line:
+        noMenu !== null
+          ? ""
+          : `${keptWords}${
+              chainKeeps === null ? "" : `${keptWords === "" ? "" : " · "}chain ${chainKeeps}`
             }`,
+      tip:
+        noMenu !== null
+          ? []
+          : [
+              "After ingredients and packaging.",
+              ...(contributionStatus === null ? [] : [contributionStatus.sentence]),
+            ],
+      bar: null,
       caption: null,
       // Nothing is costed without a menu, so the quality word behind the
       // figure has nothing to qualify.
-      status: noMenu !== null ? null : tileStatus(row.contribution_quality, row.contribution_notes),
+      status: contributionStatus,
       link: null,
     },
     {
@@ -391,10 +496,17 @@ export function tiles(result: DashboardResult): Tile[] {
         noMenu !== null ? noMenu : share === null ? "Nothing sold here can be costed yet." : null,
       loss: false,
       sentence: noMenu !== null ? "" : unmappedWords(result.unmapped),
+      line: noMenu !== null ? "" : unmappedLine(result.unmapped),
+      // The strip that used to sit at the foot of the screen, whole: this
+      // tile is its only home now.
+      tip: noMenu !== null ? [] : [strip.lead, strip.rest],
+      // A share of sales is the one figure on the row a bar can draw, and the
+      // percentage stands beside it.
+      bar: noMenu !== null ? null : keptBar(share),
       caption: null,
       // A share is a fact about the rows, not a figure with a caveat.
       status: null,
-      link: noMenu !== null || result.unmapped.names === 0 ? null : MAP_THEM,
+      link: noMenu !== null || result.unmapped.names === 0 ? null : MAP_THEM_SHORT,
     },
   ];
 }
@@ -412,6 +524,46 @@ export function leagueLine(row: LeagueRow): string {
   const days = `${row.window.days} ${row.window.days === 1 ? "day" : "days"}`;
   const deliveries = `${row.deliveries} ${row.deliveries === 1 ? "delivery" : "deliveries"}`;
   return `${windowWords(row.window.from, row.window.to)}, ${days} · ${deliveries}`;
+}
+
+/** The money behind a row's ratio, or the words that say there is none. */
+function purchasesLine(row: LeagueRow): string {
+  return row.ratio_pct === null ? noRatioWords(row) : `${roundedAed(row.purchases)} purchases`;
+}
+
+/** Everything behind a league row's one icon, in reading order: its window
+ * and its deliveries, the money behind its ratio, then the sentences that
+ * earned its status word. One icon a row - two was one too many. */
+export function leagueTip(row: LeagueRow): string[] {
+  return [leagueLine(row), purchasesLine(row), ...statusTip(row)];
+}
+
+/** The same for the chain's row, which has no window of its own to name. */
+export function totalTip(total: DashboardTotal): string[] {
+  return [
+    total.ratio_pct === null
+      ? chainRatioWords(total)
+      : `${roundedAed(total.purchases)} purchases`,
+    ...statusTip(total),
+  ];
+}
+
+/** The status sentences, one to a line - the tail of both tips. */
+export function statusTip(row: {
+  contribution_quality: PeriodQuality;
+  contribution_notes: string[];
+}): string[] {
+  return sentences(leagueStatus(row).sentence);
+}
+
+/** The bar beside a kept percentage: the percentage the API sent, clamped to
+ * the track. Nothing is divided here - a percentage is already a width - and
+ * a row that lost money gets an empty track and says so in words. */
+export function keptBar(pct: string | null): number | null {
+  if (pct === null) return null;
+  const value = Number(pct);
+  if (!Number.isFinite(value)) return null;
+  return Math.min(100, Math.max(0, value));
 }
 
 /** The ratio cell's words when there is no ratio to show - `/sales`' own. */
@@ -490,6 +642,12 @@ export function leagueFootnote(result: DashboardResult): string {
   );
 }
 
+/** The footnote, behind the icon beside the league's heading: the same three
+ * sentences, one to a line. */
+export function footnoteTip(result: DashboardResult): string[] {
+  return sentences(leagueFootnote(result));
+}
+
 /** The screen's select: every branch, the chain first. */
 export function branchOptions(branches: Branch[]): { id: string; label: string }[] {
   return [
@@ -555,6 +713,26 @@ export function signalHref(signal: DashboardSignal): string | null {
     return `/dashboard?branch=${encodeURIComponent(signal.branch_id)}`;
   }
   return null;
+}
+
+/** The API's own detail line behind the icon after the sentence, and the
+ * date a price moved on where there is one to name. */
+export function signalTip(signal: DashboardSignal): string[] {
+  const when = signalWhen(signal);
+  return when === "this window" ? [signal.detail] : [signal.detail, when];
+}
+
+/** Three rows and a toggle, the item panel's own pattern: the list is ranked
+ * by money, so the three that matter are the three at the top. */
+export const SIGNALS_SHOWN = 3;
+
+export function signalPanel(signals: DashboardSignal[], expanded: boolean): DashboardSignal[] {
+  return expanded ? signals : signals.slice(0, SIGNALS_SHOWN);
+}
+
+export function showAllSignalsLabel(count: number, expanded: boolean): string | null {
+  if (count <= SIGNALS_SHOWN) return null;
+  return expanded ? `Show the top ${SIGNALS_SHOWN} only` : `Show all ${count}`;
 }
 
 /** "Based on 2 branches; Rolla has no sales loaded." under the list, or the
@@ -693,6 +871,17 @@ export function todaysPlateLink(row: DashboardItemRow): { href: string; label: s
 }
 
 export const COST_COVERS = "Cost covers what the recipe lists.";
+
+/** What contribution is and is not, behind the icon beside the item panel's
+ * heading - the paragraph that used to close the screen, word for word. */
+export const ITEMS_NOTE =
+  "Contribution is the till's own net takings for the item less what its recipe costs at the " +
+  "prices in force on the period's last day; it is not profit, and " +
+  `${COST_COVERS.charAt(0).toLowerCase()}${COST_COVERS.slice(1)}`;
+
+export function itemsTip(): string[] {
+  return sentences(ITEMS_NOTE);
+}
 
 // --- the coverage strip -------------------------------------------------------
 
