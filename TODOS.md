@@ -680,7 +680,7 @@ material's latest move inside the window" by construction and its caption says s
 
 ### An index on the sales tables
 
-**What:** The first index beyond the uniques on `sales_lines` and `sales_daily`, in a 0020.
+**What:** The first index beyond the uniques on `sales_lines` and `sales_daily`, in the next free migration (0020 is WP-87's supplier aliases, 0021 is M12's usable share).
 
 **Why:** 0019 refuses indexes until a read needs one, and the dashboard read is the read that will.
 
