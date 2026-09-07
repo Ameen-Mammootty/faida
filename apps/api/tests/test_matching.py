@@ -144,6 +144,15 @@ PAIRS = json.loads(
 )
 
 
+#: One row of demo_seed.sql's supplier_aliases insert: two UUIDs, the alias as
+#: printed, then its normalized form. Only the printed alias is a name a paper
+#: could carry, so only that group is captured (0020 moved these out of the
+#: suppliers insert into their own table).
+_SEED_ALIAS_ROW = re.compile(
+    r"\(\s*'[0-9a-f-]{36}'\s*,\s*'[0-9a-f-]{36}'\s*,\s*'([^']+)'\s*,\s*'[^']+'\s*\)"
+)
+
+
 def supplier_corpus_names() -> list[str]:
     """Every supplier name the signed ground truth prints, plus the demo seed's
     supplier names and aliases - read from the files rather than copied here,
@@ -153,11 +162,17 @@ def supplier_corpus_names() -> list[str]:
         invoice = json.loads(path.read_text()).get("invoice") or {}
         if invoice.get("supplier_name"):
             names.add(invoice["supplier_name"])
-    block = re.search(r"insert into suppliers.*?;", DEMO_SEED.read_text(), re.S)
+    seed = DEMO_SEED.read_text()
+    block = re.search(r"insert into suppliers.*?;", seed, re.S)
     assert block is not None, "demo_seed.sql no longer inserts suppliers - update this loader"
     for quoted in re.findall(r"'([^']+)'", block.group(0)):
         if not re.fullmatch(r"[0-9a-f-]{36}", quoted):
             names.add(quoted)
+    aliases = re.search(r"insert into supplier_aliases.*?;", seed, re.S)
+    assert aliases is not None, "demo_seed.sql no longer seeds aliases - update this loader"
+    seeded = _SEED_ALIAS_ROW.findall(aliases.group(0))
+    assert len(seeded) >= 6, "the seeded aliases shrank - check demo_seed.sql"
+    names.update(seeded)
     return sorted(names)
 
 

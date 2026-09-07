@@ -13,6 +13,7 @@ import hmac
 import json
 from decimal import Decimal
 
+import asyncpg
 import httpx
 import pytest
 
@@ -29,13 +30,20 @@ from faida_api.confirm import (
     MissingVatRateEdit,
     PaymentKindEdit,
     ReconstructedTotalEdit,
+    SupplierEdit,
+    SupplierNameEdit,
     TotalsEdit,
+    _with_booked_under,
     apply_edits,
     edited_field_keys,
     parse_reply,
     reconstructed_field_keys,
+    status_after_supplier,
 )
+from faida_api.contracts import InvoiceStatus
+from faida_api.db import Database
 from faida_api.extraction.schema import ExtractedInvoice, ExtractedLine, LineKind
+from faida_api.matching import match_supplier, normalize
 from faida_api.replies import (
     CASH_HOLD_NOTE,
     QUESTION_MISSING_DATE,
@@ -55,7 +63,9 @@ from faida_api.worker import run_one_job
 from .conftest import (
     DEMO_PHONE,
     DEMO_TENANT_ID,
+    MIGRATIONS_DIR,
     TEST_APP_SECRET,
+    TEST_DATABASE_URL,
     FakeExtraction,
     FakeMeta,
     FakeStorage,
@@ -1291,3 +1301,143 @@ def test_a_pack_size_correction_is_attributed_to_the_line_it_changed():
     # pack_size alone rather than the whole line.
     keys = edited_field_keys([LinePackSizeEdit(line_index=2, pack_size="2kg")])
     assert keys == ["lines.2.pack_size"]
+
+
+# --- the supplier as a fact on the paper (M9 WP-87) --------------------------
+
+
+def test_a_supplier_choice_is_attributed_to_the_one_field_it_moves():
+    # C8: both spellings of the pick write the same column, so both re-stamp
+    # the same field path - and neither one touches the printed supplier name,
+    # which is the evidence the alias is learnt from.
+    assert edited_field_keys([SupplierEdit(supplier_id="s-1")]) == ["supplier_id"]
+    assert edited_field_keys([SupplierNameEdit(name="Al Madina ABC")]) == ["supplier_id"]
+    assert edited_field_keys(
+        [
+            SupplierEdit(supplier_id="s-1"),
+            LineFieldEdit(line_index=0, field="qty", value=Decimal("1")),
+        ]
+    ) == ["supplier_id", "lines.0.qty"]
+
+
+def test_a_supplier_choice_changes_nothing_the_camera_read():
+    # The pick is resolved against the catalog, not merged into the invoice
+    # shape: what the paper printed stays exactly what the paper printed.
+    invoice = ExtractedInvoice(
+        supplier_name="AL MADINA ABC TRDG",
+        lines=[ExtractedLine(raw_name="RICE BASM 5KG")],
+        total=Decimal("67.20"),
+    )
+    for edit in (SupplierEdit(supplier_id="s-1"), SupplierNameEdit(name="Al Madina ABC")):
+        assert apply_edits(invoice, [edit]) == invoice
+
+
+def test_a_re_pointed_paper_takes_the_status_the_new_duplicate_answer_implies():
+    """WP-87: re-pointing re-asks "is this the same paper twice", because that
+    question is asked within one supplier. The hold outranks the cash rule,
+    and a paper that stops being a copy still stays held if it is cash."""
+    awaiting, held = InvoiceStatus.AWAITING_CONFIRM, InvoiceStatus.NEEDS_REVIEW
+    # Becomes a copy: held, whatever it was.
+    assert (
+        status_after_supplier(awaiting, payment_kind="credit", duplicate_of_invoice_id="x") is held
+    )
+    # Stops being a copy: back to awaiting - unless it is cash, which leaves
+    # only through the approve door.
+    assert (
+        status_after_supplier(held, payment_kind="credit", duplicate_of_invoice_id=None) is awaiting
+    )
+    assert status_after_supplier(held, payment_kind="cash", duplicate_of_invoice_id=None) is held
+    # A paper that is not editable is not moved by anything.
+    for settled in (InvoiceStatus.CONFIRMED, InvoiceStatus.DISMISSED, InvoiceStatus.DRAFT):
+        assert (
+            status_after_supplier(settled, payment_kind="credit", duplicate_of_invoice_id=None)
+            is settled
+        )
+
+
+def test_the_booked_under_line_appears_exactly_when_the_names_differ():
+    # The line is the answer to "whose price history did this move", and it is
+    # worth a line only when that is not the name printed on the paper.
+    reply = "Read it: Gulf Foods Trading LLC, 2 lines."
+    assert _with_booked_under(reply, "Gulf Foods Trading LLC", "Gulf Foods Trading L.L.C.") == (
+        f"{reply}\nBooked under Gulf Foods Trading L.L.C."
+    )
+    # Same name, however it is punctuated or cased: nothing to say.
+    assert _with_booked_under(reply, "GULF FOODS TRADING LLC", "Gulf Foods Trading LLC") == reply
+    # No supplier yet: nothing to say either.
+    assert _with_booked_under(reply, "Gulf Foods Trading LLC", None) == reply
+
+
+@requires_db
+async def test_the_aliases_seeded_before_0020_are_still_there_after_it():
+    """The live migration, rehearsed: a database at 0019 with aliases in the
+    old text[] column comes out of 0020 with the same aliases in the new
+    table, normalized the way Python normalizes them - so the supplier a paper
+    matched on Monday still matches on Tuesday.
+
+    Driven against the real files rather than a copy of the copy statement:
+    migrate to 0019, plant the rows, apply 0020, read them back through the
+    query the matcher uses."""
+    conn = await asyncpg.connect(TEST_DATABASE_URL)
+    try:
+        await conn.execute("drop schema public cascade; create schema public;")
+        migrations = sorted(MIGRATIONS_DIR.glob("*.sql"))
+        move = next(path for path in migrations if path.name.startswith("0020_"))
+        for migration in migrations:
+            if migration is move:
+                break
+            await conn.execute(migration.read_text())
+
+        await conn.execute(
+            "insert into tenants (id, name, currency) values ($1, 'Before', 'AED')",
+            DEMO_TENANT_ID,
+        )
+        await conn.execute(
+            "insert into suppliers (tenant_id, name, name_aliases) values ($1, $2, $3)",
+            DEMO_TENANT_ID,
+            "Al Madina Trading Co.",
+            ["AL MADINA TRADING CO L.L.C.", "Al Madeena Trading", ""],
+        )
+        await conn.execute(move.read_text())
+    finally:
+        await conn.close()
+
+    # A pool opened after the move, because this test rebuilt the schema under
+    # everything: the shipped query is what reads the aliases back.
+    database = Database(TEST_DATABASE_URL)
+    await database.connect()
+    try:
+        suppliers = await database.list_suppliers(tenant_id=DEMO_TENANT_ID)
+        stored = await database.pool.fetch(
+            "select alias, normalized from supplier_aliases where tenant_id = $1", DEMO_TENANT_ID
+        )
+    finally:
+        await database.close()
+
+    assert [row["name"] for row in suppliers] == ["Al Madina Trading Co."]
+    assert sorted(suppliers[0]["name_aliases"]) == [
+        "AL MADINA TRADING CO L.L.C.",
+        "Al Madeena Trading",
+    ]  # the blank alias, which matched nothing, is gone
+    # The normalized column is the matcher's form, computed once in SQL by the
+    # migration and owned by Python from then on.
+    assert all(row["normalized"] == normalize(row["alias"]) for row in stored)
+    # And the point of all of it: the paper that matched still matches.
+    assert match_supplier(suppliers, "Al Madeena Trading")["name"] == "Al Madina Trading Co."
+
+
+@requires_db
+async def test_a_correction_reply_still_says_where_the_paper_was_filed(api, db):
+    """The line rides on the correction reply too, not only the first one: a
+    person fixing a quantity on their phone sees the same filing note, and
+    after a supplier is re-pointed from the screen the next chat reply says
+    the new name."""
+    app, client, *_ = api
+    await seed_supplier_with_items(db, [{"canonical_name": "Milk Powder 2.5kg"}])
+    await post_webhook(client, wa_image_payload())
+    await drain_jobs(db, app, FakeExtraction(result=invoice_result(good_invoice())))
+
+    await post_webhook(client, wa_text_payload("line 1 qty 12", message_id="wamid.fix"))
+    await drain_jobs(db, app, None)
+    reply = (await outbound_bodies(db))[-1]
+    assert reply.endswith("Reply OK to confirm.\nBooked under Gulf Foods Trading L.L.C.")

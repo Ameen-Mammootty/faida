@@ -13,13 +13,38 @@ import asyncpg
 from . import costing
 from .contracts import InvoiceStatus, JobKind
 from .extraction.currency import currency_differs
-from .matching import clean_name, match_supplier, snap_item, strip_delivery_note
-from .provenance import asserted_fields
+from .matching import (
+    clean_name,
+    known_as,
+    match_supplier,
+    normalize,
+    snap_item,
+    strip_delivery_note,
+)
+from .provenance import Origin, asserted_fields
 from .recipes import RecipeKey, component_key, recipe_key, recipes_match
 from .takings import FILS, code_key, day_key, name_key, till_item_key
 
 RETRY_LIMIT = 3
 RETRY_BACKOFF_SECONDS = 30
+
+#: One supplier as everything that matches, books or picks one sees it (M9
+#: WP-87): the catalog row plus every printed name that means it, aggregated
+#: from `supplier_aliases`. The alias array is still called `name_aliases`
+#: because that is the shape `matching.match_supplier` and `matching.known_as`
+#: read - the storage moved into its own table, the matcher's contract did
+#: not. Ordered by name so match_supplier's tie-break sees the same rows in
+#: the same order on every run (2026-09-05 eng review).
+_SUPPLIERS_WITH_ALIASES = """
+    select s.id, s.name,
+           coalesce(array_agg(a.alias order by a.created_at, a.id)
+                    filter (where a.alias is not null), array[]::text[]) as name_aliases
+    from suppliers s
+    left join supplier_aliases a on a.supplier_id = s.id
+    where s.tenant_id = $1 {extra}
+    group by s.id, s.name
+    order by s.name
+"""
 
 #: One sales day as every read and write returns it (M8 WP-80) - the C6 day
 #: shape minus its lines, which `list_sales_lines` fetches in one query.
@@ -193,6 +218,110 @@ async def _cost_stock_lines(
                 override=line["pack_size_override"],
             ),
         )
+
+
+class SupplierAliasCollision(Exception):
+    """The printed name this confirm would have taught already means another
+    supplier (M9 WP-87). Nothing is written and the confirm fails, because the
+    two ways out of a collision - overwrite the other supplier's alias, or
+    keep two suppliers answering to one name - are both a wrong booking that
+    nobody would ever see. The person is told which supplier holds it and can
+    correct the paper instead.
+
+    `message` is the sentence both doors say, word for word: a 422 on the
+    review screen, a reply on chat."""
+
+    def __init__(self, alias: str, holder_name: str) -> None:
+        self.alias = alias
+        self.holder_name = holder_name
+        self.message = (
+            f'"{alias}" is already how {holder_name} is known, so this paper cannot teach it '
+            f"as another supplier's name. Correct the supplier on the paper, or rename it."
+        )
+        super().__init__(self.message)
+
+
+async def _learn_supplier_alias(
+    conn: asyncpg.Connection, invoice_id: str, *, tenant_id: str, actor: str
+) -> dict:
+    """Teach the catalog what this paper called its supplier, at confirm
+    (M9 WP-87).
+
+    The rule in one sentence: when a *person* chose the supplier and the name
+    printed on the paper is not already how that supplier is known, the
+    printed name becomes an alias, so the vendor's next paper matches at 1.00
+    with nobody touching anything.
+
+    Three guards, each for a way this could teach a lie:
+
+    - **Only a person's choice teaches.** The machine's own match already
+      agreed with the printed name (that is what matching it means), and the
+      supplier the confirm path attaches by itself (D21) was found by the same
+      matcher - neither is new information. So this reads C8 provenance:
+      `supplier_id` stamped `corrected_screen` or `corrected_chat` is the only
+      thing that counts as somebody deciding.
+
+    - **Only on confirm.** A misclick corrected before the person says OK
+      teaches nothing, because nothing was taught when they clicked - the
+      supplier on the row at confirm time is the only one that ever gets an
+      alias.
+
+    - **Never over another supplier's name.** A printed name that already
+      means somebody else - as their catalog name or as an alias they hold -
+      raises `SupplierAliasCollision`, which rolls back the whole confirm.
+      `unique (tenant_id, normalized)` is the same rule in the schema, for the
+      race this Python check cannot see.
+
+    Returns the detail the confirm's audit row folds in, or `{}` when nothing
+    was learnt."""
+    invoice = await conn.fetchrow(
+        "select supplier_id, supplier_name, provenance from invoices "
+        "where id = $1 and tenant_id = $2",
+        invoice_id,
+        tenant_id,
+    )
+    if invoice is None or invoice["supplier_id"] is None:
+        return {}
+    record = (invoice["provenance"] or {}).get("supplier_id")
+    origin = record.get("origin") if isinstance(record, dict) else None
+    if origin not in (Origin.CORRECTED_SCREEN.value, Origin.CORRECTED_CHAT.value):
+        return {}  # nobody chose this supplier; there is nothing to learn from
+    alias = clean_name(invoice["supplier_name"] or "")
+    normalized = normalize(alias)
+    if not normalized:
+        return {}  # the paper's supplier name was unreadable: nothing to teach
+
+    suppliers = await conn.fetch(_SUPPLIERS_WITH_ALIASES.format(extra=""), tenant_id)
+    supplier_id = str(invoice["supplier_id"])
+    chosen = next((row for row in suppliers if str(row["id"]) == supplier_id), None)
+    if chosen is None or known_as(chosen, alias):
+        return {}
+    holder = next(
+        (row for row in suppliers if str(row["id"]) != supplier_id and known_as(row, alias)), None
+    )
+    if holder is not None:
+        raise SupplierAliasCollision(alias, holder["name"])
+
+    await conn.execute(
+        """
+        insert into supplier_aliases (tenant_id, supplier_id, alias, normalized)
+        values ($1, $2, $3, $4)
+        """,
+        tenant_id,
+        invoice["supplier_id"],
+        alias,
+        normalized,
+    )
+    await _insert_audit_event(
+        conn,
+        tenant_id=tenant_id,
+        actor=actor,
+        action="supplier.alias_added",
+        subject_type="supplier",
+        subject_id=supplier_id,
+        detail={"alias": alias, "invoice_id": invoice_id},
+    )
+    return {"supplier_alias_added": {"supplier_id": supplier_id, "alias": alias}}
 
 
 async def _insert_audit_event(
@@ -624,8 +753,11 @@ class Database:
     ) -> list[asyncpg.Record]:
         """C6 invoice list for one tenant, newest first; every filter
         optional. Carries the branch name (WP-32: the list shows names, not
-        UUIDs) and, for a held duplicate, the number of the invoice it copies
-        - joined rather than fetched per row, so the list stays one query.
+        UUIDs), the catalog name of the supplier this paper is booked under
+        (WP-87: whose price history it moves is a fact the list must show, and
+        it is not always the name printed on the paper), and, for a held
+        duplicate, the number of the invoice it copies - joined rather than
+        fetched per row, so the list stays one query.
 
         The tenant filter arrived with WP-73: until then this list had none,
         which was fine only while the API had one tenant to show.
@@ -640,9 +772,11 @@ class Database:
             select i.id, i.supplier_name, i.supplier_id, i.invoice_no, i.invoice_date,
                    i.currency, i.total, i.status, i.created_at, i.branch_id, i.document_id,
                    i.duplicate_of_invoice_id, b.name as branch_name,
-                   dup.invoice_no as duplicate_of_invoice_no
+                   dup.invoice_no as duplicate_of_invoice_no,
+                   sup.name as booked_under_name
             from invoices i
             left join branches b on b.id = i.branch_id
+            left join suppliers sup on sup.id = i.supplier_id
             left join invoices dup on dup.id = i.duplicate_of_invoice_id
             where i.tenant_id = $4
               and ($1::uuid is null or i.branch_id = $1)
@@ -705,13 +839,51 @@ class Database:
 
     # -- Supplier memory (WP-22, plan.md §5 layer 4) -------------------------
 
-    async def list_suppliers(self, tenant_id: str) -> list[asyncpg.Record]:
-        return await self.pool.fetch(
-            # Ordered so matching.match_supplier's tie-break sees the same
-            # rows in the same order on every run (2026-09-05 eng review).
-            "select id, name, name_aliases from suppliers where tenant_id = $1 order by name",
-            tenant_id,
+    async def list_suppliers(self, *, tenant_id: str) -> list[asyncpg.Record]:
+        """Every supplier this tenant buys from, with the printed names that
+        mean it. One query for the matcher, the picker and the confirm-time
+        re-match, so no two of them can disagree about what a supplier is
+        known as."""
+        return await self.pool.fetch(_SUPPLIERS_WITH_ALIASES.format(extra=""), tenant_id)
+
+    async def get_supplier(self, supplier_id: str, *, tenant_id: str) -> asyncpg.Record | None:
+        """One supplier of this tenant, with its aliases, or None - which is
+        how a supplier id from another tenant becomes a 404 rather than a
+        booking (WP-87)."""
+        return await self.pool.fetchrow(
+            _SUPPLIERS_WITH_ALIASES.format(extra="and s.id = $2"), tenant_id, supplier_id
         )
+
+    async def resolve_supplier_by_name(self, name: str, *, tenant_id: str) -> asyncpg.Record | None:
+        """The tenant's supplier whose catalog name *is* this name, or None.
+
+        Normalized equality, not the fuzzy score: this answers "does the name
+        the person just typed already exist", where a near miss must mint a
+        new supplier rather than quietly book under an old one. The fuzzy
+        matcher is the machine's guess; this is a person's spelling."""
+        target = normalize(name)
+        if not target:
+            return None
+        for supplier in await self.list_suppliers(tenant_id=tenant_id):
+            if normalize(supplier["name"]) == target:
+                return supplier
+        return None
+
+    async def create_supplier(self, name: str, *, tenant_id: str) -> asyncpg.Record:
+        """Mint a supplier by name (WP-87's "New supplier"), or hand back the
+        one already holding that exact name - the same `on conflict` the
+        confirm path uses, so two people naming the same vendor at once get
+        one supplier and not an error."""
+        supplier_id = await self.pool.fetchval(
+            """
+            insert into suppliers (tenant_id, name) values ($1, $2)
+            on conflict (tenant_id, name) do update set name = excluded.name
+            returning id
+            """,
+            tenant_id,
+            clean_name(name),
+        )
+        return await self.get_supplier(str(supplier_id), tenant_id=tenant_id)
 
     async def list_supplier_items(self, supplier_id: str) -> list[asyncpg.Record]:
         return await self.pool.fetch(
@@ -2672,9 +2844,7 @@ class Database:
                 if not supplier_name:
                     return attached  # no supplier and no name to create one from
                 suppliers = await conn.fetch(
-                    "select id, name, name_aliases from suppliers where tenant_id = $1 "
-                    "order by name",
-                    invoice["tenant_id"],
+                    _SUPPLIERS_WITH_ALIASES.format(extra=""), invoice["tenant_id"]
                 )
                 matched = match_supplier(suppliers, invoice["supplier_name"])
                 if matched is not None:
@@ -2898,9 +3068,11 @@ class Database:
 
     async def get_invoice(self, invoice_id: str, *, tenant_id: str) -> asyncpg.Record | None:
         """One of this tenant's invoices, plus its branch name (C6 detail
-        shows names), the tenant's own currency (WP-28: the reply, the ack
-        and price memory all have to know whether this invoice is billed in
-        the tenant's money), and its document's header columns.
+        shows names), the catalog name of the supplier it is booked under
+        (WP-87, null until one is attached), the tenant's own currency
+        (WP-28: the reply, the ack and price memory all have to know whether
+        this invoice is billed in the tenant's money), and its document's
+        header columns.
 
         The document rides along on purpose (WP-73): the detail screen used
         to read it by id afterwards, and the storage path it carries is what
@@ -2911,6 +3083,7 @@ class Database:
         return await self.pool.fetchrow(
             """
             select i.*, b.name as branch_name, t.currency as tenant_currency,
+                   sup.name as booked_under_name,
                    d.status as document_status, d.classification as document_classification,
                    d.source as document_source, d.created_at as document_created_at,
                    d.storage_path as document_storage_path
@@ -2918,6 +3091,7 @@ class Database:
             join tenants t on t.id = i.tenant_id
             join documents d on d.id = i.document_id
             left join branches b on b.id = i.branch_id
+            left join suppliers sup on sup.id = i.supplier_id
             where i.id = $1 and i.tenant_id = $2
             """,
             invoice_id,
@@ -3048,6 +3222,12 @@ class Database:
             attached = await self.record_confirmed_prices(
                 invoice_id, tenant_id=tenant_id, conn=conn
             )
+            # WP-87: the paper teaches the catalog what it called this
+            # supplier, but only here - a supplier picked and then re-picked
+            # before the OK taught nothing along the way. A collision raises,
+            # which rolls this transaction back: no confirm, no prices, no
+            # alias, and a sentence naming the supplier that already holds it.
+            learnt = await _learn_supplier_alias(conn, invoice_id, tenant_id=tenant_id, actor=actor)
             await _insert_audit_event(
                 conn,
                 tenant_id=row["tenant_id"],
@@ -3055,7 +3235,7 @@ class Database:
                 action=action,
                 subject_type="invoice",
                 subject_id=invoice_id,
-                detail={"from_status": from_status, **(detail or {}), **attached},
+                detail={"from_status": from_status, **(detail or {}), **attached, **learnt},
             )
         return True
 
@@ -3143,6 +3323,8 @@ class Database:
         status: str,
         tax_treatment: str | None,
         vat_rate: Decimal | None,
+        supplier_id: str | None,
+        duplicate_of_invoice_id: str | None,
         message_id: str | None = None,
     ) -> bool:
         """Persist a correction (WP-21/WP-25/WP-26/WP-28/WP-74), one
@@ -3166,6 +3348,13 @@ class Database:
         inclusive one, and a stale treatment beside a new total would store a
         gross price under a net baseline.
 
+        `supplier_id` and `duplicate_of_invoice_id` are written as given, not
+        coalesced (WP-87): the caller re-resolves both on every correction -
+        the supplier because a person can re-point the paper, the duplicate
+        pointer because re-pointing it changes which papers it could be a copy
+        of - so null here means null, and a caller that forgot to pass the
+        current value would be a bug rather than a no-op.
+
         `actor` and `corrected_fields` write the audit event in the same
         transaction, so a stored correction and the note of who made it cannot
         be observed apart; when the status moved, the row says from what to
@@ -3177,7 +3366,8 @@ class Database:
                 set invoice_no = $2, invoice_date = $3, subtotal = $4, tax = $5, total = $6,
                     confidence = $7, provenance = $8,
                     currency = coalesce($9, currency), tax_treatment = $10, vat_rate = $11,
-                    payment_kind = $13, status = $14
+                    payment_kind = $13, status = $14,
+                    supplier_id = $16, duplicate_of_invoice_id = $17
                 where id = $1 and tenant_id = $12 and status = $15
                 returning tenant_id::text
                 """,
@@ -3196,6 +3386,8 @@ class Database:
                 payment_kind,
                 status,
                 from_status,
+                supplier_id,
+                duplicate_of_invoice_id,
             )
             if updated is None:
                 return False  # not this tenant's invoice, or no longer editable: nothing written

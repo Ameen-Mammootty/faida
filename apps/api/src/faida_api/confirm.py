@@ -70,9 +70,19 @@ confirm the rest" - but never one with no total (WP-26, founder call
 2026-08-28): a missing line quantity is a small hole, while the total is the
 invoice's headline number and M5 divides it into plate costs no photograph can
 check. That OK gets the totals question again, not a confirmation.
+
+One correctable field has no chat spelling yet: the supplier (WP-87,
+`SupplierEdit` / `SupplierNameEdit`). It arrives from the review screen's
+picker through the same `_apply_correction` as everything above - the door is
+shared and this function assumes no screen - and a sentence for the phone to
+say it in is a later row. Everything downstream of the door already works from
+chat: the reply says which supplier the paper was filed under whenever that is
+not the name printed on it, and an "OK" that would teach a name another
+supplier already answers to is refused in words rather than failing quietly.
 """
 
 import datetime
+import logging
 import re
 import zoneinfo
 from decimal import ROUND_HALF_UP, Decimal
@@ -82,14 +92,14 @@ import asyncpg
 from pydantic import BaseModel, ConfigDict
 
 from .contracts import InvoiceStatus
-from .db import Database
+from .db import Database, SupplierAliasCollision
 from .extraction.currency import normalize_currency
 from .extraction.dates import parse_printed_date
 from .extraction.normalize import blank_to_none
-from .extraction.pipeline import price_alerts
+from .extraction.pipeline import find_duplicate, price_alerts
 from .extraction.schema import ExtractedInvoice, ExtractedLine
 from .extraction.validate import validate_invoice
-from .matching import Row, snap_item
+from .matching import Row, same_name, snap_item
 from .provenance import Origin, line_key, mark
 from .replies import (
     REPLY_CASH_HOLD_OK,
@@ -105,7 +115,10 @@ from .replies import (
     compose_line_out_of_range,
     compose_total_needed_reply,
     compose_vat_rate_reply,
+    render_booked_under,
 )
+
+logger = logging.getLogger(__name__)
 
 # Branches carry their own timezone; this is the schema default, used when an
 # unknown sender's invoice has no branch.
@@ -235,6 +248,38 @@ class PaymentKindEdit(BaseModel):
     value: Literal["cash", "credit"]
 
 
+class SupplierEdit(BaseModel):
+    """The supplier this paper is booked under, picked from the catalog
+    (WP-87). Carries an id, not a name: the picker has already read the
+    tenant's suppliers, and a name here would re-open the very ambiguity the
+    pick exists to settle. Resolved in the caller's tenant; a supplier id from
+    anywhere else does not exist for them.
+
+    It does **not** touch `invoices.supplier_name`. That column is what the
+    paper printed, and it stays what the paper printed - it is the evidence
+    for the alias confirm learns, and overwriting it would erase the reason
+    anyone booked this paper by hand."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    supplier_id: str
+
+
+class SupplierNameEdit(BaseModel):
+    """ "this is a new vendor, and here is its name" (WP-87).
+
+    Resolves to the tenant's supplier whose name normalizes to this one - so
+    typing a name that already exists picks it rather than failing on the
+    unique constraint - and otherwise mints a supplier. Normalized equality
+    and not the fuzzy score: the matcher's guesses are what a person is
+    overriding here, and a near miss must be allowed to be a different
+    company. That is the whole "Al Madina ABC" lesson."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+
+
 class AmbiguousDateEdit(BaseModel):
     """ "date 5/7" - date-shaped but missing its year. Never applied: the flow
     answers with the year question (compose_ambiguous_date_reply) instead of
@@ -265,9 +310,16 @@ Edit = (
     | DateEdit
     | InvoiceNoEdit
     | PaymentKindEdit
+    | SupplierEdit
+    | SupplierNameEdit
     | AmbiguousDateEdit
     | MissingVatRateEdit
 )
+
+#: The two edits that re-point a paper at a different supplier (WP-87). They
+#: travel together everywhere: the same resolve, the same re-snap, the same
+#: duplicate re-run, the same one field in the provenance record.
+SupplierChoice = SupplierEdit | SupplierNameEdit
 
 
 class Confirm(BaseModel):
@@ -477,6 +529,11 @@ def edited_field_keys(edits: list[Edit]) -> list[str]:
             new_keys = ["invoice_no"]
         elif isinstance(edit, PaymentKindEdit):
             new_keys = ["payment_kind"]
+        elif isinstance(edit, SupplierChoice):
+            # Both spellings write the same field: which supplier's history
+            # this paper moves. "New supplier" changes the catalog too, but on
+            # the invoice there is one column and one decision (WP-87).
+            new_keys = ["supplier_id"]
         elif isinstance(edit, AmbiguousDateEdit | MissingVatRateEdit):
             raise ValueError("an unanswerable edit is asked about, never applied")
         elif isinstance(edit, LineNameEdit):
@@ -522,6 +579,13 @@ def apply_edits(invoice: ExtractedInvoice, edits: list[Edit]) -> ExtractedInvoic
             header["invoice_no"] = edit.value
         elif isinstance(edit, PaymentKindEdit):
             header["payment_kind"] = edit.value
+        elif isinstance(edit, SupplierChoice):
+            # Deliberately nothing. The supplier is not one of C3's read-off-
+            # the-page fields - it is a row in the catalog this paper points
+            # at - so it is resolved against the database by the flow, and the
+            # printed supplier_name this shape carries stays exactly as
+            # printed (WP-87).
+            continue
         elif isinstance(edit, AmbiguousDateEdit | MissingVatRateEdit):
             raise ValueError("an unanswerable edit is asked about, never applied")
         elif isinstance(edit, LineNameEdit):
@@ -537,6 +601,17 @@ def apply_edits(invoice: ExtractedInvoice, edits: list[Edit]) -> ExtractedInvoic
                 update={edit.field: edit.value}
             )
     return invoice.model_copy(update={"lines": lines, **header})
+
+
+class SupplierNotFound(Exception):
+    """The picked supplier is not this tenant's (WP-87). A row outside the
+    caller's tenant does not exist for them, so the door answers 404 - the
+    same rule every other read follows, spelt as an exception because the
+    correction door resolves it half-way down a shared function."""
+
+    def __init__(self, supplier_id: str) -> None:
+        super().__init__(supplier_id)
+        self.supplier_id = supplier_id
 
 
 class CorrectionRefused(Exception):
@@ -572,6 +647,31 @@ def status_after_payment_kind(
     ):
         return InvoiceStatus.AWAITING_CONFIRM
     return current
+
+
+def status_after_supplier(
+    status: str, *, payment_kind: str | None, duplicate_of_invoice_id: object
+) -> InvoiceStatus:
+    """WP-87: the status a supplier correction implies, once the duplicate
+    check has been re-run against the newly chosen supplier.
+
+    Re-pointing a paper can create a hold or dissolve one, because "is this
+    the same paper twice" is asked *within one supplier*: a copy booked under
+    a lookalike stops being a copy the moment it is booked under the right
+    vendor, and vice versa. So the pointer decides first, and then the cash
+    rule decides, in that order - a duplicate hold outranks everything (the
+    pipeline's own order), and a paper that is no longer a copy still stays
+    held if it is cash, because a cash paper leaves only through the approve
+    door.
+
+    Only the two editable states move. A confirmed or dismissed paper is not
+    editable to begin with, and a draft has no hold to lift."""
+    current = InvoiceStatus(status)
+    if current not in (InvoiceStatus.AWAITING_CONFIRM, InvoiceStatus.NEEDS_REVIEW):
+        return current
+    if duplicate_of_invoice_id is not None or payment_kind == "cash":
+        return InvoiceStatus.NEEDS_REVIEW
+    return InvoiceStatus.AWAITING_CONFIRM
 
 
 # --- flow (called from the worker's text branch) ----------------------------
@@ -664,9 +764,17 @@ async def handle_inbound_text(
             return await _total_needed(db, str(target["id"]), tenant_id)
         # One call, one transaction: the status flip, the audit row and the
         # price baseline commit together or not at all (WP-50).
-        await db.confirm_invoice(
-            str(target["id"]), tenant_id=tenant_id, actor=chat_actor(from_phone)
-        )
+        try:
+            await db.confirm_invoice(
+                str(target["id"]), tenant_id=tenant_id, actor=chat_actor(from_phone)
+            )
+        except SupplierAliasCollision as clash:
+            # WP-87: somebody picked this paper's supplier on the screen and
+            # the name it prints already means another one. The confirm rolled
+            # back, and the phone that sent the paper is told why in the same
+            # sentence the screen shows - a failed job and a silence would be
+            # the dead end this flow keeps promising not to be.
+            return clash.message
         return _ack(target)
     try:
         return await _apply_correction(
@@ -700,6 +808,16 @@ async def _apply_correction(
     shape the new state calls for - the cash-hold closing on a cash hold, the
     ordinary "Reply OK to confirm" otherwise.
 
+    A supplier edit (WP-87) is the one correction that changes which rows
+    this paper touches rather than what one of its cells says, so three things
+    happen that no other field triggers: the lines re-snap against the chosen
+    supplier's catalog rather than the old one's, the WP-44 duplicate check
+    re-runs (a copy booked under a lookalike stops being a copy once it is
+    booked under the right vendor, and the reverse), and the status follows
+    both through `status_after_supplier`. Nothing is taught to the catalog
+    here - the alias is learnt on confirm, so a misclick corrected before the
+    OK teaches nothing at all.
+
     `tenant_id`, `actor` and `origin` are the caller's to say: the same
     function serves the chat grammar and the review screen's PATCH (one door
     for both, plan.md §7.2 C8), so the caller names whose invoice this is,
@@ -719,10 +837,19 @@ async def _apply_correction(
     invoice = apply_edits(_to_extracted(invoice_row, line_rows), edits)
     validation = validate_invoice(invoice)
 
+    # The supplier this paper points at after the edits: unchanged unless
+    # somebody picked one, and resolved in this tenant when they did.
+    supplier_id = _maybe_id(invoice_row["supplier_id"])
+    booked_under = invoice_row["booked_under_name"]
+    choice = next((edit for edit in edits if isinstance(edit, SupplierChoice)), None)
+    if choice is not None:
+        supplier = await _resolve_supplier(db, choice, tenant_id=tenant_id)
+        supplier_id, booked_under = str(supplier["id"]), supplier["name"]
+
     snapped_items: list[Row | None] = [None] * len(invoice.lines)
     line_checks = validation.lines
-    if invoice_row["supplier_id"] is not None:
-        items = await db.list_supplier_items(str(invoice_row["supplier_id"]))
+    if supplier_id is not None:
+        items = await db.list_supplier_items(supplier_id)
         snapped_items = [snap_item(items, line.raw_name) for line in invoice.lines]
         line_checks = [
             check.model_copy(update={"snapped": item is not None})
@@ -739,11 +866,21 @@ async def _apply_correction(
     corrected = edited_field_keys(edits)
     from_status = invoice_row["status"]
     status = InvoiceStatus(from_status)
-    if any(isinstance(edit, PaymentKindEdit) for edit in edits):
+    duplicate_of = _maybe_id(invoice_row["duplicate_of_invoice_id"])
+    if choice is not None:
+        duplicate_of = await _redo_duplicate_check(
+            db, invoice_row, invoice, supplier_id=supplier_id, tenant_id=tenant_id
+        )
+        status = status_after_supplier(
+            from_status,
+            payment_kind=invoice.payment_kind,
+            duplicate_of_invoice_id=duplicate_of,
+        )
+    elif any(isinstance(edit, PaymentKindEdit) for edit in edits):
         status = status_after_payment_kind(
             from_status,
             payment_kind=invoice.payment_kind,
-            duplicate_of_invoice_id=invoice_row["duplicate_of_invoice_id"],
+            duplicate_of_invoice_id=duplicate_of,
         )
     now = datetime.datetime.now(datetime.UTC)
     provenance = mark(
@@ -803,6 +940,8 @@ async def _apply_correction(
         lines=lines,
         actor=actor,
         corrected_fields=corrected,
+        supplier_id=supplier_id,
+        duplicate_of_invoice_id=duplicate_of,
         message_id=message_id,
     )
     if not applied:
@@ -812,8 +951,80 @@ async def _apply_correction(
         fresh = await db.get_invoice(invoice_id, tenant_id=tenant_id)
         raise CorrectionRefused(None if fresh is None else fresh["status"])
     if status is InvoiceStatus.NEEDS_REVIEW and invoice.payment_kind == "cash":
-        return compose_cash_hold_reply(invoice, validation, alerts, tenant_currency=tenant_currency)
-    return compose_invoice_reply(invoice, validation, alerts, tenant_currency=tenant_currency)
+        reply = compose_cash_hold_reply(
+            invoice, validation, alerts, tenant_currency=tenant_currency
+        )
+    else:
+        reply = compose_invoice_reply(invoice, validation, alerts, tenant_currency=tenant_currency)
+    return _with_booked_under(reply, invoice.supplier_name, booked_under)
+
+
+def _maybe_id(value: object) -> str | None:
+    return None if value is None else str(value)
+
+
+def _with_booked_under(reply: str, printed_name: str | None, catalog_name: str | None) -> str:
+    """Append WP-87's "Booked under <name>." line, and only when it says
+    something: the paper is booked under a supplier whose catalog name is not
+    the name printed on it. When the two read the same the line is noise, and
+    a reply nobody reads is a reply that hides the one that matters."""
+    if catalog_name is None or same_name(printed_name, catalog_name):
+        return reply
+    return f"{reply}\n{render_booked_under(catalog_name)}"
+
+
+async def _resolve_supplier(db: Database, choice: Edit, *, tenant_id: str) -> asyncpg.Record:
+    """The supplier a person picked, as a catalog row (WP-87).
+
+    By id, it must be one of this tenant's - anything else raises, and the
+    door answers 404, because a row outside the tenant does not exist for the
+    caller. By name, the tenant's supplier of that name is used when there is
+    one and a new supplier is minted when there is not, which is the picker's
+    "New supplier" and the only place in the product that creates a supplier
+    on a person's say-so."""
+    if isinstance(choice, SupplierEdit):
+        supplier = await db.get_supplier(choice.supplier_id, tenant_id=tenant_id)
+        if supplier is None:
+            raise SupplierNotFound(choice.supplier_id)
+        return supplier
+    assert isinstance(choice, SupplierNameEdit)
+    existing = await db.resolve_supplier_by_name(choice.name, tenant_id=tenant_id)
+    if existing is not None:
+        return existing
+    return await db.create_supplier(choice.name, tenant_id=tenant_id)
+
+
+async def _redo_duplicate_check(
+    db: Database,
+    invoice_row: asyncpg.Record,
+    invoice: ExtractedInvoice,
+    *,
+    supplier_id: str | None,
+    tenant_id: str,
+) -> str | None:
+    """WP-44's question, asked again for the supplier this paper now points at
+    (WP-87): which earlier paper, if any, is this one a copy of?
+
+    Two rows are kept out of the comparison, and both matter. This invoice
+    itself, obviously. And every paper that arrived *after* it: a duplicate
+    pointer means "the earlier paper this one copies", so letting a newer row
+    win would point the original at its own copy and leave the two holding
+    each other.
+
+    A failed check is not allowed to sink a correction, the same posture the
+    pipeline takes: the pointer stays where it was and the person's edit still
+    lands."""
+    try:
+        headers = await db.list_invoice_headers_for_tenant(tenant_id)
+    except Exception:
+        logger.exception(
+            "duplicate re-check failed for invoice %s; pointer left alone", invoice_row["id"]
+        )
+        return _maybe_id(invoice_row["duplicate_of_invoice_id"])
+    mine = (invoice_row["created_at"], str(invoice_row["id"]))
+    earlier = [row for row in headers if (row["created_at"], str(row["id"])) < mine]
+    duplicate, _ = find_duplicate(earlier, supplier_id, invoice)
+    return None if duplicate is None else str(duplicate["id"])
 
 
 async def _total_needed(db: Database, invoice_id: str, tenant_id: str) -> str:

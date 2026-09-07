@@ -225,6 +225,12 @@ delete from documents
 delete from supplier_items
  where tenant_id = 'd0000000-0000-0000-0000-000000000001';
 
+-- Aliases first, including any a rehearsal's confirm taught (0020, WP-87).
+-- The cascade off suppliers would take them anyway; spelt out because every
+-- other table in this reset is, and a silent cascade is a rule nobody reads.
+delete from supplier_aliases
+ where tenant_id = 'd0000000-0000-0000-0000-000000000001';
+
 delete from suppliers
  where tenant_id = 'd0000000-0000-0000-0000-000000000001';
 
@@ -253,14 +259,32 @@ values
 on conflict (id) do update set name = excluded.name, timezone = excluded.timezone;
 -- wa_phone_e164 intentionally not updated on conflict: see the founder step below.
 
-insert into suppliers (id, tenant_id, name, name_aliases)
+insert into suppliers (id, tenant_id, name)
 values
   ('d0000000-0000-0000-0000-000000000021', 'd0000000-0000-0000-0000-000000000001',
-   'Gulf Foods Trading L.L.C.',
-   array['Gulf Foods', 'Gulf Foods Trading LLC', 'GULF FOODS TRADING']),
+   'Gulf Foods Trading L.L.C.'),
   ('d0000000-0000-0000-0000-000000000022', 'd0000000-0000-0000-0000-000000000001',
-   'Al Madina Trading Co.',
-   array['Al Madeena Trading', 'AL MADINA TRADING CO LLC', 'Al Madina Trading']);
+   'Al Madina Trading Co.');
+
+-- The printed names that mean these two suppliers (0020). `normalized` is
+-- matching.normalize's output for the alias beside it - lowercased, dots and
+-- punctuation to spaces, whitespace collapsed - because Python owns that
+-- value everywhere else and a seed that computed it differently would be a
+-- supplier the matcher cannot find.
+insert into supplier_aliases (tenant_id, supplier_id, alias, normalized)
+values
+  ('d0000000-0000-0000-0000-000000000001', 'd0000000-0000-0000-0000-000000000021',
+   'Gulf Foods', 'gulf foods'),
+  ('d0000000-0000-0000-0000-000000000001', 'd0000000-0000-0000-0000-000000000021',
+   'Gulf Foods Trading LLC', 'gulf foods trading llc'),
+  ('d0000000-0000-0000-0000-000000000001', 'd0000000-0000-0000-0000-000000000021',
+   'GULF FOODS TRADING', 'gulf foods trading'),
+  ('d0000000-0000-0000-0000-000000000001', 'd0000000-0000-0000-0000-000000000022',
+   'Al Madeena Trading', 'al madeena trading'),
+  ('d0000000-0000-0000-0000-000000000001', 'd0000000-0000-0000-0000-000000000022',
+   'AL MADINA TRADING CO LLC', 'al madina trading co llc'),
+  ('d0000000-0000-0000-0000-000000000001', 'd0000000-0000-0000-0000-000000000022',
+   'Al Madina Trading', 'al madina trading');
 
 -- last_price / prev_price mirror the last two history rows below;
 -- last_price_at matches the newest observation (a week ago).

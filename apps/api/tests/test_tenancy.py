@@ -61,6 +61,7 @@ PUBLIC_ROUTES = {
 TENANT_TABLES = (
     "branches",
     "suppliers",
+    "supplier_aliases",
     "supplier_items",
     "supplier_item_prices",
     "documents",
@@ -367,6 +368,7 @@ MATRIX: list[dict] = [
         "files": {"file": ("a.jpg", b"\xff\xd8jpeg", "image/jpeg")},
         "expect": 201,
     },
+    {"method": "GET", "path": "/api/suppliers", "url": lambda r: "/api/suppliers"},
     {
         "method": "GET",
         "path": "/api/supplier-items/{item_id}/prices",

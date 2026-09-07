@@ -53,6 +53,17 @@ everything that is not a held cash paper. `payment_kind` is a correctable
 field for the same reason: a misread cash is corrected, never laundered
 through an approval, and correcting it moves the status the way the pipeline
 would have (C1 as amended, confirm.status_after_payment_kind).
+
+The supplier is a correctable field too (M9 WP-87). Every invoice payload
+carries `booked_under {id, name}` - whose price history this paper moves,
+which is not always the name printed on it - and the two PATCH fields
+`supplier` (an id from GET /api/suppliers) and `supplier_name` (a new vendor,
+or an existing one spelt out) re-point it through the same one door as every
+other correction: re-snap against the chosen supplier's catalog, re-run the
+duplicate check, move the status the cash rule's way, 409 once the paper is
+confirmed, 404 for a supplier outside the tenant. Nothing is taught to the
+catalog until confirm, and a confirm that would teach a name another supplier
+already answers to fails with 422 naming the holder.
 """
 
 import datetime
@@ -75,12 +86,15 @@ from .confirm import (
     LineNameEdit,
     LinePackSizeEdit,
     PaymentKindEdit,
+    SupplierEdit,
+    SupplierNameEdit,
+    SupplierNotFound,
     TotalsEdit,
     _apply_correction,
     _parse_number,
 )
 from .contracts import InvoiceStatus, JobKind
-from .db import Database
+from .db import Database, SupplierAliasCollision
 from .extraction import units
 from .extraction.currency import currency_differs
 from .extraction.normalize import blank_to_none, normalize_extracted
@@ -98,6 +112,10 @@ UPLOAD_MAX_BYTES = 10 * 1024 * 1024
 _LINE_FIELDS = {"qty", "unit_price", "line_total", "name", "pack_size"}
 _HEADER_FIELDS = {"subtotal", "tax", "total"}
 _PAYMENT_KINDS = {"cash", "credit"}
+#: WP-87's two spellings of "this paper belongs to that supplier". Both are
+#: header fields, both go through `_apply_correction`, and both end up writing
+#: one column.
+_SUPPLIER_FIELDS = {"supplier", "supplier_name"}
 
 # The invoice states the review screen may edit: awaiting_confirm (the normal
 # path) and needs_review (a cash hold, which leaves through approve, or a
@@ -141,6 +159,11 @@ class Correction(BaseModel):
         "tax",
         "total",
         "payment_kind",
+        # WP-87, the two spellings of one decision: `supplier` is a supplier
+        # id picked from GET /api/suppliers, `supplier_name` is "New supplier"
+        # with a name typed beside it.
+        "supplier",
+        "supplier_name",
     ]
     value: str
 
@@ -181,11 +204,25 @@ def _iso(value) -> str | None:
     return None if value is None else value.isoformat()
 
 
+def _booked_under(row: asyncpg.Record) -> dict | None:
+    """WP-87: the supplier this paper is filed against, as {id, name}, or null
+    while it has none.
+
+    `supplier_name` beside it is what the paper printed and this is where it
+    was filed, and the whole reason the field exists is that those two are not
+    always the same sentence. Both queries join the supplier, so it is part of
+    the shared summary rather than the list-only half."""
+    if row["supplier_id"] is None:
+        return None
+    return {"id": str(row["supplier_id"]), "name": row["booked_under_name"]}
+
+
 def _invoice_summary(row: asyncpg.Record) -> dict:
     return {
         "id": str(row["id"]),
         "supplier_name": row["supplier_name"],
         "supplier_id": _maybe_str(row["supplier_id"]),
+        "booked_under": _booked_under(row),
         "invoice_no": row["invoice_no"],
         "invoice_date": _iso(row["invoice_date"]),
         "currency": row["currency"],
@@ -210,7 +247,11 @@ def _invoice_list_row(row: asyncpg.Record) -> dict:
     into the detail payload too, whose row comes from `get_invoice` and has no
     join on it - so a joined column added to the shared serializer raises
     KeyError on every detail request, taking out GET detail, confirm and manual
-    entry together. One serializer, two queries: the joined half lives here."""
+    entry together. One serializer, two queries: the joined half lives here.
+
+    `booked_under` is in the shared serializer and not here because WP-87 put
+    the supplier join on *both* queries, which is the condition this note
+    names."""
     return {
         **_invoice_summary(row),
         "duplicate_of_invoice_no": row["duplicate_of_invoice_no"],
@@ -405,9 +446,14 @@ async def patch_invoice_fields(
     invoice_id: uuid.UUID, body: FieldCorrections, request: Request, ctx: Context
 ) -> dict:
     """Apply field corrections through the WP-21 machinery: re-validate,
-    re-snap, persist. Confirming is its own endpoint, exactly as in chat; the
-    one correction that moves a status is `payment_kind` (C1 as amended),
-    and the returned detail carries the new one."""
+    re-snap, persist. Confirming is its own endpoint, exactly as in chat.
+
+    Two corrections move a status. `payment_kind` (C1 as amended), and - since
+    WP-87 - `supplier` / `supplier_name`, because re-pointing a paper re-asks
+    whether it is a copy of an earlier one. The returned detail carries the
+    new status either way. A supplier id that is not this tenant's answers
+    404: it does not exist for the caller, which is the rule every other read
+    follows."""
     db: Database = request.app.state.db
     invoice = await db.get_invoice(str(invoice_id), tenant_id=ctx.tenant_id)
     if invoice is None:
@@ -448,6 +494,10 @@ async def patch_invoice_fields(
         raise HTTPException(
             status_code=409, detail=f"invoice is {refused.status}; it can no longer be edited"
         ) from None
+    except SupplierNotFound as missing:
+        raise HTTPException(
+            status_code=404, detail=f"supplier {missing.supplier_id} not found"
+        ) from None
     return await _invoice_detail(request, str(invoice_id), ctx)
 
 
@@ -468,6 +518,29 @@ def _to_edit(correction: Correction) -> Edit:
                 detail=f'\'{correction.value}\' is not a payment kind: send "cash" or "credit"',
             )
         return PaymentKindEdit(value=kind)
+    if correction.field in _SUPPLIER_FIELDS:
+        if correction.line_index is not None:
+            raise HTTPException(
+                status_code=422,
+                detail=f"field '{correction.field}' is a header field; line_index must be null",
+            )
+        value = correction.value.strip()
+        if not value:
+            raise HTTPException(
+                status_code=422,
+                detail=f"field '{correction.field}' needs a value: a supplier id, or a name",
+            )
+        if correction.field == "supplier_name":
+            return SupplierNameEdit(name=value)
+        try:
+            uuid.UUID(value)
+        except ValueError:
+            raise HTTPException(
+                status_code=422,
+                detail=f"'{correction.value}' is not a supplier id: send the id from "
+                "GET /api/suppliers, or use field 'supplier_name' to name a new one",
+            ) from None
+        return SupplierEdit(supplier_id=value)
     if correction.field in _HEADER_FIELDS:
         if correction.line_index is not None:
             raise HTTPException(
@@ -531,16 +604,22 @@ async def confirm_invoice(invoice_id: uuid.UUID, request: Request, ctx: Context)
             detail="invoice has no total; set the total before confirming",
         )
 
-    if invoice["status"] == InvoiceStatus.AWAITING_CONFIRM:
-        confirmed = await db.confirm_invoice(
-            str(invoice_id), tenant_id=ctx.tenant_id, actor=ctx.actor
-        )
-    elif invoice["status"] == InvoiceStatus.NEEDS_REVIEW:
-        confirmed = await db.confirm_reviewed_invoice(
-            str(invoice_id), tenant_id=ctx.tenant_id, actor=ctx.actor
-        )
-    else:
-        confirmed = False
+    try:
+        if invoice["status"] == InvoiceStatus.AWAITING_CONFIRM:
+            confirmed = await db.confirm_invoice(
+                str(invoice_id), tenant_id=ctx.tenant_id, actor=ctx.actor
+            )
+        elif invoice["status"] == InvoiceStatus.NEEDS_REVIEW:
+            confirmed = await db.confirm_reviewed_invoice(
+                str(invoice_id), tenant_id=ctx.tenant_id, actor=ctx.actor
+            )
+        else:
+            confirmed = False
+    except SupplierAliasCollision as clash:
+        # WP-87: this confirm would have taught a name another supplier
+        # already answers to. Nothing was written - not the status, not the
+        # prices, not the alias - and the sentence names the holder.
+        raise HTTPException(status_code=422, detail=clash.message) from None
     if not confirmed:
         # Already confirmed, still a draft, marked cash a moment ago, or lost
         # a race to another writer. Re-read: see _fresh_status.
@@ -594,20 +673,25 @@ async def approve_invoice(
             detail="invoice has no total; set the total before approving",
         )
 
-    approved = await db.approve_cash_invoice(
-        str(invoice_id),
-        tenant_id=ctx.tenant_id,
-        actor=ctx.actor,
-        reason=body.reason,
-        detail={
-            "supplier_name": invoice["supplier_name"],
-            "invoice_no": invoice["invoice_no"],
-            "currency": invoice["currency"],
-            "total": _dec(invoice["total"]),
-            "payment_kind": invoice["payment_kind"],
-            "duplicate_of_invoice_id": _maybe_str(invoice["duplicate_of_invoice_id"]),
-        },
-    )
+    try:
+        approved = await db.approve_cash_invoice(
+            str(invoice_id),
+            tenant_id=ctx.tenant_id,
+            actor=ctx.actor,
+            reason=body.reason,
+            detail={
+                "supplier_name": invoice["supplier_name"],
+                "invoice_no": invoice["invoice_no"],
+                "currency": invoice["currency"],
+                "total": _dec(invoice["total"]),
+                "payment_kind": invoice["payment_kind"],
+                "duplicate_of_invoice_id": _maybe_str(invoice["duplicate_of_invoice_id"]),
+            },
+        )
+    except SupplierAliasCollision as clash:
+        # The approve door is the confirm write (WP-74), so it meets WP-87's
+        # alias collision the same way and says the same sentence.
+        raise HTTPException(status_code=422, detail=clash.message) from None
     if not approved:
         status = await _fresh_status(db, str(invoice_id), ctx)
         if status == InvoiceStatus.CONFIRMED:
@@ -821,7 +905,7 @@ async def create_manual_invoice(body: ManualInvoice, request: Request, ctx: Cont
     supplier = None
     snapped_items: list[Row | None] = [None] * len(invoice.lines)
     try:
-        suppliers = await db.list_suppliers(tenant_id)
+        suppliers = await db.list_suppliers(tenant_id=tenant_id)
         supplier = match_supplier(suppliers, invoice.supplier_name)
         if supplier is not None:
             items = await db.list_supplier_items(str(supplier["id"]))
@@ -959,6 +1043,33 @@ async def _get_branch(db: Database, branch_id: str, tenant_id: str) -> asyncpg.R
     except ValueError:
         return None
     return await db.get_branch(branch_id, tenant_id=tenant_id)
+
+
+# --- suppliers (M9 WP-87) ----------------------------------------------------
+
+
+@router.get("/suppliers")
+async def list_suppliers(request: Request, ctx: Context) -> dict:
+    """The tenant's suppliers, each with the printed names that already mean
+    it - what the review screen's supplier picker is built from (WP-87).
+
+    The aliases travel with the row on purpose. A person choosing where a
+    paper belongs is choosing between companies whose catalog names look alike
+    on a screen, and the alias list is the only thing that says "this one is
+    the vendor whose invoices come in printed as GULF FOODS TRADING". Ordered
+    by name, the order the matcher uses."""
+    db: Database = request.app.state.db
+    suppliers = await db.list_suppliers(tenant_id=ctx.tenant_id)
+    return {
+        "suppliers": [
+            {
+                "id": str(supplier["id"]),
+                "name": supplier["name"],
+                "aliases": list(supplier["name_aliases"] or []),
+            }
+            for supplier in suppliers
+        ]
+    }
 
 
 # --- supplier item price history --------------------------------------------

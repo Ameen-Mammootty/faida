@@ -34,6 +34,7 @@ from ..replies import (
     compose_cash_hold_reply,
     compose_duplicate_hold_reply,
     compose_invoice_reply,
+    render_booked_under,
     render_duplicate_note,
 )
 from ..storage import Storage
@@ -219,7 +220,7 @@ async def _persist_extracted(
     supplier = None
     snapped_items: list[Row | None] = [None] * len(invoice.lines)
     try:
-        suppliers = await db.list_suppliers(str(doc["tenant_id"]))
+        suppliers = await db.list_suppliers(tenant_id=str(doc["tenant_id"]))
         supplier = match_supplier(suppliers, invoice.supplier_name)
         if supplier is not None:
             items = await db.list_supplier_items(str(supplier["id"]))
@@ -331,6 +332,13 @@ async def _persist_extracted(
             reply = compose_invoice_reply(
                 invoice, validation, alerts, tenant_currency=tenant_currency
             )
+        # WP-87: which supplier's price history this paper moves, said out
+        # loud when it is not the name printed on the paper - the one moment
+        # before confirm where a wrong booking is still one keystroke to fix.
+        # A duplicate hold skips it on purpose: that reply is about a copy
+        # nobody is going to record, and a filing note on it is noise.
+        if supplier is not None and not same_name(invoice.supplier_name, supplier["name"]):
+            reply = f"{reply}\n{render_booked_under(supplier['name'])}"
         if similar is not None:
             note = render_duplicate_note(
                 similar["supplier_name"], similar["invoice_no"], similar["created_at"].date()

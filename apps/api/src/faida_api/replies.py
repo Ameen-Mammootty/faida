@@ -523,6 +523,24 @@ def compose_duplicate_hold_reply(
     )
 
 
+def render_booked_under(supplier_name: str) -> str:
+    """WP-87: whose price history this paper moves, when that is not the name
+    printed on it.
+
+    Appended to the reply rather than folded into the summary line, the way
+    the duplicate note is, because it answers a different question: the
+    summary says what the paper is, and this says where it was filed. It is
+    written only when the two names differ - a line repeating the name already
+    on the screen above it teaches nothing and costs the reader a line.
+
+    A catalog name that already ends in a full stop ("Gulf Foods Trading
+    L.L.C.") keeps its own, because "L.L.C.." is the kind of small ugliness a
+    person reads as a bug in the number beside it."""
+    name = supplier_name.strip()
+    stop = "" if name.endswith(".") else "."
+    return f"Booked under {name}{stop}"
+
+
 def render_duplicate_note(
     supplier_name: str | None, invoice_no: str | None, received_on: datetime.date
 ) -> str:

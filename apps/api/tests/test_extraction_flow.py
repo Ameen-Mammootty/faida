@@ -473,7 +473,11 @@ async def test_price_alert_fires_in_the_extraction_reply(api, db):
         "Read it: Gulf Foods Trading LLC, 2 lines, total AED 745.76, dated 20 Aug 2026.\n"
         "Karak Tea Dust down AED 3.25 (22.00 to 18.75) since your last purchase.\n"
         "Milk Powder 2.5kg up AED 2.60 (51.90 to 54.50) since your last purchase.\n"
-        "Reply OK to confirm."
+        "Reply OK to confirm.\n"
+        # WP-87: the paper prints "LLC" and the catalog row is "L.L.C.", so
+        # the reply says where it filed this one while it is still one
+        # keystroke to move.
+        "Booked under Gulf Foods Trading L.L.C."
     )
 
     # The baseline rule: alerting must not move last_price/prev_price or
@@ -534,7 +538,8 @@ async def test_no_alert_when_either_threshold_is_unmet(api, db):
 
     assert (await outbound_bodies(db))[-1] == (
         "Read it: Gulf Foods Trading LLC, 2 lines, total AED 704.34, dated 20 Aug 2026.\n"
-        "Reply OK to confirm."
+        "Reply OK to confirm.\n"
+        "Booked under Gulf Foods Trading L.L.C."
     )
 
 

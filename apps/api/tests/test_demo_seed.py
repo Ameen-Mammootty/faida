@@ -89,7 +89,7 @@ async def test_staged_state_snaps_and_fires_the_demo_alerts(db):
     assert [b["name"] for b in branches] == ["Al Qusais Branch", "Al Nahda Branch", "Rolla Branch"]
     assert all(b["wa_phone_e164"] is None for b in branches)  # founder sets the real one
 
-    suppliers = await db.list_suppliers(CHAIN_TENANT_ID)
+    suppliers = await db.list_suppliers(tenant_id=CHAIN_TENANT_ID)
     assert len(suppliers) == 2
 
     # The curated invoice's extracted supplier name must match the staged row.

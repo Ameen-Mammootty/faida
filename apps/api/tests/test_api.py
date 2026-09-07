@@ -174,6 +174,9 @@ async def test_list_is_newest_first_and_filters_work(api, db):
         "id": str(first["id"]),
         "supplier_name": "Gulf Foods Trading LLC",
         "supplier_id": None,
+        # WP-87: nothing in the catalog to book against yet, so the screen has
+        # nothing to show and says so with a null rather than a guess.
+        "booked_under": None,
         "invoice_no": "INV-1041",
         "invoice_date": "2026-08-20",
         "currency": "AED",
@@ -1535,3 +1538,327 @@ async def test_a_third_send_is_held_against_the_live_original(api, db):
     )
     assert third["status"] == "needs_review"
     assert third["duplicate_of_invoice_id"] == original["id"]
+
+
+# --- the supplier as a correctable fact (M9 WP-87) ---------------------------
+#
+# The founder's question, 2026-09-05: a new vendor called "Al Madina ABC"
+# arrives while "Al Madina" is already in the list - does it book under the
+# wrong one? The word check stopped the machine doing it silently. These
+# tests are the other half: when the machine gets it wrong anyway, or gets it
+# right for the wrong reasons, a person can see where a paper was filed and
+# move it, once, before the price history is written.
+
+
+async def seed_lookalike_supplier(db, name: str, canonical_name: str) -> str:
+    """A second supplier with a catalog row of its own, so a re-pointed paper
+    has a different catalog to snap against."""
+    supplier_id = await db.pool.fetchval(
+        "insert into suppliers (tenant_id, name) values ($1, $2) returning id",
+        DEMO_TENANT_ID,
+        name,
+    )
+    await db.pool.fetchval(
+        """
+        insert into supplier_items (tenant_id, supplier_id, canonical_name, unit, pack_size)
+        values ($1, $2, $3, 'sack', '2.5kg') returning id
+        """,
+        DEMO_TENANT_ID,
+        supplier_id,
+        canonical_name,
+    )
+    return str(supplier_id)
+
+
+async def aliases_of(db, supplier_id: str) -> list[str]:
+    return [
+        row["alias"]
+        for row in await db.pool.fetch(
+            "select alias from supplier_aliases where supplier_id = $1 order by alias", supplier_id
+        )
+    ]
+
+
+@requires_db
+async def test_the_picker_lists_every_supplier_with_the_names_it_answers_to(api, db):
+    app, client, *_ = api
+    gulf, _ = await seed_supplier_with_items(db, [{"canonical_name": "Milk Powder 2.5kg"}])
+    gulf = str(gulf)
+    abc = await seed_lookalike_supplier(db, "Gulf Foods ABC Trading LLC", "Milk Powder 2.5kg")
+    await db.pool.execute(
+        "insert into supplier_aliases (tenant_id, supplier_id, alias, normalized) "
+        "values ($1, $2, 'GULF FOODS TRADING', 'gulf foods trading')",
+        DEMO_TENANT_ID,
+        gulf,
+    )
+
+    resp = await client.get("/api/suppliers", headers=AUTH)
+    assert resp.status_code == 200
+    # Ordered by name, the order the matcher breaks its ties on.
+    assert resp.json()["suppliers"] == [
+        {"id": str(abc), "name": "Gulf Foods ABC Trading LLC", "aliases": []},
+        {"id": str(gulf), "name": "Gulf Foods Trading L.L.C.", "aliases": ["GULF FOODS TRADING"]},
+    ]
+
+
+@requires_db
+async def test_list_and_detail_both_say_who_the_paper_was_booked_under(api, db):
+    app, client, *_ = api
+    gulf, _ = await seed_supplier_with_items(db, [{"canonical_name": "Milk Powder 2.5kg"}])
+    gulf = str(gulf)
+    invoice = await extracted_invoice(api, db)
+
+    booked = {"id": str(gulf), "name": "Gulf Foods Trading L.L.C."}
+    listed = (await client.get("/api/invoices", headers=AUTH)).json()["invoices"][0]
+    assert listed["booked_under"] == booked
+    # The printed name and the filing are two different facts, and the whole
+    # point of the field is that they do not always read the same.
+    assert listed["supplier_name"] == "Gulf Foods Trading LLC"
+    detail = (await client.get(f"/api/invoices/{invoice['id']}", headers=AUTH)).json()
+    assert detail["booked_under"] == booked
+
+
+@requires_db
+async def test_a_paper_is_re_pointed_before_confirm_and_the_vendor_is_learnt(api, db):
+    """The whole WP-87 story in one walk: a paper lands under the lookalike,
+    a person moves it, its lines re-snap against the right catalog, and the
+    next paper from that vendor lands where it belongs with nobody touching
+    anything."""
+    app, client, *_ = api
+    gulf, gulf_items = await seed_supplier_with_items(
+        db, [{"canonical_name": "Milk Powder 2.5kg", "unit": "sack", "pack_size": "2.5kg"}]
+    )
+    gulf = str(gulf)
+    abc = await seed_lookalike_supplier(db, "Gulf Foods ABC Trading LLC", "Milk Powder 2.5kg")
+    abc_item = str(
+        await db.pool.fetchval("select id from supplier_items where supplier_id = $1", abc)
+    )
+
+    invoice = await extracted_invoice(api, db)
+    assert str(invoice["supplier_id"]) == gulf  # the machine's guess: the lookalike
+    first_line = await db.pool.fetchrow(
+        "select * from invoice_lines where invoice_id = $1 and position = 0", invoice["id"]
+    )
+    assert str(first_line["supplier_item_id"]) == str(gulf_items["Milk Powder 2.5kg"])
+
+    resp = await client.patch(
+        f"/api/invoices/{invoice['id']}/fields",
+        headers=AUTH,
+        json={"corrections": [{"field": "supplier", "value": abc}]},
+    )
+    assert resp.status_code == 200
+    detail = resp.json()
+    assert detail["booked_under"] == {"id": abc, "name": "Gulf Foods ABC Trading LLC"}
+    # The printed name is evidence and is never overwritten by the choice.
+    assert detail["supplier_name"] == "Gulf Foods Trading LLC"
+    # The lines snapped again, against the catalog they now belong to.
+    assert detail["lines"][0]["supplier_item_id"] == str(abc_item)
+    assert detail["status"] == "awaiting_confirm"
+    # C8: the field a person decided, stamped with the door they used.
+    assert detail["provenance"]["supplier_id"] == {
+        "origin": "corrected_screen",
+        "actor": TEST_ACTOR,
+        "at": detail["provenance"]["supplier_id"]["at"],
+    }
+    corrected = await db.pool.fetchrow(
+        "select * from audit_events where action = 'invoice.corrected' and subject_id = $1",
+        invoice["id"],
+    )
+    assert corrected["detail"]["fields"] == ["supplier_id"]
+    assert corrected["actor"] == TEST_ACTOR
+    # Nothing is taught yet: the person has not said this paper is right.
+    assert await aliases_of(db, abc) == []
+
+    assert (
+        await client.post(f"/api/invoices/{invoice['id']}/confirm", headers=AUTH)
+    ).status_code == 200
+    # Now it is taught, with a row of its own in the trail.
+    assert await aliases_of(db, abc) == ["Gulf Foods Trading LLC"]
+    learnt = await db.pool.fetchrow(
+        "select * from audit_events where action = 'supplier.alias_added'"
+    )
+    assert str(learnt["subject_id"]) == abc
+    assert learnt["actor"] == TEST_ACTOR
+    assert learnt["detail"]["alias"] == "Gulf Foods Trading LLC"
+    # The price landed on the right supplier's history, which is the point.
+    assert (
+        await db.pool.fetchval(
+            "select count(*) from supplier_item_prices where supplier_item_id = $1", abc_item
+        )
+        == 1
+    )
+
+    # The next paper from the same vendor, printed the same way: no keystroke.
+    second = good_invoice()
+    second.invoice_no = "INV-1042"
+    landed = await extracted_invoice(api, db, second, message_id="wamid.in2")
+    assert str(landed["supplier_id"]) == abc
+
+
+@requires_db
+async def test_a_misclick_corrected_before_confirm_teaches_nothing(api, db):
+    """The alias is learnt on confirm and nowhere else, so a wrong pick that
+    is put right before the OK leaves no trace in the catalog - which is what
+    makes the picker safe to use."""
+    app, client, *_ = api
+    printed = good_invoice()
+    printed.supplier_name = "Gulf Foods Trading L.L.C."  # exactly the catalog name
+    gulf, _ = await seed_supplier_with_items(db, [{"canonical_name": "Milk Powder 2.5kg"}])
+    gulf = str(gulf)
+    abc = await seed_lookalike_supplier(db, "Gulf Foods ABC Trading LLC", "Milk Powder 2.5kg")
+    invoice = await extracted_invoice(api, db, printed)
+
+    url = f"/api/invoices/{invoice['id']}/fields"
+    misclick = await client.patch(
+        url, headers=AUTH, json={"corrections": [{"field": "supplier", "value": abc}]}
+    )
+    assert misclick.json()["booked_under"]["id"] == abc
+    back = await client.patch(
+        url, headers=AUTH, json={"corrections": [{"field": "supplier", "value": gulf}]}
+    )
+    assert back.json()["booked_under"]["id"] == gulf
+
+    assert (
+        await client.post(f"/api/invoices/{invoice['id']}/confirm", headers=AUTH)
+    ).status_code == 200
+    assert await aliases_of(db, abc) == []
+    assert await aliases_of(db, gulf) == []  # the name it printed is already this supplier's
+    assert await db.pool.fetchval("select count(*) from supplier_aliases") == 0
+
+
+@requires_db
+async def test_a_name_another_supplier_answers_to_fails_the_confirm(api, db):
+    """Never a silent overwrite: if the printed name already means somebody
+    else, the confirm stops and says whose it is. Two suppliers answering to
+    one name is a wrong booking nobody would ever see."""
+    app, client, *_ = api
+    gulf, _ = await seed_supplier_with_items(db, [{"canonical_name": "Milk Powder 2.5kg"}])
+    gulf = str(gulf)
+    abc = await seed_lookalike_supplier(db, "Gulf Foods ABC Trading LLC", "Milk Powder 2.5kg")
+    await db.pool.execute(
+        "insert into supplier_aliases (tenant_id, supplier_id, alias, normalized) "
+        "values ($1, $2, 'Gulf Foods Trading LLC', 'gulf foods trading llc')",
+        DEMO_TENANT_ID,
+        gulf,
+    )
+    invoice = await extracted_invoice(api, db)
+
+    await client.patch(
+        f"/api/invoices/{invoice['id']}/fields",
+        headers=AUTH,
+        json={"corrections": [{"field": "supplier", "value": abc}]},
+    )
+    resp = await client.post(f"/api/invoices/{invoice['id']}/confirm", headers=AUTH)
+    assert resp.status_code == 422
+    assert "Gulf Foods Trading L.L.C." in resp.json()["detail"]
+
+    # Nothing was written: not the status, not the prices, not the alias.
+    row = await db.pool.fetchrow("select * from invoices where id = $1", invoice["id"])
+    assert row["status"] == "awaiting_confirm"
+    assert row["confirmed_at"] is None
+    assert await db.pool.fetchval("select count(*) from supplier_item_prices") == 0
+    assert await aliases_of(db, abc) == []
+
+
+@requires_db
+async def test_a_new_vendor_is_named_and_an_existing_one_is_recognised(api, db):
+    app, client, *_ = api
+    gulf, _ = await seed_supplier_with_items(db, [{"canonical_name": "Milk Powder 2.5kg"}])
+    gulf = str(gulf)
+    invoice = await extracted_invoice(api, db)
+    url = f"/api/invoices/{invoice['id']}/fields"
+
+    # "New supplier", with a name nobody holds: one is minted.
+    resp = await client.patch(
+        url, headers=AUTH, json={"corrections": [{"field": "supplier_name", "value": "Al Madina "}]}
+    )
+    booked = resp.json()["booked_under"]
+    assert booked["name"] == "Al Madina"  # trimmed the way a catalog name is
+    assert booked["id"] != gulf
+
+    # The same name typed again, punctuated differently: the supplier that
+    # exists, never a second row with a near-identical name.
+    resp = await client.patch(
+        url, headers=AUTH, json={"corrections": [{"field": "supplier_name", "value": "AL MADINA"}]}
+    )
+    assert resp.json()["booked_under"] == booked
+    assert await db.pool.fetchval("select count(*) from suppliers") == 2
+
+
+@requires_db
+async def test_a_supplier_outside_the_tenant_does_not_exist_for_this_paper(api, db):
+    app, client, *_ = api
+    await seed_supplier_with_items(db, [{"canonical_name": "Milk Powder 2.5kg"}])
+    invoice = await extracted_invoice(api, db)
+    other_tenant = await db.pool.fetchval(
+        "insert into tenants (name, currency) values ('Other Chain', 'AED') returning id"
+    )
+    theirs = await db.pool.fetchval(
+        "insert into suppliers (tenant_id, name) values ($1, 'Their Vendor') returning id",
+        other_tenant,
+    )
+
+    url = f"/api/invoices/{invoice['id']}/fields"
+    for supplier_id in (str(theirs), str(uuid.uuid4())):
+        resp = await client.patch(
+            url, headers=AUTH, json={"corrections": [{"field": "supplier", "value": supplier_id}]}
+        )
+        assert resp.status_code == 404, supplier_id
+    # Not an id at all is a request error, with the door named.
+    resp = await client.patch(
+        url, headers=AUTH, json={"corrections": [{"field": "supplier", "value": "Al Madina"}]}
+    )
+    assert resp.status_code == 422
+    assert "supplier_name" in resp.json()["detail"]
+    # And the paper is exactly where it was.
+    row = await db.pool.fetchrow("select supplier_id from invoices where id = $1", invoice["id"])
+    assert row["supplier_id"] is not None
+
+
+@requires_db
+async def test_re_pointing_re_asks_whether_the_paper_is_a_copy(api, db):
+    """WP-44's question is asked within one supplier, so moving a paper can
+    make it a copy of an earlier one - or stop it being one. The pointer and
+    the status follow, and the copy leaves the working list the way every
+    other held duplicate does."""
+    app, client, *_ = api
+    gulf, _ = await seed_supplier_with_items(db, [{"canonical_name": "Milk Powder 2.5kg"}])
+    gulf = str(gulf)
+    abc = await seed_lookalike_supplier(db, "Gulf Foods ABC Trading LLC", "Milk Powder 2.5kg")
+    original = await extracted_invoice(api, db)
+
+    # A second paper, same number and total, that landed under the other
+    # supplier - so nothing held it.
+    copy_paper = good_invoice()
+    copy_paper.supplier_name = "Gulf Foods ABC Trading LLC"
+    copy = await extracted_invoice(api, db, copy_paper, message_id="wamid.in2")
+    assert str(copy["supplier_id"]) == abc
+    assert copy["status"] == "awaiting_confirm"
+    assert copy["duplicate_of_invoice_id"] is None
+
+    resp = await client.patch(
+        f"/api/invoices/{copy['id']}/fields",
+        headers=AUTH,
+        json={"corrections": [{"field": "supplier", "value": gulf}]},
+    )
+    detail = resp.json()
+    assert detail["status"] == "needs_review"
+    assert detail["duplicate_of_invoice_id"] == str(original["id"])
+    assert detail["duplicate_of"]["invoice_no"] == "INV-1041"
+
+    # And back: no longer a copy of anything, so the hold lifts.
+    resp = await client.patch(
+        f"/api/invoices/{copy['id']}/fields",
+        headers=AUTH,
+        json={"corrections": [{"field": "supplier", "value": abc}]},
+    )
+    detail = resp.json()
+    assert detail["status"] == "awaiting_confirm"
+    assert detail["duplicate_of_invoice_id"] is None
+    # The earlier paper is never pointed at its own copy.
+    assert (
+        await db.pool.fetchval(
+            "select duplicate_of_invoice_id from invoices where id = $1", original["id"]
+        )
+        is None
+    )
