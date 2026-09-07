@@ -1376,8 +1376,7 @@ export interface DashboardResult {
   total: DashboardTotal;
   items: DashboardItems;
   signals: DashboardSignal[];
-  /** Optional only while WP-99's web half lands: the API always sends it. */
-  price_moves?: DashboardPriceMoves;
+  price_moves: DashboardPriceMoves;
   unmapped: DashboardUnmapped;
   menu: DashboardMenu;
 }
