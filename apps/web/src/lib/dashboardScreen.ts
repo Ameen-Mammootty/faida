@@ -184,8 +184,12 @@ export function freshnessLine(result: DashboardResult): FreshnessLine | null {
     }
   }
   const count = approvals.count;
+  // A full stop and a middle dot side by side - "5 days ago. · AED 9,493" -
+  // is a punctuation mistake, not a sentence. The stop goes when something
+  // joins on after it, and stays when the sentence stands alone.
+  const joined = takings !== null || count > 0;
   return {
-    sentence: freshness.sentence,
+    sentence: joined ? freshness.sentence.replace(/\.$/, "") : freshness.sentence,
     estimated: freshness.quality === "estimated",
     takings,
     papers:
@@ -339,17 +343,20 @@ function unmappedWords(unmapped: DashboardUnmapped): string {
   } no dish yet.`;
 }
 
-/** The same queue in the tile's one short line: the money the names are worth
- * is the clause that moves behind the icon, nothing else changes. */
+/** The same queue in the tile's one short line, which has 223 px at 1366 and
+ * has to hold the link to the queue too: "unmapped" is the API's own note
+ * ("3 till names with sales are not mapped to a menu item") in one word, and
+ * both full sentences are behind the tile's icon. */
 function unmappedLine(unmapped: DashboardUnmapped): string {
   const { names } = unmapped;
   if (names === 0) return "Every till name is mapped.";
-  return `${names} till ${names === 1 ? "name" : "names"} ${
-    names === 1 ? "has" : "have"
-  } no dish yet`;
+  return `${names} till ${names === 1 ? "name" : "names"} unmapped`;
 }
 
 const MAP_THEM = { href: "/sales", label: "Map them on Sales" };
+/** The same door in the tile's one line, where "on Sales" wrapped it onto
+ * a second. */
+const MAP_THEM_SHORT = { href: MAP_THEM.href, label: "Map them" };
 
 /**
  * The four headline tiles (M9 WP-98), in reading order: what the till took,
@@ -499,7 +506,7 @@ export function tiles(result: DashboardResult): Tile[] {
       caption: null,
       // A share is a fact about the rows, not a figure with a caveat.
       status: null,
-      link: noMenu !== null || result.unmapped.names === 0 ? null : MAP_THEM,
+      link: noMenu !== null || result.unmapped.names === 0 ? null : MAP_THEM_SHORT,
     },
   ];
 }
@@ -519,16 +526,29 @@ export function leagueLine(row: LeagueRow): string {
   return `${windowWords(row.window.from, row.window.to)}, ${days} · ${deliveries}`;
 }
 
-/** The window, the deliveries and the money behind the ratio - the two
- * sub-lines the league row used to print, now behind the icon after the
- * branch name. */
-export function leagueTip(row: LeagueRow): string[] {
-  const lines = [leagueLine(row)];
-  if (row.ratio_pct !== null) lines.push(`${roundedAed(row.purchases)} purchases`);
-  return lines;
+/** The money behind a row's ratio, or the words that say there is none. */
+function purchasesLine(row: LeagueRow): string {
+  return row.ratio_pct === null ? noRatioWords(row) : `${roundedAed(row.purchases)} purchases`;
 }
 
-/** The status sentences behind the icon beside the chip, one to a line. */
+/** Everything behind a league row's one icon, in reading order: its window
+ * and its deliveries, the money behind its ratio, then the sentences that
+ * earned its status word. One icon a row - two was one too many. */
+export function leagueTip(row: LeagueRow): string[] {
+  return [leagueLine(row), purchasesLine(row), ...statusTip(row)];
+}
+
+/** The same for the chain's row, which has no window of its own to name. */
+export function totalTip(total: DashboardTotal): string[] {
+  return [
+    total.ratio_pct === null
+      ? chainRatioWords(total)
+      : `${roundedAed(total.purchases)} purchases`,
+    ...statusTip(total),
+  ];
+}
+
+/** The status sentences, one to a line - the tail of both tips. */
 export function statusTip(row: {
   contribution_quality: PeriodQuality;
   contribution_notes: string[];

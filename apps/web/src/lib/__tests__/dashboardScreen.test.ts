@@ -48,6 +48,7 @@ import {
   signalsFootnote,
   statusTip,
   tiles,
+  totalTip,
   todaysPlateLink,
   withBranch,
 } from "../dashboardScreen";
@@ -234,8 +235,10 @@ describe("the first run", () => {
 describe("the freshness line", () => {
   it("carries the API's sentence, the newest day's takings and the papers link", async () => {
     const line = freshnessLine(await scenario("full"));
+    // The API's own stop goes when a middle dot joins the next piece on:
+    // "5 days ago. · AED 9,493" is a punctuation mistake, not a sentence.
     expect(line).toEqual({
-      sentence: "Sales loaded to Mon 31 Aug, 5 days ago.",
+      sentence: "Sales loaded to Mon 31 Aug, 5 days ago",
       estimated: false,
       takings: "AED 9,493 taken that day across 3 branches",
       papers: { label: "2 papers waiting for you", href: "/invoices?status=needs_review" },
@@ -244,7 +247,14 @@ describe("the freshness line", () => {
 
   it("carries the word past seven days, and that branch's own day under the filter", async () => {
     const partial = freshnessLine(await scenario("partial"));
-    expect(partial?.sentence).toBe("Sales loaded to Mon 31 Aug, 12 days ago.");
+    expect(partial?.sentence).toBe("Sales loaded to Mon 31 Aug, 12 days ago");
+    // Nothing joins on, so the sentence keeps the stop the API printed.
+    const alone = freshnessLine({
+      ...(await scenario("full")),
+      latest_day: null,
+      approvals: { count: 0, duplicates: 0, awaiting_confirm: 0, invoices: [] },
+    });
+    expect(alone?.sentence).toBe("Sales loaded to Mon 31 Aug, 5 days ago.");
     expect(partial?.estimated).toBe(true);
     const karama = freshnessLine(await scenario("full", "br-02"));
     expect(karama?.takings).toBe("AED 2,987 taken that day at Karama");
@@ -595,7 +605,7 @@ describe("the headline tiles", () => {
       words: null,
       loss: false,
       sentence: "3 till names worth AED 8,320 have no dish yet.",
-      line: "3 till names have no dish yet",
+      line: "3 till names unmapped",
       tip: [
         "These figures cover 84.2% of what was sold.",
         "3 till names worth AED 8,320 have no dish yet.",
@@ -603,7 +613,7 @@ describe("the headline tiles", () => {
       bar: 84.2,
       caption: null,
       status: null,
-      link: { href: "/sales", label: "Map them on Sales" },
+      link: { href: "/sales", label: "Map them" },
     });
   });
 
@@ -635,7 +645,7 @@ describe("the headline tiles", () => {
     expect(ratio.line).toBe("AED 11,898 of confirmed papers · chain 23.7%");
     expect(contribution.line).toBe("keeps 69.9% of costed sales · chain 67.4%");
     expect(contribution.tip[0]).toBe("After ingredients and packaging.");
-    expect(share.line).toBe("1 till name has no dish yet");
+    expect(share.line).toBe("1 till name unmapped");
     expect(share.tip).toEqual([
       "These figures cover 86.0% of what was sold.",
       "1 till name worth AED 3,120 has no dish yet.",
@@ -765,13 +775,28 @@ describe("the info tips", () => {
     expect(answerChip(await scenario("nomenu"))).toBeNull();
   });
 
-  it("moves the league row's window, days and purchases behind the name", async () => {
+  it("puts a league row's whole story behind its one icon", async () => {
     const full = await scenario("full");
     const [deira, karama] = full.league;
-    expect(leagueTip(deira)).toEqual(["25-31 Aug, 7 days · 1 delivery", "AED 4,121 purchases"]);
-    // Karama bought nothing in the window, so there is no purchases line.
+    expect(leagueTip(deira)).toEqual([
+      "25-31 Aug, 7 days · 1 delivery",
+      "AED 4,121 purchases",
+      "Covers 82% of this branch's sales value.",
+      "1 item cannot be costed yet.",
+      "1 till name with sales is not mapped to a menu item.",
+    ]);
+    // Karama bought nothing in the window, and the line says so in the cell's
+    // own words rather than printing AED 0.
     expect(karama.ratio_pct).toBeNull();
-    expect(leagueTip(karama)).toEqual([leagueLine(karama)]);
+    expect(leagueTip(karama).slice(0, 2)).toEqual([leagueLine(karama), "No confirmed purchases"]);
+    expect(leagueTip(karama).slice(2)).toEqual(statusTip(karama));
+    // The chain has no window of its own to name.
+    expect(totalTip(full.total)).toEqual([
+      "AED 16,019 purchases",
+      ...statusTip(full.total),
+    ]);
+    const nothing = { ...full.total, purchases: "0.00", ratio_pct: null };
+    expect(totalTip(nothing)[0]).toBe("No confirmed purchases");
   });
 
   it("cuts the status sentences and the footnote into one line each", async () => {

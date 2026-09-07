@@ -135,15 +135,19 @@ export default function AppShell({
             );
           })}
         </nav>
-        {/* The foot. The 40 px band is the one session slot's, which is fixed
-            over it; the two heights below and its `bottom-13` must agree. */}
+        {/* The foot. The 44 px band is the one session slot's, which is fixed
+            over it; the two heights below and its `bottom-13` must agree.
+            44 and not 40 because that is what the slot's two stacked lines
+            measure at 1280 px - the address at 16 and Sign out at 24, with
+            the 4 px gap between them - and a band 4 px short let the button
+            hang into the gap above the brand line. */}
         <div className="mt-auto px-5">
           {mock ? (
             <span className="inline-block rounded-sm bg-cream/10 px-2 py-0.5 text-xs font-medium whitespace-nowrap text-cream/80">
               Sample data
             </span>
           ) : null}
-          <div aria-hidden="true" className="mt-4 h-10" />
+          <div aria-hidden="true" className="mt-4 h-11" />
           <p className="mt-3 h-4 text-xs leading-4 text-cream/70">Profit, in plain sight.</p>
         </div>
       </aside>
@@ -246,7 +250,7 @@ export default function AppShell({
               the four words keep the whole of the top row; from 640 px it is
               back in the row where it has always been; from 1280 px it is
               fixed into the sidebar's foot band. One node, one session read. */}
-          <div className="absolute top-[57px] right-4 flex h-9 max-w-[55%] items-center sm:static sm:ml-4 sm:h-14 sm:max-w-none xl:fixed xl:top-auto xl:right-auto xl:bottom-13 xl:left-0 xl:z-20 xl:ml-0 xl:h-10 xl:w-58 xl:px-5">
+          <div className="absolute top-[57px] right-4 flex h-9 max-w-[55%] items-center sm:static sm:ml-4 sm:h-14 sm:max-w-none xl:fixed xl:top-auto xl:right-auto xl:bottom-13 xl:left-0 xl:z-20 xl:ml-0 xl:h-11 xl:w-58 xl:px-5">
             <SessionMenu />
           </div>
         </div>

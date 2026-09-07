@@ -55,10 +55,10 @@ import {
   signalTip,
   signalsCount,
   signalsFootnote,
-  statusTip,
   tillNamesWords,
   tiles,
   todaysPlateLink,
+  totalTip,
   withBranch,
   type PeriodChoice,
   type Tile,
@@ -164,11 +164,19 @@ function KeptFigure({ value }: { value: string | null }) {
 }
 
 /** The share bar: mist track, palm fill, the width the API's percentage
- * already is. It never stands alone - the number it draws is always on the
- * line above it (the display rules). */
-function ShareBar({ width }: { width: number }) {
+ * already is. It never stands alone - the number it draws is always beside
+ * it (the display rules). */
+function ShareBar({
+  width,
+  className = "w-full",
+}: {
+  width: number;
+  className?: string;
+}) {
   return (
-    <span className="block h-1.5 w-full overflow-hidden rounded-full bg-mist">
+    <span
+      className={`block h-1.5 overflow-hidden rounded-full bg-mist ${className}`}
+    >
       <span
         className="block h-full rounded-full bg-palm"
         style={{ width: `${width}%` }}
@@ -177,14 +185,16 @@ function ShareBar({ width }: { width: number }) {
   );
 }
 
-/** A league row's Kept cell: the percentage, and the bar under it. A row that
+/** A league row's Kept cell: the bar and its percentage on one line, so the
+ * figure sits on the row's own baseline with every other figure. A row that
  * kept nothing shows the loss words and an empty track. */
 function KeptCell({ value, noun }: { value: string | null; noun: string }) {
   const width = keptBar(value);
   if (value === null || width === null)
     return <span className="text-xs font-normal text-stone">-</span>;
   return (
-    <span className="flex flex-col items-end gap-0.5">
+    <span className="flex items-center justify-end gap-2">
+      <ShareBar width={width} className="max-w-[90px] shrink flex-1" />
       {value.startsWith("-") ? (
         <LossFigure
           figure={percent(value)}
@@ -193,11 +203,10 @@ function KeptCell({ value, noun }: { value: string | null; noun: string }) {
           figureClass="font-display text-[15px] font-semibold tabular-nums"
         />
       ) : (
-        <span className="font-display text-[15px] font-semibold text-ink tabular-nums">
+        <span className="shrink-0 font-display text-[15px] font-semibold text-ink tabular-nums">
           {percent(value)}
         </span>
       )}
-      <ShareBar width={width} />
     </span>
   );
 }
@@ -243,7 +252,7 @@ function SectionHeading({
  */
 function HeadlineTile({ tile }: { tile: Tile }) {
   return (
-    <dl className="flex flex-col rounded-md border border-ink/10 bg-paper p-4">
+    <dl className="rounded-md border border-ink/10 bg-paper p-4">
       {/* Two labels of the four run to a second line in a quarter-width
           column, so the label reserves both and the four figures sit on one
           line across the row. */}
@@ -280,15 +289,17 @@ function HeadlineTile({ tile }: { tile: Tile }) {
           <ShareBar width={tile.bar} />
         </dd>
       )}
-      {tile.line === "" && tile.caption === null && tile.status === null ? null : (
-        <dd className="mt-auto pt-1 text-[12.5px] leading-snug text-stone">
-          {/* The word gets its own line: beside a sentence it pushed "AED"
-              away from the number that follows it. */}
-          {tile.status !== null ? (
-            <span className="mb-0.5 block">
-              <QualityChip quality={tile.status.quality} />
-            </span>
-          ) : null}
+      {/* The word gets a row of its own, and only where there is one: beside
+          the sentence it pushed "AED" away from the number after it, and
+          under a figure it left a tile with no word looking like a tile with
+          a hole in it. */}
+      {tile.status === null ? null : (
+        <dd className="mt-1.5">
+          <QualityChip quality={tile.status.quality} />
+        </dd>
+      )}
+      {tile.line === "" && tile.caption === null ? null : (
+        <dd className="mt-1 text-[12.5px] leading-snug text-stone">
           {tile.caption === null ? null : <>{tile.caption} &middot; </>}
           {tile.line}
           {tile.link ? (
@@ -310,31 +321,35 @@ function HeadlineTile({ tile }: { tile: Tile }) {
 
 // --- the league ---------------------------------------------------------------
 
-/** The branch name and the icon that holds its window, its days and the
- * money behind its ratio. */
-function BranchName({ row }: { row: LeagueRow }) {
+/** The branch name, and nothing else: the row's one icon is in its status
+ * cell, and the whole of what the row has to say is behind it. */
+function BranchName({ row, tall = false }: { row: LeagueRow; tall?: boolean }) {
   const link = leagueLink(row);
   return (
-    <span className="flex items-center gap-1.5">
-      <Link
-        href={link.href}
-        aria-label={link.label}
-        className="rounded-sm font-medium text-ink underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-palm/30"
-      >
-        {row.branch_name}
-      </Link>
-      <InfoTip lines={leagueTip(row)} label={`More about ${row.branch_name}`} />
-    </span>
+    <Link
+      href={link.href}
+      aria-label={link.label}
+      // The card keeps the 44 px target a thumb needs; the table's row is
+      // 42 px tall and the link is one of six cells on it.
+      className={`rounded-sm font-medium text-ink underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-palm/30 ${
+        tall ? "inline-flex min-h-11 items-center py-1" : ""
+      }`}
+    >
+      {row.branch_name}
+    </Link>
   );
 }
 
-/** The status cell everywhere it appears: the word, and the sentences that
- * earned it behind the icon. */
+/** The status cell everywhere it appears: the word, and behind the row's one
+ * icon its window, the money behind its ratio and the sentences that earned
+ * the word. */
 function StatusCell({
-  row,
+  quality,
+  tip,
   label,
 }: {
-  row: { contribution_quality: LeagueRow["contribution_quality"]; contribution_notes: string[] };
+  quality: LeagueRow["contribution_quality"];
+  tip: string[];
   label: string;
 }) {
   return (
@@ -342,8 +357,8 @@ function StatusCell({
     // narrow end of a six-column table has 118: the cell lets the word wrap
     // rather than clip it, and the icon after it stays reachable.
     <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1 [&_span]:whitespace-normal">
-      <QualityChip quality={leagueStatus(row).quality} />
-      <InfoTip lines={statusTip(row)} label={label} />
+      <QualityChip quality={quality} />
+      <InfoTip lines={tip} label={label} />
     </span>
   );
 }
@@ -379,7 +394,11 @@ function LeagueTableRow({ row }: { row: LeagueRow }) {
         <KeptCell value={row.contribution_pct} noun="this branch" />
       </td>
       <td className="px-4 py-2.5">
-        <StatusCell row={row} label={`Why ${row.branch_name} reads this way`} />
+        <StatusCell
+          quality={leagueStatus(row).quality}
+          tip={leagueTip(row)}
+          label={`More about ${row.branch_name}`}
+        />
       </td>
     </tr>
   );
@@ -389,8 +408,8 @@ function LeagueCard({ row }: { row: LeagueRow }) {
   return (
     <li className="rounded-md border border-ink/10 bg-paper p-3">
       <div className="flex items-start justify-between gap-3">
-        <div className="flex min-h-11 items-center">
-          <BranchName row={row} />
+        <div>
+          <BranchName row={row} tall />
         </div>
         <div className="pt-1 text-right">
           {row.contribution_pct === null ? (
@@ -410,7 +429,11 @@ function LeagueCard({ row }: { row: LeagueRow }) {
       </div>
       <p className="mt-0.5 text-xs text-stone tabular-nums">{cardLine(row)}</p>
       <p className="mt-2">
-        <StatusCell row={row} label={`Why ${row.branch_name} reads this way`} />
+        <StatusCell
+          quality={leagueStatus(row).quality}
+          tip={leagueTip(row)}
+          label={`More about ${row.branch_name}`}
+        />
       </p>
     </li>
   );
@@ -1131,8 +1154,9 @@ export default function Dashboard() {
                     </td>
                     <td className="px-4 py-2.5 font-normal">
                       <StatusCell
-                        row={result.total}
-                        label="Why the chain reads this way"
+                        quality={result.total.contribution_quality}
+                        tip={totalTip(result.total)}
+                        label="More about all branches"
                       />
                     </td>
                   </tr>
@@ -1172,8 +1196,9 @@ export default function Dashboard() {
                 </p>
                 <p className="mt-2">
                   <StatusCell
-                    row={result.total}
-                    label="Why the chain reads this way"
+                    quality={result.total.contribution_quality}
+                    tip={totalTip(result.total)}
+                    label="More about all branches"
                   />
                 </p>
               </li>
