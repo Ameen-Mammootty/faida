@@ -100,7 +100,15 @@ from .extraction.currency import currency_differs
 from .extraction.normalize import blank_to_none, normalize_extracted
 from .extraction.schema import ExtractedInvoice, ExtractedLine
 from .extraction.validate import validate_invoice
-from .matching import Row, match_supplier, propose_ingredients, snap_item
+from .matching import (
+    Row,
+    clean_name,
+    known_as,
+    match_supplier,
+    normalize,
+    propose_ingredients,
+    snap_item,
+)
 from .provenance import Origin, initial
 from .replies import DEFAULT_CURRENCY, compose_cash_approved_notice
 
@@ -215,6 +223,35 @@ def _booked_under(row: asyncpg.Record) -> dict | None:
     if row["supplier_id"] is None:
         return None
     return {"id": str(row["supplier_id"]), "name": row["booked_under_name"]}
+
+
+async def _learns_printed_name(db: Database, invoice: asyncpg.Record, *, tenant_id: str) -> bool:
+    """WP-87, the review screen's one sentence: whether confirming this paper
+    as it stands would teach the name printed on it to the supplier it is
+    booked under.
+
+    The rule is `db._learn_supplier_alias`'s, asked ahead of time: the paper
+    is still editable, a *person* chose the supplier (C8 provenance says
+    `corrected_screen` or `corrected_chat` - the machine's own match teaches
+    nothing), the printed name normalizes to something, and the chosen
+    supplier does not already answer to it (`matching.known_as`, the one test
+    the alias door, the chat reply and the matcher share). Computed here and
+    not on the screen so the sentence can never disagree with what the confirm
+    then does. The collision case is deliberately not asked: the confirm
+    answers it, naming the holder. One extra read, and only for the rare paper
+    a person has re-pointed; every other paper answers false without touching
+    the catalog."""
+    if invoice["supplier_id"] is None or invoice["status"] not in _EDITABLE_STATUSES:
+        return False
+    record = (invoice["provenance"] or {}).get("supplier_id")
+    origin = record.get("origin") if isinstance(record, dict) else None
+    if origin not in (Origin.CORRECTED_SCREEN.value, Origin.CORRECTED_CHAT.value):
+        return False
+    printed = clean_name(invoice["supplier_name"] or "")
+    if not normalize(printed):
+        return False
+    supplier = await db.get_supplier(str(invoice["supplier_id"]), tenant_id=tenant_id)
+    return supplier is not None and not known_as(supplier, printed)
 
 
 def _invoice_summary(row: asyncpg.Record) -> dict:
@@ -377,8 +414,18 @@ async def _invoice_detail(request: Request, invoice_id: str, ctx: AuthContext) -
                 "created_at": _iso(original["created_at"]),
             }
 
+    # The detail's booked_under carries one word more than the list's: whether
+    # the confirm would learn the printed name (WP-87). The list has no
+    # sentence to say it in, and the read it costs belongs to one paper.
+    booked_under = _booked_under(invoice)
+    if booked_under is not None:
+        booked_under["learns_printed_name"] = await _learns_printed_name(
+            db, invoice, tenant_id=ctx.tenant_id
+        )
+
     return {
         **_invoice_summary(invoice),
+        "booked_under": booked_under,
         "duplicate_of": duplicate_of,
         "subtotal": _dec(invoice["subtotal"]),
         "tax": _dec(invoice["tax"]),

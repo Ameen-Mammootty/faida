@@ -4,6 +4,10 @@
  * inv-1001  all green, awaiting confirmation (the happy path)
  * inv-1002  amber fields: one arithmetic failure, one unreadable quantity
  * inv-1003  cash invoice held as needs_review
+ * inv-1009  booked under a lookalike supplier (M9 WP-87): the printed name is
+ *           not the catalog's, so the review screen shows the supplier block
+ *           with something to correct, and its lines find their items only
+ *           once it is re-pointed at the right vendor
  *
  * Checks and confidence are computed by the store through the same
  * validation mirror a PATCH uses, so fixtures can never drift from the
@@ -147,6 +151,51 @@ export const MOCK_BRANCHES: { id: string; name: string }[] = [
   { id: "br-01", name: "Al Quoz" },
   { id: "br-02", name: "Karama" },
   { id: "br-03", name: "Deira" },
+];
+
+/**
+ * One supplier of the mock's catalog (M9 WP-87): what GET /api/suppliers
+ * lists, plus `items` - the supplier item each exact printed line name snaps
+ * to under this supplier, which is the mock's whole version of the re-snap a
+ * supplier correction triggers on the API. Written out, not matched: the
+ * fuzzy matcher is the API's, and the mock only has to keep the shape of its
+ * outcome honest (a line under the wrong supplier has no item and no price
+ * history; under the right one it has both).
+ */
+export interface MockSupplier {
+  id: string;
+  name: string;
+  /** The printed names this supplier already answers to. */
+  aliases: string[];
+  items: Record<string, string>;
+}
+
+/** Ordered by name, the order the API's picker arrives in. "Al Madina
+ * Trading Co." is the lookalike the demo's WP-87 paper landed under. */
+export const MOCK_SUPPLIERS: MockSupplier[] = [
+  {
+    id: "sup-01",
+    name: "Al Madina Foodstuff Trading LLC",
+    aliases: ["Al Madina Foodstuff"],
+    items: {
+      "Rainbow Milk Powder 2.25kg": "si-2001",
+      "Karak Tea Dust 5kg": "si-2002",
+      "Sugar 50kg": "si-2003",
+      "Cardamom Powder 500g": "si-2004",
+      "Paper Cups 8oz x1000": "si-2005",
+    },
+  },
+  { id: "sup-03", name: "Al Madina Trading Co.", aliases: ["AL MADINA TRADING"], items: {} },
+  {
+    id: "sup-02",
+    name: "Al Seeb Trading Co LLC",
+    aliases: ["AL SEEB TRADING"],
+    items: {
+      "Chapati Flour 25kg": "si-2101",
+      "Evaporated Milk 410ml": "si-2102",
+      "Sugar 10kg": "si-2103",
+    },
+  },
 ];
 
 /**
@@ -652,6 +701,55 @@ export const FIXTURES: Fixture[] = [
         supplier_item_id: null,
         snapped: null,
         cost: costs("0.00400000", "g", "4.00", "kg", "5kg"),
+      },
+    ],
+  },
+  // M9 WP-87: the paper the supplier block exists for. Printed with a
+  // shortened name, booked by the machine under the lookalike "Al Madina
+  // Trading Co.", whose catalog has none of its items - so nothing snapped
+  // and no price history shows until a person re-points it at Al Madina
+  // Foodstuff Trading LLC. Dated after the loaded sales, so it rides along in
+  // no sales window and moves no figure on the other screens.
+  {
+    id: "inv-1009",
+    document_id: "doc-9009",
+    branch_id: "br-01",
+    branch_name: "Al Quoz",
+    supplier_id: "sup-03",
+    supplier_name: "AL MADINA FOODSTUFF TRDG LLC",
+    invoice_no: "INV-10517",
+    invoice_date: "2026-09-02",
+    currency: "AED",
+    subtotal: "365.00",
+    tax: "18.25",
+    total: "383.25",
+    payment_kind: "credit",
+    status: "awaiting_confirm",
+    source: "whatsapp",
+    image_url: "/fixtures/inv-1009.svg",
+    created_at: "2026-09-02T10:05:00+00:00",
+    lines: [
+      {
+        raw_name: "Rainbow Milk Powder 2.25kg",
+        qty: "4",
+        unit: "tin",
+        pack_size: "2.25kg",
+        unit_price: "54.50",
+        line_total: "218.00",
+        supplier_item_id: null,
+        snapped: false,
+        cost: costs("0.02422222", "g", "24.22", "kg", "2.25kg"),
+      },
+      {
+        raw_name: "Karak Tea Dust 5kg",
+        qty: "3",
+        unit: "bag",
+        pack_size: "5kg",
+        unit_price: "49.00",
+        line_total: "147.00",
+        supplier_item_id: null,
+        snapped: false,
+        cost: costs("0.00980000", "g", "9.80", "kg", "5kg"),
       },
     ],
   },
