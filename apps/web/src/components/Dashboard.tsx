@@ -11,8 +11,10 @@ import {
   LEAGUE_LINK,
   NO_ITEMS,
   NO_SIGNALS,
-  answerCaveat,
+  SCREEN_ABOUT,
+  answerChip,
   answerLines,
+  answerTip,
   branchOptions,
   branchParam,
   cardLine,
@@ -21,10 +23,10 @@ import {
   componentCost,
   componentLink,
   componentWords,
-  coverageStrip,
   drillNotes,
   filteredEmpty,
   firstRun,
+  footnoteTip,
   freshnessLine,
   incompleteItems,
   isFirstRun,
@@ -32,10 +34,11 @@ import {
   itemCaption,
   itemPanel,
   itemsHeading,
-  leagueFootnote,
-  leagueLine,
+  itemsTip,
+  keptBar,
   leagueLink,
   leagueStatus,
+  leagueTip,
   monthOptions,
   noContributionWords,
   noMenuSentence,
@@ -44,12 +47,15 @@ import {
   periodBounds,
   portionsWords,
   showAllLabel,
+  showAllSignalsLabel,
   soldCount,
   signalHref,
   signalMoney,
-  signalWhen,
+  signalPanel,
+  signalTip,
   signalsCount,
   signalsFootnote,
+  statusTip,
   tillNamesWords,
   tiles,
   todaysPlateLink,
@@ -66,6 +72,7 @@ import type {
   LeagueRow,
 } from "@/lib/types";
 import { ChevronIcon } from "./icons";
+import InfoTip from "./InfoTip";
 import LossFigure from "./LossFigure";
 import QualityChip from "./QualityChip";
 
@@ -77,9 +84,16 @@ import QualityChip from "./QualityChip";
  * papers waiting); the two answer sentences; the branch league with
  * contribution beside the ratio; what to look at, ranked by money; the items
  * five and five, expanding in place with the in-row drill to each
- * ingredient's invoice line; the coverage strip as a link to the queue on
- * `/sales`. One screen with a branch filter that writes `?branch=` into the
- * URL (P7); the chain total never follows the filter.
+ * ingredient's invoice line. One screen with a branch filter that writes
+ * `?branch=` into the URL (P7); the chain total never follows the filter.
+ *
+ * The founder's redesign (2026-09-07): the answer, the four figures and the
+ * whole league sit above the fold on a 1366x768 laptop and on a 1229x691 one,
+ * because every sentence that qualifies a figure moved behind a circled "i"
+ * beside it. Nothing was rewritten to get there - a tooltip prints the
+ * sentence the API sent or the join `lib/dashboardScreen.ts` already made -
+ * and nothing is left to colour: the kept bar and the costed-share bar each
+ * stand beside their own number.
  *
  * Everything here is framing: every sentence that states a fact or a number
  * arrived composed from the API (C13.5), and every decision about which to
@@ -149,6 +163,45 @@ function KeptFigure({ value }: { value: string | null }) {
   );
 }
 
+/** The share bar: mist track, palm fill, the width the API's percentage
+ * already is. It never stands alone - the number it draws is always on the
+ * line above it (the display rules). */
+function ShareBar({ width }: { width: number }) {
+  return (
+    <span className="block h-1.5 w-full overflow-hidden rounded-full bg-mist">
+      <span
+        className="block h-full rounded-full bg-palm"
+        style={{ width: `${width}%` }}
+      />
+    </span>
+  );
+}
+
+/** A league row's Kept cell: the percentage, and the bar under it. A row that
+ * kept nothing shows the loss words and an empty track. */
+function KeptCell({ value, noun }: { value: string | null; noun: string }) {
+  const width = keptBar(value);
+  if (value === null || width === null)
+    return <span className="text-xs font-normal text-stone">-</span>;
+  return (
+    <span className="flex flex-col items-end gap-0.5">
+      {value.startsWith("-") ? (
+        <LossFigure
+          figure={percent(value)}
+          noun={noun}
+          align="end"
+          figureClass="font-display text-[15px] font-semibold tabular-nums"
+        />
+      ) : (
+        <span className="font-display text-[15px] font-semibold text-ink tabular-nums">
+          {percent(value)}
+        </span>
+      )}
+      <ShareBar width={width} />
+    </span>
+  );
+}
+
 // --- the tiles ----------------------------------------------------------------
 
 /** The quiet link at the right of a section's heading: where the whole of
@@ -164,107 +217,156 @@ function SectionLink({ href, label }: { href: string; label: string }) {
   );
 }
 
+/** A section's heading with the sentences that explain it behind one icon. */
+function SectionHeading({
+  title,
+  tip,
+  label,
+}: {
+  title: string;
+  tip: string[];
+  label: string;
+}) {
+  return (
+    <h2 className="flex items-center gap-1.5 font-display text-lg font-semibold text-ink">
+      {title}
+      <InfoTip lines={tip} label={label} />
+    </h2>
+  );
+}
+
 /**
- * One headline: a label, the figure, the sentence beneath it and the quality
- * word where the figure has one. No icon, no bar, no gauge, no arrow - the
- * figure beside the sentence says everything a bar would, and a bar would
- * carry meaning by colour alone.
+ * One headline: the label, the figure with its quality word and its icon on
+ * the same line, and one short line beneath. Everything that qualifies the
+ * figure - the standing clause, the note behind the word, the money the
+ * queue is worth - is behind the icon.
  */
 function HeadlineTile({ tile }: { tile: Tile }) {
   return (
-    <dl className="rounded-md border border-ink/10 bg-paper p-4">
+    <dl className="flex flex-col rounded-md border border-ink/10 bg-paper p-4">
       {/* Two labels of the four run to a second line in a quarter-width
           column, so the label reserves both and the four figures sit on one
           line across the row. */}
-      <dt className="min-h-8 text-xs font-medium tracking-wider text-stone uppercase">
+      <dt className="min-h-7 text-[11px] leading-[14px] font-medium tracking-wider text-stone uppercase">
         {tile.label}
       </dt>
-      <dd className="mt-1.5 flex flex-wrap items-baseline gap-x-2">
-        {tile.figure === null ? (
-          <span className="text-sm text-stone">{tile.words}</span>
-        ) : tile.loss ? (
-          <LossFigure
-            figure={tile.figure}
-            noun="the costed sales"
-            plural
-            figureClass="font-display text-2xl font-semibold tabular-nums"
-          />
-        ) : (
-          <span className="font-display text-2xl font-semibold text-ink tabular-nums">
-            {tile.figure}
-          </span>
-        )}
-        {tile.caption ? (
-          <span className="text-xs text-stone">· {tile.caption}</span>
-        ) : null}
+      {/* The figure keeps the whole line - a money headline and a chip beside
+          it do not both fit a quarter column - so the icon rides the figure's
+          right and the quality word leads the line it qualifies, the way the
+          league's status cell reads. */}
+      <dd className="mt-1.5 flex min-h-7 items-center justify-between gap-2">
+        <span className="min-w-0">
+          {tile.figure === null ? (
+            <span className="text-sm text-stone">{tile.words}</span>
+          ) : tile.loss ? (
+            <LossFigure
+              figure={tile.figure}
+              noun="the costed sales"
+              plural
+              figureClass="font-display text-[26px] leading-7 font-semibold tabular-nums"
+            />
+          ) : (
+            <span className="font-display text-[26px] leading-7 font-semibold whitespace-nowrap text-ink tabular-nums">
+              {tile.figure}
+            </span>
+          )}
+        </span>
+        <span className="shrink-0">
+          <InfoTip lines={tile.tip} label={`More about ${tile.label}`} />
+        </span>
       </dd>
-      {/* A word with a note behind it leads that note, the way the league's
-          status cell does; a word with nothing behind it - the freshness
-          one - rides beside the date it qualifies. */}
-      {tile.sentence ? (
-        <dd className="mt-1 text-xs text-stone">
-          {tile.sentence}
-          {tile.status !== null && tile.status.sentence === null ? (
-            <>
-              {" "}
+      {tile.bar === null ? null : (
+        <dd className="mt-1.5">
+          <ShareBar width={tile.bar} />
+        </dd>
+      )}
+      {tile.line === "" && tile.caption === null && tile.status === null ? null : (
+        <dd className="mt-auto pt-1 text-[12.5px] leading-snug text-stone">
+          {/* The word gets its own line: beside a sentence it pushed "AED"
+              away from the number that follows it. */}
+          {tile.status !== null ? (
+            <span className="mb-0.5 block">
               <QualityChip quality={tile.status.quality} />
+            </span>
+          ) : null}
+          {tile.caption === null ? null : <>{tile.caption} &middot; </>}
+          {tile.line}
+          {tile.link ? (
+            <>
+              {" · "}
+              <Link
+                href={tile.link.href}
+                className="font-medium text-palm underline-offset-2 hover:underline"
+              >
+                {tile.link.label} &rarr;
+              </Link>
             </>
           ) : null}
         </dd>
-      ) : null}
-      {tile.status?.sentence ? (
-        <dd className="mt-1.5 text-xs text-stone">
-          <QualityChip quality={tile.status.quality} />{" "}
-          <span className="align-middle">{tile.status.sentence}</span>
-        </dd>
-      ) : null}
-      {tile.link ? (
-        <dd className="mt-1.5">
-          <SectionLink href={tile.link.href} label={tile.link.label} />
-        </dd>
-      ) : null}
+      )}
     </dl>
   );
 }
 
 // --- the league ---------------------------------------------------------------
 
-function LeagueTableRow({ row }: { row: LeagueRow }) {
-  const status = leagueStatus(row);
+/** The branch name and the icon that holds its window, its days and the
+ * money behind its ratio. */
+function BranchName({ row }: { row: LeagueRow }) {
   const link = leagueLink(row);
   return (
-    <tr className="border-b border-ink/5 align-top">
-      {/* The name cell is `/sales`' own: `py-2` against the figures' `py-3`,
-          so the 44 px control and the figures beside it sit where they sit on
-          that screen - the two league tables are the same table. */}
-      <td className="px-4 py-2">
-        <Link
-          href={link.href}
-          aria-label={link.label}
-          className="inline-flex min-h-11 items-center rounded-sm py-1 font-medium text-ink underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-palm/30"
-        >
-          {row.branch_name}
-        </Link>
-        <p className="text-xs text-stone">{leagueLine(row)}</p>
+    <span className="flex items-center gap-1.5">
+      <Link
+        href={link.href}
+        aria-label={link.label}
+        className="rounded-sm font-medium text-ink underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-palm/30"
+      >
+        {row.branch_name}
+      </Link>
+      <InfoTip lines={leagueTip(row)} label={`More about ${row.branch_name}`} />
+    </span>
+  );
+}
+
+/** The status cell everywhere it appears: the word, and the sentences that
+ * earned it behind the icon. */
+function StatusCell({
+  row,
+  label,
+}: {
+  row: { contribution_quality: LeagueRow["contribution_quality"]; contribution_notes: string[] };
+  label: string;
+}) {
+  return (
+    // "Reliable with limitations" is 179 px of unbreakable chip and the
+    // narrow end of a six-column table has 118: the cell lets the word wrap
+    // rather than clip it, and the icon after it stays reachable.
+    <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1 [&_span]:whitespace-normal">
+      <QualityChip quality={leagueStatus(row).quality} />
+      <InfoTip lines={statusTip(row)} label={label} />
+    </span>
+  );
+}
+
+function LeagueTableRow({ row }: { row: LeagueRow }) {
+  return (
+    <tr className="border-b border-ink/5">
+      <td className="px-4 py-2.5">
+        <BranchName row={row} />
       </td>
-      <td className="px-4 py-3 text-right tabular-nums">
+      <td className="px-4 py-2.5 text-right tabular-nums">
         {row.net_sales === null ? "-" : roundedAed(row.net_sales)}
       </td>
-      <td className="px-4 py-3 text-right">
+      <td className="px-4 py-2.5 text-right">
         {row.ratio_pct === null ? (
           <span className="text-xs text-stone">{noRatioWords(row)}</span>
         ) : (
-          <>
-            <span className="font-display text-[15px] font-semibold text-ink tabular-nums">
-              {percent(row.ratio_pct)}
-            </span>
-            <p className="text-xs text-stone tabular-nums">
-              {roundedAed(row.purchases)} purchases
-            </p>
-          </>
+          <span className="font-display text-[15px] font-semibold text-ink tabular-nums">
+            {percent(row.ratio_pct)}
+          </span>
         )}
       </td>
-      <td className="px-4 py-3 text-right">
+      <td className="px-4 py-2.5 text-right">
         {row.contribution === null ? (
           <span className="text-xs text-stone">{noContributionWords(row)}</span>
         ) : (
@@ -273,32 +375,22 @@ function LeagueTableRow({ row }: { row: LeagueRow }) {
           </span>
         )}
       </td>
-      <td className="px-4 py-3 text-right font-display text-[15px] font-semibold">
-        <KeptFigure value={row.contribution_pct} />
+      <td className="px-4 py-2.5 text-right">
+        <KeptCell value={row.contribution_pct} noun="this branch" />
       </td>
-      <td className="px-4 py-3">
-        <QualityChip quality={status.quality} />
-        <p className="mt-1 text-xs text-stone">{status.sentence}</p>
+      <td className="px-4 py-2.5">
+        <StatusCell row={row} label={`Why ${row.branch_name} reads this way`} />
       </td>
     </tr>
   );
 }
 
 function LeagueCard({ row }: { row: LeagueRow }) {
-  const status = leagueStatus(row);
-  const link = leagueLink(row);
   return (
     <li className="rounded-md border border-ink/10 bg-paper p-3">
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <Link
-            href={link.href}
-            aria-label={link.label}
-            className="inline-flex min-h-11 items-center rounded-sm py-1 font-medium text-ink underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-palm/30"
-          >
-            {row.branch_name}
-          </Link>
-          <p className="text-xs text-stone">{leagueLine(row)}</p>
+        <div className="flex min-h-11 items-center">
+          <BranchName row={row} />
         </div>
         <div className="pt-1 text-right">
           {row.contribution_pct === null ? (
@@ -317,9 +409,8 @@ function LeagueCard({ row }: { row: LeagueRow }) {
         </div>
       </div>
       <p className="mt-0.5 text-xs text-stone tabular-nums">{cardLine(row)}</p>
-      <p className="mt-2 text-xs text-stone">
-        <QualityChip quality={status.quality} />{" "}
-        <span className="align-middle">{status.sentence}</span>
+      <p className="mt-2">
+        <StatusCell row={row} label={`Why ${row.branch_name} reads this way`} />
       </p>
     </li>
   );
@@ -448,7 +539,7 @@ function ItemTableRow({
       <tr
         className={`border-b border-ink/5 align-middle ${caption === "Worst" ? "border-t border-t-ink/15" : ""}`}
       >
-        <td className="px-4 py-2">
+        <td className="px-4 py-2.5">
           {caption ? (
             <p className="text-[11px] font-medium tracking-wider text-stone uppercase">
               {caption}
@@ -461,7 +552,7 @@ function ItemTableRow({
             }}
             onClick={onToggle}
             aria-expanded={open}
-            className="group inline-flex min-h-11 items-center gap-1.5 rounded-sm py-1 text-left font-medium text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-palm/30"
+            className="group inline-flex items-center gap-1.5 rounded-sm text-left font-medium text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-palm/30"
           >
             <ChevronIcon
               className={`h-3 w-3 shrink-0 text-stone transition-transform ${open ? "rotate-90" : ""}`}
@@ -476,16 +567,16 @@ function ItemTableRow({
             ) : null}
           </button>
         </td>
-        <td className="px-4 py-3 text-right text-stone tabular-nums">
+        <td className="px-4 py-2.5 text-right text-stone tabular-nums">
           {row.qty_sold === null ? "-" : soldCount(row.qty_sold)}
         </td>
-        <td className="px-4 py-3 text-right tabular-nums">
+        <td className="px-4 py-2.5 text-right tabular-nums">
           {roundedAed(row.net_item_sales)}
         </td>
-        <td className="px-4 py-3 text-right">
+        <td className="px-4 py-2.5 text-right">
           <ContributionFigure row={row} layout="table" />
         </td>
-        <td className="px-4 py-3 text-right font-display text-[15px] font-semibold">
+        <td className="px-4 py-2.5 text-right font-display text-[15px] font-semibold">
           <KeptFigure value={row.contribution_pct} />
         </td>
       </tr>
@@ -578,9 +669,9 @@ function ItemCard({
 function SignalLine({ signal }: { signal: DashboardSignal }) {
   const href = signalHref(signal);
   return (
-    <li className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 py-3 first:pt-0 last:pb-0">
-      <div className="min-w-0 flex-1">
-        <p className="text-sm text-ink">
+    <li className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 py-2 first:pt-0 last:pb-0">
+      <p className="flex min-w-0 flex-1 items-center gap-1.5 text-sm text-ink">
+        <span className="min-w-0">
           {href ? (
             <Link href={href} className="underline-offset-2 hover:underline">
               {signal.sentence}
@@ -588,15 +679,12 @@ function SignalLine({ signal }: { signal: DashboardSignal }) {
           ) : (
             signal.sentence
           )}
-        </p>
-        <p className="text-xs text-stone">{signal.detail}</p>
-      </div>
-      <div className="text-right">
-        <p className="font-display text-[15px] font-semibold text-ink tabular-nums">
-          {signalMoney(signal)}
-        </p>
-        <p className="text-xs text-stone">{signalWhen(signal)}</p>
-      </div>
+        </span>
+        <InfoTip lines={signalTip(signal)} label="More about this" />
+      </p>
+      <p className="font-display text-[15px] font-semibold text-ink tabular-nums">
+        {signalMoney(signal)}
+      </p>
     </li>
   );
 }
@@ -617,6 +705,7 @@ export default function Dashboard() {
   const [reloadKey, setReloadKey] = useState(0);
   const [open, setOpen] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
+  const [allSignals, setAllSignals] = useState(false);
   const drillRef = useRef<HTMLDivElement>(null);
   const rowButtons = useRef<Map<string, HTMLButtonElement>>(new Map());
   const lastOpened = useRef<string | null>(null);
@@ -667,21 +756,19 @@ export default function Dashboard() {
     }
   }, [open]);
 
-  const header = (
-    <header>
-      <h1 className="font-display text-2xl font-semibold tracking-[-0.02em] text-ink">
-        Dashboard
-      </h1>
-      <p className="mt-1 max-w-2xl text-sm text-stone">
-        What each branch and each dish kept after ingredients and packaging,
-        over the days you have loaded.
-      </p>
-    </header>
+  // One line, always: the name of the screen and what it is, the second
+  // behind the icon.
+  const title = (
+    <h1 className="flex items-center gap-1.5 font-display text-[22px] font-semibold tracking-[-0.02em] text-ink">
+      Dashboard
+      <InfoTip lines={[SCREEN_ABOUT]} label="What this screen shows" />
+    </h1>
   );
+  const header = <header>{title}</header>;
 
   if (loadError) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-5">
         {header}
         <div
           role="alert"
@@ -708,7 +795,7 @@ export default function Dashboard() {
 
   if (result === null || branches === null) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-5">
         {header}
         <div
           aria-busy="true"
@@ -725,9 +812,9 @@ export default function Dashboard() {
   if (isFirstRun(result)) {
     const first = firstRun(result);
     return (
-      <div className="space-y-6">
+      <div className="space-y-5">
         {header}
-        <section className="rounded-md border border-ink/10 bg-paper p-5">
+        <section className="rounded-md border border-ink/10 bg-paper p-4">
           <h2 className="font-display text-lg font-semibold text-ink">
             {first.heading}
           </h2>
@@ -755,7 +842,8 @@ export default function Dashboard() {
 
   const fresh = freshnessLine(result);
   const answer = answerLines(result);
-  const caveat = answerCaveat(result);
+  const chip = answerChip(result);
+  const caveat = answerTip(result);
   const emptyBranch = filteredEmpty(result);
   const noMenu = noMenuSentence(result);
   const months = monthOptions(result.period);
@@ -772,8 +860,9 @@ export default function Dashboard() {
   const headlines = tiles(result);
   const panel = itemPanel(result.items, expanded);
   const incomplete = incompleteItems(result.items);
-  const strip = coverageStrip(result);
   const footnote = signalsFootnote(result);
+  const signals = signalPanel(result.signals, allSignals);
+  const moreSignals = showAllSignalsLabel(result.signals.length, allSignals);
   const toggle = (id: string) =>
     setOpen((current) => (current === id ? null : id));
 
@@ -803,87 +892,91 @@ export default function Dashboard() {
           ];
 
   return (
-    <div className="space-y-6">
-      {header}
-
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-stone">
-        <div
-          role="group"
-          aria-label="Period"
-          className="inline-flex overflow-hidden rounded-sm border border-ink/15"
-        >
-          {choices.map((option) => {
-            const on = choiceKey(option) === choiceKey(choice);
-            return (
-              <button
-                key={choiceKey(option)}
-                type="button"
-                aria-pressed={on}
+    <div className="space-y-5">
+      {/* The heading row and the freshness line read as one block, so they
+          share a gap of their own rather than the section gap. */}
+      <div>
+        <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          {title}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <div
+              role="group"
+              aria-label="Period"
+              className="inline-flex overflow-hidden rounded-sm border border-ink/15"
+            >
+              {choices.map((option) => {
+                const on = choiceKey(option) === choiceKey(choice);
+                return (
+                  <button
+                    key={choiceKey(option)}
+                    type="button"
+                    aria-pressed={on}
+                    disabled={loading}
+                    onClick={() => {
+                      if (on) return;
+                      setLoading(true);
+                      setChoice(option);
+                      setOpen(null);
+                    }}
+                    className={`min-h-9 px-3 py-1 text-xs font-medium ${
+                      on ? "bg-palm text-cream" : "text-stone hover:text-palm"
+                    } disabled:opacity-60`}
+                  >
+                    {choiceLabel(option)}
+                  </button>
+                );
+              })}
+            </div>
+            <label className="inline-flex items-center gap-2 text-xs font-medium text-stone">
+              <span className="sr-only">Branch</span>
+              <select
+                value={branch ?? ""}
                 disabled={loading}
-                onClick={() => {
-                  if (on) return;
-                  setLoading(true);
-                  setChoice(option);
-                  setOpen(null);
-                }}
-                className={`min-h-9 px-3 py-1 text-xs font-medium ${
-                  on ? "bg-palm text-cream" : "text-stone hover:text-palm"
-                } disabled:opacity-60`}
+                onChange={(event) => pickBranch(event.target.value)}
+                className="min-h-9 rounded-sm border border-ink/15 bg-paper px-2 py-1 text-xs font-medium text-ink disabled:opacity-60"
               >
-                {choiceLabel(option)}
-              </button>
-            );
-          })}
-        </div>
-        <label className="inline-flex items-center gap-2 text-xs font-medium text-stone">
-          <span className="sr-only">Branch</span>
-          <select
-            value={branch ?? ""}
-            disabled={loading}
-            onChange={(event) => pickBranch(event.target.value)}
-            className="min-h-9 rounded-sm border border-ink/15 bg-paper px-2 py-1 text-xs font-medium text-ink disabled:opacity-60"
-          >
-            {options.map((option) => (
-              <option key={option.id} value={option.id}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
+                {options.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </header>
+
+        <p
+          role="status"
+          aria-live="polite"
+          className="mt-1 flex flex-wrap items-center gap-x-1.5 text-[13px] text-stone"
+        >
+          {loading ? (
+            `Loading ${choiceLabel(choice)}`
+          ) : fresh ? (
+            <>
+              <span>{fresh.sentence}</span>
+              {fresh.estimated ? <QualityChip quality="estimated" /> : null}
+              {fresh.takings ? (
+                <span className="tabular-nums">· {fresh.takings}</span>
+              ) : null}
+              {fresh.papers ? (
+                <span>
+                  {"· "}
+                  <Link
+                    href={fresh.papers.href}
+                    className="font-medium text-palm underline-offset-2 hover:underline"
+                  >
+                    {fresh.papers.label}
+                  </Link>
+                </span>
+              ) : null}
+            </>
+          ) : null}
+        </p>
       </div>
 
-      <p role="status" aria-live="polite" className="text-sm text-stone">
-        {loading ? (
-          `Loading ${choiceLabel(choice)}`
-        ) : fresh ? (
-          <>
-            {fresh.sentence}
-            {fresh.estimated ? (
-              <>
-                {" "}
-                <QualityChip quality="estimated" />
-              </>
-            ) : null}
-            {fresh.takings ? (
-              <span className="tabular-nums"> · {fresh.takings}</span>
-            ) : null}
-            {fresh.papers ? (
-              <>
-                {" · "}
-                <Link
-                  href={fresh.papers.href}
-                  className="font-medium text-palm underline-offset-2 hover:underline"
-                >
-                  {fresh.papers.label}
-                </Link>
-              </>
-            ) : null}
-          </>
-        ) : null}
-      </p>
-
       {emptyBranch ? (
-        <section className="rounded-md border border-ink/10 bg-paper p-5">
+        <section className="rounded-md border border-ink/10 bg-paper p-4">
           <p className="text-sm font-medium text-ink">{emptyBranch}</p>
           <button
             type="button"
@@ -898,20 +991,26 @@ export default function Dashboard() {
       {emptyBranch ? null : (
         <section
           aria-busy={loading}
-          className={`space-y-6 ${loading ? "opacity-60" : ""}`}
+          className={`space-y-5 ${loading ? "opacity-60" : ""}`}
         >
-          <div className="max-w-3xl space-y-1">
-            <p className="text-base leading-relaxed text-ink">
-              {answer.empty ?? (
-                <>
-                  {answer.branch ? <span>{answer.branch}</span> : null}
-                  {answer.branch && answer.item ? " " : null}
-                  {answer.item ? <span>{answer.item}</span> : null}
-                </>
-              )}
-            </p>
-            {caveat ? <p className="text-xs text-stone">{caveat}</p> : null}
-          </div>
+          {/* The answer, the hero: two sentences, its word, and the notes
+              that qualify them behind the icon at the end. */}
+          <p className="max-w-4xl text-[17px] leading-snug font-medium text-ink">
+            {answer.empty ?? (
+              <>
+                {answer.branch ? <span>{answer.branch}</span> : null}
+                {answer.branch && answer.item ? " " : null}
+                {answer.item ? <span>{answer.item}</span> : null}
+              </>
+            )}
+            {chip !== null ? (
+              <>
+                {" "}
+                <QualityChip quality={chip} />
+              </>
+            ) : null}{" "}
+            <InfoTip lines={caveat} label="What qualifies this answer" />
+          </p>
 
           {/* The four headlines: the row in view, with the chain named beside
               it. One column on a phone, two by two on a tablet, one row on a
@@ -926,163 +1025,159 @@ export default function Dashboard() {
 
           <section className="space-y-2">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h2 className="font-display text-lg font-semibold text-ink">
-                Branch league
-              </h2>
+              <SectionHeading
+                title="Branch league"
+                tip={footnoteTip(result)}
+                label="How to read the league"
+              />
               <SectionLink href={LEAGUE_LINK.href} label={LEAGUE_LINK.label} />
             </div>
 
-          {/* The league: one fixed grid so every row lines up (the sales screen's rule). */}
-          <div className="hidden overflow-hidden rounded-md border border-ink/10 bg-paper sm:block">
-            <table className="w-full table-fixed text-sm">
-              <caption className="sr-only">
-                Branches ranked by what they kept, lowest first
-              </caption>
-              <colgroup>
-                <col className="w-[23%]" />
-                <col className="w-[13%]" />
-                <col className="w-[16%]" />
-                <col className="w-[16%]" />
-                <col className="w-[11%]" />
-                <col className="w-[21%]" />
-              </colgroup>
-              <thead>
-                <tr className="border-b border-ink/10 text-left text-xs font-medium tracking-wider text-stone uppercase">
-                  <th scope="col" className="px-4 py-2 font-medium">
-                    Branch
-                  </th>
-                  <th scope="col" className="px-4 py-2 text-right font-medium">
-                    Net sales
-                  </th>
-                  <th scope="col" className="px-4 py-2 text-right font-medium">
-                    Purchases ÷ net sales (cash basis)
-                  </th>
-                  <th scope="col" className="px-4 py-2 text-right font-medium">
-                    Contribution (est.)
-                  </th>
-                  <th scope="col" className="px-4 py-2 text-right font-medium">
-                    Kept
-                  </th>
-                  <th scope="col" className="px-4 py-2 font-medium">
-                    Status
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {result.league.map((row) => (
-                  <LeagueTableRow key={row.branch_id} row={row} />
-                ))}
-                {result.unassigned.count > 0 ? (
-                  <tr className="border-b border-ink/5 align-top text-stone">
-                    <td className="px-4 py-3">
-                      <p className="font-medium">No branch</p>
-                      <p className="text-xs">
-                        {result.unassigned.count}{" "}
-                        {result.unassigned.count === 1 ? "invoice" : "invoices"}{" "}
-                        with no branch
-                      </p>
-                    </td>
-                    <td className="px-4 py-3 text-right">-</td>
-                    <td className="px-4 py-3 text-right text-xs tabular-nums">
-                      {roundedAed(result.unassigned.purchases)} purchases
-                    </td>
-                    <td className="px-4 py-3 text-right">-</td>
-                    <td className="px-4 py-3 text-right">-</td>
-                    <td className="px-4 py-3 text-xs">
-                      Counted in the total, ranked nowhere.
-                    </td>
+            {/* The league: one fixed grid so every row lines up (the sales screen's rule). */}
+            <div className="hidden overflow-hidden rounded-md border border-ink/10 bg-paper sm:block">
+              <table className="w-full table-fixed text-sm">
+                <caption className="sr-only">
+                  Branches ranked by what they kept, lowest first
+                </caption>
+                <colgroup>
+                  <col className="w-[18%]" />
+                  <col className="w-[14%]" />
+                  <col className="w-[16%]" />
+                  <col className="w-[16%]" />
+                  <col className="w-[16%]" />
+                  <col className="w-[20%]" />
+                </colgroup>
+                <thead>
+                  <tr className="border-b border-ink/10 text-left text-[11px] leading-4 font-medium tracking-wider text-stone uppercase">
+                    <th scope="col" className="px-4 py-1.5 font-medium">
+                      Branch
+                    </th>
+                    <th scope="col" className="px-4 py-1.5 text-right font-medium">
+                      Net sales
+                    </th>
+                    <th scope="col" className="px-4 py-1.5 text-right font-medium">
+                      Purchases ÷ net sales (cash basis)
+                    </th>
+                    <th scope="col" className="px-4 py-1.5 text-right font-medium">
+                      Contribution (est.)
+                    </th>
+                    <th scope="col" className="px-4 py-1.5 text-right font-medium">
+                      Kept
+                    </th>
+                    <th scope="col" className="px-4 py-1.5 font-medium">
+                      Status
+                    </th>
                   </tr>
-                ) : null}
-                <tr className="border-t border-ink/15 align-top font-semibold">
-                  <td className="px-4 py-3">All branches</td>
-                  <td className="px-4 py-3 text-right tabular-nums">
-                    {roundedAed(result.total.net_sales)}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    {result.total.ratio_pct === null ? (
-                      <span className="text-xs font-normal text-stone">
-                        Not rated
-                      </span>
-                    ) : (
-                      <>
+                </thead>
+                <tbody>
+                  {result.league.map((row) => (
+                    <LeagueTableRow key={row.branch_id} row={row} />
+                  ))}
+                  {result.unassigned.count > 0 ? (
+                    <tr className="border-b border-ink/5 text-stone">
+                      <td className="px-4 py-2.5">
+                        <span className="font-medium">No branch</span>
+                        <p className="text-xs">
+                          {result.unassigned.count}{" "}
+                          {result.unassigned.count === 1
+                            ? "invoice"
+                            : "invoices"}{" "}
+                          with no branch
+                        </p>
+                      </td>
+                      <td className="px-4 py-2.5 text-right">-</td>
+                      <td className="px-4 py-2.5 text-right text-xs tabular-nums">
+                        {roundedAed(result.unassigned.purchases)} purchases
+                      </td>
+                      <td className="px-4 py-2.5 text-right">-</td>
+                      <td className="px-4 py-2.5 text-right">-</td>
+                      <td className="px-4 py-2.5 text-xs">
+                        Counted in the total, ranked nowhere.
+                      </td>
+                    </tr>
+                  ) : null}
+                  <tr className="border-t border-ink/15 font-semibold">
+                    <td className="px-4 py-2.5">All branches</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">
+                      {roundedAed(result.total.net_sales)}
+                    </td>
+                    <td className="px-4 py-2.5 text-right">
+                      {result.total.ratio_pct === null ? (
+                        <span className="text-xs font-normal text-stone">
+                          Not rated
+                        </span>
+                      ) : (
                         <span className="font-display text-[15px] tabular-nums">
                           {percent(result.total.ratio_pct)}
                         </span>
-                        <p className="text-xs font-normal text-stone tabular-nums">
-                          {roundedAed(result.total.purchases)} purchases
-                        </p>
-                      </>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    {result.total.contribution === null ? (
-                      <span className="text-xs font-normal text-stone">
+                      )}
+                    </td>
+                    <td className="px-4 py-2.5 text-right">
+                      {result.total.contribution === null ? (
+                        <span className="text-xs font-normal text-stone">
+                          {noMenu ?? "Nothing costed"}
+                        </span>
+                      ) : (
+                        <span className="font-display text-[15px] tabular-nums">
+                          {roundedAed(result.total.contribution)}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2.5 text-right">
+                      <KeptCell
+                        value={result.total.contribution_pct}
+                        noun="the chain"
+                      />
+                    </td>
+                    <td className="px-4 py-2.5 font-normal">
+                      <StatusCell
+                        row={result.total}
+                        label="Why the chain reads this way"
+                      />
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            {/* Cards under 640 px: the kept percentage as the large figure. */}
+            <ul className="space-y-2 sm:hidden">
+              {result.league.map((row) => (
+                <LeagueCard key={row.branch_id} row={row} />
+              ))}
+              <li className="rounded-md border border-ink/15 bg-paper p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <p className="min-h-11 py-1 font-semibold text-ink">
+                    All branches
+                  </p>
+                  <div className="pt-1 text-right">
+                    {result.total.contribution_pct === null ? (
+                      <span className="text-xs text-stone">
                         {noMenu ?? "Nothing costed"}
                       </span>
                     ) : (
-                      <span className="font-display text-[15px] tabular-nums">
-                        {roundedAed(result.total.contribution)}
+                      <span className="font-display text-xl font-semibold text-ink tabular-nums">
+                        {percent(result.total.contribution_pct)}
                       </span>
                     )}
-                  </td>
-                  <td className="px-4 py-3 text-right font-display text-[15px]">
-                    <KeptFigure value={result.total.contribution_pct} />
-                  </td>
-                  <td className="px-4 py-3 font-normal">
-                    <QualityChip quality={result.total.contribution_quality} />
-                    <p className="mt-1 text-xs text-stone">
-                      {leagueStatus(result.total).sentence}
-                    </p>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-            <p className="border-t border-ink/10 px-4 py-3 text-xs text-stone">
-              {leagueFootnote(result)}
-            </p>
-          </div>
-
-          {/* Cards under 640 px: the kept percentage as the large figure. */}
-          <ul className="space-y-2 sm:hidden">
-            {result.league.map((row) => (
-              <LeagueCard key={row.branch_id} row={row} />
-            ))}
-            <li className="rounded-md border border-ink/15 bg-paper p-3">
-              <div className="flex items-start justify-between gap-3">
-                <p className="min-h-11 py-1 font-semibold text-ink">
-                  All branches
-                </p>
-                <div className="pt-1 text-right">
-                  {result.total.contribution_pct === null ? (
-                    <span className="text-xs text-stone">
-                      {noMenu ?? "Nothing costed"}
-                    </span>
-                  ) : (
-                    <span className="font-display text-xl font-semibold text-ink tabular-nums">
-                      {percent(result.total.contribution_pct)}
-                    </span>
-                  )}
+                  </div>
                 </div>
-              </div>
-              <p className="mt-0.5 text-xs text-stone tabular-nums">
-                {result.total.contribution === null
-                  ? `Net sales ${roundedAed(result.total.net_sales)}`
-                  : `Kept ${roundedAed(result.total.contribution)} of ${roundedAed(result.total.net_sales)}`}
-                {result.total.ratio_pct === null
-                  ? ""
-                  : ` · purchases ÷ net sales ${percent(result.total.ratio_pct)}`}
-              </p>
-              <p className="mt-2 text-xs text-stone">
-                <QualityChip quality={result.total.contribution_quality} />{" "}
-                <span className="align-middle">
-                  {leagueStatus(result.total).sentence}
-                </span>
-              </p>
-            </li>
-            <li className="px-1 text-xs text-stone">
-              {leagueFootnote(result)}
-            </li>
-          </ul>
+                <p className="mt-0.5 text-xs text-stone tabular-nums">
+                  {result.total.contribution === null
+                    ? `Net sales ${roundedAed(result.total.net_sales)}`
+                    : `Kept ${roundedAed(result.total.contribution)} of ${roundedAed(result.total.net_sales)}`}
+                  {result.total.ratio_pct === null
+                    ? ""
+                    : ` · purchases ÷ net sales ${percent(result.total.ratio_pct)}`}
+                </p>
+                <p className="mt-2">
+                  <StatusCell
+                    row={result.total}
+                    label="Why the chain reads this way"
+                  />
+                </p>
+              </li>
+            </ul>
           </section>
 
           {/* What to look at: prose, ranked by money, never a widget. */}
@@ -1103,13 +1198,23 @@ export default function Dashboard() {
               ) : (
                 <>
                   <ul className="divide-y divide-ink/5">
-                    {result.signals.map((signal) => (
+                    {signals.map((signal) => (
                       <SignalLine
                         key={`${signal.kind}-${signal.sentence}`}
                         signal={signal}
                       />
                     ))}
                   </ul>
+                  {moreSignals ? (
+                    <button
+                      type="button"
+                      onClick={() => setAllSignals((value) => !value)}
+                      aria-expanded={allSignals}
+                      className="mt-2 text-xs font-medium text-palm underline-offset-2 hover:underline"
+                    >
+                      {moreSignals}
+                    </button>
+                  ) : null}
                   {footnote ? (
                     <p className="mt-2 text-xs text-stone">{footnote}</p>
                   ) : null}
@@ -1121,9 +1226,11 @@ export default function Dashboard() {
           {/* The items: five and five, expanding in place. */}
           <section className="space-y-2">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h2 className="font-display text-lg font-semibold text-ink">
-                Items: what each one contributed
-              </h2>
+              <SectionHeading
+                title="Items: what each one contributed"
+                tip={itemsTip()}
+                label="What contribution counts"
+              />
               <span className="flex flex-wrap items-baseline gap-x-3">
                 {itemsHeading(result.items) ? (
                   <span className="text-xs text-stone">
@@ -1256,29 +1363,6 @@ export default function Dashboard() {
                   ))}
                 </ul>
               </div>
-            ) : null}
-            {panel.kind !== "none" ? (
-              <p className="max-w-2xl text-xs text-stone">
-                Contribution is the till&apos;s own net takings for the item
-                less what its recipe costs at the prices in force on the
-                period&apos;s last day; it is not profit, and{" "}
-                {COST_COVERS.charAt(0).toLowerCase() + COST_COVERS.slice(1)}
-              </p>
-            ) : null}
-          </section>
-
-          {/* The consultant's queue: a link, not a second queue. */}
-          <section className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-mist p-4">
-            <p className="text-sm text-ink">
-              <span className="font-medium">{strip.lead}</span> {strip.rest}
-            </p>
-            {strip.link ? (
-              <Link
-                href={strip.link.href}
-                className="inline-flex min-h-11 items-center rounded-sm border border-palm/30 px-3 py-1.5 text-sm font-medium text-palm hover:border-palm"
-              >
-                {strip.link.label} &rarr;
-              </Link>
             ) : null}
           </section>
         </section>

@@ -251,7 +251,7 @@ export default function AppShell({
           </div>
         </div>
       </header>
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6 xl:pt-10">{children}</main>
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-5 sm:px-6 xl:pt-10">{children}</main>
       {/* The brand line moves into the sidebar foot where there is a sidebar. */}
       <footer className="mx-auto w-full max-w-6xl px-4 pt-4 pb-10 sm:px-6 xl:hidden">
         <p className="text-xs text-stone">Profit, in plain sight.</p>
