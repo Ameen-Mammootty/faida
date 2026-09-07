@@ -84,6 +84,7 @@ Sales (M8): a branch-day of till sales has one door - `POST /api/sales/days`, `d
 
 Extraction (M1+): Gemini 3 Flash (`gemini-3-flash-preview`) via the google-genai SDK with structured JSON output - the shipped default since 2026-08-29 (measured bake-off, Decision Log) - behind one thin provider interface so the provider swaps in one place; Claude Opus 5 stays wired as the fallback (`EXTRACTION_PROVIDER=anthropic`, no deploy needed).
 Accuracy is a pipeline property, not a prompt property: deterministic arithmetic reconciliation, one scoped repair pass, supplier-memory snapping, and derived (never self-reported) confidence.
+Supplier matching (`matching.match_supplier`) is that character score with a word check on top (2026-09-05): a candidate over the 0.85 bar is refused when a meaningful word on either side has no counterpart on the other (single-letter runs joined, a prefix only for a dotted abbreviation, per script, legal boilerplate ignored), so a new vendor "Al Madina ABC" never books under "Al Madina"; the check can only remove a match, and confirm matches a supplier-less paper again before creating a supplier. The evidence is `tests/fixtures/supplier_name_pairs.json` and the corpus guard in `tests/test_matching.py`; a wrong booking is silent and permanent, a miss is one alias keystroke (WP-87).
 The full six-layer design is `plan.md` §5.
 Once the eval harness exists, every pipeline change runs the eval before merge.
 

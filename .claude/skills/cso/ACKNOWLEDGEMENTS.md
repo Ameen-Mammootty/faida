@@ -1,0 +1,1 @@
+/Users/mohammedameen/Documents/GitHub/faida/.claude/skills/gstack/cso/ACKNOWLEDGEMENTS.md

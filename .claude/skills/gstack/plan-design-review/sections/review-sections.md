@@ -396,7 +396,7 @@ Display:
 - **CEO Review (optional):** Use your judgment. Recommend it for big product/business changes, new user-facing features, or scope decisions. Skip for bug fixes, refactors, infra, and cleanup.
 - **Design Review (optional):** Use your judgment. Recommend it for UI/UX changes. Skip for backend-only, infra, or prompt-only changes.
 - **Adversarial Review (automatic):** Always-on for every review. Every diff gets both Claude adversarial subagent and Codex adversarial challenge. Large diffs (200+ lines) additionally get Codex structured review with P1 gate. No configuration needed.
-- **Outside Voice (optional):** Independent plan review from a different AI model. Offered after all review sections complete in /plan-ceo-review and /plan-eng-review. Falls back to Claude subagent if Codex is unavailable. Never gates shipping.
+- **Outside Voice (optional):** Independent plan review from a different AI model when Codex is available (falls back to a same-family Claude subagent otherwise — fresh context, not cross-model). Offered after all review sections complete in /plan-ceo-review and /plan-eng-review. Never gates shipping.
 
 **Verdict logic:**
 - **CLEARED**: Eng Review has >= 1 entry within 7 days from either \`review\` or \`plan-eng-review\` with status "clean" (or \`skip_eng_review\` is \`true\`)
@@ -405,10 +405,11 @@ Display:
 - If \`skip_eng_review\` config is \`true\`, Eng Review shows "SKIPPED (global)" and verdict is CLEARED
 
 **Staleness detection:** After displaying the dashboard, check if any existing reviews may be stale:
-- Parse the \`---HEAD---\` section from the bash output to get the current HEAD commit hash
-- For each review entry that has a \`commit\` field: compare it against the current HEAD. If different, count elapsed commits: \`git rev-list --count STORED_COMMIT..HEAD\`. Display: "Note: {skill} review from {date} may be stale — {N} commits since review"
+- **Content-first rule (diff-scoped rows only: \`review\`, \`adversarial-review\`, \`codex-review\`, ship-stage entries).** Parse the \`---WTREE---\` and \`---DIRTY---\` sections from the bash output. If an entry has a \`wtree\` field AND it equals the current \`---WTREE---\` value, the review is CURRENT — identical content, regardless of commit count, rebase, amend, or whether it was committed yet (wtree equality alone proves identical content; that is the keystone property). Skip the commit-count heuristic for that entry and show no staleness note.
+- Plan-tier rows (plan-ceo-review, plan-eng-review, plan-design-review) grade a plan file, not the repo tree — never apply the wtree rule to them; they keep the 7-day freshness logic. If such an entry carries a \`plan_sha256\` field, you MAY compare it against the current plan file's sha256 and note "plan changed since review" on mismatch.
+- Fallback (no \`wtree\` on the entry, or wtree mismatch): parse the \`---HEAD---\` section to get the current HEAD commit hash. For each review entry that has a \`commit\` field: compare it against the current HEAD. If different, count elapsed commits: \`git rev-list --count STORED_COMMIT..HEAD\`. If that command FAILS (the stored commit was rebased away), grade UNKNOWN and treat as stale — do not error. Display: "Note: {skill} review from {date} may be stale — {N} commits since review"
 - For entries without a \`commit\` field (legacy entries): display "Note: {skill} review from {date} has no commit tracking — consider re-running for accurate staleness detection"
-- If all reviews match the current HEAD, do not display any staleness notes
+- If all reviews grade CURRENT (wtree match or HEAD match), do not display any staleness notes
 
 ## Plan File Review Report
 

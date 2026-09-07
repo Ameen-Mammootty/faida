@@ -13,7 +13,11 @@ import * as path from 'path';
 import * as os from 'os';
 import { spawnSync } from 'child_process';
 
-const SCHEMA_VERSION = 1;
+// v2: EvalTestEntry.harvest gains optional {insertions, deletions, net} and
+// may be explicitly null (arm-benchmark harvest-failure taxonomy). Readers
+// stay tolerant of v1 runs: no reader requires the new fields, and
+// eval-compare only warns on version mismatch.
+const SCHEMA_VERSION = 2;
 const LEGACY_EVAL_DIR = path.join(os.homedir(), '.gstack-dev', 'evals');
 
 /**
@@ -39,7 +43,16 @@ export function getProjectEvalDir(): string {
   return LEGACY_EVAL_DIR;
 }
 
-const DEFAULT_EVAL_DIR = getProjectEvalDir();
+/**
+ * Lazy + memoized so importing this module never spawns the gstack-slug
+ * subprocess. Callers that pass an explicit dir or set GSTACK_EVAL_DIR
+ * (the sharded paid runner does, per shard) never pay for slug detection.
+ */
+let memoizedDefaultEvalDir: string | null = null;
+function defaultEvalDir(): string {
+  if (memoizedDefaultEvalDir === null) memoizedDefaultEvalDir = getProjectEvalDir();
+  return memoizedDefaultEvalDir;
+}
 
 // --- Interfaces ---
 
@@ -50,12 +63,19 @@ export interface EvalTestEntry {
   passed: boolean;
   duration_ms: number;
   cost_usd: number;
+  /** 1-based record attempt for this name in this run. bun's --retry leaves
+   *  retried passes INVISIBLE in its text output (a fail→pass prints no
+   *  (fail) line and recaps as a clean pass — probed on 1.3.10), so the ONLY
+   *  reliable attempt signal is this in-process record: a retried test runs
+   *  its body again and re-records under the same name. Set by addTest. */
+  attempt?: number;
 
   // E2E
   transcript?: any[];
   prompt?: string;
   output?: string;
   turns_used?: number;
+  tokens_used?: number;
   browse_errors?: string[];
 
   // LLM judge
@@ -81,12 +101,20 @@ export interface EvalTestEntry {
 
   error?: string;
 
-  // Worktree harvest data
+  // Diff harvest data. Two writers today:
+  //   - WorktreeManager harvests set {filesChanged, patchPath, isDuplicate}.
+  //   - Arm-benchmark cells (schema v2) set {filesChanged, insertions,
+  //     deletions, net} from `git add -A && git diff --cached --stat`, and
+  //     record an explicit `null` when harvest itself failed (failure
+  //     taxonomy: a failed harvest is never silently dropped).
   harvest?: {
     filesChanged: number;
-    patchPath: string;
-    isDuplicate: boolean;
-  };
+    patchPath?: string;
+    isDuplicate?: boolean;
+    insertions?: number;
+    deletions?: number;
+    net?: number;
+  } | null;
 }
 
 export interface EvalResult {
@@ -96,6 +124,10 @@ export interface EvalResult {
   git_sha: string;
   timestamp: string;
   hostname: string;
+  /** `claude --version` first line at run time (schema-additive, optional).
+   *  TUI drift broke the PTY harness three times before runs recorded which
+   *  CLI they actually exercised. */
+  claude_cli_version?: string;
   tier: 'e2e' | 'llm-judge';
   total_tests: number;
   passed: number;
@@ -104,6 +136,13 @@ export interface EvalResult {
   total_duration_ms: number;
   wall_clock_ms?: number;     // wall-clock from collector creation to finalization (shows parallelism)
   tests: EvalTestEntry[];
+  /** Shard slug when the run was collected under <evalDir>/shards/<slug>/. */
+  shard?: string;
+  /** Tests recorded more than once this run — the flake ledger for the paid
+   *  lane. A test passing on attempt 2 every week used to read permanently
+   *  green (the retry's entry was indistinguishable and bun's output hides
+   *  retries entirely). Present only when non-empty. */
+  flaky_retries?: Array<{ name: string; attempts: number }>;
   _partial?: boolean;  // true for incremental saves, absent in final
 }
 
@@ -131,9 +170,108 @@ export interface ComparisonResult {
   unchanged: number;
   tool_count_before: number;
   tool_count_after: number;
+  /** After-tests that had a same-named entry in the before run. 0 = nothing was
+   *  actually compared, so no stability claim is warranted. */
+  matched?: number;
 }
 
 // --- Shared helpers ---
+
+/**
+ * Is this eval file an in-progress accumulator rather than a finalized run?
+ *
+ * True on either signal: the `_partial` flag inside the JSON (the authoritative
+ * role marker) OR a filename starting with `_partial` (catches accumulators
+ * whose body predates the flag, and flagged files that were renamed keep being
+ * caught by the flag). Every baseline lookup must exclude these — an
+ * accumulator carries the current run's tier, branch, and freshest timestamp,
+ * so treating it as a baseline makes the run compare against itself.
+ */
+export function isPartialEval(data: unknown, filename: string): boolean {
+  if (path.basename(filename).startsWith('_partial')) return true;
+  return Boolean((data as { _partial?: unknown } | null)?._partial);
+}
+
+/**
+ * Is this path a FINALIZED eval-store result file? Single owner of the
+ * filename taxonomy (manifest.json / slice-N.json are runner artifacts,
+ * _partial* are in-progress accumulators) — the paid runner's report mode
+ * and eval-flake-rank both consume this instead of re-encoding the rule
+ * (review finding: the rule lived in three places).
+ */
+export function isFinalizedEvalResultFile(relPath: string): boolean {
+  const base = path.basename(relPath);
+  if (!base.endsWith('.json')) return false;
+  if (base === 'manifest.json' || /^slice-\d+\.json$/.test(base)) return false;
+  if (base.startsWith('_partial')) return false;
+  return true;
+}
+
+/**
+ * List eval JSON files in `evalDir` plus one level of `<evalDir>/shards/<slug>/`
+ * subdirectories (where the sharded paid runner points each shard's collector).
+ * Returns absolute paths. Missing dirs yield [].
+ */
+export function listEvalJsonFiles(evalDir: string): string[] {
+  const jsonIn = (dir: string): string[] => {
+    let names: string[];
+    try {
+      names = fs.readdirSync(dir);
+    } catch {
+      return [];
+    }
+    return names.filter(f => f.endsWith('.json')).map(f => path.join(dir, f));
+  };
+
+  const files = jsonIn(evalDir);
+  const shardsRoot = path.join(evalDir, 'shards');
+  let shardDirs: fs.Dirent[];
+  try {
+    shardDirs = fs.readdirSync(shardsRoot, { withFileTypes: true });
+  } catch {
+    return files;
+  }
+  for (const entry of shardDirs) {
+    if (!entry.isDirectory()) continue;
+    files.push(...jsonIn(path.join(shardsRoot, entry.name)));
+  }
+  return files;
+}
+
+/**
+ * Shard slug for an eval dir: when the dir is directly under a `shards/`
+ * directory (the sharded paid runner's per-shard GSTACK_EVAL_DIR layout),
+ * the dir name is the slug; otherwise null.
+ */
+export function shardSlugOfEvalDir(evalDir: string): string | null {
+  const normalized = path.resolve(evalDir);
+  return path.basename(path.dirname(normalized)) === 'shards' ? path.basename(normalized) : null;
+}
+
+/**
+ * Find the most recent finalized (non-partial) eval file for a tier, scanning
+ * `evalDir` and one level of `shards/<slug>/` subdirs. Shared by the budget
+ * regression gate and any tooling that needs "the latest real run".
+ */
+export function findLatestFinalizedRun(
+  evalDir: string,
+  tier: 'e2e' | 'llm-judge',
+): { filepath: string; result: EvalResult } | null {
+  let latest: { filepath: string; result: EvalResult; timestamp: string } | null = null;
+  for (const filepath of listEvalJsonFiles(evalDir)) {
+    let data: EvalResult;
+    try {
+      data = JSON.parse(fs.readFileSync(filepath, 'utf-8')) as EvalResult;
+    } catch { continue; }
+    if (isPartialEval(data, filepath)) continue;
+    if (data.tier !== tier) continue;
+    const timestamp = data.timestamp ?? '';
+    if (!latest || timestamp.localeCompare(latest.timestamp) > 0) {
+      latest = { filepath, result: data, timestamp };
+    }
+  }
+  return latest ? { filepath: latest.filepath, result: latest.result } : null;
+}
 
 /**
  * Determine if a planted-bug eval passed based on judge results vs ground truth thresholds.
@@ -171,8 +309,16 @@ export function extractToolSummary(transcript: any[]): Record<string, number> {
 }
 
 /**
- * Find the most recent prior eval file for comparison.
- * Prefers same branch, falls back to any branch.
+ * Find the most recent prior COMPLETED eval file for comparison.
+ * Scans the eval dir plus one level of `shards/<slug>/` subdirs. Prefers
+ * same shard slug (a shard's own history over another shard's or the flat
+ * dir's), then same branch, then falls back to anything.
+ *
+ * In-progress accumulators (`_partial: true`, written by savePartial after every
+ * test) are never candidates: the current run's own partial carries the current
+ * tier + branch and the freshest timestamp, so including it made every run
+ * compare against itself and report "no regressions" unconditionally. The
+ * exclusion is by role (the `_partial` flag), not by filename.
  */
 export function findPreviousRun(
   evalDir: string,
@@ -180,24 +326,22 @@ export function findPreviousRun(
   branch: string,
   excludeFile: string,
 ): string | null {
-  let files: string[];
-  try {
-    files = fs.readdirSync(evalDir).filter(f => f.endsWith('.json'));
-  } catch {
-    return null; // dir doesn't exist
-  }
-
   // Parse top-level fields from each file (cheap — no full tests array needed)
-  const entries: Array<{ file: string; branch: string; timestamp: string }> = [];
-  for (const file of files) {
-    if (file === path.basename(excludeFile)) continue;
-    const fullPath = path.join(evalDir, file);
+  const entries: Array<{ file: string; branch: string; timestamp: string; shard: string | null }> = [];
+  for (const fullPath of listEvalJsonFiles(evalDir)) {
+    if (path.resolve(fullPath) === path.resolve(excludeFile)) continue;
     try {
       const raw = fs.readFileSync(fullPath, 'utf-8');
       // Quick parse — only grab the fields we need
       const data = JSON.parse(raw);
+      if (isPartialEval(data, fullPath)) continue; // in-progress run, not a baseline
       if (data.tier !== tier) continue;
-      entries.push({ file: fullPath, branch: data.branch || '', timestamp: data.timestamp || '' });
+      entries.push({
+        file: fullPath,
+        branch: data.branch || '',
+        timestamp: data.timestamp || '',
+        shard: data.shard || shardSlugOfEvalDir(path.dirname(fullPath)),
+      });
     } catch { continue; }
   }
 
@@ -206,11 +350,17 @@ export function findPreviousRun(
   // Sort by timestamp descending
   entries.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
 
-  // Prefer same branch
-  const sameBranch = entries.find(e => e.branch === branch);
-  if (sameBranch) return sameBranch.file;
-
-  // Fallback: any branch
+  // Prefer same shard slug (null = the flat dir), then same branch, then any.
+  const targetShard = shardSlugOfEvalDir(path.dirname(excludeFile));
+  const preferences: Array<(e: typeof entries[number]) => boolean> = [
+    e => e.shard === targetShard && e.branch === branch,
+    e => e.shard === targetShard,
+    e => e.branch === branch,
+  ];
+  for (const matches of preferences) {
+    const hit = entries.find(matches);
+    if (hit) return hit.file;
+  }
   return entries[0].file;
 }
 
@@ -226,6 +376,7 @@ export function compareEvalResults(
   const deltas: TestDelta[] = [];
   let improved = 0, regressed = 0, unchanged = 0;
   let toolCountBefore = 0, toolCountAfter = 0;
+  let matched = 0;
 
   // Index before tests by name
   const beforeMap = new Map<string, EvalTestEntry>();
@@ -246,6 +397,7 @@ export function compareEvalResults(
 
     let statusChange: TestDelta['status_change'] = 'unchanged';
     if (beforeTest) {
+      matched++;
       if (!beforeTest.passed && afterTest.passed) { statusChange = 'improved'; improved++; }
       else if (beforeTest.passed && !afterTest.passed) { statusChange = 'regressed'; regressed++; }
       else { unchanged++; }
@@ -314,6 +466,7 @@ export function compareEvalResults(
     unchanged,
     tool_count_before: toolCountBefore,
     tool_count_after: toolCountAfter,
+    matched,
   };
 }
 
@@ -512,7 +665,17 @@ export function generateCommentary(c: ComparisonResult): string[] {
     }
   }
 
-  // 4. Overall summary
+  // 4. No baseline — say so. A run with nothing to compare against must never
+  //    read as "stable"; silence or a false all-clear is worse than no output.
+  if (c.matched === 0 && c.deltas.length > 0) {
+    notes.push(
+      `NO BASELINE: none of these ${c.deltas.length} test(s) appear in ${path.basename(c.before_file)}. ` +
+      'Nothing was compared, so this run says nothing about regressions.',
+    );
+    return notes;
+  }
+
+  // 5. Overall summary
   if (c.deltas.length >= 3 && regressions.length === 0) {
     const overallParts: string[] = [];
 
@@ -644,21 +807,65 @@ function getVersion(): string {
   }
 }
 
+// Cached per process: savePartial runs after EVERY test and must not pay a
+// CLI spawn each time. Three separate harness breakages were traced to
+// claude-CLI TUI drift only after long flake hunts — stamping the version
+// into every run record makes that correlation a grep instead of an
+// archaeology dig.
+//
+// GSTACK_CLAUDE_CLI_VERSION short-circuits the spawn entirely: the paid
+// runner's parent resolves the version once and passes it to every shard,
+// so test processes never block on it. The fallback spawn is SYNCHRONOUS on
+// the same thread that polls PTY sessions — the judgePtyState blocking
+// class — so its budget is a tight 3s, not a generous one: a slow/hung CLI
+// costs one bounded stall per process and records 'unknown'.
+let claudeCliVersionCache: string | null = null;
+export function getClaudeCliVersion(): string {
+  if (claudeCliVersionCache !== null) return claudeCliVersionCache;
+  const fromEnv = process.env.GSTACK_CLAUDE_CLI_VERSION;
+  if (fromEnv) {
+    claudeCliVersionCache = fromEnv;
+    return claudeCliVersionCache;
+  }
+  try {
+    const result = spawnSync('claude', ['--version'], { stdio: 'pipe', timeout: 3_000 });
+    claudeCliVersionCache = result.stdout?.toString().split('\n')[0].trim() || 'unknown';
+  } catch {
+    claudeCliVersionCache = 'unknown';
+  }
+  return claudeCliVersionCache;
+}
+
 export class EvalCollector {
   private tier: 'e2e' | 'llm-judge';
   private tests: EvalTestEntry[] = [];
   private finalized = false;
   private evalDir: string;
+  private shard: string | null;
   private createdAt = Date.now();
 
   constructor(tier: 'e2e' | 'llm-judge', evalDir?: string) {
     this.tier = tier;
-    this.evalDir = evalDir || DEFAULT_EVAL_DIR;
+    this.evalDir = evalDir || process.env.GSTACK_EVAL_DIR || defaultEvalDir();
+    this.shard = shardSlugOfEvalDir(this.evalDir);
   }
 
   addTest(entry: EvalTestEntry): void {
-    this.tests.push(entry);
+    // Same-name re-record = the test body ran again = bun retried it (test
+    // names are unique by convention). Stamp the 1-based attempt so a
+    // pass-on-attempt-2 stays visible forever — the stream hides it.
+    const prior = this.tests.filter((t) => t.name === entry.name).length;
+    this.tests.push({ ...entry, attempt: prior + 1 });
     this.savePartial();
+  }
+
+  /** Names recorded more than once this run, with their attempt counts. */
+  private flakyRetries(): Array<{ name: string; attempts: number }> {
+    const counts = new Map<string, number>();
+    for (const t of this.tests) counts.set(t.name, (counts.get(t.name) ?? 0) + 1);
+    return [...counts.entries()]
+      .filter(([, n]) => n > 1)
+      .map(([name, attempts]) => ({ name, attempts }));
   }
 
   /** Write incremental results after each test. Atomic write, non-fatal. */
@@ -677,6 +884,7 @@ export class EvalCollector {
         git_sha: git.sha,
         timestamp: new Date().toISOString(),
         hostname: os.hostname(),
+        claude_cli_version: getClaudeCliVersion(),
         tier: this.tier,
         total_tests: this.tests.length,
         passed,
@@ -684,6 +892,7 @@ export class EvalCollector {
         total_cost_usd: Math.round(totalCost * 100) / 100,
         total_duration_ms: totalDuration,
         tests: this.tests,
+        ...(this.shard ? { shard: this.shard } : {}),
         _partial: true,
       };
 
@@ -706,6 +915,7 @@ export class EvalCollector {
     const totalDuration = this.tests.reduce((s, t) => s + t.duration_ms, 0);
     const passed = this.tests.filter(t => t.passed).length;
 
+    const flaky = this.flakyRetries();
     const result: EvalResult = {
       schema_version: SCHEMA_VERSION,
       version,
@@ -713,6 +923,7 @@ export class EvalCollector {
       git_sha: git.sha,
       timestamp,
       hostname: os.hostname(),
+      claude_cli_version: getClaudeCliVersion(),
       tier: this.tier,
       total_tests: this.tests.length,
       passed,
@@ -721,6 +932,8 @@ export class EvalCollector {
       total_duration_ms: totalDuration,
       wall_clock_ms: Date.now() - this.createdAt,
       tests: this.tests,
+      ...(this.shard ? { shard: this.shard } : {}),
+      ...(flaky.length > 0 ? { flaky_retries: flaky } : {}),
     };
 
     // Write eval file
@@ -742,7 +955,11 @@ export class EvalCollector {
         const comparison = compareEvalResults(prevResult, result, prevFile, filepath);
         process.stderr.write(formatComparison(comparison) + '\n');
       } else {
-        process.stderr.write('\nFirst run — no comparison available.\n');
+        process.stderr.write(
+          `\nNO BASELINE: no completed prior ${this.tier} run found in ${this.evalDir}` +
+          ' (the in-progress accumulator is not a baseline). Nothing compared —' +
+          ' this run says nothing about regressions.\n',
+        );
       }
     } catch (err: any) {
       process.stderr.write(`\nCompare error: ${err.message}\n`);
@@ -779,6 +996,12 @@ export class EvalCollector {
     const totalCost = `$${result.total_cost_usd.toFixed(2)}`;
     const totalDur = `${Math.round(result.total_duration_ms / 1000)}s`;
     lines.push(`  Total: ${result.passed}/${result.total_tests} passed${' '.repeat(20)}${totalCost.padStart(6)}  ${totalDur}`);
+    if (result.flaky_retries && result.flaky_retries.length > 0) {
+      // Loud, never fatal: a flaky pass must not block anyone, but it must
+      // never be silent either — that invisibility is how flakes calcified.
+      lines.push(`  ⚠ FLAKY: ${result.flaky_retries.length} test(s) recorded multiple attempts this run: `
+        + result.flaky_retries.map((f) => `${f.name} (x${f.attempts})`).join(', '));
+    }
     lines.push(`Saved: ${filepath}`);
 
     process.stderr.write(lines.join('\n') + '\n');

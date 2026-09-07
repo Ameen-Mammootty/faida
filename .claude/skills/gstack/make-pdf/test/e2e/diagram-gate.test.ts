@@ -83,6 +83,7 @@ describe("diagram render gate", () => {
         env: { ...process.env, BROWSE_BIN },
         stdout: "pipe",
         stderr: "pipe",
+        timeout: 120_000,
       });
       const stderr = new TextDecoder().decode(run.stderr);
       if (run.exitCode !== 0) {
@@ -164,7 +165,10 @@ describe("diagram render gate", () => {
 
   if (!avail.ok) {
     test("diagram gate prerequisites are present (hard-required in CI)", () => {
-      if (process.env.CI) {
+      // Hard-require only where the binary is expected: the make-pdf gate
+      // workflow is macOS-only (path-filtered) and builds dist/pdf first.
+      // The Linux free lane deliberately doesn't build it — warn-skip there.
+      if (process.env.CI && process.platform === 'darwin') {
         throw new Error(`diagram gate prerequisites missing in CI: ${avail.reason}`);
       }
       console.warn(`[skip] ${avail.reason}`);

@@ -41,6 +41,30 @@ model copies both scripts joined on some runs and one script on others. Scoring
 is script-aware (see _similarity) so a joined "English / عربى" name still
 matches a single-script catalog entry on the half they share - one read variant
 no longer splits a supplier or an item into two.
+
+The supplier word check (2026-09-05 eng review; the founder's "Al Madina ABC"
+question): the character score dilutes a short distinguishing word by
+everything two names share - an inserted word of N characters is invisible
+once the shared text is longer than about 2.8N - so "Al Madina ABC Trading
+LLC" scores 0.91 against "Al Madina Trading LLC" and would book under it
+silently, corrupting the other supplier's price history for good.
+`match_supplier` therefore refuses any candidate over the bar whose
+*meaningful words* disagree with the printed name (`words_agree`): every word
+on each side must have a counterpart on the other, per script, after legal
+and trade boilerplate is set aside. The check runs only on candidates already
+at or above SUPPLIER_MATCH_THRESHOLD and can only remove a match, never add
+one: a miss costs one alias keystroke, a wrong match corrupts another
+supplier's prices. Two rules the first draft got wrong, caught by the review's
+outside voice: runs of single letters are joined before the boilerplate list
+("L.L.C." is "llc" and ignored, "A.B.C" is "abc" and meaningful), and a
+prefix stands in for a longer word only when it is written as an abbreviation
+with a trailing dot ("VEG." for "Vegetables"; "Star" never for "Starlet", and
+an undotted "Veg" is a miss by design). Measured: no pair of the real supplier
+names in the eval truth and the demo seed changes outcome (the regression
+guard, tests/test_matching.py), and every labelled pair in
+tests/fixtures/supplier_name_pairs.json goes the right way (the validation,
+grown from every real surprise). The boilerplate list itself is a judgement
+call, pinned word by word to a corpus name or a labelled pair.
 """
 
 import re
@@ -56,6 +80,29 @@ Row = Mapping[str, Any]
 
 SUPPLIER_MATCH_THRESHOLD = 0.85
 SNAP_THRESHOLD = 0.80
+
+# Legal forms and generic trade words a letterhead adds or drops between
+# printings ("Gulf Foods Trading" / "Gulf Foods Trading L.L.C." / "Gulf Foods
+# Trading Est."). The supplier word check ignores exactly these; every other
+# word is meaningful, including the trade descriptors that tell two companies
+# apart ("Foodstuff", "Fresh", "Supply", "Vegetables", "Hypermarket", "Star").
+# Each entry is pinned to a corpus name or a labelled pair by a test; a word
+# with neither is a judgement call and does not belong here. Single characters
+# never reach this list: runs of them are joined first, which is how "L.L.C."
+# arrives as "llc" and "ذ.م.م" as "ذمم".
+_SUPPLIER_BOILERPLATE = frozenset(
+    "llc ltd limited co company est fze fzc fzco wll "
+    "trading tr general and al "
+    "شركة مؤسسة ذمم للتجارة التجارية تجارة العامة المحدودة".split()
+)
+# A word on one side counts as present on the other when a word there is this
+# close a spelling ("madeena" / "madina" scores 0.77).
+_WORD_MATCH_RATIO = 0.75
+# An abbreviation is two to five letters followed by a dot in the name as
+# printed ("VEG.", "Tr.", "Est."): not preceded by a letter or a dot (the
+# single letters of "L.L.C." abbreviate nothing) and not followed by a digit
+# (the dot in "2.5kg" is a decimal point).
+_ABBREVIATION_RE = re.compile(r"(?<![\w.])([^\W\d_]{2,5})\.(?!\d)")
 # INGREDIENT_PROPOSAL_THRESHOLD 0.70, measured with pack sizes stripped from
 # both sides (see propose_ingredients). Real matches clear it - "Milk Powder
 # 2.5kg" 1.00, "MILK PWDR 2.5KG NIDO" 0.72, "EVAP MILK 48x400ML" vs
@@ -375,19 +422,123 @@ def propose_menu_items(
     return scored[:limit]
 
 
+def _abbreviations(raw_name: str) -> frozenset[str]:
+    """The abbreviated words of a name as printed, casefolded ("VEG." -> "veg")."""
+    return frozenset(match.group(1).casefold() for match in _ABBREVIATION_RE.finditer(raw_name))
+
+
+def _join_single_letters(tokens: Sequence[str]) -> list[str]:
+    """Runs of single characters joined into one word ("l l c" -> "llc", "a b
+    c" -> "abc", "ذ م م" -> "ذمم"): what "L.L.C." and "A.B.C" become once
+    `normalize` has turned their dots into spaces."""
+    words: list[str] = []
+    run: list[str] = []
+    for token in tokens:
+        if len(token) == 1:
+            run.append(token)
+            continue
+        if run:
+            words.append("".join(run))
+            run = []
+        words.append(token)
+    if run:
+        words.append("".join(run))
+    return words
+
+
+def _supplier_words(view: str) -> list[str]:
+    """The meaningful words of one script view of a normalized name: single
+    letters joined, then boilerplate and anything under two characters
+    dropped."""
+    words = _join_single_letters(view.split())
+    return [word for word in words if len(word) >= 2 and word not in _SUPPLIER_BOILERPLATE]
+
+
+def _word_present(
+    word: str, others: Sequence[str], joined: str, abbreviations: frozenset[str]
+) -> bool:
+    """Whether one side's word has a counterpart on the other, by one of three
+    rules, each pinned to a labelled pair: it appears inside the other name
+    with spaces removed ("almadina" in "al madina", "veg" in "vegetables"); a
+    word on the other side is an abbreviation of it, written with a dot
+    ("vegetables" from "VEG."); or a word on the other side is a close
+    spelling ("madina" / "madeena")."""
+    if len(word) >= 3 and word in joined:
+        return True
+    if any(other in abbreviations and word.startswith(other) for other in others):
+        return True
+    return any(SequenceMatcher(None, word, other).ratio() >= _WORD_MATCH_RATIO for other in others)
+
+
+def words_agree(a: str, b: str) -> bool:
+    """Whether two supplier names agree word for word: every meaningful word on
+    each side has a counterpart on the other (`_word_present`), compared per
+    script and only for a script both names carry - the WP-29 principle, so a
+    bilingual letterhead against a single-script catalog entry is judged on
+    the half they share. Boilerplate never counts (`_SUPPLIER_BOILERPLATE`).
+    A side with no meaningful words agrees trivially, and the character score
+    decides alone."""
+    na, nb = normalize(a), normalize(b)
+    abbreviations_a, abbreviations_b = _abbreviations(a), _abbreviations(b)
+    for view in (_latin_view, _arabic_view):
+        va, vb = view(na), view(nb)
+        if not (va and vb):
+            continue
+        words_a, words_b = _supplier_words(va), _supplier_words(vb)
+        joined_a, joined_b = va.replace(" ", ""), vb.replace(" ", "")
+        if not all(_word_present(word, words_b, joined_b, abbreviations_b) for word in words_a):
+            return False
+        if not all(_word_present(word, words_a, joined_a, abbreviations_a) for word in words_b):
+            return False
+    return True
+
+
+def same_name(a: str | None, b: str | None) -> bool:
+    """Whether two printed names are the same name: equal after `normalize`,
+    and both present. An empty name never equals another empty name - the
+    rule invoice numbers already follow (`normalize_invoice_no`)."""
+    if not a or not b:
+        return False
+    na = normalize(a)
+    return bool(na) and na == normalize(b)
+
+
+def known_as(supplier: Row, name: str | None) -> bool:
+    """Whether `name` is already this supplier's catalog name or one of its
+    aliases - the one test the alias door (WP-87), the chat reply's "Booked
+    under" line and the matcher share."""
+    known = (supplier["name"], *(supplier["name_aliases"] or []))
+    return any(same_name(name, candidate) for candidate in known)
+
+
 def match_supplier(suppliers: Sequence[Row], extracted_name: str | None) -> Row | None:
     """The supplier whose name or alias best matches the extracted supplier
-    name, or None when nothing clears SUPPLIER_MATCH_THRESHOLD."""
+    name, or None when nothing both clears SUPPLIER_MATCH_THRESHOLD and agrees
+    word for word (`words_agree`). The character score comes first and the
+    word check runs only for a candidate already over the bar, so the check
+    can only remove a match. Ties break on the normalized catalog name, and
+    `Database.list_suppliers` orders its rows the same way, so the same paper
+    books under the same supplier on every run."""
     if not extracted_name:
         return None
     best: Row | None = None
-    best_score = 0.0
+    best_key: tuple[float, str] | None = None
     for supplier in suppliers:
-        names = [supplier["name"], *(supplier["name_aliases"] or [])]
-        score = max(_similarity(extracted_name, name) for name in names)
-        if score > best_score:
-            best, best_score = supplier, score
-    return best if best_score >= SUPPLIER_MATCH_THRESHOLD else None
+        score = 0.0
+        for name in (supplier["name"], *(supplier["name_aliases"] or [])):
+            if not name:
+                continue  # an empty alias matches nothing and raises nothing
+            candidate = _similarity(extracted_name, name)
+            if candidate < SUPPLIER_MATCH_THRESHOLD or candidate <= score:
+                continue
+            if words_agree(extracted_name, name):
+                score = candidate
+        if score < SUPPLIER_MATCH_THRESHOLD:
+            continue
+        key = (-score, normalize(supplier["name"]))
+        if best_key is None or key < best_key:
+            best, best_key = supplier, key
+    return best
 
 
 def _best_item(items: Sequence[Row], raw_name: str, *, strip_notes: bool) -> Row | None:

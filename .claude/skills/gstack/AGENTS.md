@@ -19,7 +19,7 @@ Invoke them by name (e.g., `/office-hours`).
 | `/plan-design-review` | Rate each design dimension 0-10, explain what a 10 looks like. |
 | `/plan-devex-review` | DX-mode review: TTHW, magical moments, friction points, persona traces. |
 | `/plan-tune` | Self-tune AskUserQuestion sensitivity per question. |
-| `/autoplan` | One command runs CEO → design → eng → DX review. |
+| `/autoplan` | One command runs CEO → design → DX → eng review (eng always last). |
 | `/design-consultation` | Build a complete design system from scratch. |
 | `/spec` | Turn vague intent into a precise, executable spec in five phases. Files a GitHub issue, optionally spawns a Claude Code agent in a fresh worktree, and lets `/ship` close the source issue on merge. |
 
@@ -92,6 +92,7 @@ Companion CLIs (run on the Mac that's plugged into the device):
 |---------|-------------|
 | `gstack-ios-qa-daemon` | Mac-side broker. Loopback by default; `--tailnet` adds a Tailscale-facing listener with capability tiers and audit logging. |
 | `gstack-ios-qa-mint` | Owner-grant CLI for the tailnet allowlist (`grant`/`revoke`/`list`). |
+| `gstack-ios-qa-regen` | Regenerate the canonical local DebugBridge package and typed accessors (`--app-source` / `--bridge-dir`). |
 
 End-to-end walkthrough: [docs/howto-ios-testing-with-gstack.md](docs/howto-ios-testing-with-gstack.md).
 
@@ -110,7 +111,7 @@ End-to-end walkthrough: [docs/howto-ios-testing-with-gstack.md](docs/howto-ios-t
 
 ```bash
 bun install              # install dependencies
-bun test                 # run free tests (no API spend)
+bun run test             # run free tests via the strict shard runner (no API spend, ~90-100s)
 bun run test:windows     # curated Windows-safe subset (runs on windows-latest)
 bun run build            # generate docs + compile binaries
 bun run gen:skill-docs   # regenerate SKILL.md files from templates

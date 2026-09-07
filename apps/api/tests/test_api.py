@@ -1064,6 +1064,33 @@ async def test_manual_entry_snaps_to_supplier_memory(api, db):
     assert milk["last_price"] == Decimal("50.00")  # baseline moves only on confirm
 
 
+@requires_db
+async def test_manual_entry_with_a_lookalike_supplier_name_attaches_no_supplier(api, db):
+    # The word check guards the typed path exactly as the photographed one
+    # (2026-09-05): "Gulf Foods ABC Trading LLC" is a different company from the
+    # seeded "Gulf Foods Trading L.L.C.", however close the characters score.
+    app, client, *_ = api
+    await seed_supplier_with_items(
+        db,
+        [
+            {
+                "canonical_name": "MILK PWDR 2.5KG NIDO",
+                "unit": "sack",
+                "pack_size": "2.5kg",
+                "last_price": Decimal("50.00"),
+            }
+        ],
+    )
+    body = manual_body(supplier_name="Gulf Foods ABC Trading LLC")
+    resp = await client.post("/api/invoices/manual", headers=AUTH, json=body)
+    assert resp.status_code == 201
+    detail = resp.json()
+    assert detail["supplier_id"] is None
+    assert [line["supplier_item_id"] for line in detail["lines"]] == [None, None]
+    assert [line["checks"]["snapped"] for line in detail["lines"]] == [None, None]
+    assert detail["confidence"]["lines"] == ["green", "green"]
+
+
 # --- the revoked-key drill (plan.md §6 M3 done-when) -------------------------
 
 

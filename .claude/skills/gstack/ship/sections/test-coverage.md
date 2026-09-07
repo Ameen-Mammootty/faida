@@ -4,6 +4,8 @@
 
 **Dispatch this step as a subagent** using the Agent tool with `subagent_type: "general-purpose"`. The subagent runs the coverage audit in a fresh context window — the parent only sees the conclusion, not intermediate file reads. This is context-rot defense.
 
+**Foreground required:** pass `run_in_background: false` on the Agent call — subagents run in the BACKGROUND by default since Claude Code v2.1.198. (Merely omitting the flag no longer produces a foreground run; it must be explicitly false.) The dispatch happens ONLY via the Agent tool: invoking the target as a Skill, or executing its workflow inline in your own context, is WRONG even though the skill may appear in your available-skills list — inline execution forfeits the fresh-context isolation this dispatch exists for, and the explicit flag already makes the Agent call block. (Where a step defines an inline FALLBACK, it applies only after a dispatched subagent has failed.) The parent needs this audit's LAST-line JSON before continuing.
+
 **Subagent prompt:** Pass the following instructions to the subagent, with `<base>` substituted with the base branch:
 
 > You are running a ship-workflow test coverage audit. Run `git diff <base>...HEAD` as needed. Do not commit or push — report only.
@@ -19,15 +21,20 @@ Before analyzing coverage, detect the project's test framework:
 
 ```bash
 setopt +o nomatch 2>/dev/null || true  # zsh compat
-# Detect project runtime
-[ -f Gemfile ] && echo "RUNTIME:ruby"
+# Detect project runtime (markers are evidence, not commands to run blind)
+[ -f manage.py ] && echo "RUNTIME:python FRAMEWORK:django"
+{ [ -f pyproject.toml ] || [ -f pytest.ini ] || [ -f tox.ini ] || [ -f setup.cfg ] || [ -f requirements.txt ]; } && echo "RUNTIME:python"
+[ -f Gemfile ] || [ -f Rakefile ] || [ -f .rspec ] && echo "RUNTIME:ruby"
 [ -f package.json ] && echo "RUNTIME:node"
-[ -f requirements.txt ] || [ -f pyproject.toml ] && echo "RUNTIME:python"
 [ -f go.mod ] && echo "RUNTIME:go"
 [ -f Cargo.toml ] && echo "RUNTIME:rust"
-# Check for existing test infrastructure
-ls jest.config.* vitest.config.* playwright.config.* cypress.config.* .rspec pytest.ini phpunit.xml 2>/dev/null
-ls -d test/ tests/ spec/ __tests__/ cypress/ e2e/ 2>/dev/null
+[ -f pom.xml ] && echo "RUNTIME:jvm BUILD:maven"
+{ [ -f build.gradle ] || [ -f build.gradle.kts ]; } && echo "RUNTIME:jvm BUILD:gradle"
+# Check for existing test infrastructure — config files, scripts, AND test files
+ls jest.config.* vitest.config.* playwright.config.* cypress.config.* .rspec pytest.ini tox.ini phpunit.xml 2>/dev/null
+[ -f package.json ] && grep -q '"test"[[:space:]]*:' package.json && echo "SCRIPT:package.json test"
+[ -f Makefile ] && grep -qE '^(test|check):' Makefile && echo "TARGET:make test"
+git ls-files | grep -cE '(^|/)(tests?|spec|__tests__)/|(^|/)tests?\.py$|(^|/)test_[^/]+\.py$|_test\.(go|py|rb|ts|js|exs)$|\.(test|spec)\.[jt]sx?$|_spec\.rb$|Test\.(java|kt)$' | sed 's/^/TESTFILES:/'
 ```
 
 3. **If no framework detected:** falls through to the Test Framework Bootstrap step (Step 4) which handles full setup.
@@ -36,7 +43,7 @@ ls -d test/ tests/ spec/ __tests__/ cypress/ e2e/ 2>/dev/null
 
 ```bash
 # Count test files before any generation
-find . -name '*.test.*' -o -name '*.spec.*' -o -name '*_test.*' -o -name '*_spec.*' | grep -v node_modules | wc -l
+git ls-files 2>/dev/null | grep -E '(\.test\.|\.spec\.|_test\.|_spec\.)' | wc -l
 ```
 
 Store this number for the PR body.
@@ -174,7 +181,7 @@ If no test framework AND user declined bootstrap → diagram only, no generation
 
 ```bash
 # Count test files after generation
-find . -name '*.test.*' -o -name '*.spec.*' -o -name '*_test.*' -o -name '*_spec.*' | grep -v node_modules | wc -l
+git ls-files 2>/dev/null | grep -E '(\.test\.|\.spec\.|_test\.|_spec\.)' | wc -l
 ```
 
 For PR body: `Tests: {before} → {after} (+{delta} new)`
@@ -254,6 +261,6 @@ Repo: {owner/repo}
 3. Embed `diagram` verbatim in the PR body's `## Test Coverage` section (Step 19).
 4. Print a one-line summary: `Coverage: {coverage_pct}%, {gaps} gaps. {tests_added.length} tests added.`
 
-**If the subagent fails, times out, or returns invalid JSON:** Fall back to running the audit inline in the parent. Do not block /ship on subagent failure — partial results are better than none.
+**If the subagent fails, times out, returns invalid JSON, or never completes (backgrounded despite the flag, or no final output after ~10 minutes — stop waiting; if a backgrounded task is still running, stop it first so a late result never races the fallback):** Fall back to running the audit inline in the parent. Do not block /ship on subagent failure — partial results are better than none.
 
 ---

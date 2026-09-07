@@ -61,6 +61,7 @@ from .conftest import (
     FakeStorage,
     requires_db,
     wa_image_payload,
+    wa_text_payload,
 )
 from .test_extraction_flow import (
     drain_jobs,
@@ -334,16 +335,6 @@ def api(settings, db):
 async def post_webhook(client, payload: dict) -> httpx.Response:
     body = json.dumps(payload).encode()
     return await client.post("/webhook", content=body, headers={"X-Hub-Signature-256": sign(body)})
-
-
-def wa_text_payload(
-    body: str, message_id: str = "wamid.txt1", from_phone: str = DEMO_PHONE
-) -> dict:
-    payload = wa_image_payload(message_id=message_id, from_phone=from_phone)
-    msg = payload["entry"][0]["changes"][0]["value"]["messages"][0]
-    msg.update({"type": "text", "text": {"body": body}})
-    del msg["image"]
-    return payload
 
 
 def madina_invoice() -> ExtractedInvoice:

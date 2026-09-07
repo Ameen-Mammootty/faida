@@ -17,7 +17,13 @@ import asyncpg
 
 from ..contracts import DocumentStatus, InvoiceStatus, JobKind, JobRefused, job_tenant_id
 from ..db import RETRY_LIMIT, Database
-from ..matching import Row, match_supplier, normalize, normalize_invoice_no, snap_item
+from ..matching import (
+    Row,
+    match_supplier,
+    normalize_invoice_no,
+    same_name,
+    snap_item,
+)
 from ..provenance import Origin, changed_fields, initial, mark
 from ..replies import (
     DEFAULT_CURRENCY,
@@ -429,9 +435,9 @@ def _same_money(invoice_currency: str | None, row_currency: str | None) -> bool:
 def _same_supplier(row: Row, supplier_id: str | None, supplier_name: str | None) -> bool:
     if supplier_id is not None and row["supplier_id"] is not None:
         return str(row["supplier_id"]) == supplier_id
-    if supplier_name and row["supplier_name"]:
-        return normalize(row["supplier_name"]) == normalize(supplier_name)
-    return False
+    # One definition of "the same name" for the whole product (matching.same_name):
+    # equal after normalization, and never two empty names.
+    return same_name(row["supplier_name"], supplier_name)
 
 
 def price_alerts(

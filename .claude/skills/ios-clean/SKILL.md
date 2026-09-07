@@ -1,1 +1,1 @@
-/Users/mohammedameen/conductor/repos/faida/.claude/skills/gstack/ios-clean/SKILL.md
+/Users/mohammedameen/Documents/GitHub/faida/.claude/skills/gstack/ios-clean/SKILL.md

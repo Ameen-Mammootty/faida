@@ -46,10 +46,10 @@ from .conftest import (
     FakeStorage,
     requires_db,
     wa_image_payload,
+    wa_text_payload,
     wire_auth,
 )
 from .test_api import client_for, extracted_invoice
-from .test_confirm_flow import wa_text_payload
 from .test_extraction_flow import drain_jobs, good_invoice, invoice_result, post_webhook
 
 AT = datetime.datetime(2026, 8, 28, 9, 0, tzinfo=datetime.UTC)

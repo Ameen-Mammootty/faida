@@ -1,0 +1,185 @@
+{
+  "_about": [
+    "Labelled supplier-name pairs for matching.match_supplier (2026-09-05 eng review).",
+    "must_match: [catalog name, name as printed] pairs that clear the 0.85 bar and must book together.",
+    "must_not_match: pairs that must never book together, whatever the character score says.",
+    "Grow this file from every real paper that surprises the matcher: add the pair, watch it fail, fix, watch it pass.",
+    "The corpus test in tests/test_matching.py is the regression guard over real names; this file is the validation."
+  ],
+  "must_match": [
+    [
+      "Gulf Foods Trading LLC",
+      "GULF FOODS TRADING L.L.C."
+    ],
+    [
+      "Gulf Foods Trading LLC",
+      "Gulf Foods Trading"
+    ],
+    [
+      "Gulf Foods Trading LLC",
+      "Gulf Foods Trading Est."
+    ],
+    [
+      "Gulf Foods Trading LLC",
+      "Gulf Foods Trading FZE"
+    ],
+    [
+      "Gulf Foods Trading LLC",
+      "Gulf Foods Trading FZC"
+    ],
+    [
+      "Gulf Foods Trading LLC",
+      "Gulf Foods Trading FZCO"
+    ],
+    [
+      "Gulf Foods Trading LLC",
+      "Gulf Foods Trading WLL"
+    ],
+    [
+      "Gulf Foods Trading LLC",
+      "Gulf Foods Trading Ltd"
+    ],
+    [
+      "Gulf Foods General Trading LLC",
+      "Gulf Foods General Trading Limited"
+    ],
+    [
+      "Gulf Foods Trading Co.",
+      "Gulf Foods Trading Company"
+    ],
+    [
+      "Gulf Foods General Trading LLC",
+      "Gulf Foods Gen. Trading LLC"
+    ],
+    [
+      "Al Madina Trading",
+      "Al Madeena Trading"
+    ],
+    [
+      "Al Madina Trading",
+      "Almadina Trading"
+    ],
+    [
+      "Al Madina Trading",
+      "Al Madina Trading Co"
+    ],
+    [
+      "Al Madina Foodstuff Trading LLC",
+      "Al Madina Foodstuff Tr. LLC"
+    ],
+    [
+      "Al Madina Trading LLC",
+      "Madina Trading LLC"
+    ],
+    [
+      "Al Madina Vegetables & Fruits Trading LLC",
+      "AL MADINA VEG. & FRUITS TRADING L.L.C"
+    ],
+    [
+      "AL MADINA VEG. & FRUITS TRADING L.L.C",
+      "Al Madina Vegetables & Fruits Trading LLC"
+    ],
+    [
+      "Al Aweer Fresh Vegetables & Fruits Trading",
+      "Al Aweer Fresh Vegetables and Fruits Trading"
+    ],
+    [
+      "Gulf Food Stuff Trading",
+      "Gulf Foodstuff Trading"
+    ],
+    [
+      "A.B.C Trading LLC",
+      "ABC Trading LLC"
+    ],
+    [
+      "M.H. Enterprises LLC",
+      "MH Enterprises LLC"
+    ],
+    [
+      "Emirates Poultry Farm",
+      "Emirates Poultry Farms"
+    ],
+    [
+      "Dairy House Foodstuff LLC",
+      "Dairy House Foodstuff LLC / بيت الألبان للمواد الغذائية ذ.م.م"
+    ],
+    [
+      "Al Madina Trading LLC",
+      "Al Madina Trading LLC / المدينة للتجارة ذ.م.م"
+    ],
+    [
+      "مؤسسة الخليج للمواد الغذائية",
+      "مؤسسة الخليج للمواد الغذائية ذ.م.م"
+    ],
+    [
+      "شركة الخليج للمواد الغذائية ذ.م.م",
+      "مؤسسة الخليج للمواد الغذائية ذ.م.م"
+    ],
+    [
+      "شركة الخليج للتجارة العامة ذ.م.م",
+      "شركة الخليج للتجارة ذ.م.م"
+    ],
+    [
+      "شركة الخليج للمواد الغذائية المحدودة",
+      "شركة الخليج للمواد الغذائية"
+    ],
+    [
+      "شركة الخليج التجارية ذ.م.م",
+      "شركة الخليج تجارة ذ.م.م"
+    ]
+  ],
+  "must_not_match": [
+    [
+      "Al Madina Trading",
+      "Al Madina ABC Trading"
+    ],
+    [
+      "Al Madina Trading LLC",
+      "Al Madina ABC Trading LLC"
+    ],
+    [
+      "Al Madina Trading LLC",
+      "Al Madina A.B.C Trading LLC"
+    ],
+    [
+      "Al Madina Trading LLC",
+      "Al Madina M.H Trading LLC"
+    ],
+    [
+      "Al Madina Star Trading LLC",
+      "Al Madina Starlet Trading LLC"
+    ],
+    [
+      "Al Madina Trading LLC",
+      "Al Madina Fresh Trading LLC / المدينة فريش للتجارة ذ.م.م"
+    ],
+    [
+      "Al Madina Trading LLC",
+      "Al Madina Hypermarket LLC"
+    ],
+    [
+      "Al Madina Vegetables & Fruits Trading LLC",
+      "Al Madina Veg & Fruits Trading LLC"
+    ],
+    [
+      "Al Ain Poultry",
+      "Al Ain Dairy"
+    ],
+    [
+      "International Trading Co",
+      "National Trading"
+    ],
+    [
+      "Gulf Pantry Supply LLC",
+      "Gulf Pantry Supplies Store LLC"
+    ],
+    [
+      "Alpha Foods LLC شركة ألفا للمواد الغذائية ذ.م.م",
+      "Beta Trading LLC شركة بيتا للمواد الغذائية ذ.م.م"
+    ],
+    [
+      "مؤسسة الخليج للمواد الغذائية",
+      "مؤسسة النور للمواد الغذائية"
+    ]
+  ]
+}

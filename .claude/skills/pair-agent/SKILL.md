@@ -1,1 +1,1 @@
-/Users/mohammedameen/conductor/repos/faida/.claude/skills/gstack/pair-agent/SKILL.md
+/Users/mohammedameen/Documents/GitHub/faida/.claude/skills/gstack/pair-agent/SKILL.md

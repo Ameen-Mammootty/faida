@@ -279,3 +279,16 @@ def wa_image_payload(message_id: str = "wamid.in1", from_phone: str = DEMO_PHONE
             }
         ],
     }
+
+
+def wa_text_payload(
+    body: str, message_id: str = "wamid.txt1", from_phone: str = DEMO_PHONE
+) -> dict:
+    """The same inbound envelope as an image, carrying a text ("OK", a
+    correction) instead - shared by the confirm-flow and extraction-flow
+    tests."""
+    payload = wa_image_payload(message_id=message_id, from_phone=from_phone)
+    msg = payload["entry"][0]["changes"][0]["value"]["messages"][0]
+    msg.update({"type": "text", "text": {"body": body}})
+    del msg["image"]
+    return payload

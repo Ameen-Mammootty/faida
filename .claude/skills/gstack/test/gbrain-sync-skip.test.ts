@@ -25,7 +25,7 @@ import { join } from "path";
 import { execFileSync, spawnSync } from "child_process";
 
 const SCRIPT = join(import.meta.dir, "..", "bin", "gstack-gbrain-sync.ts");
-const BUN_BIN = execFileSync("sh", ["-c", "command -v bun"], { encoding: "utf-8" }).trim();
+const BUN_BIN = execFileSync("sh", ["-c", "command -v bun"], { encoding: "utf-8", timeout: 30_000 }).trim();
 
 interface FakeEnv {
   tmp: string;
@@ -42,7 +42,7 @@ interface FakeEnv {
  */
 function makeEnv(opts: {
   withGbrain: boolean;
-  gbrainBehavior?: "ok" | "broken-db" | "broken-config" | "slow";
+  gbrainBehavior?: "ok" | "broken-db" | "broken-config" | "engine-locked" | "slow";
   withConfig: boolean;
 }): FakeEnv {
   const tmp = mkdtempSync(join(tmpdir(), "gbrain-sync-skip-"));
@@ -75,6 +75,9 @@ function makeEnv(opts: {
         : behavior === "ok"
           ? `  echo '{"sources":[]}'
   exit 0`
+          : behavior === "engine-locked"
+            ? `  echo "gbrain sources: connect timed out (default 10000ms; pass --timeout=Ns to override)." >&2
+  exit 124`
           : `  ${
               behavior === "broken-db"
                 ? 'echo "Cannot connect to database: . Fix: Check your connection URL in ~/.gbrain/config.json" >&2'
@@ -109,9 +112,10 @@ function runOrchestrator(
 ): { stdout: string; stderr: string; exitCode: number } {
   // Initialize a git repo in the sandbox so repoRoot() finds it (otherwise
   // code stage skips with "not in git repo" before our check ever fires).
-  spawnSync("git", ["init", "-q", env.home], { encoding: "utf-8" });
+  spawnSync("git", ["init", "-q", env.home], { encoding: "utf-8", timeout: 30_000 });
   spawnSync("git", ["-C", env.home, "commit", "--allow-empty", "-m", "init", "-q"], {
     encoding: "utf-8",
+    timeout: 30_000,
     env: { ...process.env, GIT_AUTHOR_NAME: "T", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "T", GIT_COMMITTER_EMAIL: "t@t" },
   });
 
@@ -202,6 +206,20 @@ describe("gstack-gbrain-sync — split-engine SKIP (plan D12)", () => {
     try {
       const r = runOrchestrator(env, ["--no-code", "--no-brain-sync"]);
       expect(r.stdout + r.stderr).toContain("local engine broken-config");
+    } finally {
+      env.cleanup();
+    }
+  });
+
+  it("SKIPs with actionable guidance when PGLite is held by gbrain serve (#2194)", () => {
+    const env = makeEnv({ withGbrain: true, gbrainBehavior: "engine-locked", withConfig: true });
+    try {
+      const r = runOrchestrator(env, ["--code-only"]);
+      const out = r.stdout + r.stderr;
+      expect(out).toContain("local engine engine-locked");
+      expect(out).toContain("gbrain serve");
+      expect(out).toContain("outside the live Claude session");
+      expect(out).not.toContain("config.json is malformed");
     } finally {
       env.cleanup();
     }
