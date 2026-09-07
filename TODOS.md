@@ -448,6 +448,28 @@ recommendation keeps the picker on both screens, and `GET /api/dashboard?from&to
 **Depends on:** WP-84, WP-93. Trigger: a pilot asks for a range the picker lacks (the founder answered D3 with the
 picker, 2026-09-05).
 
+### A till name mapped to a lookalike dish is invisible on the screen
+
+**What:** When a proposal is accepted or a dish is picked for a till name, warn (not refuse) when the
+till name's size word disagrees with the dish's - `2L` against `Flask 1 L`, `SML` against `Large` - using
+the size vocabulary `matching._dish_words` already strips; and list, under *Mapped names* on `/sales`,
+the mapped names whose dish carries a different size word, so a wrong keystroke is one line to find
+rather than a figure to notice.
+
+**Why:** At the M9 go-live sitting (2026-09-07, `DEMO_RUNBOOK.md` §C5) the live dashboard read was diffed
+against `act_four.py` before the screen was looked at and disagreed by AED 220 on the chain's contribution:
+`COFFEE MILK FLASK 2L` had been mapped to the 1 L flask at the M8 sitting - a keystroke, since the matcher
+proposes the 2 L flask first (0.976 against 0.927). Nothing on the screen could show it: the queue was
+empty, the coverage tile read 100%, and the only symptoms were "44 costed" against a 45-item menu and a
+flask in the best five. The founder fixed it through the shipped door (Unmap, then the top proposal), so
+the door is not the gap; seeing the need for it is.
+
+**Context:** WP-96, 2026-09-07. The runbook now reads the live mapping back before a rehearsal week (§H's
+preconditions), which covers the demo stage and not a customer's.
+
+**Depends on:** nothing. Trigger: fired once, on the demo stage; build it when a pilot's consultant maps a
+till for the first time, or the second time a read-back finds one.
+
 ### Correcting a wrongly taught branch alias
 
 **What:** A way back for an alias taught to the wrong branch: a delete on `POST /api/branches/{id}/aliases`'s
@@ -687,7 +709,7 @@ material's latest move inside the window" by construction and its caption says s
 **Depends on:** WP-92. Trigger: a tenant's `sales_lines` passes a million rows or the dashboard read
 passes 500 ms.
 
-### The real menu CSV lives outside the repository, so act four's exact figures cannot fail CI
+### ~~The real menu CSV lives outside the repository, so act four's exact figures cannot fail CI~~ done 2026-09-07
 
 **What:** Commit a copy of the founder's 45-item menu in the loader's shape (or a fixture derived
 from it) under `Docs/demo-invoices/koukh-al-shay/`, and drop the skip in
@@ -706,9 +728,11 @@ publishes the derived plate costs, so the prices are not a new disclosure; the r
 client's, which is why this is a data call and not an engineering one.
 
 **Depends on:** the founder's say-so on committing the client's menu. Trigger: fired - the day
-act four became the demo bar.
+act four became the demo bar. **Decided and done 2026-09-07 at the WP-96 sitting:** the CSV is committed
+beside the papers, `plate_costs.DEFAULT_CSV` points at it, the skip is gone, and `test_demo_seed.py`'s
+act-four test runs in CI.
 
-### The screen's headline rounding truncates while every API sentence rounds half up
+### ~~The screen's headline rounding truncates while every API sentence rounds half up~~ done 2026-09-05 (WP-98), live 2026-09-07
 
 **What:** Decide one rounding for a whole-dirham headline and apply it to `format.roundedAed`
 (string operations only, per the house rule), with its tests; or keep truncation and say so

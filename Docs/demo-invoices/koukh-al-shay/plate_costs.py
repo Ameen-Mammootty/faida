@@ -46,7 +46,10 @@ from faida_api.extraction.constants import (  # noqa: E402
     VAT_RATE_BY_CURRENCY,
 )
 
-DEFAULT_CSV = pathlib.Path.home() / "Downloads/Menu engineer/koukh-al-shay/faida-loader-preview.csv"
+#: The real menu in the loader's shape - 45 items, their recipes and selling prices.
+#: Committed 2026-09-07 on the founder's decision (WP-96), so the figures act four
+#: speaks are pinned in CI and not only on the machine that holds the file.
+DEFAULT_CSV = HERE / "faida-loader-preview.csv"
 
 CURRENCY = "AED"
 

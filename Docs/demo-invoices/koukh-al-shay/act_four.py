@@ -36,10 +36,11 @@ dish keeps over eighty per cent and nothing is ten points below the average, so
 a very short menu, not a fault.
 
 *real* is the stage the demo runs on: the 45-item menu, the five KAS papers,
-and the committed `sales-week.csv`. It needs the founder's menu CSV, which
-lives outside the repository, so CI cannot reach it - but it is the only stage
-whose figures act four actually speaks, and it prints them twice, before and
-after the on-stage paper, which is the reload beat.
+and the committed `sales-week.csv`. It reads the committed menu CSV (in the
+repository since 2026-09-07, the founder's call at the WP-96 sitting, so CI
+pins it too) - it is the only stage whose figures act four actually speaks,
+and it prints them twice, before and after the on-stage paper, which is the
+reload beat.
 """
 
 from __future__ import annotations
@@ -590,7 +591,7 @@ def main() -> None:
     if args.stage == "real" and not args.menu_csv.exists():
         raise SystemExit(
             f"the real menu is not here: {args.menu_csv}\n"
-            "It lives outside the repository. Pass --menu-csv, or run --stage practice."
+            "Pass --menu-csv, or run --stage practice."
         )
     reads = asyncio.run(
         run(args.database_url, stage=args.stage, migrate=args.migrate, menu_csv=args.menu_csv)

@@ -2,7 +2,8 @@
 
 The five papers themselves (`KAS-1.png` … `KAS-5.png`), the generator prompts that describe
 them, the renderer that produced them and the script that verifies them. Sized against the real
-45-recipe menu in `~/Downloads/Menu engineer/koukh-al-shay/faida-loader-preview.csv`.
+45-recipe menu in `faida-loader-preview.csv` beside them (committed 2026-09-07 on the founder's
+decision at the WP-96 sitting; until then it lived only on the founder's machine).
 
 **These are rendered, not image-generated, and that is the point.** Every total, every VAT line
 and every per-base-unit delta here is load-bearing - the on-stage alert thresholds are computed
@@ -254,9 +255,8 @@ money is identical and only the word moves. And on the **practice** stage - the 
 menu - every dish keeps between 81% and 86%, so nothing is ten points below the average, no branch
 is five points below the chain, and the seed's own price history moves nothing by 5%: **no signal
 can fire there**, which is C13.3a's warning about a relative rule on a very short menu rather than
-a fault. `tests/test_demo_seed.py` pins both stages - the practice one everywhere, the real one
-where the menu CSV is - so a change that quietly breaks the script fails a test instead of the
-demo.
+a fault. `tests/test_demo_seed.py` pins both stages everywhere, the menu CSV being committed
+since 2026-09-07, so a change that quietly breaks the script fails a test instead of the demo.
 
 ## House rules these papers keep
 

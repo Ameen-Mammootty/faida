@@ -1318,7 +1318,7 @@ async def test_the_committed_real_week_loads_on_the_fixture_tenant(sales_api, db
 def test_the_generator_runs_with_no_database_and_no_key_and_is_reproducible(tmp_path):
     """The real week needs no database and no API key: a menu CSV in the loader's
     shape in, a till export out, the same bytes every run. The founder's real menu
-    lives outside the repo, so the committed file is compared only where it exists."""
+    is committed beside it (2026-09-07), so the committed week is compared everywhere."""
     menu = tmp_path / "menu.csv"
     menu.write_text(
         "category,item_code,item_name,selling_price_aed,yield_portions,yield_label,"
@@ -1352,10 +1352,9 @@ def test_the_generator_runs_with_no_database_and_no_key_and_is_reproducible(tmp_
     assert len({(row[0], row[1]) for row in rows[:-1]}) == 21
 
     gen = _generator()
-    if gen.DEFAULT_CSV.exists():
-        regenerated = tmp_path / "committed.csv"
-        gen.write_csv(gen.real_week(gen.DEFAULT_CSV), regenerated)
-        assert regenerated.read_bytes() == REAL_WEEK_CSV.read_bytes()
+    regenerated = tmp_path / "committed.csv"
+    gen.write_csv(gen.real_week(gen.DEFAULT_CSV), regenerated)
+    assert regenerated.read_bytes() == REAL_WEEK_CSV.read_bytes()
 
 
 # --- act four (WP-95) ---------------------------------------------------------
@@ -1375,8 +1374,8 @@ def test_the_generator_runs_with_no_database_and_no_key_and_is_reproducible(tmp_
 # so **no signal can fire on it** and act four must not promise one there. The
 # **real** stage is the one the demo runs on - the 45-item menu, the five KAS
 # papers, the committed week - and it is where the league, the low-margin dish
-# and the milk moves live. It needs the founder's menu CSV, which lives outside
-# the repository, so it is skipped where that file is not.
+# and the milk moves live. It reads the committed menu CSV (in the repository
+# since 2026-09-07, the founder's call at the WP-96 sitting), so CI pins it too.
 
 ACT_FOUR = GENERATOR.parent / "act_four.py"
 
@@ -1464,8 +1463,6 @@ async def test_act_four_speaks_the_figures_the_runbook_quotes(act_four, db):
     and after, the dish that sells and does not earn, the item at the bottom of
     the five, and the two milk moves with their money and their date."""
     module, client = act_four
-    if not module.DEFAULT_CSV.exists():
-        pytest.skip("the founder's 45-item menu lives outside the repository")
     async with client:
         reads = await module.real_stage(client, db, module.DEFAULT_CSV)
     (before_title, before), (after_title, after) = reads
