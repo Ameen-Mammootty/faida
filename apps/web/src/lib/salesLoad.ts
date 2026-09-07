@@ -35,6 +35,7 @@ import { sumStrings } from "./mock/decimal";
 import type {
   AmountBasis,
   Branch,
+  BranchAlias,
   DateOrder,
   SalesColumn,
   SalesColumnMap,
@@ -376,6 +377,253 @@ export function branchFor(label: string, branches: Branch[]): Branch | null {
   );
 }
 
+// --- the till's names: taught once, re-taught or forgotten from the same screen
+
+/**
+ * The correction door's screen half (TODOS.md, "Correcting a wrongly taught
+ * branch alias"). On the first live upload AL NAHDA was answered with Al
+ * Qusais Branch, both outlets' rows landed in one branch's days, and the way
+ * back was a row deleted in SQL. Every decision the loader makes about a
+ * label it already knows lives here, so the component only renders:
+ *
+ * - which labels in the file were *taught* - resolved through an alias row,
+ *   never a branch's own name, which has nothing to un-teach;
+ * - the picker for one of them, the branch it reads as preselected;
+ * - the two-step re-teach through the two doors, remove then teach, and the
+ *   sentence for each way the second step can fail without the first being
+ *   undone - a label is left unteached, never silently re-taught to the old
+ *   branch;
+ * - the forget path, remove only;
+ * - the way out of a 409 on a first-time teach, in the API's own sentence.
+ */
+
+/** A till label the file uses that Faida reads through an alias. */
+export interface TaughtLabel {
+  label: string;
+  aliasId: string;
+  branchId: string;
+  branchName: string;
+}
+
+/** The alias row a label resolves through, with the branch holding it; null
+ * when no branch was taught it (a branch's own name is not an alias). The
+ * comparison is the resolver's own, `nameKey`, so this and `branchFor`
+ * agree on every label. */
+export function aliasRowFor(
+  label: string,
+  branches: Branch[],
+): { branch: Branch; row: BranchAlias } | null {
+  const key = nameKey(label);
+  if (key === "") return null;
+  for (const branch of branches) {
+    const row = branch.alias_rows.find((candidate) => nameKey(candidate.alias) === key);
+    if (row) return { branch, row };
+  }
+  return null;
+}
+
+/** The file's taught labels, each once, in the order the file first uses
+ * them - over the read's `knownBranches`, the labels a branch answered to.
+ * A label that is a branch's own name (case aside) is not listed: there is
+ * no alias behind it to correct. */
+export function taughtLabels(labels: string[], branches: Branch[]): TaughtLabel[] {
+  const seen = new Set<string>();
+  const taught: TaughtLabel[] = [];
+  for (const label of labels) {
+    if (seen.has(nameKey(label))) continue;
+    seen.add(nameKey(label));
+    const found = aliasRowFor(label, branches);
+    if (!found) continue;
+    if (branches.some((branch) => nameKey(branch.name) === nameKey(label))) continue;
+    taught.push({
+      label,
+      aliasId: found.row.id,
+      branchId: found.branch.id,
+      branchName: found.branch.name,
+    });
+  }
+  return taught;
+}
+
+/** The "Not this branch?" picker: every branch, the one the label reads as
+ * preselected, so the consultant sees the current answer before changing it. */
+export interface BranchPicker {
+  label: string;
+  current: { id: string; name: string };
+  options: { id: string; name: string }[];
+}
+
+export function reteachPicker(label: string, branches: Branch[]): BranchPicker | null {
+  const found = aliasRowFor(label, branches);
+  if (!found) return null;
+  return {
+    label,
+    current: { id: found.branch.id, name: found.branch.name },
+    options: branches.map((branch) => ({ id: branch.id, name: branch.name })),
+  };
+}
+
+/** What re-teaching a label to `toBranchId` means: the two doors in order,
+ * or nothing - the same branch again, or a label nobody taught (that is
+ * the first-time question's job, one door). */
+export type ReteachPlan =
+  | {
+      kind: "reteach";
+      remove: { branchId: string; branchName: string; aliasId: string };
+      teach: { branchId: string; branchName: string; label: string };
+    }
+  | { kind: "same_branch" }
+  | { kind: "not_taught" };
+
+export function planReteach(label: string, toBranchId: string, branches: Branch[]): ReteachPlan {
+  const found = aliasRowFor(label, branches);
+  if (!found) return { kind: "not_taught" };
+  if (found.branch.id === toBranchId) return { kind: "same_branch" };
+  const to = branches.find((branch) => branch.id === toBranchId);
+  if (!to) return { kind: "not_taught" };
+  return {
+    kind: "reteach",
+    remove: { branchId: found.branch.id, branchName: found.branch.name, aliasId: found.row.id },
+    teach: { branchId: to.id, branchName: to.name, label },
+  };
+}
+
+/** Forgetting a label: the remove door alone, then the label is back in the
+ * first-time question. Null when there is nothing to forget. */
+export function planForget(
+  label: string,
+  branches: Branch[],
+): { branchId: string; branchName: string; aliasId: string } | null {
+  const found = aliasRowFor(label, branches);
+  if (!found) return null;
+  return { branchId: found.branch.id, branchName: found.branch.name, aliasId: found.row.id };
+}
+
+/** A sentence about one label, shown on that label's own row. `done` is a
+ * plain outcome; `stop` is something that did not happen, and says what
+ * state the label is now in. Colour never carries this alone: the row's
+ * words do. */
+export interface LabelNote {
+  label: string;
+  tone: "done" | "stop";
+  sentence: string;
+}
+
+/** The re-teach's outcomes, in order of what happened.
+ *
+ * - The first door refused: nothing changed, and the label still reads as
+ *   the old branch.
+ * - The first door removed the row and the second refused: the label reads
+ *   as nothing now, on purpose - re-teaching it to the old branch behind
+ *   the consultant's back is exactly the wrong silent thing - so the
+ *   sentence says it is back in the question below.
+ * - Both doors answered: the label reads as the new branch and the days
+ *   have moved in the grid. */
+export function reteachNote(
+  plan: Extract<ReteachPlan, { kind: "reteach" }>,
+  failed: { step: "remove" | "teach"; reason: string } | null,
+): LabelNote {
+  const label = plan.teach.label;
+  if (failed === null) {
+    return {
+      label,
+      tone: "done",
+      sentence:
+        `"${label}" now reads as ${plan.teach.branchName}. Its days have moved in the grid, ` +
+        "and every export after this one reads it the same way.",
+    };
+  }
+  if (failed.step === "remove") {
+    return {
+      label,
+      tone: "stop",
+      sentence:
+        `"${label}" still reads as ${plan.remove.branchName} - Faida could not un-teach it: ` +
+        `${failed.reason} Nothing has changed.`,
+    };
+  }
+  return {
+    label,
+    tone: "stop",
+    sentence:
+      `"${label}" no longer reads as ${plan.remove.branchName}, but Faida could not teach it ` +
+      `as ${plan.teach.branchName}: ${failed.reason} It is back in the question below - ` +
+      "say which branch it is.",
+  };
+}
+
+/** The forget path's two outcomes. */
+export function forgetNote(
+  plan: { branchName: string },
+  label: string,
+  failed: { reason: string } | null,
+): LabelNote {
+  if (failed === null) {
+    return {
+      label,
+      tone: "done",
+      sentence:
+        `"${label}" is forgotten - it no longer reads as ${plan.branchName}, and it is back in ` +
+        "the question below.",
+    };
+  }
+  return {
+    label,
+    tone: "stop",
+    sentence:
+      `"${label}" still reads as ${plan.branchName} - Faida could not forget it: ` +
+      `${failed.reason} Nothing has changed.`,
+  };
+}
+
+/** A door's sentence, made to end a sentence of ours: the API's detail has
+ * no full stop of its own. */
+export function reasonSentence(message: string): string {
+  const text = message.trim();
+  if (text === "") return "Faida could not reach the door.";
+  return /[.!?]$/.test(text) ? text : `${text}.`;
+}
+
+/**
+ * The way out of a 409 on a first-time teach. The door has said the label
+ * already names another branch (in its own sentence, kept word for word),
+ * which means Faida knew more than this screen did - a tab left open, a
+ * colleague a minute ahead. Read against the *refreshed* branches: when the
+ * holding branch's alias row is there, the offer is the same "Not this
+ * branch?" control the taught list carries, on this label; when it is not
+ * (the door's key and this screen's disagree about the label), the sentence
+ * stands alone, and the fix is an engineer's - said, never guessed. Any
+ * other status is not a refusal of this kind and returns null.
+ */
+export function teachRefusal(
+  label: string,
+  status: number,
+  sentence: string,
+  branches: Branch[],
+): { note: LabelNote; offer: TaughtLabel | null } | null {
+  if (status !== 409) return null;
+  const found = aliasRowFor(label, branches);
+  const offer =
+    found === null
+      ? null
+      : {
+          label,
+          aliasId: found.row.id,
+          branchId: found.branch.id,
+          branchName: found.branch.name,
+        };
+  return {
+    note: {
+      label,
+      tone: "stop",
+      sentence:
+        reasonSentence(sentence) +
+        (offer ? " Not this branch? Say which one it is." : " Ask Faida to look at it."),
+    },
+    offer,
+  };
+}
+
 // --- reading the file -------------------------------------------------------
 
 /** One item row, the till's own words. */
@@ -436,6 +684,11 @@ export type ReadSalesResult =
       ignoredColumns: string[];
       /** The till's labels no branch answers to, each once. */
       unknownBranches: string[];
+      /** The till's labels a branch did answer to, each once, in the order
+       * the file first uses them - read from the rows, because two labels
+       * taught to one branch merge into one branch-day and the second
+       * label would vanish from the day list (the incident's own shape). */
+      knownBranches: string[];
     }
   | { ok: false; error: string };
 
@@ -516,6 +769,7 @@ export function readSalesCsv(
   const days = new Map<string, ReadDay>();
   const branchOrder: string[] = [];
   const unknownBranches: string[] = [];
+  const knownBranches: string[] = [];
   let skippedNoDate = 0;
   let unplaced = 0;
 
@@ -552,6 +806,7 @@ export function readSalesCsv(
       if (branch) {
         branchId = branch.id;
         branchName = branch.name;
+        if (!knownBranches.includes(branchLabel)) knownBranches.push(branchLabel);
       } else {
         branchId = null;
         if (branchLabel === "") {
@@ -708,7 +963,15 @@ export function readSalesCsv(
     (a, b) => orderOf(a) - orderOf(b) || a.date.localeCompare(b.date) || a.key.localeCompare(b.key),
   );
   void unplaced;
-  return { ok: true, days: list, granularity, skippedNoDate, ignoredColumns, unknownBranches };
+  return {
+    ok: true,
+    days: list,
+    granularity,
+    skippedNoDate,
+    ignoredColumns,
+    unknownBranches,
+    knownBranches,
+  };
 }
 
 // --- what committing would change -------------------------------------------

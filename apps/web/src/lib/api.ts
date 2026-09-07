@@ -64,6 +64,7 @@ import {
   mockMapTillItem,
   mockPostSalesDays,
   mockPostSalesFile,
+  mockRemoveBranchAlias,
   mockSaveSalesLayout,
   mockUnmapTillItem,
 } from "./mock/sales";
@@ -460,6 +461,20 @@ export async function addBranchAlias(branchId: string, alias: string): Promise<B
   const body = await request<{ alias: BranchAlias }>(
     `/api/branches/${encodeURIComponent(branchId)}/aliases`,
     jsonInit("POST", { alias }),
+  );
+  return body.alias;
+}
+
+/** Un-teach one till label from one branch (TODOS.md, "Correcting a wrongly
+ * taught branch alias"): the row goes with its audit line, the loaded days
+ * stay where they landed, and 404 is the answer outside the tenant or under
+ * another branch. The screen's re-teach is this and then `addBranchAlias`,
+ * in that order, never a second write door. */
+export async function removeBranchAlias(branchId: string, aliasId: string): Promise<BranchAlias> {
+  if (MOCK) return mockRemoveBranchAlias(branchId, aliasId);
+  const body = await request<{ alias: BranchAlias }>(
+    `/api/branches/${encodeURIComponent(branchId)}/aliases/${encodeURIComponent(aliasId)}`,
+    { method: "DELETE" },
   );
   return body.alias;
 }

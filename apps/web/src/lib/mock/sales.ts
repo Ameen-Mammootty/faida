@@ -5,8 +5,9 @@
  * every QA pass drive it - so this reproduces the door's *decisions* in the
  * door's own words: the three outcomes and their previous figures, the
  * 31-day body, the date window, the one-shape rule, the foreign branch, the
- * alias that already names another branch, the file kept under its own
- * hash. Money is computed in exactly one place, the way the door does it
+ * alias that already names another branch and the un-teach of one taught
+ * wrong, the file kept under its own hash. Money is computed in exactly one
+ * place, the way the door does it
  * (C11.2: `net = amount / (1 + rate)`, half-up to a fil, the day the exact
  * sum of its lines), because a net figure is the door's answer and the grid
  * restamps from it. Nothing here is a second implementation of the ratio.
@@ -82,9 +83,17 @@ const branches: Branch[] = MOCK_BRANCHES.map((branch) => ({
   name: branch.name,
   timezone: "Asia/Dubai",
   aliases: [],
+  alias_rows: [],
 }));
 
 const aliases: BranchAlias[] = [];
+
+/** `aliases` and `alias_rows` on a branch are two views of one list, the way
+ * the API composes them from one query. */
+function syncBranchAliases(branch: Branch): void {
+  branch.alias_rows = aliases.filter((row) => row.branch_id === branch.id);
+  branch.aliases = branch.alias_rows.map((row) => row.alias);
+}
 
 export async function mockGetBranches(): Promise<Branch[]> {
   return respond(branches);
@@ -106,7 +115,21 @@ export async function mockAddBranchAlias(branchId: string, alias: string): Promi
   if (existing) return respond(existing);
   const row: BranchAlias = { id: nextId("alias"), branch_id: branchId, alias: alias.trim(), alias_key: key };
   aliases.push(row);
-  branch.aliases.push(row.alias);
+  syncBranchAliases(branch);
+  return respond(row);
+}
+
+/** DELETE /api/branches/{branch_id}/aliases/{alias_id}: the row it removed;
+ * 404 for a branch the tenant does not have, and 404 for an alias that is
+ * not under that branch - it does not exist at that address. The loaded
+ * days are not touched, exactly like the door. */
+export async function mockRemoveBranchAlias(branchId: string, aliasId: string): Promise<BranchAlias> {
+  const branch = branches.find((row) => row.id === branchId);
+  if (!branch) throw new ApiError(404, "branch not found");
+  const index = aliases.findIndex((row) => row.id === aliasId && row.branch_id === branchId);
+  if (index < 0) throw new ApiError(404, "alias not found");
+  const [row] = aliases.splice(index, 1);
+  syncBranchAliases(branch);
   return respond(row);
 }
 

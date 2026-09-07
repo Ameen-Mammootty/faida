@@ -784,10 +784,16 @@ export interface Branch {
   name: string;
   timezone: string;
   aliases: string[];
+  /** The same labels with their ids beside them, so a label taught to the
+   * wrong branch has something to point the un-teach at. The resolver
+   * matches on `aliases`; this is for the correction door only. */
+  alias_rows: BranchAlias[];
 }
 
 /** POST /api/branches/{id}/aliases -> 201 {"alias": {...}}; 409 when the
- * alias already names another branch. */
+ * alias already names another branch. DELETE /api/branches/{id}/aliases/{alias_id}
+ * -> 200 with the row it removed; 404 outside the tenant or under another
+ * branch. */
 export interface BranchAlias {
   id: string;
   branch_id: string;
