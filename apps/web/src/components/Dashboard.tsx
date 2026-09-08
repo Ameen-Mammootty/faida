@@ -713,7 +713,11 @@ function TrackRow({
   return (
     <li className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 py-2.5 first:pt-0 last:pb-0 sm:grid-cols-[9.5rem_minmax(0,1fr)_auto] sm:gap-y-0">
       <div className="col-start-1 row-start-1 min-w-0">
-        <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm font-semibold text-ink">
+        {/* Inline, not a flex row: a long name wraps to a second line and
+            the icon and the chip stay on its last word instead of dropping
+            to a line of their own (seen live on "Hot Chocolate - Large 250
+            ml", 2026-09-08). */}
+        <p className="text-sm leading-5 font-semibold text-ink">
           {href ? (
             <Link href={href} className="underline-offset-2 hover:underline">
               {name}
@@ -721,7 +725,12 @@ function TrackRow({
           ) : (
             <span>{name}</span>
           )}
-          {chip === null ? null : <QualityChip quality={chip} />}
+          {chip === null ? null : (
+            <>
+              {" "}
+              <QualityChip quality={chip} />
+            </>
+          )}{" "}
           <InfoTip lines={tip} label={tipLabel} />
         </p>
         {when === null ? null : <p className="text-[11px] leading-tight text-stone">{when}</p>}
