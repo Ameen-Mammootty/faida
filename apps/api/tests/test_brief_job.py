@@ -24,13 +24,14 @@ import datetime
 import json
 import logging
 from decimal import Decimal
-from io import StringIO
+from io import BytesIO, StringIO
 
 import httpx
 import pytest
 from fastapi import FastAPI
+from PIL import Image
 
-from faida_api import brief, brief_cli, worker
+from faida_api import brief, brief_card, brief_cli, worker
 from faida_api.api import router as api_router
 from faida_api.contracts import WA_STATUS_IGNORED_BRIEF_RECIPIENT, JobKind
 from faida_api.dashboard import router as dashboard_router
@@ -175,6 +176,12 @@ async def _jobs(db, kind: str | None = None) -> list:
 
 async def _brief_jobs(db) -> list:
     return await _jobs(db, JobKind.SEND_BRIEF)
+
+
+def _card_path(recipient_id: str, *, tenant_id: str = TENANT, day=TODAY) -> str:
+    """Where the morning's picture is stored (C15.4). Spelled out here rather
+    than imported, so a path the code changes quietly fails a test loudly."""
+    return f"{tenant_id}/briefs/{day.isoformat()}/{recipient_id}.png"
 
 
 async def _outbound_templates(db) -> list:
@@ -328,10 +335,12 @@ async def test_the_job_sends_the_template_and_records_what_it_sent(rig, db):
     assert sent["type"] == "template"
     assert sent["template"]["name"] == brief.TEMPLATE_NAME
     assert sent["template"]["language"] == {"code": brief.TEMPLATE_LANGUAGE}
-    # The body alone: the picture header is WP-106's, and until it lands a
-    # header component would be Meta's 132000.
-    assert [part["type"] for part in sent["template"]["components"]] == ["body"]
-    parameters = sent["template"]["components"][0]["parameters"]
+    # The picture first, the five values after it: the template's own order,
+    # and Meta's 132000 if it were any other (WP-106, §3.1).
+    header, body = sent["template"]["components"]
+    assert header["type"] == "header"
+    assert body["type"] == "body"
+    parameters = body["parameters"]
     assert len(parameters) == brief.PARAMETER_COUNT
     assert [part["type"] for part in parameters] == ["text"] * brief.PARAMETER_COUNT
     assert [part["text"] for part in parameters] == list(morning.parameters)
@@ -344,7 +353,7 @@ async def test_the_job_sends_the_template_and_records_what_it_sent(rig, db):
         "template": brief.TEMPLATE_NAME,
         "language": brief.TEMPLATE_LANGUAGE,
         "parameters": list(morning.parameters),
-        "card_path": None,
+        "card_path": _card_path(recipient),
         "tenant_id": TENANT,
         "recipient_id": recipient,
         "brief_date": TODAY.isoformat(),
@@ -423,7 +432,7 @@ async def test_a_record_write_that_raises_after_the_send_costs_a_second_brief(ri
     Meta accepts the message, the record write raises, and the retry - finding
     no row - sends the same brief again. Recording before sending would lose a
     morning instead of repeating one, and the repeat is the better failure."""
-    app, client, fake_meta, _ = rig
+    app, client, fake_meta, fake_storage = rig
     await _stage(client, db)
     recipient = await _recipient(db)
     real = db.record_outbound_template
@@ -439,6 +448,8 @@ async def test_a_record_write_that_raises_after_the_send_costs_a_second_brief(ri
     assert job["status"] == "queued" and job["attempts"] == 1
     assert len(fake_meta.sent) == 1  # the phone has it
     assert await _outbound_templates(db) == []  # and we have no record of it
+    card = dict(fake_storage.objects)
+    assert list(card) == [_card_path(recipient)]
 
     monkeypatch.setattr(db, "record_outbound_template", real)
     await db.pool.execute("update jobs set run_after = now() where status = 'queued'")
@@ -446,6 +457,10 @@ async def test_a_record_write_that_raises_after_the_send_costs_a_second_brief(ri
 
     assert len(fake_meta.sent) == 2  # the same morning, twice
     assert len(await _outbound_templates(db)) == 1
+    # The second attempt met its own card at that key - storage refused the
+    # write with a 409 and the morning carried on rather than dying on its
+    # own evidence. The bytes are the first attempt's, untouched.
+    assert fake_storage.objects == card
     (job,) = await _brief_jobs(db)
     assert job["status"] == "done"
 
@@ -527,6 +542,107 @@ async def test_a_tenant_with_nothing_loaded_sends_nothing_and_says_so(rig, db, c
         f"brief skipped: nothing loaded for tenant {TENANT_C}" in record.getMessage()
         for record in caplog.records
     )
+
+
+# --- the picture card (WP-106) ---------------------------------------------------
+
+
+async def test_the_card_is_stored_where_the_row_says_it_is_and_sent_as_the_header(rig, db):
+    """What the phone showed can be opened again (C15.4): one PNG at the
+    morning's own key, at the size WhatsApp shows whole, handed to Meta byte
+    for byte and named on the row that says the brief went out."""
+    app, client, fake_meta, fake_storage = rig
+    await _stage(client, db)
+    recipient = await _recipient(db)
+
+    await _enqueue_brief(db, recipient)
+    assert await run_one_job(db, app.state.wa, app.state.storage) is True
+
+    card_path = _card_path(recipient)
+    assert list(fake_storage.objects) == [card_path]
+    stored = fake_storage.objects[card_path]
+    image = Image.open(BytesIO(stored))
+    assert image.size == (brief_card.CANVAS_W, brief_card.CANVAS_H) == (1080, 1350)
+
+    # Meta was handed the same bytes, and the header names what came back.
+    (upload,) = fake_meta.uploads
+    assert upload["file"] == stored
+    assert upload["type"] == "image/png"
+    (sent,) = fake_meta.sent
+    header = sent["template"]["components"][0]
+    assert header["parameters"] == [{"type": "image", "image": {"id": "media-up1"}}]
+
+    (row,) = await _outbound_templates(db)
+    assert row["payload"]["card_path"] == card_path
+
+
+async def test_the_card_is_stored_then_uploaded_then_sent(rig, db, monkeypatch):
+    """The order is the contract (C15.4): the evidence exists before the
+    message does, and Meta holds the picture before the template names it. A
+    card sent and never stored is a morning nobody can show back."""
+    app, client, _, _ = rig
+    await _stage(client, db)
+    recipient = await _recipient(db)
+
+    order: list[str] = []
+
+    def note(target, name: str, step: str) -> None:
+        real = getattr(target, name)
+
+        async def wrapped(*args, **kwargs):
+            order.append(step)
+            return await real(*args, **kwargs)
+
+        monkeypatch.setattr(target, name, wrapped)
+
+    note(app.state.storage, "put", "store")
+    note(app.state.wa, "upload_media", "upload")
+    note(app.state.wa, "send_template", "send")
+
+    await _enqueue_brief(db, recipient)
+    assert await run_one_job(db, app.state.wa, app.state.storage) is True
+    assert order == ["store", "upload", "send"]
+
+
+async def test_an_upload_meta_refuses_fails_the_job_before_any_send(rig, db):
+    """A card that never becomes a header must not become half a message: the
+    upload is its own request, and its refusal fails the job with Meta's own
+    reason before a template leaves (§7's card failure row)."""
+    app, client, fake_meta, fake_storage = rig
+    await _stage(client, db)
+    recipient = await _recipient(db)
+    fake_meta.fail_uploads = True
+
+    await _enqueue_brief(db, recipient)
+    await drain_jobs(db, app, None, release_backoff=True)
+
+    (job,) = await _brief_jobs(db)
+    assert job["status"] == "failed"
+    assert job["attempts"] == 3
+    assert "code 2207026" in job["last_error"]
+    assert fake_meta.sent == []
+    assert await _outbound_templates(db) == []
+    # The card is stored all the same - it is written first - and the two
+    # retries met it there rather than dying on the duplicate.
+    assert list(fake_storage.objects) == [_card_path(recipient)]
+
+
+async def test_the_dry_run_writes_the_card_to_a_file_and_says_so(rig, db, tmp_path):
+    """`--card` is how the founder looks at the picture without sending
+    anything, and how Meta gets its sample at submission (§3.1)."""
+    _, client, _, _ = rig
+    await _stage(client, db)
+    out = StringIO()
+    target = tmp_path / "brief.png"
+
+    assert (
+        await brief_cli.run(db, None, tenant_id=TENANT, today=TODAY, card=str(target), out=out)
+        is None
+    )
+
+    image = Image.open(BytesIO(target.read_bytes()))
+    assert image.size == (brief_card.CANVAS_W, brief_card.CANVAS_H)
+    assert str(target) in out.getvalue()
 
 
 # --- the stranded job (P12) ------------------------------------------------------
@@ -700,24 +816,35 @@ async def test_the_dry_run_on_an_empty_tenant_says_there_is_nothing_to_send(rig,
 async def test_a_rehearsal_sends_once_and_stays_outside_the_days_key(rig, db):
     """The founder proving the template at four in the afternoon must not
     silence the next morning's brief."""
-    app, client, fake_meta, _ = rig
+    app, client, fake_meta, fake_storage = rig
     await _stage(client, db)
     recipient = await _recipient(db)
     out = StringIO()
 
     message_id = await brief_cli.run(
-        db, app.state.wa, tenant_id=TENANT, today=TODAY, send_to=OWNER_PHONE, out=out
+        db,
+        app.state.wa,
+        app.state.storage,
+        tenant_id=TENANT,
+        today=TODAY,
+        send_to=OWNER_PHONE,
+        out=out,
     )
     assert message_id == "wamid.out1"
     assert message_id in out.getvalue()
 
     (sent,) = fake_meta.sent
     assert sent["type"] == "template"
-    assert [part["type"] for part in sent["template"]["components"]] == ["body"]
+    assert [part["type"] for part in sent["template"]["components"]] == ["header", "body"]
 
+    # The rehearsal's card is stored under its own name, so it can never take
+    # the key that morning's card will want.
+    rehearsal_card = brief_cli.rehearsal_card_path(TENANT, TODAY, OWNER_PHONE)
+    assert list(fake_storage.objects) == [rehearsal_card]
     (row,) = await _outbound_templates(db)
     assert row["payload"]["rehearsal"] is True
     assert row["payload"]["recipient_id"] == recipient
+    assert row["payload"]["card_path"] == rehearsal_card
     assert (
         await db.outbound_brief_exists(recipient_id=recipient, brief_date=TODAY.isoformat())
     ) is False
@@ -727,6 +854,7 @@ async def test_a_rehearsal_sends_once_and_stays_outside_the_days_key(rig, db):
     assert await run_one_job(db, app.state.wa, app.state.storage) is True
     rows = await _outbound_templates(db)
     assert [r["payload"]["rehearsal"] for r in rows] == [True, False]
+    assert sorted(fake_storage.objects) == sorted([rehearsal_card, _card_path(recipient)])
 
 
 # --- the loop's own habit ---------------------------------------------------------

@@ -25,7 +25,9 @@ import logging
 import time
 import zoneinfo
 
-from . import brief, dashboard
+import httpx
+
+from . import brief, brief_card, dashboard
 from .confirm import handle_inbound_text
 from .contracts import (
     MEDIA_TYPES,
@@ -293,6 +295,72 @@ async def read_brief(db: Database, tenant_id: str, *, today: datetime.date) -> b
     return brief.compose(month, window, currency=currency)
 
 
+async def _store_card(storage: Storage, card_path: str, png: bytes) -> None:
+    """Put the morning's card in storage, forgiving the one refusal that means
+    it is already there.
+
+    Nothing this product stores is ever overwritten (`x-upsert: false`,
+    storage.py), so a retry of a job that failed after this step meets its own
+    first attempt: Supabase answers 409, or a 400 naming the duplicate. That
+    is not a failure here - `brief_card.render_card` is deterministic for the
+    same `Brief`, so the object already at that key is byte for byte what this
+    attempt would have written, and losing a morning to our own evidence would
+    be absurd. Every other refusal raises: storage that is down must stop the
+    job before a message goes out with no picture behind it."""
+    try:
+        await storage.put(card_path, png, "image/png")
+    except httpx.HTTPStatusError as exc:
+        body = (exc.response.text or "").lower()
+        already_there = exc.response.status_code == 409 or (
+            exc.response.status_code == 400 and ("already exists" in body or "duplicate" in body)
+        )
+        if not already_there:
+            raise
+        logger.info("card already stored at %s; the retry carries on", card_path)
+
+
+async def send_brief_card(
+    wa: WhatsAppClient,
+    storage: Storage,
+    morning: brief.Brief,
+    *,
+    phone: str,
+    card_path: str,
+) -> str:
+    """Draw the card, store it, upload it and send the template with it as the
+    header. Returns Meta's message id (M10 WP-106, C15.4).
+
+    The one door for a brief that leaves the building: the 07:00 job and the
+    founder's rehearsal from the command line both come through here, so the
+    picture on the phone, the copy in storage and the header on the message
+    cannot drift apart between them. The caller owns the record row, because
+    that is the only thing the two doors say differently (a rehearsal sits
+    outside the day's key).
+
+    The order is store, upload, send, and it is the order for a reason: the
+    evidence exists before the message does. A card stored and never sent is a
+    stray object nobody reads; a card sent and never stored is a morning we
+    cannot show back to the owner who asks what the picture said. An upload
+    Meta refuses raises here, before any message leaves, so a half-sent brief
+    is not a thing that can happen (§7's card failure row)."""
+    # a. The picture, drawn from the same `Brief` the five parameters came
+    #    from, so the card and the text can never quote two mornings.
+    png = brief_card.render_card(morning)
+    # b. The immutable copy, before anything is sent: what the phone showed
+    #    can be opened again (C15.4).
+    await _store_card(storage, card_path, png)
+    # c. Meta wants the file itself, not a link; a refusal fails the job here.
+    media_id = await wa.upload_media(png, "image/png")
+    # d. The header component names that media id and comes first (§3.1).
+    return await wa.send_template(
+        phone,
+        brief.TEMPLATE_NAME,
+        brief.TEMPLATE_LANGUAGE,
+        morning.parameters,
+        header_image_id=media_id,
+    )
+
+
 async def send_brief(db: Database, wa: WhatsAppClient, storage: Storage, payload: dict) -> None:
     """One morning, one recipient, one message (C15.1, C15.3, C15.4).
 
@@ -313,8 +381,11 @@ async def send_brief(db: Database, wa: WhatsAppClient, storage: Storage, payload
     sending - would lose a morning instead of repeating one, and a repeated
     brief is the better failure.
 
-    `storage` is unused until the picture card lands (WP-106); the handler
-    signature is the queue's, not this job's."""
+    The picture card goes through `send_brief_card`: stored at
+    `{tenant_id}/briefs/{brief_date}/{recipient_id}.png` first, uploaded, then
+    sent as the template's header, so the evidence of a morning exists before
+    the message does and a retry that meets its own stored card carries on
+    (WP-106, C15.4)."""
     tenant_id = job_tenant_id(JobKind.SEND_BRIEF, payload)
     recipient_id = str(payload["recipient_id"])
     brief_date = str(payload["brief_date"])
@@ -338,11 +409,9 @@ async def send_brief(db: Database, wa: WhatsAppClient, storage: Storage, payload
         logger.info("brief already sent to recipient %s for %s", recipient_id, brief_date)
         return
 
-    message_id = await wa.send_template(
-        recipient["phone_e164"],
-        brief.TEMPLATE_NAME,
-        brief.TEMPLATE_LANGUAGE,
-        morning.parameters,
+    card_path = f"{tenant_id}/briefs/{brief_date}/{recipient_id}.png"
+    message_id = await send_brief_card(
+        wa, storage, morning, phone=recipient["phone_e164"], card_path=card_path
     )
     await db.record_outbound_template(
         message_id,
@@ -354,6 +423,7 @@ async def send_brief(db: Database, wa: WhatsAppClient, storage: Storage, payload
         recipient_id=recipient_id,
         brief_date=brief_date,
         rehearsal=False,
+        card_path=card_path,
     )
     logger.info("brief sent to recipient %s for %s as %s", recipient_id, brief_date, message_id)
 
