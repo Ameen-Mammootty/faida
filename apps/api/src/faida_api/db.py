@@ -2305,6 +2305,91 @@ class Database:
             date_to,
         )
 
+    async def list_period_material_purchases(
+        self, *, tenant_id: str, date_from: datetime.date, date_to: datetime.date
+    ) -> list[asyncpg.Record]:
+        """Every confirmed stock line a period bought, at line grain (C14.3,
+        C14.4) - the one query M12 adds.
+
+        The unit is the line, not the material, because the drill has to reach
+        the line the owner can look at (`/invoices/<id>#line-<n>`, the M9
+        anchor) and because the roll-up is Python's: `usage.py` sums per
+        (branch, material) over each branch's own clipped window, which this
+        read does not know. C11.8's "sum in SQL, never over lines in Python"
+        is a rule about till lines, which arrive by the thousand a week; a
+        chain-month of confirmed stock lines is a few hundred rows. The
+        trigger to split this into a summed read beside a lazily loaded drill
+        route is 5,000 lines in a period or 200 KB on the wire (C14.4).
+
+        `purchased_on` is the same `coalesce` costing ranks by and the ratio
+        reads periods by - the printed date, confirm time in UTC as the
+        tie-breaker - so one paper sits in the same week on the materials
+        screen, the sales screen and here.
+
+        **Price and currency are not filters** (C14.3). A line whose price the
+        camera missed and a line on a paper billed in USD both delivered
+        goods, and quantities are what this read is for; the money-side rules
+        that exclude a foreign paper from the purchases figure say nothing
+        about how many sacks arrived. So both come back, and the caller names
+        them.
+
+        Nothing is dropped for being unplaceable either, because Python places
+        it and a silent drop would present a part of what was bought as the
+        whole of it:
+
+          - `supplier_item_id` null is an **orphan** (D3): the confirm path
+            creates no catalog product for a line on a foreign paper or one
+            with no quantity or price, and a product is the only path to a
+            material, so the line is counted with its reason and its paper and
+            sits in no row.
+          - `ingredient_id` null is a pack **no material is mapped to yet**
+            (Codex 3): a purchase of something real, reported beside the panel
+            with its spend and a link to the materials queue.
+          - `branch_id` null is a paper nobody's phone sent: listed under
+            `unassigned`, in no branch row and no chain figure (C14.9).
+
+        `frozen_factor` is `cost_basis.pack_base_quantity`, the amount one
+        unit price bought in base units, frozen inside the confirm
+        transaction. It is the factor of record (D2): the caller multiplies
+        `qty` by it where it exists and falls back to `costing.resolve_pack`
+        over the printed cells and `pack_size_override` only where it does
+        not, so a line's quantity and its cost can never come from two
+        different readings of the same box. It is null exactly where the line
+        has no cost - no price, a foreign paper, or a pack nothing could read.
+
+        A negative `qty` is a return and travels with its printed sign; the
+        caller nets it. Charge lines - delivery, cool-box hire - deliver
+        nothing and are excluded here, the one filter besides status, kind and
+        date."""
+        return await self.pool.fetch(
+            """
+            select inv.id::text as invoice_id, inv.invoice_no,
+                   l.position as line_position, inv.branch_id::text as branch_id,
+                   coalesce(inv.invoice_date,
+                            (inv.confirmed_at at time zone 'UTC')::date) as purchased_on,
+                   sup.name as supplier_name,
+                   l.raw_name, l.qty, l.unit, l.pack_size, l.unit_price, l.line_total,
+                   inv.currency,
+                   (l.cost_basis->>'pack_base_quantity')::numeric as frozen_factor,
+                   l.supplier_item_id::text as supplier_item_id,
+                   s.ingredient_id::text as ingredient_id,
+                   s.pack_size_override, s.canonical_name
+            from invoice_lines l
+            join invoices inv on inv.id = l.invoice_id
+            left join supplier_items s on s.id = l.supplier_item_id
+            left join suppliers sup on sup.id = inv.supplier_id
+            where l.tenant_id = $1
+              and inv.status = 'confirmed'
+              and l.line_kind = 'stock_item'
+              and coalesce(inv.invoice_date,
+                           (inv.confirmed_at at time zone 'UTC')::date) between $2 and $3
+            order by purchased_on, invoice_id, line_position
+            """,
+            tenant_id,
+            date_from,
+            date_to,
+        )
+
     async def list_period_sales_lines(
         self, *, tenant_id: str, date_from: datetime.date, date_to: datetime.date
     ) -> list[asyncpg.Record]:
