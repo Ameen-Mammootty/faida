@@ -203,10 +203,17 @@ function hundredth(text: string): string {
 
 /** The column the API stores is `numeric(5,4)`, so four places is all that
  * survives the trip. Cut rather than rounded, so what the screen shows, what
- * is sent and what is stored are one number. */
+ * is sent and what is stored are one number - and cut *before* the range is
+ * checked, so a share too small to store is stopped here rather than sent as
+ * a zero the door would refuse. */
 function toFourPlaces(text: string): string {
   const dot = text.indexOf(".");
   return dot === -1 ? text : numberKey(text.slice(0, dot + 5));
+}
+
+/** Every zero, however it is written: "0", "0.00", "0.0000". */
+function isZero(text: string): boolean {
+  return /^0+(\.0+)?$/.test(text);
 }
 
 /**
@@ -243,7 +250,7 @@ function usableShare(
     };
   }
   const fraction = numberKey(percent || aboveOne(written) ? hundredth(written) : written);
-  if (/^0+(\.0+)?$/.test(fraction)) {
+  if (isZero(fraction)) {
     return {
       problem: `the usable share for ${named} is zero - it must be above 0 and at most 100%`,
     };
@@ -253,7 +260,15 @@ function usableShare(
       problem: `the usable share for ${named} is "${text}" - it must be above 0 and at most 100%`,
     };
   }
-  return { share: toFourPlaces(fraction) };
+  const kept = toFourPlaces(fraction);
+  if (isZero(kept)) {
+    return {
+      problem:
+        `the usable share for ${named} is "${text}" - the smallest share Faida keeps ` +
+        "is 0.0001, a hundredth of a percent",
+    };
+  }
+  return { share: kept };
 }
 
 /**
@@ -640,6 +655,10 @@ export function planLoad(
  */
 function lineKey(ingredientId: string, qty: string, unit: string, share: string | null): string {
   const word = unit.trim().toLowerCase();
+  // The API stores the share to four places and hands it back that way, so
+  // "0.8500" comes home for the "0.85" that went out - the same round trip
+  // `qty` already makes ("220" out, "220.0000" back). Both sides go through
+  // `numberKey` for exactly that reason: this is one value, never two.
   const yielded = share === null ? "as purchased" : numberKey(share);
   return `${ingredientId}|${numberKey(qty)}|${UNITS.get(word)?.canonical ?? word}|${yielded}`;
 }

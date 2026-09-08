@@ -485,6 +485,13 @@ const unitKey = (unit: string) => {
   if (/^(pcs?|pce|pces|pieces?|ea|each|nos?|units?)$/.test(word)) return "pc";
   return word;
 };
+
+/** `numeric(5,4)` as the column keeps it: "0.85" stored is "0.8500" read. */
+const fourPlaces = (value: string) => {
+  const [whole, decimals = ""] = value.trim().split(".");
+  return `${whole}.${`${decimals}0000`.slice(0, 4)}`;
+};
+
 const lineKey = (ingredientId: string, qty: string, unit: string, share: string | null) =>
   `${ingredientId}|${amountKey(qty)}|${unitKey(unit)}|${share === null ? "" : amountKey(share)}`;
 
@@ -568,7 +575,10 @@ export async function mockLoadMenuItem(body: MenuItemLoadInput): Promise<MenuLoa
     qty: component.qty,
     unit: component.unit,
     source_text: component.source_text,
-    usable_share: component.usable_share,
+    // Stored at the column's own four places and handed back that way, as the
+    // API does: "0.85" goes in, "0.8500" comes out, and nothing downstream may
+    // read those as two different shares.
+    usable_share: component.usable_share === null ? null : fourPlaces(component.usable_share),
     // The sentence beside a share names the purchased amount, and that is a
     // division: the API does it, and a mock that did it too would be a second
     // implementation of the arithmetic (rule 3). The share still travels, so

@@ -676,6 +676,10 @@ export interface MenuComponent {
    * decimal fraction string - "0.85" is 85% usable, the rest being trim,
    * bone or peel. Null means the quantity above is already the purchased
    * amount, which is every recipe written before this column existed.
+   *
+   * It arrives at the column's own precision - "0.8500" for the "0.85" that
+   * was sent, the way `qty` comes back "220.0000" - so it is compared
+   * through the same normaliser quantities use and never as raw text.
    */
   usable_share: string | null;
   /**

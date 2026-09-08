@@ -106,6 +106,13 @@ describe("the usable share column", () => {
     expect(oneShare("120%").problem).toBe(
       'the usable share for Chicken is "120%" - it must be above 0 and at most 100%',
     );
+    // Four places is the whole of what the column keeps, so a share that
+    // rounds away is stopped here rather than sent as a zero the door refuses.
+    expect(oneShare("0.00001").problem).toBe(
+      'the usable share for Chicken is "0.00001" - the smallest share Faida keeps is 0.0001, ' +
+        "a hundredth of a percent",
+    );
+    expect(oneShare("0.001%").problem).toContain("the smallest share Faida keeps");
   });
 
   it("reads any bare number above one as a percent, and shows it back", () => {
@@ -133,6 +140,8 @@ describe("the usable share column", () => {
     expect(shareWords("0.3333")).toBe("33.33% usable");
     expect(shareWords("1")).toBe("100% usable");
     expect(shareWords("0.05")).toBe("5% usable");
+    // The API's four-place form says the same thing, whoever hands it over.
+    expect(shareWords("0.8500")).toBe("85% usable");
   });
 });
 
@@ -234,8 +243,16 @@ describe("the share on the wire", () => {
 
   it("makes a new version when only the share moved, and no change when it did not", () => {
     expect(planned("85%", null).plan).toMatchObject({ kind: "new_version", version: 2 });
-    expect(planned("85%", "0.8500").plan).toMatchObject({ kind: "unchanged", version: 1 });
     expect(planned("", null).plan).toMatchObject({ kind: "unchanged", version: 1 });
     expect(planned("", "0.8500").plan).toMatchObject({ kind: "new_version", version: 2 });
+  });
+
+  it("reads the share the API hands back as the same share that was sent", () => {
+    // The column keeps four places, so "0.85" goes out and "0.8500" comes
+    // home - the round trip `qty` already makes. A re-upload of the same
+    // sheet must still read "no change", whichever way each side spells it.
+    for (const cell of ["85%", "85", "0.85", "0.8500"]) {
+      expect(planned(cell, "0.8500").plan).toMatchObject({ kind: "unchanged", version: 1 });
+    }
   });
 });
