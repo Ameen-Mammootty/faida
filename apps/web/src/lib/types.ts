@@ -671,6 +671,20 @@ export interface MenuComponent {
   /** The recipe card's own words ("1 cup"), kept beside the conversion -
    * the only audit a typed quantity will ever have. */
   source_text: string | null;
+  /**
+   * M12 WP-119 (D13): the share of what is bought that reaches the pot, as a
+   * decimal fraction string - "0.85" is 85% usable, the rest being trim,
+   * bone or peel. Null means the quantity above is already the purchased
+   * amount, which is every recipe written before this column existed.
+   */
+  usable_share: string | null;
+  /**
+   * The API's own sentence for that share - "500 g at 85% usable, 588 g
+   * bought" - composed there and printed here exactly as it arrives. The
+   * bought amount is arithmetic, and arithmetic on this side would be a
+   * second implementation of it.
+   */
+  usable_words: string | null;
   /** Exactly one of these is set. */
   cost: MenuComponentCost | null;
   missing: string | null;
