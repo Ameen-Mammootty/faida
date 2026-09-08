@@ -165,6 +165,37 @@ def _menu_items(
     return menu
 
 
+def _branch_ratio_rows(
+    branches: Sequence[asyncpg.Record],
+    *,
+    days: Sequence,
+    invoices: Sequence,
+    period: ratio.Period,
+    currency: str,
+    newest_by_branch: Mapping[str, datetime.date],
+) -> dict[str, ratio.BranchRow]:
+    """Every branch's ratio row for the period, each clipped to that branch's
+    own loaded range - `ratio.period_row` called once per branch and nowhere
+    else (C11, C12.9).
+
+    Lifted out of the handler so M12's printout (`usage_report.py`, WP-120)
+    builds the same windows from the same rows: a window built two ways is a
+    figure that can disagree with the screen above it.
+    """
+    return {
+        branch["id"]: ratio.period_row(
+            branch_id=branch["id"],
+            branch_name=branch["name"],
+            days=days,
+            invoices=invoices,
+            period=period,
+            tenant_currency=currency,
+            latest_sales_day=newest_by_branch.get(branch["id"]),
+        )
+        for branch in branches
+    }
+
+
 # --- the sentences that are about the whole screen ------------------------------
 
 
@@ -496,18 +527,14 @@ async def dashboard(
             tenant_id=tenant_id, date_from=period.start, date_to=period.end
         )
     ]
-    ratio_rows = {
-        branch["id"]: ratio.period_row(
-            branch_id=branch["id"],
-            branch_name=branch["name"],
-            days=days,
-            invoices=invoices,
-            period=period,
-            tenant_currency=currency,
-            latest_sales_day=newest_by_branch.get(branch["id"]),
-        )
-        for branch in branches
-    }
+    ratio_rows = _branch_ratio_rows(
+        branches,
+        days=days,
+        invoices=invoices,
+        period=period,
+        currency=currency,
+        newest_by_branch=newest_by_branch,
+    )
     unassigned = ratio.unassigned_group(invoices, period, currency)
     ratio_total = ratio.chain_total(list(ratio_rows.values()), unassigned)
 
