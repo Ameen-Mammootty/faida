@@ -485,21 +485,27 @@ const unitKey = (unit: string) => {
   if (/^(pcs?|pce|pces|pieces?|ea|each|nos?|units?)$/.test(word)) return "pc";
   return word;
 };
-const lineKey = (ingredientId: string, qty: string, unit: string) =>
-  `${ingredientId}|${amountKey(qty)}|${unitKey(unit)}`;
+const lineKey = (ingredientId: string, qty: string, unit: string, share: string | null) =>
+  `${ingredientId}|${amountKey(qty)}|${unitKey(unit)}|${share === null ? "" : amountKey(share)}`;
 
 /** D8's rule: the same yield and the same multiset of (ingredient, amount,
- * measure), in any order. Free text is outside it. */
+ * measure, usable share), in any order. Free text is outside it; the share is
+ * not, because 85% usable draws a different amount out of the storeroom
+ * (M12 WP-119). */
 function sameRecipe(detail: MenuItemDetail, body: MenuItemLoadInput): boolean {
   const recipe = detail.recipe;
   if (!recipe) return false;
   if (amountKey(recipe.yield_portions) !== amountKey(body.yield_portions)) return false;
   if (recipe.components.length !== body.components.length) return false;
   const stored = recipe.components
-    .map((component) => lineKey(component.ingredient_id, component.qty, component.unit))
+    .map((component) =>
+      lineKey(component.ingredient_id, component.qty, component.unit, component.usable_share),
+    )
     .sort();
   const incoming = body.components
-    .map((component) => lineKey(component.ingredient_id, component.qty, component.unit))
+    .map((component) =>
+      lineKey(component.ingredient_id, component.qty, component.unit, component.usable_share),
+    )
     .sort();
   return stored.every((value, position) => value === incoming[position]);
 }
@@ -562,7 +568,11 @@ export async function mockLoadMenuItem(body: MenuItemLoadInput): Promise<MenuLoa
     qty: component.qty,
     unit: component.unit,
     source_text: component.source_text,
-    usable_share: null,
+    usable_share: component.usable_share,
+    // The sentence beside a share names the purchased amount, and that is a
+    // division: the API does it, and a mock that did it too would be a second
+    // implementation of the arithmetic (rule 3). The share still travels, so
+    // a re-upload that changes it is a new version here as well.
     usable_words: null,
     cost: null,
     missing: plate.missing[0],
