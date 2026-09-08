@@ -145,14 +145,82 @@ def wire_auth(app: FastAPI) -> None:
 
 
 class FakeMeta:
-    """Mock transport for the Graph API: media metadata, media bytes, message send."""
+    """Mock transport for the Graph API: media metadata, media bytes, message
+    send (text and template), media upload.
+
+    `sent` holds every message JSON as Meta received it, whatever its type;
+    `uploads` holds each multipart upload already parsed into its fields, so a
+    test asserts on what went over the wire rather than on how httpx encoded
+    it. The two refusal switches are the two shapes Meta refuses in: a bare
+    500 (`fail_sends`, the outage a best-effort reply has to survive) and a
+    400 carrying a numbered error (`template_error`, M10 WP-102: 132001 when
+    the template is not approved, 132000 when it was edited to a different
+    variable count). Nothing is recorded while either is on - a refused send
+    is a send that never happened."""
+
+    #: Meta's own wording for the refusals the morning brief can meet.
+    ERRORS = {
+        132001: (
+            "Template name does not exist in the translation",
+            "template name (faida_daily_brief) does not exist in en",
+        ),
+        132000: (
+            "Number of parameters does not match the expected number of params",
+            "body: number of localizable_params (4) does not match the expected number (5)",
+        ),
+        2207026: ("Media upload error", "the file could not be uploaded"),
+    }
 
     def __init__(self):
         self.sent: list[dict] = []
+        self.uploads: list[dict] = []
         self.media_bytes = b"\xff\xd8fake-jpeg-bytes"
         # Meta answering 500 to every send: what a best-effort reply has to
         # survive. Nothing is recorded in `sent` while it is on.
         self.fail_sends = False
+        # Meta refusing every template send with this numbered error (400).
+        self.template_error: int | None = None
+        # Meta refusing every media upload: the card that never becomes a
+        # header, which must fail the job before any message leaves.
+        self.fail_uploads = False
+
+    @staticmethod
+    def multipart_fields(request: httpx.Request) -> dict:
+        """The multipart body as {field name: value}, the file as bytes and
+        its filename beside it under `filename`."""
+        import re
+
+        content_type = request.headers.get("content-type", "")
+        boundary = content_type.partition("boundary=")[2].strip('"').encode()
+        fields: dict = {}
+        for part in request.content.split(b"--" + boundary):
+            head, sep, body = part.partition(b"\r\n\r\n")
+            if not sep:
+                continue
+            name = re.search(rb'name="([^"]+)"', head)
+            if not name:
+                continue
+            value = body.rstrip(b"\r\n").removesuffix(b"--")
+            key = name.group(1).decode()
+            filename = re.search(rb'filename="([^"]+)"', head)
+            if filename:
+                fields["filename"] = filename.group(1).decode()
+                fields[key] = value
+            else:
+                fields[key] = value.decode()
+        return fields
+
+    def error_body(self, code: int) -> dict:
+        message, details = self.ERRORS.get(code, ("Meta refused the request", "no details"))
+        return {
+            "error": {
+                "message": message,
+                "type": "OAuthException",
+                "code": code,
+                "error_data": {"details": details},
+                "fbtrace_id": "x",
+            }
+        }
 
     def transport(self) -> httpx.MockTransport:
         def handle(request: httpx.Request) -> httpx.Response:
@@ -162,10 +230,17 @@ class FakeMeta:
 
                 if self.fail_sends:
                     return httpx.Response(500, json={"error": {"message": "meta down"}})
+                if self.template_error is not None:
+                    return httpx.Response(400, json=self.error_body(self.template_error))
                 self.sent.append(json.loads(request.content))
                 return httpx.Response(
                     200, json={"messages": [{"id": f"wamid.out{len(self.sent)}"}]}
                 )
+            if path.endswith("/media") and request.method == "POST":
+                if self.fail_uploads:
+                    return httpx.Response(400, json=self.error_body(2207026))
+                self.uploads.append(self.multipart_fields(request))
+                return httpx.Response(200, json={"id": f"media-up{len(self.uploads)}"})
             if request.url.host == "cdn.test":
                 return httpx.Response(200, content=self.media_bytes)
             # media id lookup

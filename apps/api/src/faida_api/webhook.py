@@ -1,5 +1,11 @@
 """Meta webhook endpoints. The receiver is dumb and fast: verify signature,
-dedupe on message_id, store raw, enqueue, return 200. All heavy work is in the worker."""
+dedupe on message_id, store raw, enqueue, return 200. All heavy work is in the worker.
+
+The same POST carries Meta's receipts for what we sent (M10 WP-102, C15.4).
+A receipt is not a message: it enqueues nothing and stamps the outbound row
+it names, so a brief that left at 07:00 and never arrived says so in
+`wa_messages.status` instead of being a thing the owner reports and nobody
+can check."""
 
 import hashlib
 import hmac
@@ -30,7 +36,8 @@ def verify_signature(raw_body: bytes, signature_header: str | None, app_secret: 
 
 def extract_messages(payload: dict[str, Any]) -> list[dict[str, Any]]:
     """Flatten a Cloud API webhook payload into inbound message dicts.
-    Status updates (delivered/read receipts) are not messages and are skipped."""
+    Status updates (delivered/read receipts) are not messages and are skipped
+    here; `extract_statuses` is the one that reads them (WP-102)."""
     out: list[dict[str, Any]] = []
     for entry in payload.get("entry", []):
         for change in entry.get("changes", []):
@@ -47,6 +54,30 @@ def extract_messages(payload: dict[str, Any]) -> list[dict[str, Any]]:
                         "type": msg_type,
                         "media_id": media_id,
                         "raw": msg,
+                    }
+                )
+    return out
+
+
+def extract_statuses(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """Flatten the same payload into Meta's receipts for messages *we* sent.
+
+    One dict per `value.statuses[]` entry: the message id it is about, how far
+    along it is (`sent`, `delivered`, `read`, `failed`), the phone it went to
+    (`recipient_id`, which is how a stub row learns its number when a receipt
+    beats our own record write) and the errors a `failed` carries. Pure, like
+    `extract_messages`, so the shapes are tested without a database."""
+    out: list[dict[str, Any]] = []
+    for entry in payload.get("entry", []):
+        for change in entry.get("changes", []):
+            value = change.get("value", {})
+            for status in value.get("statuses", []):
+                out.append(
+                    {
+                        "id": status.get("id"),
+                        "status": status.get("status"),
+                        "recipient_id": status.get("recipient_id"),
+                        "errors": status.get("errors"),
                     }
                 )
     return out
@@ -89,6 +120,20 @@ async def receive_webhook(request: Request) -> Response:
             accepted.append(msg["id"])
         else:
             logger.info("duplicate wa message skipped: %s", msg["id"])
+    # A receipt for something we sent: stamp the row and enqueue nothing
+    # (WP-102). `failed` carries Meta's error object; the first one is the
+    # reason, in the shape the Graph API returns synchronously.
+    for status in extract_statuses(payload):
+        if not status["id"] or not status["status"]:
+            continue
+        errors = status["errors"] or []
+        await db.stamp_outbound_status(
+            status["id"],
+            status["status"],
+            errors[0] if errors else None,
+            to_phone=status["recipient_id"],
+        )
+
     # WP-41: receipt-to-200 per accepted message. No document exists yet, so
     # the message id is the correlator; the pipeline's summary line ties it to
     # the document through wa_messages.created_at.
