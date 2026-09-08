@@ -15,7 +15,7 @@ Plan reference: `plan.md` §8 M9 (the checklist and the done-when), §3 (the dis
 The screenshot (`Screenshot 2026-09-05 005021.png`, taken at 00:50 on 2026-09-05, before the design review that picked Variant A at 11:05) is the **previous build's** dashboard, run locally at `localhost:3000/dashboard`.
 None of its labels exist in this codebase: `git grep` on master finds no "Executive Dashboard", no "Inventory" screen and no "Profitability" screen under `apps/web/src`, and its percentages carry four decimals where every figure this API sends is a one-decimal string.
 So the reference is a picture of a shape the founder liked, not a screen to restore, and its numbers are the old build's problems (a cost coverage of 109.0971% beside an "unavailable" chip is exactly the contradiction C9 was written to forbid).
-The screenshot lives only on the founder's machine; **copying it to `Docs/reference/` before the design review is a founder step**, so the board has the thing it answers beside it.
+The screenshot lives only on the founder's machine; **copying it to `Docs/reference/` before the design review is a founder step**, so the board has the thing it answers beside it. **Done 2026-09-08:** the file is `Docs/reference/previous-build-dashboard-2026-09-05.jpg` - the photograph the founder pasted into the planning session, of the Windows laptop with the PNG open, recovered from the session transcript because the PNG itself was never on the Mac; `Docs/reference/README.md` says so.
 
 Read element by element, against what is live today:
 
@@ -293,7 +293,7 @@ Three things the first draft listed here are rules now, not decisions, because t
 
 Recorded in `plan.md` on 2026-09-05: rows 97 to 99 in §7.3 under M9 (approved to build), one checklist line in §8 M9, two Decision Log rows (the ask planned as a delta on the live screen, translated by the display rules; then approved with every decision as recommended), one Progress Log line, and an APPROVED row in Approved Mockups pointing at the board; `TODOS.md` carries the picker-range entry's answer, the headline-rounding entry's answer, and three items this plan deferred with triggers.
 The board's `approved.json` records the founder's pick of Variant D; `proposed.json` stays as the review's record.
-Still a founder step before the lanes start: the screenshot into `Docs/reference/`, so the board has the thing it answers beside it.
+Still a founder step before the lanes start: the screenshot into `Docs/reference/`, so the board has the thing it answers beside it. (Closed 2026-09-08, after the lanes: `Docs/reference/previous-build-dashboard-2026-09-05.jpg`, recovered from the session transcript.)
 
 ## GSTACK REVIEW REPORT
 
