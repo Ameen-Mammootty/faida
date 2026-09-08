@@ -1425,9 +1425,9 @@ async def test_act_four_on_the_practice_stage_says_only_what_is_there(act_four, 
     assert len(kept) == 3 and kept == sorted(kept)
     first = payload["league"][0]["branch_name"]
     assert payload["answer"]["branch"] == (
-        f"Look at {first.removesuffix(' Branch')} first: it keeps about AED "
-        f"{Decimal(payload['league'][0]['contribution_pct']).quantize(Decimal('1'))} "
-        "of every 100 it takes, the least of the three."
+        f"Look at {first.removesuffix(' Branch')}: keeps "
+        f"{Decimal(payload['league'][0]['contribution_pct']).quantize(Decimal('1'))}%, "
+        "the least of the three branches."
     )
     assert Decimal(payload["total"]["contribution"]) == sum(
         Decimal(row["contribution"]) for row in payload["league"]
@@ -1488,12 +1488,17 @@ async def test_act_four_speaks_the_figures_the_runbook_quotes(act_four, db):
 
         # The one sentence, named and worded.
         assert payload["answer"]["branch"] == (
-            "Look at Al Nahda first: it keeps about AED 66 of every 100 it takes, "
-            "the least of the three."
+            "Look at Al Nahda: keeps 66%, the least of the three branches."
+        )
+        cocoa = next(
+            r
+            for r in payload["items"]["all"]
+            if r["menu_item_name"] == "Hot Chocolate - Large 250 ml"
         )
         assert payload["answer"]["item"] == (
-            "Hot Chocolate - Large 250 ml sells more than any item that earns under "
-            "the menu's average."
+            "Hot Chocolate - Large 250 ml: sells well but keeps only "
+            f"{Decimal(cocoa['contribution_pct']).quantize(Decimal('1'))}% against the menu's "
+            f"{Decimal(payload['total']['contribution_pct']).quantize(Decimal('1'))}%."
         )
         assert [row["branch_name"] for row in payload["league"]] == [
             "Al Nahda Branch",

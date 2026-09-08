@@ -1012,25 +1012,28 @@ export default function Dashboard() {
 
       {emptyBranch ? null : (
         <section aria-busy={loading} className={`space-y-5 ${loading ? "opacity-60" : ""}`}>
-          {/* The answer: the headline, what it went on to say, the word it
-              carries, and the notes behind the icon. */}
+          {/* The answer: the API's lines as bullets, the word it carries and
+              the notes behind the icon at the card's right. */}
           <section className="rounded-md border border-ink/10 border-l-4 border-l-gold bg-paper px-5 py-3">
-            <p
-              className={`flex flex-wrap items-center gap-x-2.5 gap-y-1 text-ink ${
-                lead.own
-                  ? "max-w-3xl text-[16px] leading-snug font-medium"
-                  : "font-display text-[23px] leading-8 font-semibold tracking-[-0.01em]"
-              }`}
-            >
-              <span>{lead.lead}</span>
-              {chip !== null ? <QualityChip quality={chip} /> : null}
-              <InfoTip lines={caveat} label="What qualifies this answer" />
-            </p>
-            {lead.lines.map((line) => (
-              <p key={line} className="mt-0.5 max-w-3xl text-[15px] leading-snug text-ink">
-                {line}
-              </p>
-            ))}
+            <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
+              {lead.own ? (
+                <p className="max-w-3xl text-[16px] leading-snug font-medium text-ink">
+                  {lead.lines[0]}
+                </p>
+              ) : (
+                <ul className="max-w-3xl list-disc space-y-1 pl-5 font-display text-[18px] leading-7 font-semibold text-ink marker:text-gold">
+                  {lead.lines.map((line) => (
+                    <li key={line}>{line}</li>
+                  ))}
+                </ul>
+              )}
+              {chip === null && caveat.length === 0 ? null : (
+                <span className="flex shrink-0 items-center gap-2 pt-1">
+                  {chip !== null ? <QualityChip quality={chip} /> : null}
+                  <InfoTip lines={caveat} label="What qualifies this answer" />
+                </span>
+              )}
+            </div>
           </section>
 
           {/* Three headlines: one column on a phone, one row from a tablet. */}

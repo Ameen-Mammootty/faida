@@ -17,7 +17,7 @@ door, papers confirmed through the real path.
 """
 
 import datetime
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 import httpx
 import pytest
@@ -164,6 +164,18 @@ async def _read(api, **params) -> dict:
     return response.json()
 
 
+def _item_answer(payload: dict, name: str, where: str = "") -> str:
+    """The crisp item line as the API composes it (2026-09-08): the dish's own
+    whole-number share against the menu's, both read off the same payload so
+    the test pins the words and never a second copy of the arithmetic."""
+    row = next(r for r in payload["items"]["all"] if r["menu_item_name"] == name)
+    kept = Decimal(row["contribution_pct"]).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    menu = Decimal(payload["total"]["contribution_pct"]).quantize(
+        Decimal("1"), rounding=ROUND_HALF_UP
+    )
+    return f"{name}: sells well{where} but keeps only {kept}% against the menu's {menu}%."
+
+
 def _by_branch(rows: list[dict]) -> dict[str, dict]:
     return {row["branch_id"]: row for row in rows}
 
@@ -293,14 +305,12 @@ async def test_the_answer_names_the_top_row_and_the_dish_that_sells_and_does_not
     await _stage(api, db)
     payload = await _read(api)
     first = payload["league"][0]
-    kept = Decimal(first["contribution_pct"]).quantize(Decimal("1"))
+    kept = Decimal(first["contribution_pct"]).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
     assert payload["answer"]["branch"] == (
-        f"Look at {first['branch_name'].replace(' Branch', '')} first: it keeps about "
-        f"AED {kept} of every 100 it takes, the least of the two."
+        f"Look at {first['branch_name'].replace(' Branch', '')}: keeps {kept}%, "
+        "the least of the two branches."
     )
-    assert payload["answer"]["item"] == (
-        "Chicken 65 sells more than any item that earns under the menu's average."
-    )
+    assert payload["answer"]["item"] == _item_answer(payload, "Chicken 65")
     assert payload["answer"]["quality"] == "reliable_with_limitations"
     kinds = [s["kind"] for s in payload["signals"]]
     assert "popular_low_margin" in kinds
@@ -326,7 +336,7 @@ async def test_the_branch_filter_narrows_everything_but_the_total(api, db):
     assert branch["league"][0] == _by_branch(chain["league"])[BRANCH_2]
     assert {row["branch_id"] for row in branch["items"]["all"]} == {BRANCH_2}
     assert [row["menu_item_name"] for row in branch["items"]["all"]] == ["Karak Cup"]
-    assert branch["answer"]["branch"] == "Al Nahda keeps about AED 92 of every 100 it takes."
+    assert branch["answer"]["branch"] == "Al Nahda: keeps 92%."
     assert branch["answer"]["item"] is None  # only karak sold there, at the chain's best
     # The signals are the branch's, against the chain's benchmark: Al Nahda
     # keeps more than the chain, so no gap, and nothing popular is low-margin.
@@ -337,9 +347,7 @@ async def test_the_branch_filter_narrows_everything_but_the_total(api, db):
     seeded = await _read(api, branch_id=BRANCH)
     popular = [s for s in seeded["signals"] if s["kind"] == "popular_low_margin"]
     assert popular and popular[0]["branch_id"] == BRANCH
-    assert seeded["answer"]["item"] == (
-        "Chicken 65 sells more than any item at Al Barsha that earns under the menu's average."
-    )
+    assert seeded["answer"]["item"] == _item_answer(seeded, "Chicken 65", where=" at Al Barsha")
 
 
 async def test_a_foreign_or_unknown_branch_is_absent(api, db):

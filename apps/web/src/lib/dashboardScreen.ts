@@ -271,40 +271,27 @@ export const ANSWER_NO_MENU =
   "and the item to look at.";
 
 export interface Answer {
-  /** The headline: "Look at Deira first", or the whole sentence when the API
-   * wrote one without a colon, or the screen's own empty sentence. */
-  lead: string;
-  /** The rest, one sentence a line: what the lead's sentence went on to say,
-   * then the item sentence. */
+  /** The API's lines, one bullet each: the branch, then the dish. */
   lines: string[];
-  /** True when the lead is the screen's own words, not the API's. */
+  /** True when the one line is the screen's own words, not the API's. */
   own: boolean;
 }
 
 /**
- * The API's two sentences, framed: the branch sentence is cut at its colon so
- * "Look at Deira first" stands as the headline and what follows reads under
- * it, then the item sentence. A cut and a capital, never a rewrite - every
- * word and its order are the API's (C13.5).
+ * The API's two lines, framed as bullets and never re-worded (C13.5): the
+ * branch to look at first, then the dish that sells and does not earn. Since
+ * 2026-09-08 the API writes them bullet-short ("Look at Deira: keeps 61%,
+ * the least of the three branches."), so the screen has nothing to cut.
  */
 export function answer(result: DashboardResult): Answer {
   const { branch, item } = result.answer;
   if (branch === null && item === null) {
     return {
-      lead: noMenuSentence(result) === null ? ANSWER_EMPTY : ANSWER_NO_MENU,
-      lines: [],
+      lines: [noMenuSentence(result) === null ? ANSWER_EMPTY : ANSWER_NO_MENU],
       own: true,
     };
   }
-  if (branch === null) return { lead: item as string, lines: [], own: false };
-  const cut = branch.indexOf(": ");
-  const tail = item === null ? [] : [item];
-  if (cut === -1) return { lead: branch, lines: tail, own: false };
-  return {
-    lead: branch.slice(0, cut),
-    lines: [capitalise(branch.slice(cut + 2)), ...tail],
-    own: false,
-  };
+  return { lines: [branch, item].filter((line): line is string => line !== null), own: false };
 }
 
 /** The word that rides at the end of the answer, where the answer has one to

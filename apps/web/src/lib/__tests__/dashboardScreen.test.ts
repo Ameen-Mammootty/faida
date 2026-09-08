@@ -353,45 +353,42 @@ describe("the to-do strip", () => {
 });
 
 describe("the answer", () => {
-  it("cuts the branch sentence at its colon for a headline and never re-words it", async () => {
+  it("frames the API's two lines as bullets and never re-words them", async () => {
     const full = await scenario("full");
     expect(answer(full)).toEqual({
-      lead: "Look at Deira first",
       lines: [
-        "It keeps about AED 61 of every 100 it takes, the least of the three.",
-        "Chicken 65 Dry sells more than any item that earns under the menu's average.",
+        "Look at Deira: keeps 61%, the least of the three branches.",
+        "Chicken 65 Dry: sells well but keeps only 38% against the menu's 67%.",
       ],
       own: false,
     });
-    // Cut and capital only: the words join back into the API's sentence.
-    const [rest] = answer(full).lines;
-    expect(`${answer(full).lead}: ${rest.charAt(0).toLowerCase()}${rest.slice(1)}`).toBe(
-      full.answer.branch,
-    );
+    expect(answer(full).lines).toEqual([full.answer.branch, full.answer.item]);
   });
 
-  it("keeps a sentence with no colon whole, and shows one side when only one can be answered", async () => {
+  it("is about that branch alone under the filter, and one line when only one side can be answered", async () => {
     expect(answer(await scenario("full", "br-01"))).toEqual({
-      lead: "Al Quoz keeps about AED 70 of every 100 it takes.",
-      lines: ["Chicken 65 Dry sells more than any item at Al Quoz that earns under the menu's average."],
+      lines: [
+        "Al Quoz: keeps 70%.",
+        "Chicken 65 Dry: sells well at Al Quoz but keeps only 38% against the menu's 67%.",
+      ],
       own: false,
     });
     const quiet = answer(await scenario("quiet"));
-    expect(quiet.lead).toBe("Look at Deira first");
-    expect(quiet.lines).toHaveLength(1);
+    expect(quiet.lines).toEqual(["Look at Deira: keeps 77%, the least of the three branches."]);
     expect(quiet.own).toBe(false);
   });
 
   it("uses its own sentence only when neither side can be answered", async () => {
     const nomenu = await scenario("nomenu");
-    expect(answer(nomenu)).toEqual({ lead: ANSWER_NO_MENU, lines: [], own: true });
-    expect(answer({ ...nomenu, menu: { items: 3, costed: 0 } }).lead).toBe(ANSWER_EMPTY);
+    expect(answer(nomenu)).toEqual({ lines: [ANSWER_NO_MENU], own: true });
+    expect(answer({ ...nomenu, menu: { items: 3, costed: 0 } }).lines).toEqual([ANSWER_EMPTY]);
   });
 
-  it("says incomplete inside the sentence when the top row is", async () => {
+  it("says incomplete inside the line when the top row is", async () => {
     const partial = answer(await scenario("partial"));
-    expect(partial.lead).toBe("Look at Karama first");
-    expect(partial.lines[0]).toMatch(/Its figure is incomplete - its row says why\.$/);
+    expect(partial.lines[0]).toBe(
+      "Look at Karama: keeps 69%, the least of the two branches. Its figure is incomplete.",
+    );
   });
 });
 

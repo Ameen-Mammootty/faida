@@ -507,8 +507,8 @@ Then go straight into **act four (section H)** in the same browser: the ratio sa
 ## H. Act four: the dashboard (added 2026-09-05, WP-95; live on the real stage 2026-09-07, WP-96)
 
 Act three ends on a ratio - what went out to suppliers against what came in. Act four answers the question underneath it: *of what the chain took, how much did it keep, and which dish is eating it?*
-One screen, `/dashboard`, read straight after act three, in the same browser. It is one read: the two sentences, the four tiles, the league, what to look at, the supplier price moves, the items. Nothing on it is stored and nothing recomputes in the background.
-The screen is the founder's compact redesign of 2026-09-07: the answer, the four figures and the whole league on one laptop screen (the league's total row ends at 608 of 768 at 1366x768), whole-dirham headlines rounded half up so they agree with the sentences beside them, and every sentence that qualifies a figure behind the info icon next to it - the caveat on the answer, the window on a status, "After ingredients and packaging." on the contribution tile. Hover or tap an icon when a figure needs its sentence; do not read the icons out.
+One screen, `/dashboard`, read straight after act three, in the same browser. It is one read: the two bullets, the three tiles, the branches, worth a look, the supplier prices, the dishes. Nothing on it is stored and nothing recomputes in the background.
+The screen is the simple form of 2026-09-08 (the founder's brief: owners who are not readers of dashboards): two crisp bullets, three figures in plain words - Sold, Kept after ingredients, Paid to suppliers - and the whole branch table on one laptop screen (the table's total row ends at 622 of 768 at 1366x768), whole-dirham headlines and whole-number percentages rounded half up so they agree with the bullets beside them, and every sentence that qualifies a figure behind the info icon next to it - the notes on the answer, the formal name on a tile ("Contribution before overheads (estimate)", "Purchases ÷ net sales (cash basis)"), the window on a branch. Hover or tap an icon when a figure needs its sentence; do not read the icons out.
 
 **Every figure quoted below is printed, not typed.** `Docs/demo-invoices/koukh-al-shay/act_four.py` stages the chain through the same doors a person uses - the menu through the loader, the four preparation papers through the typed-invoice door and the confirm, each pack mapped to its material, the committed week through `POST /api/sales/days`, one keystroke per till name - and then reads `GET /api/dashboard` and prints exactly what comes back:
 
@@ -519,54 +519,53 @@ apps/api/.venv/bin/python Docs/demo-invoices/koukh-al-shay/act_four.py --migrate
 
 Two things about that script are worth knowing before you quote it on stage. It types the four preparation papers instead of photographing them, and a typed price is *asserted* (C8), which caps every plate at **estimated** - so the script's quality words are one notch below the real stage's, where the same papers were read from photographs and read *reliable with limitations*. **The money is identical**; only the word moves. And it stages a throwaway database, never the live one. On 2026-09-07 the live read and the script's read agreed to the fil in every figure (§C5); the one difference is that the live drill says *Recipe version 2*, because the real menu was loaded twice, where the script's throwaway says version 1.
 
-**1. The one sentence and the four figures (about 30 seconds).** Open `/dashboard`. (The tab was opened before act one, so it still shows the week before KAS-5 - that is what step 4 moves, exactly as it did on `/sales`.) Under the heading, the freshness line - `Sales loaded to Mon 31 Aug, 7 days ago · AED 9,625 taken that day across 3 branches` - then the two sentences, which read out loud:
+**1. The two bullets and the three figures (about 30 seconds).** Open `/dashboard`. (The tab was opened before act one, so it still shows the week before KAS-5 - that is what step 4 moves, exactly as it did on `/sales`.) Under the heading, the freshness line - `Sales loaded to Mon 31 Aug, 7 days ago.` - with nothing waiting beside it (no paper held, every till name mapped, every dish costed, so the to-do strip is empty), then the two bullets, which read out loud:
 
 ```
-Look at Al Nahda first: it keeps about AED 66 of every 100 it takes, the least of the three.
-Hot Chocolate - Large 250 ml sells more than any item that earns under the menu's average.
+• Look at Al Nahda: keeps 66%, the least of the three branches.
+• Hot Chocolate - Large 250 ml: sells well but keeps only 52% against the menu's 66%.
 ```
 
 Say: "Act three told you where the money went out. This tells you what stayed - and it names the branch and the dish before you have read a single number."
-Then the four tiles under them:
+Then the three tiles under them:
 
 ```
-NET SALES                                   AED 71,942    to Mon 31 Aug
-PURCHASES ÷ NET SALES (CASH BASIS)          12.7%         Incomplete · AED 9,163 of confirmed papers
-CONTRIBUTION BEFORE OVERHEADS (ESTIMATE)    AED 47,021    Reliable with limitations · keeps 65.8% of costed sales
-COSTED SHARE OF SALES                       100.0%        Every till name is mapped.
+SOLD                      AED 71,942    AED 9,625 on Mon 31 Aug
+KEPT AFTER INGREDIENTS    AED 47,021    AED 66 of every 100 sold · [bar] covers 100% of what sold
+PAID TO SUPPLIERS         AED 9,163     AED 13 of every 100 sold · Incomplete
 ```
 
-Say: "Four figures, and the second one is honest about itself: two branches have no papers yet, so the chain's ratio says *incomplete* rather than pretending." Point at **45 costed** beside the items heading further down - the screen says what it is built on (it reads "N costed of M" the moment a row carries no numbers).
+Say: "Three figures in plain words, and the third one is honest about itself: two branches have no papers yet, so what the chain paid to suppliers says *incomplete* rather than pretending." The formal names are behind each tile's icon - "Contribution before overheads (estimate): what is left after ingredients and packaging, before rent, wages and utilities. It is not profit." and "Purchases ÷ net sales (cash basis): 12.7%." - for the one person in the room who asks. (The script's typed papers read *estimated* where the real stage's photographed ones read *reliable with limitations*; on the real stage the kept tile and the bullets carry no chip at all, because the screen prints the word only where it is a caveat.)
 
-**2. The league, with contribution beside the ratio (about 40 seconds).** The table, ordered by what each branch keeps, least first - **not** by the ratio, which is `/sales`' key:
+**2. The branches, ranked by what they keep (about 40 seconds).** The table - **Branches** - ordered by what each branch keeps, least first - **not** by the ratio, which is `/sales`' key and lives there now (the "All on Sales" link at the table's right):
 
 ```
-BRANCH             NET SALES    PURCHASES ÷ NET SALES    CONTRIBUTION (EST.)   KEPT     STATUS
-Al Nahda Branch    AED 23,066   No confirmed purchases   AED 15,029            65.7%    Reliable with limitations
-Rolla Branch       AED 18,608   No confirmed purchases   AED 12,149            65.8%    Reliable with limitations
-Al Qusais Branch   AED 30,267   30.3%                    AED 19,843            66.0%    Reliable with limitations
-All branches       AED 71,942   12.7%                    AED 47,021            65.8%    Reliable with limitations
+BRANCH             SOLD         KEPT          SHARE KEPT
+Al Nahda Branch    AED 23,066   AED 15,029    [bar] 66%
+Rolla Branch       AED 18,608   AED 12,149    [bar] 66%
+Al Qusais Branch   AED 30,267   AED 19,843    [bar] 66%
+All branches       AED 71,942   AED 47,021    [bar] 66%
 ```
 
-(The exact figures behind the rows are 15,028.97, 12,148.63, 19,843.16 and 47,020.76; the screen rounds half up, so 15,028.97 reads **AED 15,029**, and the bar beside each percentage is drawn to its own number.)
+(The exact figures behind the rows are 15,028.97, 12,148.63, 19,843.16 and 47,020.76; the screen rounds half up, so 15,028.97 reads **AED 15,029**, and the bar beside each percentage is drawn to its own tenth - 65.7, 65.8, 66.0 and 65.8 - though all four read **66%** as whole numbers. The tenths, the window, the deliveries and what each branch paid are behind its icon: "AED 9,163 paid to suppliers, AED 30 of every 100 sold" on Al Qusais, "No confirmed purchases" on the other two.)
 
 Say: "This is contribution before overheads - ingredients and packaging out of what the till took. It is **not** net profit: rent, wages and electricity are not in it, and neither is waste, because nobody records waste yet and this screen does not invent it."
 Then point at Al Nahda and Rolla: "Those two have no invoices yet, so act three could not give them a ratio. They still have a contribution, because contribution needs sales and a costed menu, not papers. That is the same discipline in the other direction: it says what it knows."
 And be straight about the spread: the three branches sit within a third of a point of each other, because the demo's sales are invented from one distribution. On a real chain that column is where the differences show up.
-If asked for one branch, pick it in the picker at the top right: the URL gains `?branch=`, the tiles become that branch's row with the chain named beside each figure (`Al Nahda · to Mon 31 Aug`; `AED 0 of confirmed papers · chain 12.7%`; `keeps 65.7% of costed sales · chain 65.8%`), the sentence becomes "Al Nahda keeps about AED 66 of every 100 it takes. Hot Chocolate - Large 250 ml sells more than any item at Al Nahda that earns under the menu's average.", and the league keeps that branch and the chain's row. It is the same screen, never a second one.
+If asked for one branch, pick it in the picker at the top right: the URL gains `?branch=`, the tiles become that branch's row with the chain named beside each figure (`Sold · Al Nahda`; `AED 66 of every 100 sold · chain AED 66`; `No confirmed purchases`), the first bullet becomes "Al Nahda: keeps 66%." and the second names the hot chocolate at Al Nahda against the menu's 66%, and the table keeps that branch and the chain's row. It is the same screen, never a second one.
 
-**3. The item that sells and does not earn (about 40 seconds).** The item panel - **Items: what each one contributed** - best five and worst five, "Show all 45 items" beneath. Read the bottom of it:
+**3. The item that sells and does not earn (about 40 seconds).** The dish panel - **Dishes** - best earners on the left, weakest earners on the right, "Show all 45 dishes" beneath. Read the weakest five:
 
 ```
-WORST
-Karak Delivery - Large 400 ml    388   AED 1,848   AED 522   28.2%
-Lotus Cake - slice               104   AED 1,090   AED 510   46.8%
-Honey Cake - slice               111   AED 1,163   AED 484   41.6%
-Karak Delivery - Medium 250 ml   542   AED 1,549   AED 353   22.8%
-Karak Delivery - Small 120 ml    492   AED 703     AED 136   19.3%
+WEAKEST EARNERS                                KEPT      SHARE KEPT
+Karak Delivery - Large 400 ml    388 sold      AED 522   [bar] 28%
+Lotus Cake - slice               104 sold      AED 510   [bar] 47%
+Honey Cake - slice               111 sold      AED 484   [bar] 42%
+Karak Delivery - Medium 250 ml   542 sold      AED 353   [bar] 23%
+Karak Delivery - Small 120 ml    492 sold      AED 136   [bar] 19%
 ```
 
-Say: "The small delivery karak sold 492 cups this week and kept AED 135.58 of the AED 702.86 it took." (The fils are the API's; the row reads AED 136 of AED 703.)
+Say: "The small delivery karak sold 492 cups this week and kept AED 135.58 of the AED 702.86 it took." (The fils are the API's; the row reads 492 sold, AED 136, 19%; the AED 703 it took is in the drill.)
 Then open the row - the drill opens in place, the ranking never leaves the screen - and read the reason off it:
 
 ```
@@ -589,20 +588,20 @@ Every one of those lines is a link to the invoice line its price came from. Clic
 **4. The reload, one layer up (about 25 seconds).** KAS-5 was confirmed in act one, and act three reloaded `/sales` to watch Al Qusais move from 30.3% to 39.3%. Act four is the same gesture one layer up. **Reload `/dashboard`.**
 
 ```
-Contribution tile   AED 47,021 · keeps 65.8%          ->   AED 46,909 · keeps 65.7%
-Ratio tile          12.7% · AED 9,163 of papers       ->   16.5% · AED 11,899 of confirmed papers
-Al Qusais           AED 19,843   66.0%   30.3%        ->   AED 19,797   65.8%   39.3%
-Al Nahda            AED 15,029   65.7%                ->   AED 14,994   65.5%
-Rolla               AED 12,149   65.8%                ->   AED 12,118   65.6%
-Karak Delivery - Small 120 ml   AED 136   19.3%       ->   AED 116   16.6%
+Kept after ingredients    AED 47,021 · AED 66 of every 100 sold   ->   AED 46,909 · AED 66 of every 100 sold
+Paid to suppliers         AED 9,163 · AED 13 of every 100 sold    ->   AED 11,899 · AED 17 of every 100 sold
+Al Qusais                 AED 19,843   66%                        ->   AED 19,797   66%   (66.0 to 65.8 behind the icon)
+Al Nahda                  AED 15,029   66%                        ->   AED 14,994   66%   (65.7 to 65.5)
+Rolla                     AED 12,149   66%                        ->   AED 12,118   66%   (65.8 to 65.6)
+Karak Delivery - Small 120 ml   AED 136   19%                     ->   AED 116   17%
 ```
 
-(Exactly: 47,020.76 to 46,908.73; 19,843.16 to 19,796.71; 135.58 to 116.40. The worst five reorder too: the large delivery karak drops below both cakes.)
+(Exactly: 47,020.76 to 46,908.73; 19,843.16 to 19,796.71; 135.58 to 116.40; the ratio 12.7% to 16.5%, behind the suppliers tile's icon. The whole numbers on the branches hold still - the tenths that moved are behind each icon - so the money is the beat: AED 47,021 to AED 46,909, and the small karak's AED 136 to AED 116. The weakest five reorder too: the large delivery karak drops below both cakes.)
 
 Say: "One delivery, confirmed from a phone, moved what the whole chain kept by AED 112, moved every branch, and reordered the bottom of the item table. Nothing was stored and nothing recomputed in the background - the page was read again, and it derived the lot."
 Open the small delivery karak again to show where the AED 19 went: its evaporated milk line reads **AED 0.541 a plate · Invoice line 1, 25 Aug 2026** before the reload and **AED 0.580 a plate · Invoice line 1, 31 Aug 2026** after it, and that link now lands on KAS-5. One line on one paper, on one plate, on 492 cups.
 
-**5. What to look at, and the price moves in money (about 40 seconds).** The reload also changed the two panels under the league. **What to look at** now reads "4 this window, largest first" - ranked by the money at stake, capped at five, three shown and "Show all 4" beneath:
+**5. Worth a look, and the price moves in money (about 40 seconds).** The reload also changed the two panels under the league. **Worth a look** now holds four lines - ranked by the money at stake, capped at five, three shown and "Show all 4" beneath:
 
 ```
 Hot Chocolate - Large 250 ml sold AED 3,010 and kept 52.3%; the menu keeps 65.7%.    AED 403
@@ -611,22 +610,22 @@ Evaporated milk is up AED 0.83 per litre since 31 Aug.                          
 Show all 4  ->  Milk powder is up AED 1.06 per kg since 31 Aug.                      AED 1
 ```
 
-Behind each icon, the sentence that made the figure: "At the menu's average it would have contributed AED 403 more."; "AED 26 off contribution on the 211 portions sold since it landed, across 9 items."; "AED 1 off contribution on the 105 portions sold since it landed, across 2 items." (Before the reload the panel held the two dishes only, "2 this window", at AED 406 and AED 246 - there was no move to compare.)
+Behind each icon, the sentence that made the figure: "At the menu's average it would have contributed AED 403 more."; "AED 26 off contribution on the 211 portions sold since it landed, across 9 items."; "AED 1 off contribution on the 105 portions sold since it landed, across 2 items." (Before the reload the panel held the two dishes only, at AED 406 and AED 246 - there was no move to compare.)
 
 Say: "The phone said milk powder is up. The menu screen said what that costs a cup. This says what it has cost the business since the delivery landed - and it ranks both milk moves **below** two dishes that quietly keep twelve and thirteen points less than the rest of the menu. A price alert is not the biggest thing happening to you."
 **The AED 26 and the AED 1 are small on purpose, and say why if asked:** KAS-5 is printed on 31 August, the last day of the week, so only that one day's cups were sold at the new price. The signal answers "what has this move cost since it landed", not "what would a week of it cost".
 
-Beside it, **Supplier price moves** - "3 moved this window · latest move each" - is the other half of the same reload. It lists every material's latest move inside the window, both directions, at the 5% gate, with the invoice behind each:
+Beside it, **Supplier prices** is the other half of the same reload. It lists every material's latest move inside the window, both directions, at the 5% gate, with the invoice behind each:
 
 ```
-Price moved   Evaporated milk is up AED 0.83 per litre since 31 Aug.     See the invoice    AED 26  at stake
-Price fell    Chicken, boneless is down AED 1.25 per kg since 31 Aug.    See the invoice    AED 11  saved
-Price moved   Milk powder is up AED 1.06 per kg since 31 Aug.            See the invoice    AED 1   at stake
-Every price move on Menu ->
+↗  Evaporated milk is up AED 0.83 per litre since 31 Aug.     AED 26  at stake
+↘  Chicken, boneless is down AED 1.25 per kg since 31 Aug.    AED 11  saved
+↗  Milk powder is up AED 1.06 per kg since 31 Aug.            AED 1   at stake
+All on Menu ->
 ```
 
 Behind each icon: the plates ("Karak Tea - Flask 2 L earns AED 0.65 less a portion; also Coffee Milk - Flask 2 L (-0.63), Habbat Al Hamra - Flask 2 L (-0.58), Karak Tea - Flask 1 L (-0.32) and 5 more."; "Butter Chicken earns AED 0.16 more a portion; also Chicken Kadai (0.16), Pepper Chicken (0.16), Chicken 65 Dry (0.15) and 3 more.") and the evidence ("was AED 11.51 per litre · AED 26 at stake on the 211 portions sold since 31 Aug."; "was AED 18.00 per kg · AED 11 saved on the 73 portions sold since 31 Aug."). Before the reload it reads "No price moves in this window."
-Say: "The panel is what moved; the list on the left is what it is costing you. Chicken went down, so it is here and not there - and *See the invoice* is the same paper again, the one the phone read twenty minutes ago." The chicken line is worth pointing at: the phone's read-out said it, the panel weighs it, nothing else on the screen fires on a fall.
+Say: "The panel is what moved; the list on the left is what it is costing you. Chicken went down, so it is here and not there - and the sentence itself is the link to the same paper again, the one the phone read twenty minutes ago." The chicken line is worth pointing at: the phone's read-out said it, the panel weighs it, nothing else on the screen fires on a fall.
 
 > **Why the chain moved by AED 112 and the signals name AED 27.** They are answers to two different questions. The signals price the cups sold *after* the delivery landed; the column reprices the whole week, because a period is costed at one price per material - the latest in force on its last day (C12.4, PRD §19's policy, the same one `/menu` applies) - so a delivery on the last day reprices all seven days. **The two are never added.**
 
@@ -642,8 +641,8 @@ Say: "The panel is what moved; the list on the left is what it is costing you. C
 
 - [ ] Act three has just run, in the same browser, with KAS-5 confirmed in this reset cycle - or step 4 has nothing to move and step 5's panels never gain their milk moves.
 - [ ] `/dashboard` open in a fourth tab **before act one**, signed in, and not reloaded since - the reload in step 4 is the whole beat. A sign-in lands there now (§A). The read takes 3 to 5 s on the live host (162 to 165 KB, measured 2026-09-07), so open the tab before going on, never on stage.
-- [ ] The whole week's till names are mapped and `DELIVERY CHARGE` is marked "not a menu item" (§C4 step 6), or the coverage tile reads under 100% and the league's `costed` column says so.
-- [ ] **Every till name is mapped to its own dish, not a lookalike.** The §C5 sitting found `COFFEE MILK FLASK 2L` on the 1 L flask - a keystroke at the §C4 sitting that lifted the chain's contribution by AED 220 and put a flask in the best five. The screen cannot see it (the queue is empty, the coverage is 100%); the figures can: "44 costed" where the menu has 45 items, or a size name in the best five. Read the mapping back before a rehearsal week, and fix a wrong one on `/sales` under *Mapped names* (Unmap, then the queue's top proposal):
+- [ ] The whole week's till names are mapped and `DELIVERY CHARGE` is marked "not a menu item" (§C4 step 6), or the kept tile's bar reads under 100% and a till name shows in the to-do strip.
+- [ ] **Every till name is mapped to its own dish, not a lookalike.** The §C5 sitting found `COFFEE MILK FLASK 2L` on the 1 L flask - a keystroke at the §C4 sitting that lifted the chain's contribution by AED 220 and put a flask in the best five. The screen cannot see it (the to-do strip is empty, the kept tile covers 100%); the figures can: "Show all 44 dishes" where the menu has 45, or a size name in the best five. Read the mapping back before a rehearsal week, and fix a wrong one on `/sales` under *Mapped names* (Unmap, then the queue's top proposal):
 
       ```sql
       select t.name, m.name from till_items t join menu_items m on m.id = t.menu_item_id
