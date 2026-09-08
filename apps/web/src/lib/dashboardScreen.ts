@@ -26,7 +26,7 @@
  * figure they name. Nothing the API said is rewritten to get there.
  */
 
-import { formatDate, quantity, roundedAed } from "./format";
+import { formatDate, money, quantity, roundedAed } from "./format";
 import {
   QUALITY_WORD,
   daysBetween,
@@ -790,11 +790,26 @@ export function signalHref(signal: DashboardSignal): string | null {
   return null;
 }
 
-/** The API's own detail line behind the icon after the sentence, and the
- * date a price moved on where there is one to name. */
+/** Behind the row's icon: the API's sentence and its detail, one to a line.
+ * The face of the row draws the numbers (the track); the words that state
+ * them are here, unchanged. */
 export function signalTip(signal: DashboardSignal): string[] {
+  return [signal.sentence, signal.detail];
+}
+
+/** The row's name, from the signal's own fields: the dish, the branch (as
+ * the owner says it), or the material. */
+export function signalName(signal: DashboardSignal): string {
+  if (signal.menu_item_name !== null) return signal.menu_item_name;
+  if (signal.branch_name !== null) return shortBranchName(signal.branch_name);
+  return signal.ingredient_name ?? "";
+}
+
+/** "since 21 Aug" under a price spike's name; nothing under the others,
+ * whose window is the period's. */
+export function signalWhenLine(signal: DashboardSignal): string | null {
   const when = signalWhen(signal);
-  return when === "this window" ? [signal.detail] : [signal.detail, when];
+  return when === "this window" ? null : when;
 }
 
 /** Three rows and a toggle: the list is ranked by money, so the three that
@@ -940,12 +955,144 @@ export function priceMoveLink(
   };
 }
 
-/** Behind the icon after the sentence: which plates felt it and the evidence
- * for the figure beside it, both in the API's own words, one to a line. */
+/** Behind the row's icon: the API's sentence, which plates felt it and the
+ * evidence for the figure beside it, all in the API's own words, one to a
+ * line. The face of the row draws the two prices; the words are here. */
 export function priceMoveTip(move: DashboardPriceMove): string[] {
-  return [move.plates, move.evidence].filter(
+  return [move.sentence, move.plates, move.evidence].filter(
     (line): line is string => line !== null && line !== "",
   );
+}
+
+/** "since 21 Aug" under the material's name. */
+export function moveWhenLine(move: DashboardPriceMove): string {
+  return `since ${shortDate(move.moved_on)}`;
+}
+
+// --- the tracks (the founder's pick, 2026-09-08) --------------------------------
+
+/**
+ * Variant C of the panels board (`dashboard-panels-20260908`, picked by the
+ * founder): the insight drawn, not said. A dish or a branch is a 0-100 track
+ * with its kept share filled and a gold tick where its benchmark sits - the
+ * gap between the fill and the tick is the problem. A price move is the same
+ * track: the fill is the price now, the tick is where it was, so a rise runs
+ * past the tick and a fall stops short of it, with the change as a chip.
+ *
+ * Every figure printed under a track is the API's field, rounded the way the
+ * headlines are; the two widths are drawing geometry and never a figure
+ * anyone reads.
+ */
+export interface Track {
+  /** The fill, 0-100: a kept share, or the price now against the larger of the two prices. */
+  fill: number;
+  /** The gold tick, 0-100: the benchmark's share, or the price before. */
+  tick: number;
+  /** A share below zero: an empty track, the figure in plum. */
+  loss: boolean;
+  /** A price that fell: the fill in the confirmed green, the chip too. */
+  fell: boolean;
+  /** Under the track, left: the figure and its word - "38%" "kept", "AED 61.40" "/kg". */
+  left: { figure: string; words: string };
+  /** Under the track, right, the tick's label: "menu 67%", "chain 67%", "was 58.00". */
+  right: string;
+  /** The change chip on a price track: "+6%", "-9%"; null on a share track. */
+  change: string | null;
+}
+
+/** A dish's or a branch's kept share against its benchmark. */
+export function shareTrack(
+  kept: string,
+  benchmark: string,
+  benchmarkWord: "menu" | "chain",
+): Track {
+  const loss = kept.startsWith("-");
+  return {
+    fill: keptBar(kept) ?? 0,
+    tick: keptBar(benchmark) ?? 0,
+    loss,
+    fell: false,
+    left: { figure: wholePercent(kept) ?? kept, words: loss ? "kept · loses money" : "kept" },
+    right: `${benchmarkWord} ${wholePercent(benchmark) ?? benchmark}`,
+    change: null,
+  };
+}
+
+/** "/kg", "/litre", "each" - the unit the price is per. */
+function perUnit(unit: string): string {
+  return unit === "each" ? "each" : `/${unit}`;
+}
+
+/** "+6%" from "5.9", "-9%" from "-9.1": the change the API judged the gate
+ * on, as a whole number with its sign. */
+export function wholeChange(pct: string): string {
+  const value = Math.round(Number(pct));
+  return `${value > 0 ? "+" : ""}${value}%`;
+}
+
+/** A price before and after, per display unit, on one track. The larger of
+ * the two is the full width; both widths are geometry only. */
+export function priceTrack(before: string, after: string, unit: string, change: string): Track {
+  const was = Number(before);
+  const now = Number(after);
+  const base = Math.max(was, now, 0);
+  const width = (value: number) => (base > 0 ? Math.min(100, Math.max(0, (value / base) * 100)) : 0);
+  return {
+    fill: width(now),
+    tick: width(was),
+    loss: false,
+    fell: change.startsWith("-"),
+    left: { figure: `AED ${money(after)}`, words: perUnit(unit) },
+    right: `was ${money(before)}`,
+    change: wholeChange(change),
+  };
+}
+
+/** A signal's track, from its own fields: a share for a dish or a branch,
+ * a price pair for a spike; null when the API sent no figures to draw, in
+ * which case the row prints the sentence instead. */
+export function signalTrack(signal: DashboardSignal): Track | null {
+  if (signal.kept_pct !== null && signal.benchmark_pct !== null) {
+    return shareTrack(
+      signal.kept_pct,
+      signal.benchmark_pct,
+      signal.kind === "branch_gap" ? "chain" : "menu",
+    );
+  }
+  if (
+    signal.price_before !== null &&
+    signal.price_after !== null &&
+    signal.unit !== null &&
+    signal.change_pct !== null
+  ) {
+    return priceTrack(signal.price_before, signal.price_after, signal.unit, signal.change_pct);
+  }
+  return null;
+}
+
+/** A move's track; null for a basis change, whose row prints the API's
+ * sentence in the track's place ("no before and after to show"). */
+export function moveTrack(move: DashboardPriceMove): Track | null {
+  if (
+    move.kind !== "moved" ||
+    move.price_before === null ||
+    move.price_after === null ||
+    move.unit === null ||
+    move.change_pct === null
+  ) {
+    return null;
+  }
+  return priceTrack(move.price_before, move.price_after, move.unit, move.change_pct);
+}
+
+/** The panel's chip: the estimated word said once in the heading when every
+ * row carries it, on each row when they differ, and never the reliable word
+ * (the league's rule, `leagueChips`). */
+export function signalsChips(signals: DashboardSignal[]): LeagueChips {
+  const words = new Set(signals.map((signal) => signal.quality));
+  if (signals.length === 0) return { shared: null, perRow: false };
+  if (words.size === 1) return { shared: [...words][0], perRow: false };
+  return { shared: null, perRow: true };
 }
 
 // --- the dishes ---------------------------------------------------------------

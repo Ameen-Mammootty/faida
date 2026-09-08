@@ -48,8 +48,9 @@ import {
   noSalesWords,
   periodBounds,
   portionsWords,
+  moveTrack,
+  moveWhenLine,
   priceMoveLink,
-  priceMoveMark,
   priceMoveMoney,
   priceMovePanel,
   priceMoveTip,
@@ -59,8 +60,12 @@ import {
   showAllSignalsLabel,
   signalHref,
   signalMoney,
+  signalName,
   signalPanel,
   signalTip,
+  signalTrack,
+  signalWhenLine,
+  signalsChips,
   signalsFootnote,
   soldWords,
   tiles,
@@ -73,8 +78,8 @@ import {
   withBranch,
   type LeagueChips,
   type PeriodChoice,
-  type PriceMoveTone,
   type Tile,
+  type Track,
 } from "@/lib/dashboardScreen";
 import { roundedAed } from "@/lib/format";
 import type {
@@ -86,12 +91,7 @@ import type {
   LeagueRow,
   PeriodQuality,
 } from "@/lib/types";
-import {
-  ChevronIcon,
-  PendingIcon,
-  TrendDownIcon,
-  TrendUpIcon,
-} from "./icons";
+import { ChevronIcon } from "./icons";
 import InfoTip from "./InfoTip";
 import LossFigure from "./LossFigure";
 import QualityChip from "./QualityChip";
@@ -640,86 +640,146 @@ function ItemList({
 
 // --- worth a look and supplier prices -----------------------------------------------
 
-function SignalLine({ signal }: { signal: DashboardSignal }) {
-  const href = signalHref(signal);
+/**
+ * The tracks (the founder's pick from the panels board, 2026-09-08): one row
+ * shape for both panels. The name (a link to where the row leads) with the
+ * row's one icon and, where there is one, the date under it; the track with
+ * its two figures under it; the money on the right. The two widths come from
+ * `lib/dashboardScreen.ts` as geometry; every figure printed is the API's.
+ */
+function TrackFigure({ track }: { track: Track }) {
+  const fillClass = track.fell ? "bg-verified" : track.loss ? "bg-plum" : "bg-palm";
   return (
-    <li className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 py-2.5 first:pt-0 last:pb-0">
-      <p className="flex min-w-0 flex-1 items-center gap-1.5 text-sm text-ink">
-        <span className="min-w-0">
-          {href ? (
-            <Link href={href} className="underline-offset-2 hover:underline">
-              {signal.sentence}
-            </Link>
-          ) : (
-            signal.sentence
+    <span className="block">
+      <span className="relative block h-2.5 rounded-full bg-mist">
+        <span
+          className={`absolute inset-y-0 left-0 rounded-full ${fillClass}`}
+          style={{ width: `${track.fill}%` }}
+        />
+        <span
+          aria-hidden="true"
+          className="absolute -top-1 h-[18px] w-0.5 rounded-sm bg-gold"
+          style={{ left: `calc(${track.tick}% - 1px)` }}
+        />
+      </span>
+      <span className="mt-1 flex min-h-[19px] items-center justify-between gap-2 text-[11.5px] text-stone tabular-nums">
+        <span>
+          <b className={`font-semibold ${track.loss ? "text-plum" : "text-ink"}`}>
+            {track.left.figure}
+          </b>{" "}
+          {track.left.words}
+        </span>
+        <span className="flex items-center gap-1 text-caution">
+          {track.right}
+          {track.change === null ? null : (
+            <span
+              className={`rounded-sm px-1.5 py-0.5 text-[11px] font-medium ${
+                track.fell ? "bg-mist text-verified" : "bg-gold-soft text-caution"
+              }`}
+            >
+              {track.change}
+            </span>
           )}
         </span>
-        <InfoTip lines={signalTip(signal)} label="More about this" />
-      </p>
-      <p className="font-display text-[15px] font-semibold text-ink tabular-nums">
-        {signalMoney(signal)}
-      </p>
-    </li>
-  );
-}
-
-/** The mark's three tones, each paired with its own glyph and its own name
- * for a screen reader, so the colour is the third cue and never the only one. */
-const MOVE_TONE: Record<PriceMoveTone, string> = {
-  caution: "text-caution",
-  verified: "text-verified",
-  stone: "text-stone",
-};
-
-function MoveMark({ move }: { move: DashboardPriceMove }) {
-  const mark = priceMoveMark(move);
-  const Icon =
-    mark.direction === "up"
-      ? TrendUpIcon
-      : mark.direction === "down"
-        ? TrendDownIcon
-        : PendingIcon;
-  return (
-    <span
-      role="img"
-      aria-label={mark.name}
-      className={`mr-1.5 inline-flex h-4 w-4 items-center justify-center align-[-3px] ${MOVE_TONE[mark.tone]}`}
-    >
-      <Icon className="h-3.5 w-3.5" />
+      </span>
     </span>
   );
 }
 
-/** One move: the mark, the API's sentence (which is the link to the line on
- * the paper), its plates and evidence behind one icon, and the money it
- * moved on the right. */
-function MoveLine({ move }: { move: DashboardPriceMove }) {
+function TrackRow({
+  name,
+  href,
+  when,
+  chip,
+  tip,
+  tipLabel,
+  track,
+  words,
+  money,
+  moneyWords,
+}: {
+  name: string;
+  href: string | null;
+  when: string | null;
+  chip: PeriodQuality | null;
+  tip: string[];
+  tipLabel: string;
+  track: Track | null;
+  /** What stands in the track's place when there is nothing to draw. */
+  words: string | null;
+  money: string | null;
+  moneyWords: string | null;
+}) {
+  return (
+    <li className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 py-2.5 first:pt-0 last:pb-0 sm:grid-cols-[9.5rem_minmax(0,1fr)_auto] sm:gap-y-0">
+      <div className="col-start-1 row-start-1 min-w-0">
+        <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm font-semibold text-ink">
+          {href ? (
+            <Link href={href} className="underline-offset-2 hover:underline">
+              {name}
+            </Link>
+          ) : (
+            <span>{name}</span>
+          )}
+          {chip === null ? null : <QualityChip quality={chip} />}
+          <InfoTip lines={tip} label={tipLabel} />
+        </p>
+        {when === null ? null : <p className="text-[11px] leading-tight text-stone">{when}</p>}
+      </div>
+      <div className="col-span-2 row-start-2 min-w-0 sm:col-span-1 sm:col-start-2 sm:row-start-1">
+        {track === null ? (
+          <p className="text-[12.5px] leading-snug text-stone">{words}</p>
+        ) : (
+          <TrackFigure track={track} />
+        )}
+      </div>
+      <p className="col-start-2 row-start-1 shrink-0 text-right sm:col-start-3">
+        {money === null ? null : (
+          <span className="block font-display text-[15px] font-semibold text-ink tabular-nums">
+            {money}
+          </span>
+        )}
+        {moneyWords === null ? null : (
+          <span className="block text-[11px] leading-tight text-stone">{moneyWords}</span>
+        )}
+      </p>
+    </li>
+  );
+}
+
+function SignalRow({ signal, chips }: { signal: DashboardSignal; chips: LeagueChips }) {
+  return (
+    <TrackRow
+      name={signalName(signal)}
+      href={signalHref(signal)}
+      when={signalWhenLine(signal)}
+      chip={chips.perRow && signal.quality === "estimated" ? "estimated" : null}
+      tip={signalTip(signal)}
+      tipLabel={`More about ${signalName(signal)}`}
+      track={signalTrack(signal)}
+      words={signal.sentence}
+      money={signalMoney(signal)}
+      moneyWords="at stake"
+    />
+  );
+}
+
+function MoveRow({ move }: { move: DashboardPriceMove }) {
   const money = priceMoveMoney(move);
   const link = priceMoveLink(move);
   return (
-    <li className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-2.5 first:pt-0 last:pb-0">
-      <p className="flex min-w-0 flex-1 items-center gap-1.5 text-sm text-ink">
-        <span className="min-w-0">
-          <MoveMark move={move} />
-          {link ? (
-            <Link href={link.href} aria-label={`${move.sentence} ${link.label}`} className="underline-offset-2 hover:underline">
-              {move.sentence}
-            </Link>
-          ) : (
-            move.sentence
-          )}
-        </span>
-        <InfoTip lines={priceMoveTip(move)} label="More about this move" />
-      </p>
-      {money ? (
-        <p className="shrink-0 text-right">
-          <span className="block font-display text-[15px] font-semibold text-ink tabular-nums">
-            {money.figure}
-          </span>
-          <span className="block text-[11px] leading-tight text-stone">{money.words}</span>
-        </p>
-      ) : null}
-    </li>
+    <TrackRow
+      name={move.ingredient_name}
+      href={link === null ? null : link.href}
+      when={moveWhenLine(move)}
+      chip={null}
+      tip={priceMoveTip(move)}
+      tipLabel={`More about ${move.ingredient_name}`}
+      track={moveTrack(move)}
+      words={move.sentence}
+      money={money === null ? null : money.figure}
+      moneyWords={money === null ? null : money.words}
+    />
   );
 }
 
@@ -886,6 +946,7 @@ export default function Dashboard() {
   const panel = itemPanel(result.items, expanded);
   const footnote = signalsFootnote(result);
   const signals = signalPanel(result.signals, allSignals);
+  const signalChips = signalsChips(result.signals);
   const moreSignals = showAllSignalsLabel(result.signals.length, allSignals);
   const moves = priceMovePanel(result.price_moves.moves, allMoves);
   const moreMoves = showAllMovesLabel(result.price_moves.moves.length, allMoves);
@@ -1165,50 +1226,61 @@ export default function Dashboard() {
           </section>
 
           {/* Two panels, side by side from a laptop and one under the other
-              below it: where the money is, and what the suppliers did to the
-              prices behind it. */}
-          <div className="grid gap-5 lg:grid-cols-2">
-            <section className="space-y-2">
-              <SectionHeading title="Worth a look" tip={[SIGNALS_ABOUT]} label="What this list is" />
-              <Card className="px-4 py-3">
+              below it, held to one height: where the money is, and what the
+              suppliers did to the prices behind it - each row a track. */}
+          <div className="grid items-stretch gap-5 lg:grid-cols-2">
+            <section className="flex flex-col gap-2">
+              <SectionHeading
+                title="Worth a look"
+                tip={[SIGNALS_ABOUT]}
+                label="What this list is"
+                chip={signalChips.shared === "estimated" ? "estimated" : null}
+              />
+              <Card className="flex flex-1 flex-col px-4 py-3">
                 {result.signals.length === 0 ? (
                   <p className="text-sm text-stone">{footnote ?? NO_SIGNALS}</p>
                 ) : (
                   <>
                     <ul className="divide-y divide-ink/5">
                       {signals.map((signal) => (
-                        <SignalLine key={`${signal.kind}-${signal.sentence}`} signal={signal} />
+                        <SignalRow
+                          key={`${signal.kind}-${signal.sentence}`}
+                          signal={signal}
+                          chips={signalChips}
+                        />
                       ))}
                     </ul>
-                    {moreSignals ? (
-                      <button
-                        type="button"
-                        onClick={() => setAllSignals((value) => !value)}
-                        aria-expanded={allSignals}
-                        className="mt-2.5 text-[13px] font-medium text-palm underline-offset-2 hover:underline"
-                      >
-                        {moreSignals}
-                      </button>
-                    ) : null}
-                    {footnote ? <p className="mt-2 text-xs text-stone">{footnote}</p> : null}
+                    <div className="mt-auto flex flex-wrap items-baseline gap-x-3 gap-y-1 pt-2.5">
+                      {moreSignals ? (
+                        <button
+                          type="button"
+                          onClick={() => setAllSignals((value) => !value)}
+                          aria-expanded={allSignals}
+                          className="text-[13px] font-medium text-palm underline-offset-2 hover:underline"
+                        >
+                          {moreSignals}
+                        </button>
+                      ) : null}
+                      {footnote ? <p className="text-xs text-stone">{footnote}</p> : null}
+                    </div>
                   </>
                 )}
               </Card>
             </section>
 
-            <section className="space-y-2">
+            <section className="flex flex-col gap-2">
               <SectionHeading title="Supplier prices" tip={[MOVES_ABOUT]} label="What this list is" />
-              <Card className="px-4 py-3">
+              <Card className="flex flex-1 flex-col px-4 py-3">
                 {moves.length === 0 ? null : (
                   <ul className="divide-y divide-ink/5">
                     {moves.map((move) => (
-                      <MoveLine key={move.ingredient_id} move={move} />
+                      <MoveRow key={move.ingredient_id} move={move} />
                     ))}
                   </ul>
                 )}
                 <div
                   className={`flex flex-wrap items-baseline gap-x-3 gap-y-1 ${
-                    moves.length === 0 ? "" : "mt-2.5"
+                    moves.length === 0 ? "" : "mt-auto pt-2.5"
                   }`}
                 >
                   {moves.length === 0 ? (

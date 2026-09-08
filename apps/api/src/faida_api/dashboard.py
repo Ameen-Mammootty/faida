@@ -324,6 +324,13 @@ def _signal_json(signal: signals.Signal) -> dict:
         "ingredient_name": signal.ingredient_name,
         "invoice_id": signal.invoice_id,
         "moved_on": _iso(signal.moved_on),
+        # The numbers behind the sentence, for the screen to draw.
+        "kept_pct": _dec(signal.kept_pct),
+        "benchmark_pct": _dec(signal.benchmark_pct),
+        "price_before": _dec(signal.price_before),
+        "price_after": _dec(signal.price_after),
+        "unit": signal.unit,
+        "change_pct": _dec(signal.change_pct),
     }
 
 
@@ -416,6 +423,17 @@ def price_moves_block(
                 "sentence": row.words.sentence,
                 "plates": row.words.plates,
                 "evidence": row.words.evidence,
+                # The two prices the sentence is written from, per display
+                # unit, and the change between them - the track the screen
+                # draws. A basis change has no before and after (D3).
+                "price_before": _dec(row.move.previous.per_display_unit)
+                if row.move.kind == "moved"
+                else None,
+                "price_after": _dec(row.move.current.per_display_unit)
+                if row.move.kind == "moved"
+                else None,
+                "unit": row.move.current.display_unit if row.move.kind == "moved" else None,
+                "change_pct": _dec(signals.move_change_pct(row.move)),
             }
             for row in listed[:PRICE_MOVES_LISTED]
         ],

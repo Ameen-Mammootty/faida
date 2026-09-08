@@ -48,21 +48,28 @@ import {
   noMenuSentence,
   noRatioWords,
   noSalesWords,
+  moveTrack,
+  moveWhenLine,
   portionsWords,
   priceMoveLink,
-  priceMoveMark,
   priceMoveMoney,
   priceMovePanel,
   priceMoveTip,
+  priceTrack,
   rowChip,
+  shareTrack,
   showAllLabel,
   showAllMovesLabel,
   showAllSignalsLabel,
   signalHref,
   signalMoney,
+  signalName,
   signalPanel,
   signalTip,
+  signalTrack,
   signalWhen,
+  signalWhenLine,
+  signalsChips,
   signalsFootnote,
   soldWords,
   statusTip,
@@ -72,6 +79,7 @@ import {
   todo,
   totalTip,
   unassignedLine,
+  wholeChange,
   wholePercent,
   withBranch,
 } from "../dashboardScreen";
@@ -185,6 +193,12 @@ function signal(overrides: Partial<DashboardSignal> = {}): DashboardSignal {
     ingredient_name: null,
     invoice_id: null,
     moved_on: null,
+    kept_pct: "38.1",
+    benchmark_pct: "67.4",
+    price_before: null,
+    price_after: null,
+    unit: null,
+    change_pct: null,
     ...overrides,
   };
 }
@@ -209,6 +223,10 @@ function priceMove(overrides: Partial<DashboardPriceMove> = {}): DashboardPriceM
     sentence: "A sentence the API composed.",
     plates: "A plates clause the API composed.",
     evidence: "An evidence line the API composed.",
+    price_before: "58.00",
+    price_after: "61.40",
+    unit: "kg",
+    change_pct: "5.9",
     ...overrides,
   };
 }
@@ -563,6 +581,65 @@ describe("the signals", () => {
     expect(SIGNALS_ABOUT).toMatch(/largest first/);
   });
 
+  it("draws a dish or a branch as its kept share against the benchmark, a spike as its prices", async () => {
+    expect(shareTrack("38.1", "67.4", "menu")).toEqual({
+      fill: 38.1,
+      tick: 67.4,
+      loss: false,
+      fell: false,
+      left: { figure: "38%", words: "kept" },
+      right: "menu 67%",
+      change: null,
+    });
+    // A share below zero: an empty track, the figure in plum, and the words say so.
+    expect(shareTrack("-5.3", "67.4", "menu")).toEqual({
+      fill: 0,
+      tick: 67.4,
+      loss: true,
+      fell: false,
+      left: { figure: "-5%", words: "kept · loses money" },
+      right: "menu 67%",
+      change: null,
+    });
+    expect(signalTrack(signal())?.right).toBe("menu 67%");
+    expect(
+      signalTrack(signal({ kind: "branch_gap", branch_id: "br-03", branch_name: "Deira Branch", menu_item_id: null, menu_item_name: null, kept_pct: "60.9" }))?.right,
+    ).toBe("chain 67%");
+    const spike = signal({
+      kind: "price_spike",
+      menu_item_id: null,
+      menu_item_name: null,
+      ingredient_id: "ing-nido",
+      ingredient_name: "Milk Powder",
+      kept_pct: null,
+      benchmark_pct: null,
+      price_before: "58.00",
+      price_after: "61.40",
+      unit: "kg",
+      change_pct: "5.9",
+    });
+    expect(signalTrack(spike)?.left).toEqual({ figure: "AED 61.40", words: "/kg" });
+    expect(signalName(spike)).toBe("Milk Powder");
+    expect(signalName(signal())).toBe("Chicken 65 Dry");
+    expect(signalName(signal({ menu_item_name: null, branch_name: "Deira Branch" }))).toBe("Deira");
+    // Nothing to draw: the row prints the sentence.
+    expect(signalTrack(signal({ kept_pct: null, benchmark_pct: null }))).toBeNull();
+    expect(wholeChange("5.9")).toBe("+6%");
+    expect(wholeChange("-9.1")).toBe("-9%");
+    expect(wholeChange("0.0")).toBe("0%");
+
+    // The mock: every chain signal is a share track, the branch view adds two price tracks.
+    const full = await scenario("full");
+    expect(full.signals.map((s) => signalTrack(s)?.change ?? null)).toEqual([null, null, null, null, null]);
+    expect(signalTrack(full.signals[0])?.loss).toBe(true);
+    const quoz = await scenario("full", "br-01");
+    expect(quoz.signals.filter((s) => s.kind === "price_spike").map((s) => signalTrack(s)?.change)).toEqual(["+6%", "+5%"]);
+    // The word said once when every row carries it, per row when they differ.
+    expect(signalsChips(full.signals)).toEqual({ shared: "estimated", perRow: false });
+    expect(signalsChips(quoz.signals)).toEqual({ shared: null, perRow: true });
+    expect(signalsChips([])).toEqual({ shared: null, perRow: false });
+  });
+
   it("arrive ranked by money, capped at five, and the fifth shows where the tail starts", async () => {
     const full = await scenario("full");
     expect(full.signals).toHaveLength(5);
@@ -586,20 +663,42 @@ describe("the signals", () => {
 });
 
 describe("the supplier price moves", () => {
-  it("marks the kind with a glyph, a tone and a name for a screen reader", () => {
-    expect(priceMoveMark(priceMove())).toEqual({
-      name: "Price rose",
-      tone: "caution",
-      direction: "up",
+  it("draws a move as one track: the fill is the price now, the tick is where it was", () => {
+    expect(moveTrack(priceMove())).toEqual({
+      fill: 100,
+      tick: expect.closeTo(94.46, 1),
+      loss: false,
+      fell: false,
+      left: { figure: "AED 61.40", words: "/kg" },
+      right: "was 58.00",
+      change: "+6%",
     });
-    expect(priceMoveMark(priceMove({ direction: "down" }))).toEqual({
-      name: "Price fell",
-      tone: "verified",
-      direction: "down",
-    });
+    const fall = moveTrack(
+      priceMove({ direction: "down", price_before: "16.50", price_after: "15.00", unit: "litre", change_pct: "-9.1" }),
+    );
+    expect(fall?.fell).toBe(true);
+    expect(fall?.tick).toBe(100);
+    expect(fall?.fill).toBeCloseTo(90.9, 0);
+    expect(fall?.left).toEqual({ figure: "AED 15.00", words: "/litre" });
+    expect(fall?.right).toBe("was 16.50");
+    expect(fall?.change).toBe("-9%");
+    // A basis change has no before and after: the row prints the sentence.
     expect(
-      priceMoveMark(priceMove({ kind: "basis_changed", direction: null })),
-    ).toEqual({ name: "Price basis changed", tone: "stone", direction: null });
+      moveTrack(
+        priceMove({
+          kind: "basis_changed",
+          direction: null,
+          money_at_stake: null,
+          price_before: null,
+          price_after: null,
+          unit: null,
+          change_pct: null,
+        }),
+      ),
+    ).toBeNull();
+    expect(priceTrack("3.80", "4.00", "kg", "5.3").change).toBe("+5%");
+    expect(priceTrack("1.00", "1.10", "each", "10.0").left.words).toBe("each");
+    expect(moveWhenLine(priceMove())).toBe("since 21 Aug");
     expect(MOVES_ABOUT).toMatch(/latest price move/);
   });
 
@@ -640,10 +739,10 @@ describe("the supplier price moves", () => {
     expect(MOVES_LINK).toEqual({ href: "/menu", label: "All on Menu" });
   });
 
-  it("puts the plates and the evidence behind the icon, in the API's own words", () => {
+  it("puts the sentence, the plates and the evidence behind the icon, in the API's own words", () => {
     const move = priceMove();
-    expect(priceMoveTip(move)).toEqual([move.plates, move.evidence]);
-    expect(priceMoveTip(priceMove({ plates: null }))).toEqual([move.evidence]);
+    expect(priceMoveTip(move)).toEqual([move.sentence, move.plates, move.evidence]);
+    expect(priceMoveTip(priceMove({ plates: null }))).toEqual([move.sentence, move.evidence]);
   });
 
   it("arrives with every kind the panel has to render, ranked, the basis change last", async () => {
@@ -651,9 +750,13 @@ describe("the supplier price moves", () => {
     const moves = full.price_moves.moves;
     expect(full.price_moves.count).toBe(moves.length);
     expect(moves.length).toBeGreaterThanOrEqual(3);
-    const names = moves.map((move) => priceMoveMark(move).name);
-    expect(new Set(names)).toEqual(new Set(["Price rose", "Price fell", "Price basis changed"]));
-    expect(names[names.length - 1]).toBe("Price basis changed");
+    expect(new Set(moves.map((move) => move.kind))).toEqual(new Set(["moved", "basis_changed"]));
+    expect(moves[moves.length - 1].kind).toBe("basis_changed");
+    // Every real move draws a track from the API's two prices; the basis
+    // change draws nothing and prints its sentence.
+    expect(moves.map((move) => moveTrack(move) !== null)).toEqual([true, true, true, true, false]);
+    expect(moveTrack(moves[0])?.left).toEqual({ figure: "AED 61.40", words: "/kg" });
+    expect(moveTrack(moves[1])?.fell).toBe(true);
     // Ranked by the money it moved whichever way, with the moneyless last.
     const weighed = moves
       .filter((move) => move.money_at_stake !== null)
@@ -1015,9 +1118,10 @@ describe("the info tips", () => {
     expect(tip[1]).toMatch(/^It is not profit/);
   });
 
-  it("puts a signal's detail behind the icon, and the date a price moved on", () => {
+  it("puts a signal's sentence and detail behind the icon, and the date a price moved on under its name", () => {
     const popular = signal();
-    expect(signalTip(popular)).toEqual([popular.detail]);
+    expect(signalTip(popular)).toEqual([popular.sentence, popular.detail]);
+    expect(signalWhenLine(popular)).toBeNull();
     const spike = signal({
       kind: "price_spike",
       invoice_id: "inv-1001",
@@ -1025,7 +1129,8 @@ describe("the info tips", () => {
       menu_item_id: null,
       detail: "Milk Powder is AED 2.10 a kg dearer than the last paper. (estimated)",
     });
-    expect(signalTip(spike)).toEqual([spike.detail, "since 21 Aug"]);
+    expect(signalTip(spike)).toEqual([spike.sentence, spike.detail]);
+    expect(signalWhenLine(spike)).toBe("since 21 Aug");
   });
 
   it("keeps the dishes' paragraph, word for word, behind its heading", () => {

@@ -601,16 +601,16 @@ Karak Delivery - Small 120 ml   AED 136   19%                     ->   AED 116  
 Say: "One delivery, confirmed from a phone, moved what the whole chain kept by AED 112, moved every branch, and reordered the bottom of the item table. Nothing was stored and nothing recomputed in the background - the page was read again, and it derived the lot."
 Open the small delivery karak again to show where the AED 19 went: its evaporated milk line reads **AED 0.541 a plate · Invoice line 1, 25 Aug 2026** before the reload and **AED 0.580 a plate · Invoice line 1, 31 Aug 2026** after it, and that link now lands on KAS-5. One line on one paper, on one plate, on 492 cups.
 
-**5. Worth a look, and the price moves in money (about 40 seconds).** The reload also changed the two panels under the league. **Worth a look** now holds four lines - ranked by the money at stake, capped at five, three shown and "Show all 4" beneath:
+**5. Worth a look, and the price moves in money (about 40 seconds).** The reload also changed the two panels under the league. **Worth a look** now holds four rows - ranked by the money at stake, capped at five, three shown and "Show all 4" beneath. Each row is a track: the dish's kept share filled, a gold tick where the menu's share sits, the gap between them the problem; a price spike is the price now filled past a tick where it was, the change as a chip:
 
 ```
-Hot Chocolate - Large 250 ml sold AED 3,010 and kept 52.3%; the menu keeps 65.7%.    AED 403
-Hot Chocolate - Small 150 ml sold AED 1,981 and kept 53.4%; the menu keeps 65.7%.    AED 244
-Evaporated milk is up AED 0.83 per litre since 31 Aug.                               AED 26
-Show all 4  ->  Milk powder is up AED 1.06 per kg since 31 Aug.                      AED 1
+Hot Chocolate - Large 250 ml   [ 52% kept ......|....... menu 66% ]                 AED 403  at stake
+Hot Chocolate - Small 150 ml   [ 53% kept ......|....... menu 66% ]                 AED 244  at stake
+Evaporated milk  since 31 Aug  [ AED 12.34 /litre ..|. was 11.51  +7% ]             AED 26   at stake
+Show all 4  ->  Milk powder  since 31 Aug  [ its two prices, the chip the change ]  AED 1    at stake
 ```
 
-Behind each icon, the sentence that made the figure: "At the menu's average it would have contributed AED 403 more."; "AED 26 off contribution on the 211 portions sold since it landed, across 9 items."; "AED 1 off contribution on the 105 portions sold since it landed, across 2 items." (Before the reload the panel held the two dishes only, at AED 406 and AED 246 - there was no move to compare.)
+Behind each row's icon, the sentence and the detail that made the figure: "Hot Chocolate - Large 250 ml sold AED 3,010 and kept 52.3%; the menu keeps 65.7%. At the menu's average it would have contributed AED 403 more."; "Evaporated milk is up AED 0.83 per litre since 31 Aug. AED 26 off contribution on the 211 portions sold since it landed, across 9 items."; "AED 1 off contribution on the 105 portions sold since it landed, across 2 items." (Before the reload the panel held the two dishes only, at AED 406 and AED 246 - there was no move to compare.)
 
 Say: "The phone said milk powder is up. The menu screen said what that costs a cup. This says what it has cost the business since the delivery landed - and it ranks both milk moves **below** two dishes that quietly keep twelve and thirteen points less than the rest of the menu. A price alert is not the biggest thing happening to you."
 **The AED 26 and the AED 1 are small on purpose, and say why if asked:** KAS-5 is printed on 31 August, the last day of the week, so only that one day's cups were sold at the new price. The signal answers "what has this move cost since it landed", not "what would a week of it cost".
@@ -618,14 +618,14 @@ Say: "The phone said milk powder is up. The menu screen said what that costs a c
 Beside it, **Supplier prices** is the other half of the same reload. It lists every material's latest move inside the window, both directions, at the 5% gate, with the invoice behind each:
 
 ```
-↗  Evaporated milk is up AED 0.83 per litre since 31 Aug.     AED 26  at stake
-↘  Chicken, boneless is down AED 1.25 per kg since 31 Aug.    AED 11  saved
-↗  Milk powder is up AED 1.06 per kg since 31 Aug.            AED 1   at stake
+Evaporated milk    since 31 Aug   [ AED 12.34 /litre ....|. was 11.51  +7% ]   AED 26  at stake
+Chicken, boneless  since 31 Aug   [ AED 16.75 /kg .....| was 18.00  -7% ]      AED 11  saved
+Milk powder        since 31 Aug   [ its two prices, the chip the change ]      AED 1   at stake
 All on Menu ->
 ```
 
-Behind each icon: the plates ("Karak Tea - Flask 2 L earns AED 0.65 less a portion; also Coffee Milk - Flask 2 L (-0.63), Habbat Al Hamra - Flask 2 L (-0.58), Karak Tea - Flask 1 L (-0.32) and 5 more."; "Butter Chicken earns AED 0.16 more a portion; also Chicken Kadai (0.16), Pepper Chicken (0.16), Chicken 65 Dry (0.15) and 3 more.") and the evidence ("was AED 11.51 per litre · AED 26 at stake on the 211 portions sold since 31 Aug."; "was AED 18.00 per kg · AED 11 saved on the 73 portions sold since 31 Aug."). Before the reload it reads "No price moves in this window."
-Say: "The panel is what moved; the list on the left is what it is costing you. Chicken went down, so it is here and not there - and the sentence itself is the link to the same paper again, the one the phone read twenty minutes ago." The chicken line is worth pointing at: the phone's read-out said it, the panel weighs it, nothing else on the screen fires on a fall.
+A fall is the green fill stopping short of the tick, with "saved" under its money. Behind each icon: the sentence, the plates ("Karak Tea - Flask 2 L earns AED 0.65 less a portion; also Coffee Milk - Flask 2 L (-0.63), Habbat Al Hamra - Flask 2 L (-0.58), Karak Tea - Flask 1 L (-0.32) and 5 more."; "Butter Chicken earns AED 0.16 more a portion; also Chicken Kadai (0.16), Pepper Chicken (0.16), Chicken 65 Dry (0.15) and 3 more.") and the evidence ("was AED 11.51 per litre · AED 26 at stake on the 211 portions sold since 31 Aug."; "was AED 18.00 per kg · AED 11 saved on the 73 portions sold since 31 Aug."). Before the reload it reads "No price moves in this window."
+Say: "The panel is what moved; the list on the left is what it is costing you. Chicken went down, so it is here and not there - and the material's name is the link to the same paper again, the one the phone read twenty minutes ago." The chicken line is worth pointing at: the phone's read-out said it, the panel weighs it, nothing else on the screen fires on a fall.
 
 > **Why the chain moved by AED 112 and the signals name AED 27.** They are answers to two different questions. The signals price the cups sold *after* the delivery landed; the column reprices the whole week, because a period is costed at one price per material - the latest in force on its last day (C12.4, PRD §19's policy, the same one `/menu` applies) - so a delivery on the last day reprices all seven days. **The two are never added.**
 

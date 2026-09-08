@@ -541,6 +541,9 @@ def signal_json(sig: S.Signal):
         "sentence": sig.sentence, "detail": sig.detail, "branch_id": sig.branch_id, "branch_name": sig.branch_name,
         "menu_item_id": sig.menu_item_id, "menu_item_name": sig.menu_item_name, "ingredient_id": sig.ingredient_id,
         "ingredient_name": sig.ingredient_name, "invoice_id": sig.invoice_id, "moved_on": iso(sig.moved_on),
+        "kept_pct": s(sig.kept_pct), "benchmark_pct": s(sig.benchmark_pct),
+        "price_before": s(sig.price_before), "price_after": s(sig.price_after), "unit": sig.unit,
+        "change_pct": s(sig.change_pct),
     }
 
 

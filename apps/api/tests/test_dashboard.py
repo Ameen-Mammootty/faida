@@ -276,6 +276,8 @@ async def test_every_money_value_is_a_string_and_the_drill_ids_resolve(api, db):
         "money_at_stake",
         "value",
         "total",
+        "price_before",
+        "price_after",
     }
 
     def walk(node):
@@ -556,6 +558,11 @@ async def test_a_fall_of_five_percent_is_in_the_panel_with_its_money_and_not_a_s
     # 0.001 a millilitre off a 60 ml cup, on all 1,050 cups sold since.
     assert move["money_at_stake"] == "-63.00"
     assert move["moved_on"] == _iso(0)
+    # The track's two prices and the change, per display unit.
+    assert Decimal(move["price_before"]) == Decimal("8.00")
+    assert Decimal(move["price_after"]) == Decimal("7.00")
+    assert move["unit"] == "litre"
+    assert move["change_pct"] == "-12.5"
     assert move["sentence"] == (
         f"Evaporated Milk is down AED 1.00 per litre since {_short(0)}, "
         f"against its last purchase on {BASELINE}."
@@ -641,6 +648,9 @@ async def test_the_same_rise_is_in_both_panels_with_the_same_money_at_every_scop
         assert move["ingredient_id"] == spike["ingredient_id"]
         assert move["invoice_id"] == spike["invoice_id"]
         assert move["moved_on"] == spike["moved_on"] == _iso(1)
+        # One pair of prices and one change for both panels.
+        for key in ("price_before", "price_after", "unit", "change_pct"):
+            assert move[key] == spike[key] and move[key] is not None
         # The plates clause names the worst first and brackets the rest.
         assert move["plates"] == (
             "Chicken 65 earns AED 1.00 less a portion; also Karak Cup (-0.01)."
