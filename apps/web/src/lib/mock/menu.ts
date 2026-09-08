@@ -199,6 +199,8 @@ const DETAILS: MenuItemDetail[] = [
           qty: "4.0000",
           unit: "g",
           source_text: "70 ml concentrate",
+          usable_share: null,
+          usable_words: null,
           cost: { amount: "0.220", quality: "reliable_with_limitations", price: DUST },
           missing: null,
         },
@@ -210,6 +212,8 @@ const DETAILS: MenuItemDetail[] = [
           qty: "55.0000",
           unit: "ml",
           source_text: null,
+          usable_share: null,
+          usable_words: null,
           cost: { amount: "0.258", quality: "reliable_with_limitations", price: EVAP },
           missing: null,
         },
@@ -221,6 +225,8 @@ const DETAILS: MenuItemDetail[] = [
           qty: "10.0000",
           unit: "g",
           source_text: "1 heaped spoon",
+          usable_share: null,
+          usable_words: null,
           cost: { amount: "0.202", quality: "reliable_with_limitations", price: MILK_POWDER },
           missing: null,
         },
@@ -250,6 +256,8 @@ const DETAILS: MenuItemDetail[] = [
           qty: "28.0000",
           unit: "g",
           source_text: "500 ml concentrate",
+          usable_share: null,
+          usable_words: null,
           cost: { amount: "1.540", quality: "reliable_with_limitations", price: DUST },
           missing: null,
         },
@@ -261,6 +269,8 @@ const DETAILS: MenuItemDetail[] = [
           qty: "390.0000",
           unit: "ml",
           source_text: null,
+          usable_share: null,
+          usable_words: null,
           cost: { amount: "1.828", quality: "reliable_with_limitations", price: EVAP },
           missing: null,
         },
@@ -272,6 +282,8 @@ const DETAILS: MenuItemDetail[] = [
           qty: "70.0000",
           unit: "g",
           source_text: null,
+          usable_share: null,
+          usable_words: null,
           cost: { amount: "1.414", quality: "reliable_with_limitations", price: MILK_POWDER },
           missing: null,
         },
@@ -301,6 +313,8 @@ const DETAILS: MenuItemDetail[] = [
           qty: "40.0000",
           unit: "g",
           source_text: null,
+          usable_share: null,
+          usable_words: null,
           cost: { amount: "0.808", quality: "reliable_with_limitations", price: MILK_POWDER },
           missing: null,
         },
@@ -312,6 +326,8 @@ const DETAILS: MenuItemDetail[] = [
           qty: "100.0000",
           unit: "ml",
           source_text: null,
+          usable_share: null,
+          usable_words: null,
           cost: { amount: "0.469", quality: "reliable_with_limitations", price: EVAP },
           missing: null,
         },
@@ -323,6 +339,8 @@ const DETAILS: MenuItemDetail[] = [
           qty: "10.0000",
           unit: "g",
           source_text: null,
+          usable_share: null,
+          usable_words: null,
           cost: { amount: "0.400", quality: "estimated", price: GHEE },
           missing: null,
         },
@@ -352,6 +370,14 @@ const DETAILS: MenuItemDetail[] = [
           qty: "1200.0000",
           unit: "g",
           source_text: "one whole bird",
+          // The one conversion yield in the sample menu (M12 WP-119): a whole
+          // bird is bought with bone and skin on it, and 1200 g of it reaches
+          // the pot. The sentence is the API's, restated here rather than
+          // computed - 1200 / 0.85 is 1411.76 g, worded to the gram - because
+          // a mock that did the division would be a second implementation of
+          // it.
+          usable_share: "0.8500",
+          usable_words: "1200 g at 85% usable, 1412 g bought",
           cost: null,
           missing: "no supplier product is mapped to Chicken yet",
         },
@@ -363,6 +389,8 @@ const DETAILS: MenuItemDetail[] = [
           qty: "60.0000",
           unit: "g",
           source_text: null,
+          usable_share: null,
+          usable_words: null,
           cost: { amount: "0.600", quality: "estimated", price: GHEE },
           missing: null,
         },
@@ -457,21 +485,34 @@ const unitKey = (unit: string) => {
   if (/^(pcs?|pce|pces|pieces?|ea|each|nos?|units?)$/.test(word)) return "pc";
   return word;
 };
-const lineKey = (ingredientId: string, qty: string, unit: string) =>
-  `${ingredientId}|${amountKey(qty)}|${unitKey(unit)}`;
+
+/** `numeric(5,4)` as the column keeps it: "0.85" stored is "0.8500" read. */
+const fourPlaces = (value: string) => {
+  const [whole, decimals = ""] = value.trim().split(".");
+  return `${whole}.${`${decimals}0000`.slice(0, 4)}`;
+};
+
+const lineKey = (ingredientId: string, qty: string, unit: string, share: string | null) =>
+  `${ingredientId}|${amountKey(qty)}|${unitKey(unit)}|${share === null ? "" : amountKey(share)}`;
 
 /** D8's rule: the same yield and the same multiset of (ingredient, amount,
- * measure), in any order. Free text is outside it. */
+ * measure, usable share), in any order. Free text is outside it; the share is
+ * not, because 85% usable draws a different amount out of the storeroom
+ * (M12 WP-119). */
 function sameRecipe(detail: MenuItemDetail, body: MenuItemLoadInput): boolean {
   const recipe = detail.recipe;
   if (!recipe) return false;
   if (amountKey(recipe.yield_portions) !== amountKey(body.yield_portions)) return false;
   if (recipe.components.length !== body.components.length) return false;
   const stored = recipe.components
-    .map((component) => lineKey(component.ingredient_id, component.qty, component.unit))
+    .map((component) =>
+      lineKey(component.ingredient_id, component.qty, component.unit, component.usable_share),
+    )
     .sort();
   const incoming = body.components
-    .map((component) => lineKey(component.ingredient_id, component.qty, component.unit))
+    .map((component) =>
+      lineKey(component.ingredient_id, component.qty, component.unit, component.usable_share),
+    )
     .sort();
   return stored.every((value, position) => value === incoming[position]);
 }
@@ -534,6 +575,15 @@ export async function mockLoadMenuItem(body: MenuItemLoadInput): Promise<MenuLoa
     qty: component.qty,
     unit: component.unit,
     source_text: component.source_text,
+    // Stored at the column's own four places and handed back that way, as the
+    // API does: "0.85" goes in, "0.8500" comes out, and nothing downstream may
+    // read those as two different shares.
+    usable_share: component.usable_share === null ? null : fourPlaces(component.usable_share),
+    // The sentence beside a share names the purchased amount, and that is a
+    // division: the API does it, and a mock that did it too would be a second
+    // implementation of the arithmetic (rule 3). The share still travels, so
+    // a re-upload that changes it is a new version here as well.
+    usable_words: null,
     cost: null,
     missing: plate.missing[0],
   }));
