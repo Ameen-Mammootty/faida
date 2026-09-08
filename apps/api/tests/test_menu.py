@@ -151,6 +151,53 @@ async def test_money_and_quantities_travel_as_strings(api, db):
 
 
 @requires_db
+async def test_a_component_carries_its_conversion_yield_and_the_words_for_it(api, db):
+    """M12 WP-119: the detail is where the Menu screen reads a component, so
+    the share and the sentence about it ride on the component itself - and on
+    a line with no price too, because losing 15% to trim is a fact about the
+    kitchen and not about what anybody paid for the chicken."""
+    chicken = await _ingredient(db, "Chicken")
+    item = await _item(api, name="Chicken Curry", price="18.00")
+    response = await api.post(
+        f"/api/menu-items/{item['id']}/recipe",
+        json=_recipe_body(
+            chicken,
+            yield_portions="1",
+            components=[
+                {"ingredient_id": chicken, "qty": "500", "unit": "g", "usable_share": "0.85"}
+            ],
+        ),
+        headers=AUTH,
+    )
+    component = response.json()["recipe"]["components"][0]
+    assert component["usable_share"] == "0.8500"
+    assert component["usable_words"] == "500 g at 85% usable, 588 g bought"
+    # No price yet, so no cost - and the yield words are there regardless.
+    assert component["cost"] is None
+    assert component["missing"] == "no supplier product is mapped to Chicken yet"
+
+
+@requires_db
+async def test_a_component_with_no_conversion_yield_says_nothing_about_one(api, db):
+    """Every recipe on file predates the column: null share, null words, and
+    the screen prints the quantity alone exactly as it did before M12."""
+    tea = await _ingredient(db, "CTC Black Tea")
+    item = await _item(api)
+    response = await api.post(
+        f"/api/menu-items/{item['id']}/recipe", json=_recipe_body(tea), headers=AUTH
+    )
+    component = response.json()["recipe"]["components"][0]
+    assert component["usable_share"] is None
+    assert component["usable_words"] is None
+    assert (
+        await db.pool.fetchval(
+            "select usable_share from recipe_components where recipe_id = $1",
+            response.json()["recipe"]["id"],
+        )
+    ) is None
+
+
+@requires_db
 async def test_two_concurrent_saves_cannot_mint_the_same_version_number(api, db):
     """D17: version = max+1 inside the transaction, unique (menu_item_id,
     version) as the referee. Whatever the interleaving, versions come out

@@ -1472,11 +1472,15 @@ class Database:
         """One version's components. `has_packs` says whether any supplier
         product is mapped onto the ingredient yet - the difference between
         "map a product to it" and "confirm a purchase of it", which are two
-        different sentences on the screen (WP-61)."""
+        different sentences on the screen (WP-61).
+
+        `usable_share` is M12's conversion yield (WP-119, D13), null on every
+        recipe written before 0021 and meaning the quantity is already
+        as-purchased."""
         return await self.pool.fetch(
             """
             select c.position, c.ingredient_id::text as ingredient_id, c.qty, c.unit,
-                   c.source_text, ing.name as ingredient_name, ing.base_unit,
+                   c.usable_share, c.source_text, ing.name as ingredient_name, ing.base_unit,
                    exists (select 1 from supplier_items si where si.ingredient_id = ing.id)
                      as has_packs
             from recipe_components c
@@ -1503,7 +1507,7 @@ class Database:
             )
             select cur.menu_item_id::text as menu_item_id,
                    c.position, c.ingredient_id::text as ingredient_id, c.qty, c.unit,
-                   c.source_text, ing.name as ingredient_name, ing.base_unit,
+                   c.usable_share, c.source_text, ing.name as ingredient_name, ing.base_unit,
                    exists (select 1 from supplier_items si where si.ingredient_id = ing.id)
                      as has_packs
             from current cur
@@ -1833,7 +1837,12 @@ class Database:
 
         A component naming another tenant's ingredient raises
         ForeignKeyViolationError from the 0012-shape composite key - Postgres
-        enforces tenancy at the write, whatever the application forgot."""
+        enforces tenancy at the write, whatever the application forgot.
+
+        A component may carry `usable_share` (M12 WP-119, D13); absent, the
+        column stores null and the line costs as-purchased, exactly as every
+        recipe written before 0021 does. The door validates the bounds and
+        0021's check constraint is the backstop."""
         async with self._txn(conn) as conn:
             recipe = await conn.fetchrow(
                 """
@@ -1852,8 +1861,8 @@ class Database:
             await conn.executemany(
                 """
                 insert into recipe_components (tenant_id, recipe_id, position, ingredient_id,
-                                               qty, unit, source_text)
-                values ($1, $2, $3, $4, $5, $6, $7)
+                                               qty, unit, usable_share, source_text)
+                values ($1, $2, $3, $4, $5, $6, $7, $8)
                 """,
                 [
                     (
@@ -1863,6 +1872,7 @@ class Database:
                         component["ingredient_id"],
                         component["qty"],
                         component["unit"],
+                        component.get("usable_share"),
                         component.get("source_text"),
                     )
                     for position, component in enumerate(components)
@@ -1922,7 +1932,10 @@ class Database:
         """
         incoming = recipe_key(
             yield_portions,
-            [component_key(c["ingredient_id"], c["qty"], c["unit"]) for c in components],
+            [
+                component_key(c["ingredient_id"], c["qty"], c["unit"], c.get("usable_share"))
+                for c in components
+            ],
         )
         async with self.pool.acquire() as conn, conn.transaction():
             item = await conn.fetchrow(
@@ -1989,13 +2002,16 @@ class Database:
             stored: RecipeKey | None = None
             if current is not None:
                 rows = await conn.fetch(
-                    "select ingredient_id::text as ingredient_id, qty, unit "
+                    "select ingredient_id::text as ingredient_id, qty, unit, usable_share "
                     "from recipe_components where recipe_id = $1",
                     current["id"],
                 )
                 stored = recipe_key(
                     current["yield_portions"],
-                    [component_key(r["ingredient_id"], r["qty"], r["unit"]) for r in rows],
+                    [
+                        component_key(r["ingredient_id"], r["qty"], r["unit"], r["usable_share"])
+                        for r in rows
+                    ],
                 )
 
             if stored is not None and recipes_match(stored, incoming):

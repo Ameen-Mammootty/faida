@@ -109,6 +109,76 @@ def test_a_missing_component_means_no_numbers_at_all():
     assert result.margin_pct is None
 
 
+def test_a_usable_share_costs_what_the_storeroom_issued():
+    """D13, the whole point of the column: a recipe says what goes in the pot,
+    so 500 g of chicken at 85% usable cost 588.24 g off the shelf and the
+    plate must cost the shelf. Hand-checked: 500 / 0.85 x 0.02 = 11.7647."""
+    price = plates.Priced(cost_per_base_unit=Decimal("0.02"), base_unit="g", quality=None)
+    trimmed = plates.cost_component(
+        position=0,
+        qty=Decimal("500"),
+        unit="g",
+        ingredient_name="Chicken",
+        has_packs=True,
+        price=price,
+        usable_share=Decimal("0.85"),
+    )
+    assert trimmed.cost.quantize(Decimal("0.0001")) == Decimal("11.7647")
+    # The divisor and nothing else: exactly 1/0.85 of the as-purchased cost.
+    assert plates.bought_base_qty(Decimal("500"), Decimal("0.85")) == Decimal("500") / Decimal(
+        "0.85"
+    )
+
+
+def test_a_component_with_no_share_costs_exactly_what_it_costed_before():
+    """Every recipe on file predates 0021 and must be byte-identical: the same
+    ComponentCost, whether the share arrives as None or never arrives at all.
+    A manufactured 1.0 divisor would be arithmetically the same and is still
+    not what this does - `bought_base_qty` returns the quantity untouched."""
+    price = plates.Priced(cost_per_base_unit=Decimal("0.02"), base_unit="g", quality=None)
+    args = dict(
+        position=0,
+        qty=Decimal("500"),
+        unit="g",
+        ingredient_name="Chicken",
+        has_packs=True,
+        price=price,
+    )
+    omitted = plates.cost_component(**args)
+    explicit_none = plates.cost_component(**args, usable_share=None)
+    assert omitted == explicit_none
+    assert omitted == plates.ComponentCost(0, cost=Decimal("10.00"), quality=Quality.RELIABLE)
+    assert plates.bought_base_qty(Decimal("500"), None) == Decimal("500")
+
+
+def test_the_component_words_name_the_typed_amount_the_share_and_the_bought_one():
+    """Composed here, printed on the screen - the screen never divides, so the
+    bought amount a reader checks by hand is the one the plate costed. The
+    columns hold four decimals for a 0.006 g draw of saffron; printing those
+    zeros back would read as false precision on every line of every card."""
+    assert (
+        plates.usable_words(Decimal("500.0000"), "g", Decimal("0.8500"))
+        == "500 g at 85% usable, 588 g bought"
+    )
+    # The bought amount takes the typed quantity's own precision, half up.
+    assert (
+        plates.usable_words(Decimal("27.5000"), "g", Decimal("0.8500"))
+        == "27.5 g at 85% usable, 32.4 g bought"
+    )
+    # A thousand is 1000 and never 1E+3.
+    assert (
+        plates.usable_words(Decimal("1000.0000"), "g", Decimal("0.8500"))
+        == "1000 g at 85% usable, 1176 g bought"
+    )
+    # A stated 100% is a fact somebody entered, and says so.
+    assert (
+        plates.usable_words(Decimal("1.0000"), "pc", Decimal("1.0000"))
+        == "1 pc at 100% usable, 1 pc bought"
+    )
+    # No share, no words: the screen prints the quantity alone, as it always has.
+    assert plates.usable_words(Decimal("220.0000"), "g", None) is None
+
+
 def test_an_empty_version_is_incomplete_never_pure_margin():
     result = plates.plate(
         [], yield_portions=Decimal("1"), selling_price=Decimal("10.00"), vat_rate=None
@@ -335,6 +405,65 @@ async def test_a_batch_recipe_divides_once_by_its_yield(api, db):
     )
     detail = await _detail(api, pot)
     assert detail["plate"]["cost_per_portion"] == "0.099"
+
+
+@requires_db
+async def test_a_conversion_yield_moves_the_plate_and_says_so_on_the_line(api, db):
+    """The same pot, with the tea dust at 85% usable: the batch draws 258.82 g
+    off the shelf rather than 220, so the cup costs 0.116 instead of 0.099 -
+    and the component line says where that came from, in words the screen
+    prints rather than computes."""
+    scenario = await _karak(db, api)
+    pot = await _menu_item(api, "Karak Flask", "35.00")
+    await _recipe(
+        api,
+        pot,
+        [{"ingredient_id": scenario["tea"], "qty": "220", "unit": "g", "usable_share": "0.85"}],
+        yield_portions="40",
+    )
+    detail = await _detail(api, pot)
+    assert detail["plate"]["cost_per_portion"] == "0.116"
+    component = detail["recipe"]["components"][0]
+    assert component["usable_words"] == "220 g at 85% usable, 259 g bought"
+    assert component["usable_share"] == "0.8500"
+
+
+@requires_db
+async def test_the_door_refuses_a_usable_share_outside_the_bounds(api, db):
+    """A share is a fraction, and the mistake a spreadsheet makes is sending 85
+    for 85%. Dividing the plate by eighty-five would cost the tea in fractions
+    of a fil on every dish that named it - silently - so the door refuses it,
+    names the material so the cell can be found, and writes no version."""
+    scenario = await _karak(db, api)
+    item_id = await _menu_item(api, "Trimmed Dish", "18.00")
+    tail = (
+        "is not a usable share for CTC Black Tea: send the share of what is bought "
+        'that reaches the pot, above 0 and at most 1, like "0.85" for 85%'
+    )
+    # "0.00001" is the odd one: it passes the bounds and then rounds away to
+    # nothing in a four-decimal column, so the door refuses what the check
+    # constraint would otherwise refuse with a 500.
+    for bad in ["0", "1.2", "85", "-0.5", "most of it", "0.00001"]:
+        response = await api.post(
+            f"/api/menu-items/{item_id}/recipe",
+            json={
+                "yield_portions": "1",
+                "components": [
+                    {
+                        "ingredient_id": scenario["tea"],
+                        "qty": "220",
+                        "unit": "g",
+                        "usable_share": bad,
+                    }
+                ],
+            },
+            headers=AUTH,
+        )
+        assert response.status_code == 422, bad
+        assert response.json()["detail"] == f"'{bad}' {tail}"
+    assert (
+        await db.pool.fetchval("select count(*) from recipes where menu_item_id = $1", item_id)
+    ) == 0
 
 
 @requires_db
