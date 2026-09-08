@@ -152,6 +152,9 @@ def _menu_items(
             components=tuple(components),
             archived=archived_at is not None,
             archived_on=None if archived_at is None else archived_at.date(),
+            recipe_created_on=(
+                None if row["recipe_created_at"] is None else row["recipe_created_at"].date()
+            ),
         )
     return menu
 
@@ -503,7 +506,7 @@ async def dashboard(
     ratio_total = ratio.chain_total(list(ratio_rows.values()), unassigned)
 
     # The menu twice from one set of rows: the period's plates and today's.
-    menu_rows, components_by_item, plate_by_item, vat_rate, prices = await _menu_context(
+    menu_rows, components_by_item, plate_by_item, vat_rate, prices, _stale = await _menu_context(
         db, tenant_id, as_of=period.end
     )
     prices_today, stale_today, _ = await _pricing(db, tenant_id)

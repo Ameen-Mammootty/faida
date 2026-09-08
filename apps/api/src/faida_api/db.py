@@ -1406,6 +1406,7 @@ class Database:
             select m.id::text as id, m.name, m.category, m.selling_price, m.archived_at,
                    m.created_at,
                    r.id::text as recipe_id, r.version, r.yield_portions, r.yield_label,
+                   r.created_at as recipe_created_at,
                    (select count(*) from recipe_components c where c.recipe_id = r.id)
                      as component_count
             from menu_items m

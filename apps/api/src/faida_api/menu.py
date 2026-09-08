@@ -338,6 +338,7 @@ async def _menu_context(
     dict[str, plates.Plate],
     Decimal | None,
     dict[str, asyncpg.Record],
+    dict[str, asyncpg.Record],
 ]:
     """The whole menu, costed, from a fixed number of queries (D10): every
     item row, each item's current components, each item's plate answer, the
@@ -351,7 +352,10 @@ async def _menu_context(
     every onboarding month incomplete. A period row says *recipe version N*
     so a reader can see which one costed it. The prices are returned too (the
     fifth value, WP-90's hand-off to WP-92) so a contribution row can name the
-    invoice line behind each component's price with no further read."""
+    invoice line behind each component's price with no further read. The
+    stale map is the sixth (M12 D17): the materials whose newest purchase
+    could not be costed, so a money figure valued at a price the stale flag
+    qualifies can say so instead of reading reliable."""
     prices, stale, vat_rate = await _pricing(db, tenant_id, as_of=as_of)
     components_by_item: dict[str, list[asyncpg.Record]] = {}
     for row in await db.list_current_recipe_components(tenant_id=tenant_id):
@@ -359,7 +363,7 @@ async def _menu_context(
 
     rows = await db.list_menu_items(tenant_id=tenant_id)
     plate_by_item = _plates_for(rows, components_by_item, prices, stale, vat_rate)
-    return rows, components_by_item, plate_by_item, vat_rate, prices
+    return rows, components_by_item, plate_by_item, vat_rate, prices, stale
 
 
 def _plate_payload(result: plates.Plate) -> dict:
@@ -493,7 +497,7 @@ async def list_menu_items(request: Request, ctx: Context) -> dict:
     tenant currency - joined in Python, nothing stored, nothing to
     invalidate."""
     db: Database = request.app.state.db
-    rows, _, plate_by_item, _, _ = await _menu_context(db, ctx.tenant_id)
+    rows, _, plate_by_item, _, _, _ = await _menu_context(db, ctx.tenant_id)
     return {
         "menu_items": [
             {
@@ -1002,6 +1006,6 @@ async def list_price_moves(request: Request, ctx: Context) -> dict:
     pairs: dict[str, list[asyncpg.Record]] = {}
     for line in await db.list_price_move_pairs(tenant_id=tenant_id):
         pairs.setdefault(line["ingredient_id"], []).append(line)
-    rows, components_by_item, plate_by_item, _, _ = await _menu_context(db, tenant_id)
+    rows, components_by_item, plate_by_item, _, _, _ = await _menu_context(db, tenant_id)
     moves = price_moves(pairs, rows, components_by_item, plate_by_item)
     return {"moves": [_move_payload(move) for move in moves]}
