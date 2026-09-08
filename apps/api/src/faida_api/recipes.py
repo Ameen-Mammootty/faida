@@ -9,11 +9,13 @@ version number on the menu screen would stop meaning anything.
 So the loader asks a narrower question than "are these bytes identical":
 
     a recipe is unchanged when it makes the same number of portions from the
-    same amounts of the same ingredients, in any order.
+    same amounts of the same ingredients, bought the same way, in any order.
 
-That is `yield_portions` plus the multiset of `(ingredient, qty, unit)` - the
-same rule the design review pinned as D8, written once here so the door and
-its tests cannot drift apart.
+That is `yield_portions` plus the multiset of `(ingredient, qty, unit,
+usable_share)` - the same rule the design review pinned as D8, written once
+here so the door and its tests cannot drift apart. The share joined it in
+M12 (WP-119, D13): it decides what the line costs and what the dish draws
+from the storeroom, so changing it changes the recipe.
 
 Three deliberate edges, each of which decides a real spreadsheet case:
 
@@ -38,10 +40,17 @@ from decimal import Decimal
 
 from .extraction import units
 
-# One component's identity: which material, how much, in what measure.
-ComponentKey = tuple[str, Decimal, str]
+# One component's identity: which material, how much, in what measure, and
+# how much of what was bought reaches the pot (M12 WP-119).
+ComponentKey = tuple[str, Decimal, str, Decimal | None]
 # A whole recipe's identity: the batch divisor, then its lines in a fixed order.
 RecipeKey = tuple[Decimal, tuple[ComponentKey, ...]]
+
+#: No real share can be this, because 0021 and the door both floor it above
+#: zero - so it orders a null share against a stated one without ever
+#: colliding with one. Sorting is `sorted`'s business; equality is the tuple's,
+#: and the tuple keeps the None.
+_NO_SHARE_SORTS_FIRST = Decimal(-1)
 
 
 def _unit_key(unit: str) -> str:
@@ -51,18 +60,42 @@ def _unit_key(unit: str) -> str:
     return units.canonical_unit(unit) or (unit or "").strip().lower()
 
 
-def component_key(ingredient_id: str, qty: Decimal, unit: str) -> ComponentKey:
+def component_key(
+    ingredient_id: str, qty: Decimal, unit: str, usable_share: Decimal | None = None
+) -> ComponentKey:
     """`Decimal("550")` and `Decimal("550.0000")` are the same amount; the
     column stores four decimals and the spreadsheet types none, so the
-    comparison is numeric, never on the printed string."""
-    return (str(ingredient_id), Decimal(qty), _unit_key(unit))
+    comparison is numeric, never on the printed string. The same numeric
+    comparison covers the share, so `0.85` and `0.8500` are one share.
+
+    The share is part of the identity (M12 WP-119, D13) because it changes
+    what the line costs and what M12 says the dish drew from the storeroom:
+    a consultant who sets chicken to 85% has edited the recipe as surely as
+    one who moved 500 g to 600 g, and the re-upload must record it.
+
+    **No share and a share of 1 are two different lines**, not one, though
+    they cost the same - the D8 rule that the card's words are the only audit
+    a typed quantity has. "500 g" and "500 g at 100% usable, 500 g bought"
+    say different things about a kitchen, and stating that nothing is lost is
+    a fact somebody entered."""
+    share = None if usable_share is None else Decimal(usable_share)
+    return (str(ingredient_id), Decimal(qty), _unit_key(unit), share)
+
+
+def _sort_key(component: ComponentKey) -> tuple[str, Decimal, str, Decimal]:
+    """`sorted` compares element by element and would reach the share only for
+    two draws of the same material in the same amount and measure - where one
+    may carry a share and the other None, which no Decimal will compare
+    against. Null sorts first, under a value no real share can hold."""
+    ingredient_id, qty, unit, share = component
+    return (ingredient_id, qty, unit, _NO_SHARE_SORTS_FIRST if share is None else share)
 
 
 def recipe_key(yield_portions: Decimal, components: list[ComponentKey]) -> RecipeKey:
     """Sorted, not set-ified: two identical lines are two lines. A recipe that
     draws the same material twice (rare, legal - the door allows it) must not
     quietly compare equal to one that draws it once."""
-    return (Decimal(yield_portions), tuple(sorted(components)))
+    return (Decimal(yield_portions), tuple(sorted(components, key=_sort_key)))
 
 
 def recipes_match(current: RecipeKey, incoming: RecipeKey) -> bool:
