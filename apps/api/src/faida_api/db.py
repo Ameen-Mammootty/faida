@@ -387,6 +387,14 @@ class Database:
 
     # -- WhatsApp messages ---------------------------------------------------
 
+    #: How far along an outbound message is, in the only order Meta moves it
+    #: (M10 WP-102, C15.4): accepted by Meta, delivered to the handset, read
+    #: by the person, and `failed` last because it is terminal - once a send
+    #: has failed nothing later can un-fail it. A stamp only ever moves a row
+    #: forward through this list, so Meta's receipts arriving out of order (or
+    #: twice, which they do) cannot walk a row backwards.
+    OUTBOUND_STATUS_ORDER = ("sent", "delivered", "read", "failed")
+
     async def record_inbound_message(
         self, message_id: str, from_phone: str | None, msg_type: str | None, payload: dict
     ) -> bool:
@@ -423,6 +431,121 @@ class Database:
             to_phone,
             payload,
         )
+
+    async def record_outbound_template(
+        self,
+        message_id: str,
+        to_phone: str,
+        *,
+        template: str,
+        language: str,
+        parameters: list[str],
+        tenant_id: str,
+        recipient_id: str,
+        brief_date: str | datetime.date,
+        rehearsal: bool,
+        card_path: str | None = None,
+    ) -> None:
+        """The record of a brief that left the building (M10 WP-102, C15.4).
+
+        One outbound row per send, carrying what was sent (the template, its
+        language and the five values as the phone showed them), the picture
+        beside it (`card_path`, the immutable copy in storage), and the key
+        the morning is - tenant, recipient and the recipient's own local date
+        - so "did the owner get Tuesday's brief?" is one row, not a
+        reconstruction. `rehearsal` marks a send the founder asked for from
+        the CLI at some other hour, which is outside the day's key.
+
+        There is no audit row: a scheduled send is not a human decision (C8).
+
+        The upsert is not a duplicate guard - it is the other half of the
+        race Meta wins about once in a while, where a receipt for this message
+        reaches the webhook before we have finished writing what we sent. That
+        receipt leaves a stub row (`stamp_outbound_status`); this completes it,
+        keeping the status the receipt brought (always at least as far along as
+        our own `sent`) and any error it carried, and drops the stub flag.
+
+        The ids and the date are written as text on purpose: the payload is
+        jsonb, and a `uuid` or a `date` object handed to the encoder would
+        raise *here* - after Meta has already accepted the message, which is
+        the one failure that costs a second brief (C15.3's named limit)."""
+        payload = {
+            "template": template,
+            "language": language,
+            "parameters": list(parameters),
+            "card_path": card_path,
+            "tenant_id": str(tenant_id),
+            "recipient_id": str(recipient_id),
+            "brief_date": str(brief_date),
+            "rehearsal": rehearsal,
+            "error": None,
+        }
+        await self.pool.execute(
+            """
+            insert into wa_messages (message_id, direction, to_phone, msg_type, payload, status)
+            values ($1, 'out', $2, 'template', $3, 'sent')
+            on conflict (message_id) do update set
+                msg_type = excluded.msg_type,
+                to_phone = excluded.to_phone,
+                payload = excluded.payload
+                          || (coalesce(wa_messages.payload, '{}'::jsonb) - 'stub'),
+                status = case when wa_messages.status = any($4::text[])
+                              then wa_messages.status
+                              else excluded.status end
+            """,
+            message_id,
+            to_phone,
+            payload,
+            list(self.OUTBOUND_STATUS_ORDER),
+        )
+
+    async def stamp_outbound_status(
+        self,
+        message_id: str,
+        status: str,
+        error: dict | None = None,
+        *,
+        to_phone: str | None = None,
+    ) -> bool:
+        """Move an outbound row along Meta's receipt order. True if it moved.
+
+        Everything the product knows about a message after it leaves is here
+        (M10 WP-102, C15.4). The rules are the ones Meta's own delivery makes
+        necessary: receipts arrive late, twice, and out of order, so a stamp
+        that is not strictly further along than the row's current status is
+        ignored rather than applied - a `delivered` after a `read` says
+        nothing new, and nothing at all follows a `failed`. A status this
+        order does not know is ignored for the same reason: it cannot be shown
+        to move the row forward.
+
+        A receipt can also arrive before we have written what we sent, so an
+        id with no row inserts a stub - direction and status are facts already,
+        `msg_type` is not - which `record_outbound_template` then completes.
+        A `failed` keeps Meta's error object under `error`, which is the only
+        place an undeliverable number (131026, asynchronous by definition) is
+        ever written down."""
+        if status not in self.OUTBOUND_STATUS_ORDER:
+            return False
+        overtakes = list(self.OUTBOUND_STATUS_ORDER[: self.OUTBOUND_STATUS_ORDER.index(status)])
+        row = await self.pool.fetchrow(
+            """
+            insert into wa_messages (message_id, direction, to_phone, msg_type, payload, status)
+            values ($1, 'out', $2, 'unknown', $3, $4)
+            on conflict (message_id) do update set
+                status = excluded.status,
+                payload = coalesce(wa_messages.payload, '{}'::jsonb) || $5::jsonb
+            where wa_messages.direction = 'out'
+              and wa_messages.status = any($6::text[])
+            returning id
+            """,
+            message_id,
+            to_phone,
+            {"stub": True, "error": error},
+            status,
+            {"error": error} if error is not None else {},
+            overtakes,
+        )
+        return row is not None
 
     async def get_inbound_message(self, message_id: str) -> asyncpg.Record | None:
         return await self.pool.fetchrow(
