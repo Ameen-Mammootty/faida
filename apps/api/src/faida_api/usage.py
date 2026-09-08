@@ -171,7 +171,10 @@ class PurchaseLine:
     purchased_on: datetime.date
     supplier_name: str | None
     raw_name: str
-    qty: Decimal
+    #: The printed quantity, signed - a return prints a negative. Null where
+    #: the camera read no quantity cell: the line delivered an unknown amount,
+    #: so it is unmeasured with its own reason rather than counted as zero.
+    qty: Decimal | None
     unit: str | None
     pack_size: str | None
     unit_price: Decimal | None
@@ -266,7 +269,7 @@ class LineEntry:
     purchased_on: datetime.date
     supplier_name: str | None
     product_name: str
-    qty: Decimal
+    qty: Decimal | None
     pack: str | None
     pack_source: str | None
     factor: Decimal | None
@@ -608,6 +611,22 @@ def measure(line: PurchaseLine) -> _Measured:
             pack=None,
             blocked=costing.blocked_reason(pack_size=line.pack_size, unit=line.unit),
         )
+    if line.qty is None:
+        # The pack reads and the quantity does not, which is a different hole
+        # from an unreadable pack and has its own shipped sentence. The line
+        # is unmeasured; nothing is counted as zero, because a line whose
+        # quantity nobody read is not a delivery of nothing. The confirm door
+        # creates no catalog product for such a line, so it is normally an
+        # orphan - but it is measured here before it is placed, and one that
+        # extraction snapped to a known product must not crash the read.
+        return _Measured(
+            line=line,
+            base_qty=None,
+            factor=factor,
+            factor_source=source,
+            pack=pack,
+            blocked=costing.Blocked.MISSING_QUANTITY,
+        )
     return _Measured(
         line=line,
         base_qty=(line.qty * factor).quantize(BASE_QUANTUM, rounding=ROUND_HALF_UP),
@@ -907,7 +926,10 @@ def _bought_by_material(
         side.papers.add(line.invoice_id)
         if line.currency != currency:
             side.foreign.add(line.invoice_id)
-        if line.qty < 0:
+        if line.qty is not None and line.qty < 0:
+            # A line whose quantity cell was never read is neither a purchase
+            # of a known amount nor a return; `measure` has already made it
+            # unmeasured, and it is counted below with the rest of those.
             side.returns += 1
         if entry.measured.measured:
             assert entry.measured.base_qty is not None
@@ -1550,7 +1572,8 @@ def unmapped_packs(
     packs = len({e.line.supplier_item_id for e in group})
     sentence = (
         f"{_plural(len(group), 'purchase line')} on {_plural(packs, 'product')} "
-        f"have no material yet, {_money_words(spend, currency)} on the printed line totals"
+        f"{'has' if len(group) == 1 else 'have'} no material yet, "
+        f"{_money_words(spend, currency)} on the printed line totals"
     )
     if foreign:
         codes = sorted({e.line.currency for e in group if e.line.currency != currency})
