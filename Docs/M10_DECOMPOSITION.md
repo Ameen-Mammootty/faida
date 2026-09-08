@@ -1,6 +1,6 @@
 # M10 decomposition - the daily WhatsApp brief (drafted 2026-09-07)
 
-Status: **decomposed and reviewed 2026-09-07 with one outside voice (Codex at medium reasoning against the file path, read-only: thirteen findings, thirteen folded, four of them blockers that changed the queue's story, the migration's number and two founder decisions), awaiting the founder's decisions.**
+Status: **redrawn 2026-09-08 to the founder's own KPI direction (§1): two of its three questions decided by the founder, the third - how the branch table travels - open as P15 with rendered samples.** Before that, decomposed and reviewed 2026-09-07 with one outside voice (Codex at medium reasoning against the file path, read-only: thirteen findings, thirteen folded, four of them blockers that changed the queue's story, the migration's number and two founder decisions), awaiting the founder's decisions.**
 The session ran as a planning lane beside WP-96's live sitting, on a branch cut from `origin/master` at `64f9793`; no feature code was written and nothing was merged.
 Three questions were put to the founder at the start of the session and answered: only the free test number is live (no business verification, no WhatsApp Business Account of our own, no purchased sender); the brief's first recipient is the founder's demo phone; the brief is English-only for the pilot.
 Every other question this document raises is answered with the recommended option and recorded as **recommended, not decided**; §5 is the founder's decision list, and the report at the end lists every one of its proposals as open.
@@ -28,11 +28,17 @@ The milestone adds no figure and no sentence about a figure that the dashboard d
 M9 P8 pinned the four slots on `GET /api/dashboard` precisely so that this milestone would fill them and word nothing itself (`plan.md:1248`; C6 extended, `plan.md:556`), and C13.5 puts every sentence that states a fact or a number on the wire for the same reason (`plan.md:554`; `signals.py:42-45`).
 What M10 adds is the message shape, the one Meta template that carries it, the recipient, the morning, and the record.
 
+**The founder's direction, 2026-09-08** - the sentence §2 rule 8 asks for, in the founder's own words: "as an owner, what we want to give him is very basic KPIs": what is my yesterday's sale; my month-to-date sales at the total level; my sales with the latest prices of materials; the cost percentage of the input cost of my total sales; then "a table, branch-wise, with the same" - yesterday's sale, the month-to-date sale, raw material cost as a percentage of sales; "top 3 profitable items and worst 3 profitable items"; and "any major price spike alert if any (show only biggest three spikes)".
+Asked which cost the two cost figures mean, the founder chose the recipe cost of what was sold at the latest purchase prices - the dashboard's own contribution figures - and not purchases ÷ net sales (cash basis), which stays on the dashboard (P16, decided).
+Asked how "profitable" ranks, the founder chose money kept in AED, the dashboard's own item order (P17, decided; `contribution.py:600-616`).
+Asked how a branch table can travel inside a WhatsApp template, which cannot hold a line break in a variable, the founder asked to weigh three ways on rendered samples: https://claude.ai/code/artifact/cd930ad7-445d-494a-a3d8-2a891df7cfdc (P15, open).
+This direction supersedes the checklist's four slots quoted above: the brief carries seven things, every one already on the dashboard read or one additive field away, and the mechanism the plan pinned - fixed sentence shapes, number slots, no generation, filled from the read - is unchanged.
+
 Two of its parts are outside the repository and outside anyone's control here: Meta's review of the template, and the production chain (business verification, a WhatsApp Business Account, a purchased sender) that `plan.md` §3 says "starts early (M5) and runs in the background" (`plan.md:83`).
 The founder's answer at the start of this session is that the chain has not started.
 That is why §4 makes the deterministic filler and a printed dry run the first vertical slice, the M12 phase-one precedent, and why §5 P8 asks whether the free test number carries the rehearsal.
 
-**Done when** (as the checklist says, read against this decomposition): at 07:00 Dubai time the recipient's phone shows one message with five lines - the newest loaded day named and aged, that day's net sales, purchases ÷ net sales (cash basis) for the window with the branch to look at first, the biggest supplier price move with the money on the sales since, and the top flagged issue - every number equal to the dashboard's for the same read, sent through an approved utility template, recorded once, with a button that opens `/dashboard`.
+**Done when** (the checklist's done-when, read against the founder's direction): at 07:00 Dubai time the recipient's phone shows one message carrying the newest loaded day named and aged, that day's net sales, month-to-date net sales, the raw-material cost of what was sold at the latest prices and its share of the sales it covers, a branch table with the same three figures per branch, the three items that earned the most and the three that earned the least, and the three biggest supplier price rises - every number equal to the dashboard's for the same reads, sent through an approved utility template, recorded once, with a button that opens `/dashboard`.
 On the founder's answer, the first phone is the founder's, on the test number; the pilot owner's phone follows the production chain.
 
 ## 2. What exists today, and what is missing
@@ -76,26 +82,29 @@ On the founder's answer, the first phone is the founder's, on the test number; t
   `db.list_branches` returns it (`db.py:2019-2027`).
   There is no tenant-level timezone: a tenant's morning has to be a fact about the recipient, or derived from its branches.
 
-### Three of the four slots are sentences on the wire; the ratio and the net sales are numbers
+### Every one of the founder's seven is on the dashboard read, and two are one field away
 
-`GET /api/dashboard` (`dashboard.py:443-684`) carries, for the default period, everything the checklist names.
-What each slot is on the wire today, and whether the brief can use it verbatim:
+`GET /api/dashboard` (`dashboard.py:443-684`) carries everything the founder's direction names, for whatever period it is asked.
+What each of the seven is on the wire today, and what the brief must do with it:
 
-| Slot (checklist) | Field | State on the wire | What the brief must do |
+| The founder's ask | Field | State on the wire | What the brief must do |
 |---|---|---|---|
-| the day, named and aged (P6) | `freshness.sentence` | a sentence: "Sales loaded to Mon 31 Aug, 5 days ago." (`dashboard.py:166-174`, `:641`); `null` when nothing is loaded | use verbatim |
-| net sales | `latest_day` | numbers: the chain's `net_sales` and one row per branch with sales that day (`dashboard.py:586-601`); `null` when nothing is loaded or the newest day is outside the period | compose one fixed shape |
-| purchases ÷ net sales (cash basis) | `total.ratio_pct`, `total.ratio_quality`, `total.ratio_notes`, `period`; `league[0]` | numbers and notes: the chain's ratio to a tenth with its quality word and the sentences that made it (`dashboard.py:653-664`); `league[0]` is the branch keeping the least, by `contribution.rank` (`dashboard.py:548-549`; C12.9), with its own `ratio_pct`, `window` and `ratio_notes` (`dashboard.py:279-304`) | compose one fixed shape |
-| the biggest supplier price move | `price_moves.moves[0]` | a sentence and its evidence: "Milk Powder is up AED 3.40 per kg since 21 Aug, against its last purchase on 12 Mar." with `money_at_stake`, `direction` and `kind` (`dashboard.py:336-417`; words from `signals.move_sentence`, `signals.py:476-497`, and `move_evidence`, `:500-528`); ranked by the dirhams moved, both directions, basis changes last (`dashboard.py:390-397`) | use the sentence verbatim; the money in one fixed clause |
-| one flagged issue | `signals[0]` | a sentence and a detail, ranked by money and capped at five (`dashboard.py:673`; `signals.py:705-717`; the three sentences at `signals.py:251-254`, `:614`, `:684-687`); the detail carries "(estimated)" when the signal fired on an estimated input (`signals.py:194-198`) | use the sentence verbatim, the word carried |
+| the day this is about (P6: the newest loaded day, named and aged) | `freshness.sentence` | a sentence: "Sales loaded to Mon 31 Aug, 5 days ago." (`dashboard.py:166-174`, `:641`); `null` when nothing is loaded | use verbatim, as the header |
+| yesterday's sale | `latest_day` | numbers: the chain's `net_sales` on the newest loaded day and one row per branch with sales that day (`dashboard.py:586-601`); present whenever the newest day is inside the period | one fixed shape; the label says "latest day", never "yesterday", because the label is fixed text and the day is not |
+| month-to-date sales, total | `total.net_sales` of a read with `from` = the first of the newest loaded day's month and `to` = that day | the route takes any `from` and `to` (`dashboard.py:447-448`; `ratio.resolve_period`, `ratio.py:272-282`); each branch's window is clipped to its loaded days and the chain total sums them (`ratio.period_row`, `chain_total`) | one month-to-date read; the line names the days actually loaded ("25-31 Aug loaded") |
+| sales with the latest prices of materials = the raw-material cost of what was sold, at the latest prices (P16) | `Contribution.cost` and `Contribution.net_item_sales` (`contribution.py:315-316`), the plate costed at the prices in force on the period's last day (C12.4), which for a period ending on the newest loaded day is the latest price | **computed and not serialised**: `total` and the league rows carry `contribution`, `contribution_pct` and `costed_share_pct` and neither `cost` nor the costed sales (`dashboard.py:279-304`, `:653-664`) | two additive fields on `total` and on each league row, `cost` and `costed_sales` (C6 extended); one fixed shape |
+| the input cost as a share of total sales (P16) | `100 − contribution_pct`, over the costed sales; `costed_share_pct` beside it | numbers | one fixed shape, "32.6% of the AED 56,294 costed (84% of sales)": the share is of costed sales and says so (C12.7, never grossed up); never "food cost %" |
+| a branch-wise table: yesterday, month to date, materials share | `latest_day.branches[]`, `league[].net_sales`, `league[].contribution_pct`, `league[].costed_share_pct`, `league[].sales_through` | numbers, one row per branch, the league ordered by kept share lowest first (`dashboard.py:548-549`) | one row per branch in the order the dashboard ranks them; how the rows travel is P15 |
+| top 3 and worst 3 profitable items (P17) | `items.top[:3]`, `items.bottom[-3:]` | ordered by money kept, most first, rows with no contribution last (`contribution.py:600-616`); five and five as slices of one list (`dashboard.py:665-672`); `items.count` the costed rows | two lists of three; the number of items that could not be costed named when it is not zero |
+| the biggest three price spikes | `price_moves.moves` with `direction = "up"`, ranked by the money at stake | the block lists five of both directions inside the read's own window (`PRICE_MOVES_LISTED`, `dashboard.py:68`; the ranking at `:390-397`), so a month-to-date read on the 3rd holds three days of moves | a second read over the default 28 days (the dashboard's own window) for the spikes, rises only, three; a `limit` keyword on `price_moves_block` so the brief can take three rises past the panel's five |
 
-- The M9 P8 row names the slots as `freshness.sentence`, `latest_day`, `league[0]` and `signals[0..1]` (`plan.md:1248`; `plan.md:1106-1107`).
-  The `price_moves` block did not exist when that was pinned: WP-99 added it on 2026-09-07, and it is exactly "each material's latest move inside the window, both directions, ranked by money" with the sentence composed once for the dashboard, the Menu card and the mock (`dashboard.py:345-361`; `CLAUDE.md`'s M9 paragraph).
-  A price spike among the signals is a rise only (C13.2), so on a morning when the biggest move is a fall the signals carry no move at all.
-  §5 P9 asks the founder to let the move slot read `price_moves.moves[0]`.
-- The ratio has no sentence anywhere on the wire: `/sales` and the dashboard print the number under its label and the notes beside it.
-  C11.6 fixes the label: "purchases ÷ net sales (cash basis)" on every surface and never food cost % (`plan.md:550`).
-  The brief's fixed template text carries the label, so the words are pinned by Meta's approval as well as by the display rule.
+- The M9 P8 row names the slots as `freshness.sentence`, `latest_day`, `league[0]` and `signals[0..1]` (`plan.md:1248`; `plan.md:1106-1107`); the founder's direction replaces that list, and the signals are no longer read by the brief at all - "what to look at" is the dashboard's, the brief's issue line is the founder's "worst 3 items" and "biggest three spikes".
+  The `price_moves` block is exactly "each material's latest move inside the window, both directions, ranked by money" with the sentence composed once for the dashboard, the Menu card and the mock (`dashboard.py:345-361`), so the spikes are its rises.
+- Two reads a morning, not one: the month-to-date read for every figure, the table and the items, and the 28-day default read for the spikes.
+  P9's one-read rule was about a screen whose blocks must agree with each other; the brief's spikes are a different question from its month, and both reads are the same function with a different window, at 07:00, once.
+- The materials share has no sentence anywhere on the wire: the dashboard prints the kept share (`contribution_pct`) and the covered share beside it, and the brief prints their complement.
+  C11.6's rule carries over in spirit: the label is "materials share of costed sales", never food cost %, and the fixed template text carries the label, so the words are pinned by Meta's approval as well as by the display rule.
+  Purchases ÷ net sales (cash basis) is not in the brief (P16); it stays on the dashboard as the cash view of the same question.
 - The net sales slot has no sentence either.
   `contribution._money_words` is the one headline-money formatter, rounded half up to whole dirhams with thousands separated (`contribution.py:334-337`), and `signals._short_branch` is the one branch-name shortener ("Rolla" from "Rolla Branch", `signals.py:172-178`), imported by `dashboard.py:46` the way the brief will import it.
 - `latest_day` is `null` when the newest loaded day is outside the period (`dashboard.py:587`).
@@ -182,11 +191,11 @@ What each slot is on the wire today, and whether the brief can use it verbatim:
 ## 3. Contracts to pin before fan-out (C15 new; C2 amended; C7 one migration; C8 extended; C6, C10 and C13 untouched)
 
 - **C15 - The daily brief.**
-  1. *One read, five lines, no generation.* The brief is composed by a pure `brief.py` from one `GET /api/dashboard` payload for the tenant's default period (28 days ending on the newest loaded day, `ratio.resolve_period`), read through the same function the route calls and never through HTTP.
-     It is five labelled lines in a fixed template body (§3.1): the day, net sales, purchases ÷ net sales (cash basis), the biggest supplier price move, and the flagged issue.
-     Where the payload carries a sentence the brief uses it verbatim (`freshness.sentence`, `price_moves.moves[0].sentence`, `signals[0].sentence`); where it carries only numbers (`latest_day`, `total`, `league[0]`, `price_moves.moves[0].money_at_stake`) the brief composes one fixed shape in Python, and a test pins every number in the brief to the payload field it came from.
-     Nothing is generated, nothing comes from a second read, and no sentence is re-worded.
-  2. *The words.* The label is "purchases ÷ net sales (cash basis)", in the fixed body, never food cost; contribution is never mentioned as profit; `verified` is never claimed; "yesterday" appears only when `freshness.sentence` says it, which is when the newest loaded day is one day before the brief's date (P6).
+  1. *Two reads, one message, no generation.* The brief is composed by a pure `brief.py` from two payloads of the dashboard function for the tenant, read through the function the route calls and never through HTTP: the month-to-date read (`from` the first of the newest loaded day's month, `to` that day) for the figures, the branch table and the items, and the default 28-day read for the price spikes.
+     Its lines are the founder's seven (§1): the day (`freshness.sentence` verbatim); the latest day's net sales; month-to-date net sales with the days loaded named; the raw-material cost of what was sold at the latest prices; that cost's share of the sales it covers with the covered share beside it; one row per branch with the same three figures; the three items that earned the most and the three that earned the least, by money kept; the three biggest supplier price rises of the 28 days with the money on the sales since.
+     Where the payload carries a sentence the brief uses it verbatim; where it carries only numbers the brief composes one fixed shape in Python, and a test pins every number in the brief to the payload field it came from.
+     Nothing is generated, nothing comes from a third read, and no sentence is re-worded.
+  2. *The words.* The label is "materials share of costed sales", in the fixed body, with the covered share beside the figure, never food cost; purchases ÷ net sales (cash basis) is not in the brief; contribution is never mentioned as profit; `verified` is never claimed; "yesterday" appears only when `freshness.sentence` says it, which is when the newest loaded day is one day before the brief's date (P6).
      Money is whole dirhams rounded half up with thousands separated (`contribution._money_words`, the §3 display rule), percentages to a tenth as the wire carries them, dates as `_short_date` and `_weekday_date` print them.
      A quality word rides on the line it qualifies, in the brief's own fixed clause, with the first note the payload gives: "(incomplete: 1 of 3 branches incomplete)", "(estimated: 1 invoice awaiting confirm)"; a signal carries "(estimated)" after its sentence exactly as its detail does on the wire.
      A figure the read withholds (`null`) is a sentence saying so with the read's own note, never a zero and never a blank slot.
@@ -210,65 +219,96 @@ What each slot is on the wire today, and whether the brief can use it verbatim:
      When sales exist the brief is sent every morning whatever their age, the header naming the day and its age; past `FRESHNESS_STALE_DAYS` the header's fixed clause says the figures are estimated because the sales are older than a week (P4).
      A day with no move and no signal says so in those two lines and is still sent.
   8. *The tap-through.* One static URL button to `https://faida-web-nine.vercel.app/dashboard`; the login gate's round trip is untouched and the message carries no credential (P5).
-  9. *The parameters.* Exactly five text parameters, positional, the count a constant beside the body and asserted by the filler so a template edited to a different count fails in a test before it fails as Meta's 132000; none contains a newline, a tab or four consecutive spaces (Meta's rule for parameter values), each is at most 160 characters by the filler's own cap, and the rendered body is under 1,024 characters by a test over the widest fixture (a chain of twelve branches).
+  9. *The parameters.* A fixed number of text parameters per template shape - five and a picture under P15 (a), eleven for three branch rows under (b), nine under (c) - the count a constant beside the body and asserted by the filler so a template edited to a different count fails in a test before it fails as Meta's 132000; none contains a newline, a tab or four consecutive spaces (Meta's rule for parameter values), each is at most 160 characters by the filler's own cap, and the rendered body is under 1,024 characters by a test over the widest fixture (a chain of twelve branches).
      Branch names in the net sales line are at most four, then the count; a chain of one branch names no branch.
   10. *C2 amended - a recipient's reply.* `process_wa_message` resolves the sender phone against branches first, then against active brief recipients; a recipient that is not a branch phone gets its inbound row stamped `ignored_brief_recipient` before anything else, one fixed reply a day (`REPLY_BRIEF_RECIPIENT`: "This number receives the morning brief. To forward invoices, use a branch's phone."), and no document, job or model call (P10).
      A phone that is both a branch and a recipient is a branch: C5 applies unchanged.
-  11. *The template.* One template, `faida_daily_brief`, category `UTILITY`, language `en`, the body and samples in §3.1, the same text under the test account and the production account; the name and language are constants in `brief.py`, and the template is edited only through Meta's review.
-  12. *What does not change.* No web file; no new route (C6 untouched); the signals, the price moves and the dashboard's sentences are read, never re-composed (C13 untouched); `brief_recipients` is tenant-owned, read with `tenant_id` keyword-only and listed in `TENANT_TABLES` (C10); **C7:** one migration, `0022_brief_recipients.sql`, the number fixed now because M12's WP-119 already holds `0021_usable_share.sql` (`plan.md` §7.3 row 119) and the two are independent, so either can land first (the test rig applies the directory in sorted order, `tests/conftest.py:58`); with a paste file and a pre-flight in the 0019 and 0020 shape.
+  11. *The template.* `faida_daily_brief`, category `UTILITY`, language `en`, the body and samples in §3.1 for the shape P15 decides (one template under (a) and (c); one per chain size under (b), named `faida_daily_brief_3` and so on), the same text under the test account and the production account; the names and language are constants in `brief.py`, and a template is edited only through Meta's review.
+  12. *What does not change.* No web file; no new route, and **C6 extended by two additive fields**, `cost` and `costed_sales` on `total` and on each league row, which the screen ignores; the signals, the price moves and the dashboard's sentences are read, never re-composed (C13 untouched); `brief_recipients` is tenant-owned, read with `tenant_id` keyword-only and listed in `TENANT_TABLES` (C10); **C7:** one migration, `0022_brief_recipients.sql`, the number fixed now because M12's WP-119 already holds `0021_usable_share.sql` (`plan.md` §7.3 row 119) and the two are independent, so either can land first (the test rig applies the directory in sorted order, `tests/conftest.py:58`); with a paste file and a pre-flight in the 0019 and 0020 shape.
 
-- **C13 untouched, one reading pinned.** The brief's move slot reads `price_moves.moves[0]`, which is the block WP-99 added after P8 was pinned, and its issue slot reads `signals[0]`; when `signals[0]` is the price spike for the same material as `moves[0]`, the issue slot reads `signals[1]`, so one move is never quoted twice (P9).
-  Amends the P8 row's `signals[0..1]` to `price_moves.moves[0]` and `signals[0..1]`; the four slots stay four.
+- **C13 untouched.** The brief reads no signal: the spikes are the `price_moves` block's rises, three of them, in the block's own words and for the block's own money, and the items are `items.top` and `items.bottom` in the dashboard's own order; the P8 row's slot list is superseded by the founder's direction (§1).
 
 ### 3.1 The template, the wire shapes and the sentence shapes
 
-**The template to submit** (WhatsApp Manager, Message templates, Create template; the founder pastes it as it stands):
+The three template shapes are rendered on a phone, with the same morning's figures, at https://claude.ai/code/artifact/cd930ad7-445d-494a-a3d8-2a891df7cfdc; the founder picks one (P15).
+The figures below are the demo chain's staged week read on 1 Sep (`apps/web/src/lib/mock/dashboard/full.json`): month to date is that week, because only that week is loaded, and the line says so.
 
-| Field | Value |
-|---|---|
-| Name | `faida_daily_brief` |
-| Category | Utility |
-| Language | English (`en`) |
-| Header | none |
-| Body | below, 152 characters of fixed text plus five variables (177 with the placeholders written out) |
-| Footer | none |
-| Button | Visit website, text `Open dashboard`, URL type static, `https://faida-web-nine.vercel.app/dashboard` |
+**The five lines every shape carries** (the header and the four figures), composed in `brief.py`:
 
-Body, exactly:
+| Line | Shape | Fields |
+|---|---|---|
+| the day | `freshness.sentence` verbatim; when `freshness.quality` is `estimated`: `<sentence> Figures below are estimated: the sales are older than a week.` | `freshness.sentence`, `freshness.quality` |
+| Latest day | `AED <n> on <day>` | `latest_day.net_sales`, `latest_day.date` |
+| Month to date | `AED <n> (<from>-<to> loaded)`, the days the chain's clipped windows actually cover; a chain whose branches cover different days names the widest and says "some branches fewer" | `total.net_sales`, `league[].window` |
+| Materials used | `AED <n> at the latest prices` | `total.cost` (new) |
+| Materials share | `<pct>% of the AED <costed> costed (<share>% of sales)`; withheld: `not available (<first note>)` | `100 − total.contribution_pct`, `total.costed_sales` (new), `total.costed_share_pct`, `total.contribution_notes` |
+
+**The branch row** (one per branch, the league's order): `<Branch> · <latest day> · <month> · <materials share>%`, a branch with no sales on the latest day showing `-` there and its own newest day in the month figure's place when it has one; the covered share per branch is on the dashboard, and the table's header says "of costed sales".
+
+**The lists:** `Earning most: <item> AED <n>; <item> AED <n>; <item> AED <n>` from `items.top[:3]`; `Earning least:` the same from `items.bottom[-3:]`, a loss printed as `AED -107`; when fewer than three items are costed the list is what exists and the line says how many could not be costed.
+`Price spikes: <sentence without its full stop>, AED <n> at stake; …` from the 28-day read's rises, three, the panel's own sentence and money (`signals.move_sentence`, `money_at_stake`); a rise nothing was sold after says `nothing sold since`; no rise in 28 days: `none of 5% or more since <from>`.
+
+**Template A - a picture card in the header** (5 body variables and an image header):
 
 ```
 *Faida morning brief*
 {{1}}
 
-Net sales: {{2}}
-Purchases ÷ net sales (cash basis): {{3}}
-Supplier prices: {{4}}
-Flagged: {{5}}
+*Latest day:* {{2}}
+*Month to date:* {{3}}
+*Materials used:* {{4}}
+*Materials share:* {{5}}
+
+The card above carries every branch, the items and the price spikes. Every figure opens to its source on the dashboard.
+```
+
+The header is an image, 1080 by 1350 (4:5, which WhatsApp shows whole), drawn by the API from the same `Brief`: the four figures as tiles, the branch table with its four columns, the two item lists, the spikes, and the sentence "Materials share is of the sales that are costed, never of all sales."
+Meta needs a sample picture at submission; the dry run writes one (`--card out.png`).
+Rendered: 382 characters of text.
+
+**Template B - text, one row per branch, one template per chain size** (11 variables for three branches; `faida_daily_brief_3`):
+
+```
+*Faida morning brief*
+{{1}}
+
+*Latest day:* {{2}}
+*Month to date:* {{3}}
+*Materials used:* {{4}}
+*Materials share:* {{5}}
+
+*By branch* (latest day · month · materials)
+{{6}}
+{{7}}
+{{8}}
+
+*Earning most:* {{9}}
+*Earning least:* {{10}}
+*Price spikes:* {{11}}
 
 Every figure opens to its source on the dashboard.
 ```
 
-Sample values, one per variable, which Meta shows its reviewer; they are the full fixture's own figures, aged to the morning after its newest day:
+Rendered: 841 characters for three branches, about 32 more per row; a chain of more than six branches sends its six largest by month-to-date sales and a count.
+
+**Template C - text, every branch on one line** (9 variables): template B with the three row lines replaced by one `{{6}}` holding `Al Quoz 4,385 · 30,719 · 30.1% | Karama 2,987 · 20,907 · 31.4% | Deira 2,122 · 15,846 · 39.1%`.
+Rendered: 839 characters for three branches.
+
+**Sample values** (the same under every shape; Meta shows them to its reviewer):
 
 | Variable | Sample |
 |---|---|
-| `{{1}}` | `Sales loaded to Mon 31 Aug, yesterday.` |
-| `{{2}}` | `AED 9,493 on Mon 31 Aug: Al Quoz 4,385, Karama 2,987, Deira 2,122.` |
-| `{{3}}` | `23.7% for the chain over 4-31 Aug (incomplete: 1 of 3 branches incomplete); Deira, the branch to look at first, 26.0% over 25-31 Aug.` |
-| `{{4}}` | `Milk Powder is up AED 3.40 per kg since 21 Aug, against its last purchase on 12 Mar. AED 109 at stake on sales since.` |
-| `{{5}}` | `Mint Lemonade sold AED 2,027 and kept -5.3%; the menu keeps 67.4%. (estimated)` |
+| the day | `Sales loaded to Mon 31 Aug, yesterday.` |
+| Latest day | `AED 9,493 on Mon 31 Aug` |
+| Month to date | `AED 67,471 (25-31 Aug loaded)` |
+| Materials used | `AED 18,342 at the latest prices` |
+| Materials share | `32.6% of the AED 56,294 costed (84% of sales)` |
+| a branch row (B) | `Al Quoz · 4,385 · 30,719 · 30.1%` |
+| Earning most | `Karak Tea (Flask 1 L) AED 11,177; Karak Tea (Cup) AED 7,821; Butter Chicken AED 4,862` |
+| Earning least | `Mint Lemonade AED -107; Egg Paratha AED 741; Nido Shake AED 1,283` |
+| Price spikes | `Milk Powder up AED 3.40 per kg since 21 Aug, AED 109 at stake; White Sugar up AED 0.20 per kg since 28 Aug, AED 8 at stake; Chicken up AED 2.00 per kg since 27 Aug, nothing sold since` |
 
-The body begins and ends with fixed text, no two variables touch, and every variable follows a label, which is the shape Meta's review accepts most readily; the bold header is WhatsApp's own `*asterisk*` markup and renders bold on the phone.
-
-**The sentence shapes** (composed in `brief.py`; `<>` marks a slot filled from the payload field named beside it; the fixed clauses are the brief's own and the quoted sentences are the wire's):
-
-| Line | Shape | Fields |
-|---|---|---|
-| 1 the day | `freshness.sentence` verbatim; when `freshness.quality` is `estimated`: `<sentence> Figures below are estimated: the sales are older than a week.` | `freshness.sentence`, `freshness.quality` |
-| 2 net sales | `AED <chain> on <day>: <Branch> <n>, <Branch> <n>, <Branch> <n>.` with at most four branches, then `across <count> branches`; a branch in the league whose `sales_through` is older than the day is appended as `; <Branch> loaded to <its day>`, and one with none as `; <Branch> has no sales loaded`; a chain of one branch: `AED <n> on <day>.` | `latest_day.net_sales`, `latest_day.branches[]`, `league[].sales_through` |
-| 3 the ratio | `<pct>% for the chain over <window>` + optional ` (<word>: <first note>)`; then `; <Branch>, the branch to look at first, <pct>% over <its window>` when the league has two or more rows and `league[0].ratio_pct` is present, or `; <Branch>, the branch to look at first, has no ratio (<its first note>)` when it is withheld; a chain of one branch: `<pct>% over <window>` with its word; the chain's ratio withheld: `not available for <window> (<first note>)` | `total.ratio_pct`, `total.ratio_quality`, `total.ratio_notes`, `period`, `league[0]` |
-| 4 the move | `moves[0].sentence` verbatim, then ` AED <n> at stake on sales since.` on a rise, ` AED <n> saved on sales since.` on a fall, ` Nothing sold since.` when the money is zero, and nothing after a basis change; no move: `no move of 5% or more since <period.from>.` | `price_moves.moves[0]` (`sentence`, `direction`, `money_at_stake`, `kind`), `period.from`, `PRICE_ALERT_MIN_PCT` |
-| 5 the issue | `signals[0].sentence` verbatim, ` (estimated)` appended when `signals[0].quality` is `estimated` (the detail's own convention), `signals[1]` when `signals[0]` is the spike for line 4's material; none: `nothing flagged on the figures loaded.` | `signals[]` |
+Every body begins and ends with fixed text, no two variables touch, every variable follows a bold label, and the button is `Open dashboard` to `https://faida-web-nine.vercel.app/dashboard`, static.
 
 **The job payload** (`jobs.payload`, kind `send_brief`):
 
@@ -278,7 +318,7 @@ The body begins and ends with fixed text, no two variables touch, and every vari
  "brief_date": "2026-09-01"}
 ```
 
-**The Meta request** (`WhatsAppClient.send_template`, POST `/{phone_number_id}/messages`):
+**The Meta request** (`WhatsAppClient.send_template`, POST `/{phone_number_id}/messages`; the body component's `parameters` in the template's order; under shape A a header component first):
 
 ```json
 {"messaging_product": "whatsapp",
@@ -289,29 +329,31 @@ The body begins and ends with fixed text, no two variables touch, and every vari
    "name": "faida_daily_brief",
    "language": {"code": "en"},
    "components": [
+     {"type": "header",
+      "parameters": [{"type": "image", "image": {"id": "<media id from POST /{phone_number_id}/media>"}}]},
      {"type": "body",
       "parameters": [
         {"type": "text", "text": "Sales loaded to Mon 31 Aug, yesterday."},
-        {"type": "text", "text": "AED 9,493 on Mon 31 Aug: Al Quoz 4,385, Karama 2,987, Deira 2,122."},
-        {"type": "text", "text": "23.7% for the chain over 4-31 Aug (incomplete: 1 of 3 branches incomplete); Deira, the branch to look at first, 26.0% over 25-31 Aug."},
-        {"type": "text", "text": "Milk Powder is up AED 3.40 per kg since 21 Aug, against its last purchase on 12 Mar. AED 109 at stake on sales since."},
-        {"type": "text", "text": "Mint Lemonade sold AED 2,027 and kept -5.3%; the menu keeps 67.4%. (estimated)"}
+        {"type": "text", "text": "AED 9,493 on Mon 31 Aug"},
+        {"type": "text", "text": "AED 67,471 (25-31 Aug loaded)"},
+        {"type": "text", "text": "AED 18,342 at the latest prices"},
+        {"type": "text", "text": "32.6% of the AED 56,294 costed (84% of sales)"}
       ]}
    ]}}
 ```
-
-A static URL button needs no component in the request.
 
 **The outbound record** (`wa_messages`, `direction = 'out'`, `msg_type = 'template'`, `message_id` Meta's `wamid`):
 
 ```json
 {"template": "faida_daily_brief", "language": "en",
- "parameters": ["Sales loaded to Mon 31 Aug, yesterday.", "…", "…", "…", "…"],
+ "parameters": ["Sales loaded to Mon 31 Aug, yesterday.", "…"],
+ "card_path": "<tenant_id>/briefs/2026-09-01/<recipient_id>.png",
  "tenant_id": "…", "recipient_id": "…", "brief_date": "2026-09-01",
  "rehearsal": false,
  "error": null}
 ```
 
+`card_path` is present under shape A only: the picture is stored immutably in Supabase Storage beside the documents, so the record holds what was sent.
 `status` moves `sent` to `delivered` to `read`, or to `failed` with Meta's error object copied into `error`, as the webhook's `statuses` entries arrive.
 
 **The recipient row** (`0022_brief_recipients.sql`, applied in §8):
@@ -336,7 +378,7 @@ create unique index jobs_send_brief_uidx
   where kind = 'send_brief';
 ```
 
-**The dry run** (`python -m faida_api.brief --tenant <id> [--today 2026-09-01]`), printing the five lines as the phone will show them, then the parameter list as JSON; `--send --to 9715XXXXXXXX` sends that brief once through the same handler as a rehearsal (`rehearsal: true`, outside the day's key), which is how the sitting proves the template at any hour.
+**The dry run** (`python -m faida_api.brief --tenant <id> [--today 2026-09-01] [--card out.png]`), printing the lines as the phone will show them, then the parameter list as JSON, and under shape A writing the card; `--send --to 9715XXXXXXXX` sends that brief once through the same handler as a rehearsal (`rehearsal: true`, outside the day's key), which is how the sitting proves the template at any hour.
 
 ## 4. Work packages
 
@@ -347,123 +389,98 @@ The rows are numbered from WP-100 because M9's last row is 99 and M12 holds 119 
 
 | WP | What | Size | Depends | Acceptance |
 |---|---|---|---|---|
-| 100 | **The deterministic filler.** A pure `brief.py` in `signals.py`'s shape (C15.1, C15.2, C15.9): `Brief(lines, parameters, quiet)` from one dashboard payload dict and the brief's date, the five sentence shapes of §3.1, `TEMPLATE_NAME`, `TEMPLATE_LANGUAGE` and `TEMPLATE_BODY` as constants, `render(brief)` producing the body as the phone shows it, the parameter rules (no newline, tab or four spaces; the 160-character cap; the four-branch rule), `PRICE_ALERT_MIN_PCT` imported for the no-move sentence, `contribution._money_words` and `signals._short_branch` imported and never copied. No I/O, no clock, no database | M | - | `tests/test_brief.py`: the five lines for each of the five committed mock fixtures (`full`, `partial`, `quiet`, `empty`, `nomenu`, chain scope) and for hand-built cases (one branch, twelve branches, a fall as the top move, a basis change, the spike duplicating the move, no signal, the chain ratio withheld, `league[0]` withheld); every number in every line equal to the payload field it came from; `empty` produces `quiet` and no lines; the stale fixture never contains "yesterday"; the word "food cost", "net profit" and "verified" absent from every rendering (the module called, never grepped); every parameter clean and under the cap; the twelve-branch rendering under 1,024 characters |
-| 101 | **The read as a function, and the printed brief.** `dashboard.read_dashboard(db, tenant_id, *, today, date_from=None, date_to=None, branch_id=None) -> dict` extracted from the route with the route as a thin wrapper, and `python -m faida_api.brief --tenant <id> [--today <date>]` printing the five lines and the parameter JSON for that tenant from the live read, read-only - the milestone's first vertical slice and its consumer until Meta approves anything (the M12 `usage_report` precedent) | M | 100 | `tests/test_dashboard.py` green unchanged, the enumerated query list unchanged, the route's JSON byte-identical to the function's for the same inputs (one new test); the CLI printing the seeded chain's brief against a test database, its lines equal to `brief.compose` over the route's payload; the founder runs it against the live database and reads the demo chain's brief on the terminal |
+| 100 | **The deterministic filler.** A pure `brief.py` in `signals.py`'s shape (C15.1, C15.2, C15.9): `Brief(lines, rows, lists, parameters, quiet)` from the two dashboard payload dicts (month to date and 28 days) and the brief's date, the line shapes, the branch row, the two lists and the spikes of §3.1, `TEMPLATE_NAME`, `TEMPLATE_LANGUAGE` and `TEMPLATE_BODY` as constants, `render(brief)` producing the body as the phone shows it, the parameter rules (no newline, tab or four spaces; the 160-character cap; the four-branch rule), `PRICE_ALERT_MIN_PCT` imported for the no-move sentence, `contribution._money_words` and `signals._short_branch` imported and never copied. No I/O, no clock, no database | M | - | `tests/test_brief.py`: every line, row and list for each of the five committed mock fixtures (`full`, `partial`, `quiet`, `empty`, `nomenu`, chain scope) and for hand-built cases (one branch, twelve branches, fewer than three costed items, a loss in the worst three, fewer than three rises, a rise nothing was sold after, the materials share withheld, a branch with no sales on the latest day, branches whose loaded days differ); every number equal to the payload field it came from, the materials share equal to 100 minus the kept share, the month-to-date figure from the month-to-date read and the spikes from the 28-day read; `empty` produces `quiet` and no lines; the stale fixture never contains "yesterday"; the word "food cost", "net profit" and "verified" absent from every rendering (the module called, never grepped); every parameter clean and under the cap; the twelve-branch rendering under 1,024 characters |
+| 101 | **The read as a function, two new fields, and the printed brief.** `dashboard.read_dashboard(db, tenant_id, *, today, date_from=None, date_to=None, branch_id=None) -> dict` extracted from the route with the route as a thin wrapper; `cost` and `costed_sales` added to `total` and to each league row from the `Contribution` the read already holds (C6 extended, additive; the mock's fixtures regenerated); a `limit` keyword on `price_moves_block`; and `python -m faida_api.brief --tenant <id> [--today <date>]` printing the five lines and the parameter JSON for that tenant from the live read, read-only - the milestone's first vertical slice and its consumer until Meta approves anything (the M12 `usage_report` precedent) | M | 100 | `tests/test_dashboard.py` green with the two fields asserted on the seeded stage (the chain's `cost` equal to the sum of its costed rows' `cost`, `costed_sales` to their `net_item_sales`), the enumerated query list unchanged, the route's JSON byte-identical to the function's for the same inputs (one new test); the CLI printing the seeded chain's brief against a test database, its lines equal to `brief.compose` over the route's payload; the founder runs it against the live database and reads the demo chain's brief on the terminal |
 | 102 | **The template send and the delivery record.** `WhatsAppClient.send_template(to, name, language, parameters)` with the §3.1 request shape beside `send_text`; `db.record_outbound_template(...)` writing the outbound row of §3.1; the webhook reading `value.statuses` and `db.stamp_outbound_status(message_id, status, error)` on rows it knows; `FakeMeta` recording template sends and answering a configurable template error (132001, 132000) | S | - | `tests/test_wa.py` or the flow suite: the exact JSON on the fake transport; a 500 raising as `send_text` does; `tests/test_webhook_pure.py`: `statuses` no longer dropped - a `delivered`, a `read` and a `failed` with its error stamped on the outbound row; a `delivered` arriving after `read` and a `read` after `failed` ignored; a status for an id with no row yet inserting the stub and the later record upserting into it with the further-along status kept; an inbound `messages` payload unchanged; every existing webhook and flow test green |
 | 103 | **The recipient, the morning and the job.** The migration of §3.1 with its paste file and pre-flight (C7); `db.list_active_brief_recipients`, `enqueue_brief_once`, `outbound_brief_exists`, `brief_recipient_for_phone`, all `tenant_id` keyword-only where a tenant is known, the local-time arithmetic in Python with `zoneinfo`; the stale-running reclaim in `claim_job` (P12); `JobKind.SEND_BRIEF` and `worker.send_brief` (the read with the recipient's local date, `brief.compose`, the dedupe check, `send_template`, the record; quiet day logs and returns); the tick in `worker_loop` on every pass, once a minute, behind `BRIEF_ENABLED` and the noon cutoff (C15.5); the resolver amendment and `REPLY_BRIEF_RECIPIENT` (C15.10); `--send --to` on the CLI as the rehearsal door; `brief_recipients` in `TENANT_TABLES` | M | 100, 101, 102 | `tests/test_brief_job.py` against Postgres: the tick enqueues one job per due recipient and a second tick the same day none; a paused recipient none; a recipient at 07:00 Dubai due at 03:00 UTC and not at 02:59; past noon local skipped with the log line; the job sends the exact template JSON and writes the row; a Meta 500 retried three times then `failed` with the error and no row; a 132001 and a 132000 the same; the handler run twice for one payload sending once; a record write that raises after the send followed by a retry sending the brief a second time (C15.3's named limit, pinned); a row left `running` past `STALE_RUNNING_MINUTES` reclaimed once and never twice, an extract job included (P12); the tick enqueuing a due recipient while the queue still holds extract jobs; a recipient whose timezone name does not resolve logged and skipped while the next one is enqueued; two tenants, two recipients, each brief carrying its own tenant's figures and never the other's; the empty tenant sending nothing; a recipient phone texting in getting `REPLY_BRIEF_RECIPIENT` once and its row stamped, a branch-and-recipient phone treated as a branch; `test_tenancy.py` green with the table listed; every existing suite green |
 | 104 | **The template, submitted** (founder task, the text ready to paste). In WhatsApp Manager under the test account: the §3.1 name, category, language, body, samples and button, submitted; the approval, the rejection reason if any, and the date recorded in this file's §8; the demo phone confirmed among the test number's recipients. The same submission under the production account when it exists | S (founder) | - | the template shows `APPROVED` in WhatsApp Manager; a `--send --to` rehearsal from the CLI lands on the founder's phone with the sample values replaced by the demo chain's own |
+| 106 | **The picture card** (only under P15 (a)). `brief_card.py`: the layout as a pure function over `Brief` returning every drawn line with its box (tested), the drawing a thin Pillow pass over it into a 1080 by 1350 PNG with a bundled OFL font (Manrope and Inter, the brand's), deterministic for the same `Brief`; `WhatsAppClient.upload_media(bytes, mime) -> media id` (POST `/{phone_number_id}/media`, multipart) beside `send_template`, and the header component in the send; the PNG stored at `{tenant_id}/briefs/{brief_date}/{recipient_id}.png` through `storage.put` (immutable, `x-upsert: false`) and named on the outbound row; `--card` on the dry run; `FakeMeta` answering the upload | M | 100, 102 | `tests/test_brief_card.py`: the layout's lines equal to the brief's lines and rows, every figure present once, nothing clipped (every box inside the canvas); the PNG decodes to 1080 by 1350; the same `Brief` twice giving identical bytes; the job under shape A uploading first, sending with the header, storing the file and naming it on the row; an upload refused failing the job before any send |
 | 105 | **Live, and the record.** One sitting: the migration applied with its pre-flight, the API deployed by the merge, the recipient row for the founder's phone pasted with its audit row, the next 07:00 brief received and read back against `/dashboard` for the same morning, the outbound row's status read back; then `DEMO_RUNBOOK.md` §J (the morning brief: preconditions, the read-back, the failure lines), `plan.md`'s boxes and logs, `TODOS.md`, `README.md`'s Meta section, `CLAUDE.md` and `AGENTS.md` (an M10 paragraph), and PRD §27.4's wording to what shipped | S | 100-104 | the founder's phone shows the brief at 07:00 with the demo chain's real figures, every number equal to the dashboard's; `wa_messages` carries one `template` row for that morning with `delivered` or `read`; the loop reset leaves the recipient row and the week intact |
 
-**The cut line, named in advance** (`plan.md` §2 rule 9): if the budget bites, the noon cutoff goes first (one constant and one clause), then the rehearsal flag on the CLI (a recipient row with `send_at_local` two minutes ahead proves the same thing more slowly), then the stub row for a status racing the record (the row reads `sent` in that rare order).
+**The cut line, named in advance** (`plan.md` §2 rule 9): under P15 (a) the card is not on the list - it is the table the founder asked for; if the budget bites, the noon cutoff goes first (one constant and one clause), then the rehearsal flag on the CLI (a recipient row with `send_at_local` two minutes ahead proves the same thing more slowly), then the stub row for a status racing the record (the row reads `sent` in that rare order).
 WP-102's status stamping is not on the list: the done-when's read-back needs the row to say `delivered` or `read`, and cutting the stamp would cut the proof.
 WP-100, WP-101, WP-103, WP-104 and WP-105 are the done-when and cannot be cut.
 
 ### 4.1 Design direction: the message is the screen
 
 There is no screen in M10.
-The message is read on a phone in a chat list at seven in the morning, by someone who will not open the dashboard unless the message gives a reason to, so the message has to carry the answer and the reason in the order the dashboard carries them: what day this is about, what came in, what went out against it, what a supplier did, and what to look at.
-Every variant below is the same template; only the five values change, because a Meta template is fixed text and the brief's honesty lives in the values.
+The message is read on a phone in a chat list at seven in the morning, by someone who will not open the dashboard unless the message gives a reason to, so it carries the founder's seven things in the founder's order: the day, what came in, what it cost in materials, the branches, the items, the spikes.
+The three shapes are rendered on a phone with the same morning's figures at https://claude.ai/code/artifact/cd930ad7-445d-494a-a3d8-2a891df7cfdc, with the trade-offs beside each; the founder picks one (P15).
+Under every shape the same five lines lead, so the chat-list preview and a screen reader get the day and the figures without opening anything, and every variant below is the same template with different values.
 
-**A normal morning** (the full fixture, read on 1 Sep):
+**A normal morning** (shape B shown; A carries the same text above the card, C the same with the rows on one line):
 
 ```
 *Faida morning brief*
 Sales loaded to Mon 31 Aug, yesterday.
 
-Net sales: AED 9,493 on Mon 31 Aug: Al Quoz 4,385, Karama 2,987, Deira 2,122.
-Purchases ÷ net sales (cash basis): 23.7% for the chain over 4-31 Aug (incomplete: 1 of 3 branches incomplete); Deira, the branch to look at first, 26.0% over 25-31 Aug.
-Supplier prices: Milk Powder is up AED 3.40 per kg since 21 Aug, against its last purchase on 12 Mar. AED 109 at stake on sales since.
-Flagged: Mint Lemonade sold AED 2,027 and kept -5.3%; the menu keeps 67.4%. (estimated)
+*Latest day:* AED 9,493 on Mon 31 Aug
+*Month to date:* AED 67,471 (25-31 Aug loaded)
+*Materials used:* AED 18,342 at the latest prices
+*Materials share:* 32.6% of the AED 56,294 costed (84% of sales)
+
+*By branch* (latest day · month · materials)
+Al Quoz · 4,385 · 30,719 · 30.1%
+Karama · 2,987 · 20,907 · 31.4%
+Deira · 2,122 · 15,846 · 39.1%
+
+*Earning most:* Karak Tea (Flask 1 L) AED 11,177; Karak Tea (Cup) AED 7,821; Butter Chicken AED 4,862
+*Earning least:* Mint Lemonade AED -107; Egg Paratha AED 741; Nido Shake AED 1,283
+*Price spikes:* Milk Powder up AED 3.40 per kg since 21 Aug, AED 109 at stake; White Sugar up AED 0.20 per kg since 28 Aug, AED 8 at stake; Chicken up AED 2.00 per kg since 27 Aug, nothing sold since
 
 Every figure opens to its source on the dashboard.
 [ Open dashboard ]
 ```
 
-**An estimated morning** (hand-built from the full fixture: one pending paper inside the window moves the chain's ratio and its word, and the fixture's own branch-gap signal is the top one; a row in `test_brief.py`):
-
-```
-Sales loaded to Mon 31 Aug, yesterday.
-
-Net sales: AED 9,493 on Mon 31 Aug: Al Quoz 4,385, Karama 2,987, Deira 2,122.
-Purchases ÷ net sales (cash basis): 24.1% for the chain over 4-31 Aug (estimated: 1 invoice awaiting confirm); Deira, the branch to look at first, 26.0% over 25-31 Aug.
-Supplier prices: Milk Powder is up AED 3.40 per kg since 21 Aug, against its last purchase on 12 Mar. AED 109 at stake on sales since.
-Flagged: Deira keeps 6.5 points less of every dirham than the chain. (estimated)
-```
-
-**A stale morning** (the partial fixture, read on 12 Sep; one branch has stopped uploading):
-
-```
-Sales loaded to Mon 31 Aug, 12 days ago. Figures below are estimated: the sales are older than a week.
-
-Net sales: AED 7,726 on Mon 31 Aug: Al Quoz 4,385, Karama 3,342; Deira has no sales loaded.
-Purchases ÷ net sales (cash basis): 31.0% for the chain over 4-31 Aug (incomplete: 2 of 3 branches incomplete); Karama, the branch to look at first, has no ratio (no confirmed purchases 25-31 Aug).
-Supplier prices: Milk Powder is up AED 3.40 per kg since 21 Aug, against its last purchase on 12 Mar. AED 91 at stake on sales since.
-Flagged: Chicken 65 Dry sold AED 2,168 and kept 38.1%; the menu keeps 69.4%. (estimated)
-```
-
+**A stale morning** (the partial fixture, read on 12 Sep; one branch has stopped uploading): the header reads `Sales loaded to Mon 31 Aug, 12 days ago. Figures below are estimated: the sales are older than a week.`; the latest-day figure is Mon 31 Aug's; the month line says `(25-31 Aug loaded; Deira none)`; Deira's row reads `Deira · - · - · -`; the rest as the read gives it.
 The header is the nudge: the same figures arrive every morning with the age one day higher, and nothing else in the product asks for the upload.
 
-**A quiet morning** (the quiet fixture: sales loaded, nothing moved, nothing flagged):
+**A quiet morning** (nothing moved, nothing to rank low): `Price spikes: none of 5% or more since 4 Aug.`; the lists still carry three and three, because the founder asked for the best and the worst, not for exceptions; when fewer than three items are costed the list is what exists and says `2 items cannot be costed yet`.
 
-```
-Sales loaded to Mon 31 Aug, yesterday.
+**A chain of one branch**: the branch table is that one row under shape B and C, and the card's table has one row under A; the chain lines and the branch line say the same numbers, which is honest and is what a one-branch owner expects.
 
-Net sales: AED 4,135 on Mon 31 Aug: Al Quoz 2,116, Karama 1,230, Deira 790.
-Purchases ÷ net sales (cash basis): 54.0% for the chain over 4-31 Aug; Deira, the branch to look at first, 74.3% over 25-31 Aug.
-Supplier prices: no move of 5% or more since 4 Aug.
-Flagged: nothing flagged on the figures loaded.
-```
+**An empty tenant** (nothing loaded): no message; the job completes and the log says `brief skipped: nothing loaded for tenant <id>`.
 
-**A chain of one branch** (the same shapes with the chain clauses dropped):
-
-```
-Sales loaded to Mon 31 Aug, yesterday.
-
-Net sales: AED 4,385 on Mon 31 Aug.
-Purchases ÷ net sales (cash basis): 38.7% over 25-31 Aug.
-Supplier prices: Cream is down AED 1.50 per litre since 26 Aug. AED 44 saved on sales since.
-Flagged: nothing flagged on the figures loaded.
-```
-
-**An empty tenant** (the empty fixture): no message.
-The job completes, the log says `brief skipped: nothing loaded for tenant <id>`, and the recipient hears nothing until the first sales day is loaded.
-
-**A fall as the biggest move**, and **a basis change**, and **the spike duplicating the move**, and **the chain ratio withheld** are single-line variants: `Cream is down AED 1.50 per litre since 26 Aug. AED 44 saved on sales since.`; `Karak Tea Dust is priced from a different pack now, so there is no before and after to show.` with nothing after it; the issue line moving to `signals[1]`; `not available for 4-31 Aug (3 of 3 branches with nothing loaded)`.
-Each is a row in `test_brief.py`.
+**The materials share withheld** (no item costed at all): `Materials used: not available (no item costed yet)` and `Materials share: not available (no item costed yet)`; the lists say the same; the branch rows carry `-` in the materials column.
 
 **The phone's rendering limits, and what the shapes do about them:**
 
-- Meta caps the body at 1,024 characters after the values are in; the fixed text is 152, the five values are capped at 160 each by the filler, and the widest committed rendering (the normal morning above) is 584.
-  A twelve-branch chain names four branches and the count, so the net sales line cannot grow with the chain.
-- A parameter value may not contain a newline, a tab or four consecutive spaces, so each value is one paragraph and the line breaks belong to the fixed body; every value ends with a full stop so a label and its value read as one sentence.
-- `*asterisks*` in the fixed body render bold; the values carry no markup, because a supplier name with an asterisk in it would otherwise toggle bold mid-line.
-- On a 390 px phone a chat bubble wraps at roughly 35 to 40 characters, so the normal morning is about twenty lines and one thumb-scroll; the chat list preview shows the first line and a half, which is why the bold title and the day come first and the figures after.
+- A template variable cannot hold a line break, a tab or four consecutive spaces, so a table with one row per branch needs a picture (A) or one variable per row (B); C puts the rows in one variable with bars.
+  That constraint is the whole of P15.
+- Meta caps the body at 1,024 characters after the values are in: A renders at 382, B at 841 for three branches (about 32 per extra row, so ten rows is the ceiling), C at 839 (about 32 per extra branch, eight is where it stops reading as a table).
+- Under A the card is a thumbnail in the bubble and readable on tap, full-screen and zoomable; the four figures are in the text so the preview and a screen reader get them without the tap; a 4:5 picture is shown whole, a taller one is cropped in the bubble.
+- `*asterisks*` in the fixed body render bold and are used for the labels; the values carry no markup, because a supplier name with an asterisk in it would otherwise toggle bold mid-line.
+- On a 390 px phone a chat bubble wraps at roughly 35 to 40 characters, so shape B is about thirty lines and two thumb-scrolls; the chat-list preview shows the first line and a half, which is why the bold title and the day come first.
 - The URL button renders full-width under the bubble with the text `Open dashboard` (25 characters is Meta's cap); a static URL shows no preview card.
-- No emoji, no icon and no colour: the brand's rule that colour never carries meaning alone (`plan.md:92`) holds trivially in a medium that has none, and the quality words are words.
-- Arabic and Malayalam are out of scope (the founder's answer; `plan.md:93`); Latin digits and the `÷` sign render in every WhatsApp client.
+- No emoji, no icon and no colour in the text; colour never carries meaning alone (`plan.md:92`), and the card uses the brand's own tokens with the figures as words and numbers.
+- Arabic and Malayalam are out of scope (the founder's answer; `plan.md:93`); Latin digits and the `÷` sign render in every WhatsApp client, and under A a second language needs a font that carries it.
 
 ## 5. Proposals for the founder (each with a recommendation)
 
 **None of these is decided.**
 Three questions were answered by the founder at the start of the session (the chain has not started; the founder's demo phone first; English only) and are carried in P2, P7 and P8 as answers to confirm at approval; every other row is open, and the session proceeded on the recommended option so that §3, §4, §6, §7 and §8 describe one consistent plan.
 P12, P13 and P14 were added by the outside voice's review (findings 4, 12 and 13 in the report).
+P15, P16 and P17 were added on 2026-09-08 from the founder's direction; P16 and P17 are decided, P15 is open with its samples rendered.
 
 | # | Proposal | Recommendation and why |
 |---|---|---|
 | P1 | **The scheduler.** Nothing in the product ticks at a wall-clock time (`worker.py:193-213`). Options: (a) the worker's own tick - once per idle poll, one query for recipients whose local morning has come and who have no job for today, enqueued through a unique index; (b) an external cron (Railway's cron service, a GitHub Actions schedule) hitting one endpoint or running one command at 07:00; (c) an in-process sleeper task computing each recipient's next 07:00 | **(a), the worker's tick.** It is the rule in `plan.md:87`: the `jobs` table is the queue and the worker owns it, no broker. The cost is one cheap query every two seconds when the queue is idle, and the unique index makes the tick idempotent whether it runs once or from two instances. (b) needs a way in: there is no API secret by decision (`CLAUDE.md`, M7), so an endpoint would reintroduce one, and a cron *command* is a second process against the same database with its own deploy and its own cold start at 03:00 UTC; it also fires whether or not the API is up, which is backwards. (c) is a scheduler subsystem with restart semantics for a job the queue already knows how to hold until `run_after` (`db.py:3589`). The one thing (a) cannot do is fire while the API is down, and C15.5's catch-up inside the morning window covers a deploy |
 | P2 | **The recipient model.** No table holds an owner's phone (§2). Options: (a) a `brief_recipients` table (§3.1) - tenant, phone, timezone, send time, pause - with the pilot's rows written by the founder's paste file together with their audit row, and the door and screen deferred; (b) two columns on `tenants` (`brief_phone_e164`, `brief_timezone`), no new table; (c) an environment variable listing phones, no schema | **(a), the table, the pilot's row by paste.** The founder's answer names the first recipient - the demo phone - and a chain with two partners is the ordinary case, which (b) cannot hold. Opt-in is a fact Meta's policy and PRD §26's audit model both want recorded, with a time, a way and the evidence, which is the `brief_recipient.added` audit row's job (C8; the review's finding 9 took the duplicate consent columns off the table), and pausing must not be nulling the phone. (c) makes a second tenant a deploy and puts a customer's phone in Railway's variables. The migration is one table and one index; the paste is the branch-phone precedent (`demo_seed.sql:562-570`), and it writes the `brief_recipient.added` audit row the future door will write. A settings screen for one phone field, for one tenant, is the vertical slice rule's letter and not its point; the trigger for the door is in §9 |
-| P3 | **Sentence slots or number slots.** The checklist says "fixed sentence shapes, number slots". Options: (a) one template whose five variables are labelled sentence-slots, each value composed in Python from the read (§3.1); (b) number-only slots inside fixed sentences ("net sales were AED {{1}}"), which needs one template per shape - a normal day, a stale day, a withheld ratio, no move, no signal - each reviewed separately, and no way to send a null | **(a), one template, five labelled slots.** It is what P8 was pinned for: "C13.5 puts every sentence on the wire so the slots are free" (`plan.md:1248`). The fixed labels are the template's honesty to Meta's reviewer (a variable after "Purchases ÷ net sales (cash basis):" cannot be used for anything else), and the values are the product's honesty to the owner - the stale morning and the withheld ratio are the same template saying a different true thing. (b) multiplies templates by variants, each an approval and a rejection risk, and still cannot say "no ratio" in a number slot. The sentence shapes themselves are fixed and tested (WP-100), so the checklist's "no generation" holds either way |
+| P3 | **Sentence slots or number slots.** *(The content this row weighed - the four checklist slots - is superseded by the founder's direction of 2026-09-08, §1; the mechanism it recommends stands for the seven lines.)* The checklist says "fixed sentence shapes, number slots". Options: (a) one template whose five variables are labelled sentence-slots, each value composed in Python from the read (§3.1); (b) number-only slots inside fixed sentences ("net sales were AED {{1}}"), which needs one template per shape - a normal day, a stale day, a withheld ratio, no move, no signal - each reviewed separately, and no way to send a null | **(a), one template, five labelled slots.** It is what P8 was pinned for: "C13.5 puts every sentence on the wire so the slots are free" (`plan.md:1248`). The fixed labels are the template's honesty to Meta's reviewer (a variable after "Purchases ÷ net sales (cash basis):" cannot be used for anything else), and the values are the product's honesty to the owner - the stale morning and the withheld ratio are the same template saying a different true thing. (b) multiplies templates by variants, each an approval and a rejection risk, and still cannot say "no ratio" in a number slot. The sentence shapes themselves are fixed and tested (WP-100), so the checklist's "no generation" holds either way |
 | P4 | **The quiet day.** What is sent when there is nothing new. Options: (a) silence only when nothing was ever loaded; otherwise a brief every morning, the day named and aged in the header, the stale clause after a week; (b) a brief only on a morning when the newest loaded day moved since the last brief; (c) a brief every morning with a separate "nothing new" template | **(a).** A till that exports weekly gives seven mornings of the same sales figures, and the product's answer to that is not silence but the header saying "12 days ago" - the only reminder to upload that exists anywhere. The price moves and the signals still change as papers land. (b) turns the brief into a notification of the upload, which the owner did not do and cannot act on, and breaks the done-when's "each morning"; the first morning it does not arrive is the morning the habit ends. (c) is a second template for a sentence the first already carries. A tenant with nothing loaded ever has nothing to say and a template costs money; that is the one silence |
 | P5 | **The tap-through.** Options: (a) a static button to `/dashboard` behind the login gate - one password entry on the phone, then the session cookie (`proxy.ts:14-19`); (b) a signed-in magic link per brief, minted through Supabase's admin link and carried in the button's dynamic suffix | **(a).** A magic link is a session in a chat log: anyone holding the phone, or anyone the message is forwarded to, opens the books, and the link either expires before the owner taps it or lives long enough to be the credential the product refused to hold anywhere (`auth.py:16-20`). The login gate already lands a tap on `/dashboard` (`gate.ts:57-62`) and the dashboard is built for 390 px. If the pilot owner says the password stops them, (b) is one `generate_link` call and a dynamic URL button, and §9 carries it with that trigger. A static URL also means a template that never needs a parameter for its button, one fewer thing to mismatch |
 | P6 | **Per-branch briefs for managers.** PRD §27.4's "optionally each branch manager". Options: (a) defer on WP-78's trigger, a pilot chain asking for a branch manager on the screen (`TODOS.md:200-221`); (b) build the row now with a nullable `branch_id` and the read under `branch_id` | **(a), defer.** There is no branch user, no branch phone that is a person, and no one who has asked; a manager's brief without a manager's role sends a branch's money to a phone whose relationship to the branch is a row nobody vouched for. When WP-78 lands it is one nullable column, `?branch=<id>` in the button (a template edit, reviewed again) and the read's existing filter (`dashboard.py:473-476`) |
 | P7 | **Language.** Answered at the start of the session: **English only for the pilot**, the demo-scope decision extended (`plan.md:93`, `:1343`). The alternative is one template per language, and every sentence the brief carries is composed in English in five Python modules, so a second language is a second composer for each - the trigger in §9 is a pilot owner who does not read English | **Confirm English only** |
 | P8 | **The rehearsal on the test number, and what the done-when means before the production chain.** Answered at the start: only the test number is live, and the first recipient is the founder's demo phone. Options: (a) submit the template under the test account now, rehearse to the founder's phone at 07:00, and call that the done-when's proof, the pilot owner's phone following the production chain; (b) wait for the production chain and send nothing before it | **(a).** The test number sends templates to its registered recipients, a template created under the test account goes through the same review, and the demo phone is registered (`Docs/DEMO_RUNBOOK.md:35`; `README.md:167`). The rehearsal proves everything this repository can prove - the read, the words, the tick, the record, the button - on a real phone at 07:00, weeks before verification clears. What it cannot prove is the production number's category rate and quality rating, which is §8's last step. (b) makes the milestone wait on the one clock nobody here controls |
-| P9 | **Which field is the biggest price move.** P8 named `signals[0..1]`; WP-99 then added `price_moves` (2026-09-07). Options: (a) `price_moves.moves[0]` - each material's latest move inside the window, both directions, ranked by the dirhams moved, with the money at stake or saved; the issue slot `signals[0]`, or `signals[1]` when the top signal is the spike for the same material; (b) the price spike among the signals, rises only, and nothing on a morning when the biggest move is a fall | **(a).** A fall is a fact an owner acts on too (the panel's own reason, `dashboard.py:355-357`), and the block's sentence is the one the dashboard and the Menu card print, so the phone and the screen quote one move in one set of words. The four slots stay four; the P8 row gains the field name. The money clause is the brief's own ("AED 109 at stake on sales since."), pinned by a test to `money_at_stake` so the amount can never differ from the panel's |
+| P9 | **Which field is the biggest price move.** *(Superseded 2026-09-08: the brief carries the three biggest rises from the `price_moves` block and reads no signal; kept for the record of why the block and not the signals.)* P8 named `signals[0..1]`; WP-99 then added `price_moves` (2026-09-07). Options: (a) `price_moves.moves[0]` - each material's latest move inside the window, both directions, ranked by the dirhams moved, with the money at stake or saved; the issue slot `signals[0]`, or `signals[1]` when the top signal is the spike for the same material; (b) the price spike among the signals, rises only, and nothing on a morning when the biggest move is a fall | **(a).** A fall is a fact an owner acts on too (the panel's own reason, `dashboard.py:355-357`), and the block's sentence is the one the dashboard and the Menu card print, so the phone and the screen quote one move in one set of words. The four slots stay four; the P8 row gains the field name. The money clause is the brief's own ("AED 109 at stake on sales since."), pinned by a test to `money_at_stake` so the amount can never differ from the panel's |
 | P10 | **The owner replies to the brief.** Today a phone no branch is registered to gets "This number isn't set up yet, so I can't read invoices from it. Ask the owner to add this number" (`replies.py:53-56`) - to the owner. Options: (a) a recipient that is not a branch phone is stamped and gets one fixed reply a day saying what the number does ("This number receives the morning brief. To forward invoices, use a branch's phone."), the unknown-sender pattern with different words; (b) silence: stamped, no reply; (c) leave it | **(a).** "Thanks" to a brief deserves an answer, and the answer should not tell the owner to ask the owner. It is one lookup after the branch lookup in the one resolver (C2 amended, C15.10), one reply constant, and the existing once-a-day silence. (b) is a phone that talks every morning and never listens. A phone that is both a branch and a recipient - the founder's - stays a branch, so the rehearsal changes nothing about the demo |
 | P11 | **The morning window.** The tick catches up after a deploy or an outage. Options: (a) send when due, up to a noon cutoff in the recipient's timezone, then skip the day with a log line; (b) send whenever the tick returns, however late | **(a).** A "morning brief" at ten at night is noise, and by then tomorrow's is nine hours away; five hours of grace covers any deploy and most outages. The cutoff is one constant with its reason beside it and one clause in the due query |
 | P12 | **The stranded job** (the review's finding 4). `claim_job` takes `queued` rows only and nothing reclaims a row left `running` by a process that died mid-job (`db.py:3583-3605`); a graceful stop finishes the job first (`main.py:64-67`), a hard kill does not. Every job kind has lived with this; the brief is the first whose stranding shows nowhere (a stranded extract job is a document stuck in `processing` on the invoice list). Options: (a) fold a reclaim into WP-103: `claim_job` also takes a `running` row untouched for `STALE_RUNNING_MINUTES` (10), attempts counted, for every kind; (b) accept it for the pilot, name it in the failure table, defer the reclaim with the trigger "a job found `running` for over an hour" | **(a), the reclaim, in WP-103.** It is one clause and one constant, every handler is already idempotent under retries by C2's rule (`CLAUDE.md`), attempts stay capped at three, and a brief interrupted at 07:00 is sent within the morning instead of never. The cost is that a legitimately slow job over ten minutes runs twice; the extraction target is twenty seconds and the worst observed was 155 s, so the constant has fifty times the headroom. (b) leaves the one morning message the product makes on a queue that can lose it silently |
 | P13 | **If Meta approves the template as marketing** (the review's finding 12). `plan.md` §3 fixes a utility template (`plan.md:83`) and PRD §11's cost model assumes it (`Docs/PRD.md:251`). Options: (a) the rehearsal on the free test number proceeds in either category; the production cutover to the pilot owner waits for a utility approval - the wording edited to the rejection reason, or the category appealed; (b) accept marketing for the pilot's one message a day, at the marketing rate and under per-user marketing limits (131049) | **(a).** The brief is an account update the owner asked for, which is what Meta's utility category describes, and the body is labelled facts with nothing offered; if a reviewer still reads it as marketing the honest move is to change the words until it reads as what it is, not to pay the marketing rate for a utility message. The test number costs nothing, so the rehearsal and the done-when on the founder's phone do not wait. The row in §7 says the same |
 | P14 | **What authorises the pilot owner's row** (the review's finding 13). The founder can authorise the founder's own phone; nobody here can manufacture the pilot owner's consent to a daily message about their money. Options: (a) the row is pasted only with the owner's own request in hand - a WhatsApp text from the owner's phone to the number, or a signed line on the onboarding sheet (PRD §28 step 2, where branch phones are registered) - and the `brief_recipient.added` audit row's detail names it (`{"evidence": "wa:<message id>"}` or `{"evidence": "onboarding sheet <date>"}`), the paste refusing a row without one; (b) the founder's word alone, recorded as such | **(a).** Meta's policy requires opt-in before a business-initiated template, PRD §26's audit model records the reason on every decision, and the evidence pointer costs one key in a detail that exists anyway. For the founder's demo phone the evidence is this decision, written into the row's detail the same way |
+| P15 | **How the branch table travels** (the founder's direction, 2026-09-08; the founder asked to weigh all three on rendered samples: https://claude.ai/code/artifact/cd930ad7-445d-494a-a3d8-2a891df7cfdc). A template variable cannot hold a line break, so one row per branch needs a picture or one variable per row. Options: (a) a picture card as the template's image header - the four figures, the branch table, the item lists and the spikes drawn by the API from the same `Brief`, 1080 by 1350, the four figures repeated in the text (5 variables, one template for every chain, WP-106: a renderer with a bundled font, a media upload to Meta, the picture stored for the record; about two more days); (b) text, one variable per branch row, one template per chain size that exists (`faida_daily_brief_3` for the pilot, up to six rows, the six largest and a count beyond that; nothing new to build); (c) text, every branch on one line separated by bars, one template, readable to about eight branches | **(a), the picture card.** It is the table the founder described, at any chain size, and the target chains are multi-branch; one template submitted once; the card is a record and forwardable; the four figures stay in plain text for the preview and a screen reader. The cost is real and bounded: a deterministic renderer, an upload before each send, two more ways a morning can fail, and a font that must carry a second language later. (b) is the honest quick path if the pilot must have the brief before the renderer exists - one three-row template today - with the ceiling of a template per chain size. (c) is the simplest and the least like what was asked |
+| P16 | **Which cost the two cost figures mean.** "Sales with the latest prices of materials" and "the cost percentage of the input cost of my total sales": (a) the recipe cost of what was sold at the latest purchase prices and its share of the sales it covers - the dashboard's contribution figures, C12; (b) purchases ÷ net sales (cash basis), the `/sales` ratio; (c) both | **Decided by the founder 2026-09-08: (a), the recipe cost at the latest prices.** The materials share is of costed sales and says the covered share beside it (C12.7, never grossed up), labelled "materials share of costed sales" and never food cost %; purchases ÷ net sales (cash basis) stays on the dashboard as the cash view of the same question. Two additive wire fields carry the cost and the costed sales (row 101) |
+| P17 | **How "profitable" ranks the top three and the worst three.** (a) By money kept in AED over the month to date, the dashboard's own item order (`contribution.py:600-616`); (b) by the kept share in percent | **Decided by the founder 2026-09-08: (a), by money kept.** `items.top[:3]` and `items.bottom[-3:]` are slices of the one ordered list the dashboard shows, so the phone and the screen name the same items in the same order; a big seller with a thin margin can rank high, which is the point of ranking by money |
 
 ## 6. Delegation waves and parallel lanes
 
@@ -473,21 +490,24 @@ P12, P13 and P14 were added by the outside voice's review (findings 4, 12 and 13
 | WP-101 the read and the dry run | `apps/api/src/faida_api/dashboard.py` (the extraction, additive), `apps/api/src/faida_api/brief.py` (`__main__`), `apps/api/tests/test_dashboard.py` (one test) | 100 |
 | WP-102 the send and the record | `apps/api/src/faida_api/{wa,webhook,db}.py` (`send_template`; `statuses`; two message functions), `apps/api/tests/{conftest,test_webhook_pure,test_flow}.py` | - |
 | WP-103 the recipient, the morning, the job | `supabase/migrations/0022_brief_recipients.sql` (new), `Docs/apply_m10_migration.sql` (new), `apps/api/src/faida_api/{contracts,worker,replies,config,db,brief}.py`, `apps/api/tests/{test_brief_job,test_tenancy,test_contracts}.py` | 100, 101, 102 |
+| WP-106 the picture card (P15 (a)) | `apps/api/src/faida_api/{brief_card,wa,storage}.py` (`upload_media`, one call), `apps/api/fonts/` (two OFL files), `apps/api/tests/{test_brief_card,conftest}.py` | 100, 102 |
 | WP-104 the template | WhatsApp Manager (the founder); this file's §8 for the record | - |
 | WP-105 live | `plan.md`, `TODOS.md`, `README.md`, `CLAUDE.md`, `AGENTS.md`, `Docs/DEMO_RUNBOOK.md`, `Docs/PRD.md` §27.4 | all |
 
 - **Wave 0 (manager, no code):** C15 and the C2 amendment pinned in `plan.md` §7.2 as decided; the rows in §7.3; one Decision Log row per §5 decision; the `TODOS.md` entries from §9.
 - **Wave 1, two lanes.** Lane A = WP-100 then WP-101 (one lane: `brief.py` and the extraction in `dashboard.py`, whose output is the filler's input). Lane F = WP-104, the founder, from the first day, because Meta's clock is the long one and the text is ready. No file overlap.
 - **Wave 2, one lane.** Lane B = WP-102 (`wa.py`, `webhook.py`, two functions in `db.py`'s messages section, the fake and its tests). It could run beside Lane A - the files are disjoint - and does so if a second lane is available; it is listed second only because Lane A is the vertical slice.
-- **Wave 3, one lane.** Lane C = WP-103, the only lane that touches `worker.py`, `contracts.py`, `config.py`, the migration and `db.py`'s jobs section, after A and B have merged. Sequenced, not parallel, because it edits the resolver every inbound message runs through (C2) and the `db.py` sections both earlier lanes touched.
+- **Wave 2, a second lane under P15 (a).** Lane D = WP-106, `brief_card.py` and the fonts, `upload_media` in `wa.py` beside Lane B's `send_template` (sequenced after B, or the two `wa.py` additions merged by the manager), no other shared file.
+- **Wave 3, one lane.** Lane C = WP-103, the only lane that touches `worker.py`, `contracts.py`, `config.py`, the migration and `db.py`'s jobs section, after A, B and D have merged. Sequenced, not parallel, because it edits the resolver every inbound message runs through (C2) and the `db.py` sections both earlier lanes touched.
 - **Wave 4: WP-105**, one sitting with the founder, on the morning after the recipient row lands.
 
 The migration is `0022_brief_recipients.sql` whether or not M12's `0021_usable_share.sql` has landed first (C15.12): the two touch different tables, the directory applies in sorted order, and a number claimed now cannot be claimed twice.
 
 ## 7. The tests that gate it
 
-- `tests/test_brief.py` (WP-100): every C15 sentence shape as a pure case with no database - the five committed fixtures at chain scope and the hand-built cases named in row 100; every number in a line equal to the payload field it came from, read back by the test from the same dict; the stale fixture rendering without the word "yesterday" and the fresh one with it; the empty fixture producing `quiet`; the forbidden phrases absent from every rendering by calling the module (never by grepping code); each parameter free of newlines, tabs and four consecutive spaces and at or under 160 characters; the twelve-branch rendering under 1,024; exactly five parameters, asserted; the fall, the basis change, the duplicate spike and the withheld ratio each one line; a chain of one branch dropping the chain clauses; the money clause equal to `money_at_stake` rounded half up.
-- `tests/test_dashboard.py` (WP-101): green unchanged, the enumerated `READS` list unchanged (`test_dashboard.py:53-75`), and one new case: the route's JSON equal to `read_dashboard`'s for the same tenant, period and `today`.
+- `tests/test_brief.py` (WP-100): every C15 line, row and list as a pure case with no database - the five committed fixtures at chain scope and the hand-built cases named in row 100; every number equal to the payload field it came from, read back by the test from the same dict, the month-to-date figures from the month-to-date payload and the spikes from the 28-day one; the materials share equal to 100 minus the kept share and the covered share beside it; the stale fixture rendering without the word "yesterday" and the fresh one with it; the empty fixture producing `quiet`; the forbidden phrases ("food cost", "net profit", "verified") absent from every rendering by calling the module (never by grepping code); each parameter free of newlines, tabs and four consecutive spaces and at or under 160 characters; the rendering of a twelve-branch chain under 1,024 under each shape; the parameter count asserted per shape; the loss printed with its sign; fewer than three rises or items saying so; a branch with no sales on the latest day carrying `-`.
+- `tests/test_dashboard.py` (WP-101): green with the two new fields asserted, the enumerated `READS` list unchanged (`test_dashboard.py:53-75`), the route's JSON equal to `read_dashboard`'s for the same tenant, period and `today`, and a month-to-date period's `total.net_sales` equal to the sum of the league rows' clipped windows.
+- `tests/test_brief_card.py` (WP-106, under P15 (a)): the layout's lines equal to the brief's, every box inside the canvas, the PNG's size, identical bytes for the same `Brief`, the upload-then-send order, an upload refused failing before any send.
 - `tests/test_webhook_pure.py` and the flow suite (WP-102): the template request's exact JSON on the fake transport; a 500 raising; `statuses` stamping `delivered`, `read` and `failed` with the error on an outbound row, a stamp never moving backwards, a status before the record inserting the stub the record then upserts into, inbound `messages` payloads unchanged.
 - `tests/test_brief_job.py` (WP-103), against Postgres: the tick's idempotence (one job per due recipient, a second tick none), the tick firing while the queue holds extract jobs, the timezone boundary (03:00 UTC due, 02:59 not), a timezone name that does not resolve skipped with the next recipient enqueued, the noon cutoff, the paused row, the send with the exact JSON and the row written, the three retries then `failed` on a 500, a 132001 and a 132000, the handler run twice sending once, the record write raising after the send and the retry sending a second copy (the named limit), a `running` row reclaimed once after `STALE_RUNNING_MINUTES` (P12), two tenants' briefs carrying their own figures, the empty tenant sending nothing, the recipient reply and its stamp, the branch-and-recipient phone treated as a branch.
 - `tests/test_tenancy.py`: `brief_recipients` in `TENANT_TABLES`; no new route, so the matrix is unchanged and the route-coverage test proves it.
@@ -514,8 +534,10 @@ The migration is `0022_brief_recipients.sql` whether or not M12's `0021_usable_s
 | the recipient | the owner replies "thanks" | stamped `ignored_brief_recipient`, one fixed reply a day, nothing created (C15.10); today it would be told to ask the owner | `wa_messages.status` |
 | the recipient | the phone is also a branch phone (the founder's) | a branch: C5 applies, the brief is unaffected | - |
 | the read | the read raises (the database is down) | the job fails and retries; nothing is sent partially, because the message is composed before the send and sent once | `jobs` |
-| the filler | a chain with many branches, or a long supplier name | the four-branch rule and the 160-character cap keep the body under 1,024; a slot over the cap is a filler bug the test catches, never a truncated message | `test_brief.py` |
-| the filler | the chain ratio or `league[0]`'s ratio is withheld | the line says so with the read's own note; never 0% (C11.6) | `test_brief.py` |
+| the filler | a chain with many branches, or a long item name | under (b) the six-largest rule, under (c) the eight-branch ceiling and under every shape the 160-character cap keep the body under 1,024; a slot over the cap is a filler bug the test catches, never a truncated message | `test_brief.py` |
+| the card (P15 (a)) | the renderer faults, or Meta refuses the upload | the job fails before any send, retries, then `failed` with the error; no half-message | `jobs.last_error`; `test_brief_card.py` |
+| the card (P15 (a)) | the card renders but a figure sits outside the canvas | the layout test pins every box inside the canvas for the twelve-branch case; the row count that fits is a constant with the overflow sentence "and N more on the dashboard" | `test_brief_card.py` |
+| the filler | no item is costed, so the materials cost and share are withheld | the lines say so with the read's own note; never 0% and never a grossed-up share (C12.7) | `test_brief.py` |
 | the template | Meta rejects the submission | nothing to code: the founder edits the wording to the rejection reason and resubmits; the tick must not be enabled before approval (§8) | WhatsApp Manager |
 | the template | Meta approves it as marketing rather than utility | the rehearsal on the free test number proceeds either way; the production cutover waits for a utility approval unless the founder decides otherwise (P13); marketing costs more and carries per-user limits (131049) | WhatsApp Manager; the rate card; P13 |
 | the template | the web host changes (a custom domain) | the button's URL is fixed text: a template edit and a review | §9's entry |
@@ -529,7 +551,7 @@ Two chains, one of code and one of Meta's, that meet at the first 07:00.
 
 **Meta's chain (the founder; external, serial, the long clock):**
 
-1. Now, under the test account: create `faida_daily_brief` in WhatsApp Manager from §3.1 (name, Utility, English, body, the five samples, the button); submit; note the date.
+1. Once P15 is decided, under the test account: create `faida_daily_brief` (or `faida_daily_brief_3`) in WhatsApp Manager from §3.1 (name, Utility, English, the body of the chosen shape, its samples, the button, and under (a) the sample picture the dry run writes); submit; note the date.
    Review is "up to 24 hours".
    Confirm the demo phone is among the test number's registered recipients (`README.md:167`) and the access token's `expires_at` is 0 (`Docs/DEMO_RUNBOOK.md:24-34`).
 2. On approval: the rehearsal send from the CLI (`--send --to`) at any hour, then the 07:00 brief after the recipient row lands (step 6 below).
@@ -575,6 +597,8 @@ The migration is additive (one table, one index) and old code ignores both, so a
   `send_at_local` is a time; a weekday set is a column and a clause.
 - **Meta's template status webhooks** (`message_template_status_update`: paused, disabled, category changed): trigger: a template paused once in production.
   The app subscribes to the `messages` field only (`Docs/DEMO_RUNBOOK.md:16`); the day a template pauses, the send fails synchronously anyway (132015).
+- **The picture card, if P15 takes (b) or (c)**: trigger: the first chain with more branches than a text row per branch can carry (six under (b), about eight under (c)).
+  WP-106 as written, unchanged.
 - **A dynamic URL button**: trigger: the manager's brief, or a custom domain that changes per tenant.
   Meta's URL variable is appended to the end of the URL and percent-encoded, which is why the pilot's button is static.
 - **The fifth slot from M12**: the existing entry at `TODOS.md:826-834` names `usage.answer`, which M12's D9 removed; rewritten to the top material row's own words (`usage.quantity_words` and the direction sentence) with the same trigger: the template is drafted and the founder wants the shelf in it.
@@ -702,3 +726,16 @@ The one thing between here and Wave 1 is the founder's answer to §5, and the on
 - P12 the stranded job: the stale-running reclaim in `claim_job`, every kind, in WP-103 (recommended; added by the review)
 - P13 a marketing classification: the rehearsal proceeds, the production cutover waits for utility (recommended; added by the review)
 - P14 the pilot owner's row only with the owner's own request in hand, named in the audit row (recommended; added by the review)
+
+### The founder's direction - 2026-09-08 morning
+
+The founder read the decomposition's brief and redrew its content: "as an owner, what we want to give him is very basic KPIs" - yesterday's sale, month-to-date sales, sales with the latest prices of materials, the input cost as a share of sales; a branch-wise table with the same three; the top three and worst three profitable items; the biggest three price spikes.
+Three questions were put back and two answered: the cost figures are the recipe cost of what was sold at the latest prices, not the cash-basis ratio (P16, decided); "profitable" ranks by money kept (P17, decided); how the branch table travels inside a WhatsApp template is P15, open, with the three shapes rendered on a phone at https://claude.ai/code/artifact/cd930ad7-445d-494a-a3d8-2a891df7cfdc.
+What changed in this file: §1 carries the direction in the founder's words; §2's slot table maps the seven things to the wire (two additive fields needed, `cost` and `costed_sales`; two reads a morning, month to date and 28 days); C15.1, C15.9, C15.11 and C15.12 follow; §3.1 carries the three template shapes with the same samples; rows 100 and 101 grew and row 106 (the picture card) exists under P15 (a); §4.1 is rewritten around the seven lines; P3 and P9 are marked superseded; §7's tests and failure modes follow.
+Not changed: the scheduler, the recipient, the record, the morning window, the resolver amendment, the migration, the Meta chain and the review's thirteen folded findings, none of which depend on what the message says.
+The Codex review above read the four-slot draft; whether a second pass runs on the redrawn content, after P15, is the manager's call, as M9's second voice was.
+
+**UNRESOLVED DECISIONS, added 2026-09-08:**
+- P15 how the branch table travels: the picture card (recommended), a row per branch with a template per chain size, or one line
+- P16 decided by the founder: the recipe cost at the latest prices and its share of costed sales
+- P17 decided by the founder: the top and worst three by money kept
