@@ -111,9 +111,13 @@ def _menu_items(
     """The menu as `contribution` reads it: each item's as-of plate, its
     current recipe version, and every component with the invoice line behind
     the price that costed it (C12.4a). The batch cost is the same
-    multiplication `plates.cost_component` makes - the quantity in base units
+    multiplication `plates.cost_component` makes - the quantity in base units,
+    divided by the conversion yield when the line has one (M12 WP-119, D13),
     times the price per base unit - and None when there is no price or the
-    unit does not convert, so a hole is a hole here too."""
+    unit does not convert, so a hole is a hole here too.
+
+    The share rides along on the component too, so the dish's contribution and
+    M12's usage figure divide by the same number this cost did."""
     menu: dict[str, contribution.MenuItem] = {}
     for row in rows:
         components: list[contribution.RecipeComponent] = []
@@ -123,7 +127,8 @@ def _menu_items(
             if price is not None:
                 converted = plates.to_base_qty(component["qty"], component["unit"])
                 if converted is not None and converted[1] == price["cost_base_unit"]:
-                    batch_cost = converted[0] * price["cost_per_base_unit"]
+                    bought = plates.bought_base_qty(converted[0], component["usable_share"])
+                    batch_cost = bought * price["cost_per_base_unit"]
                 invoice_id = price["invoice_id"]
                 position = price["position"]
                 purchased_on = price["purchased_on"]
@@ -137,6 +142,7 @@ def _menu_items(
                     invoice_id=invoice_id,
                     line_position=position,
                     purchased_on=purchased_on,
+                    usable_share=component["usable_share"],
                 )
             )
         archived_at = row["archived_at"]

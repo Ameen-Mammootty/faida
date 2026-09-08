@@ -315,6 +315,70 @@ async def test_a_second_draw_of_the_same_material_is_not_collapsed(api, db):
 
 
 @requires_db
+async def test_the_usable_share_column_is_optional_and_absent_means_as_purchased(api, db):
+    """M12 WP-119: the spreadsheets already in consultants' hands have no such
+    column, and a file without it must load exactly as it always did - null on
+    the row, and the same words on the card."""
+    tea = await _material(api, "CTC black tea")
+    response = await _load(api, _row(components=[_component(tea)]))
+    assert response.json()["outcome"] == "created"
+    recipe_id = response.json()["menu_item"]["recipe"]["id"]
+    assert (
+        await db.pool.fetchval(
+            "select usable_share from recipe_components where recipe_id = $1", recipe_id
+        )
+    ) is None
+    component = response.json()["menu_item"]["recipe"]["components"][0]
+    assert component["usable_share"] is None
+    assert component["usable_words"] is None
+
+
+@requires_db
+async def test_a_loaded_share_reaches_the_card_in_words(api, db):
+    """The consultant types 85% in a cell; the card says what it means, and
+    what it means is what the plate costed. 27.5 g in the pot at 85% usable
+    is 32.4 g off the shelf, to the typed quantity's own precision."""
+    tea = await _material(api, "CTC black tea")
+    response = await _load(api, _row(components=[_component(tea, usable_share="0.85")]))
+    component = response.json()["menu_item"]["recipe"]["components"][0]
+    assert component["usable_share"] == "0.8500"
+    assert component["usable_words"] == "27.5 g at 85% usable, 32.4 g bought"
+
+
+@requires_db
+async def test_a_changed_share_is_a_new_recipe_and_the_same_one_is_unchanged(api, db):
+    """D8 extended by D13: the share decides what the line costs and what M12
+    says the dish drew from the storeroom, so moving it is editing the recipe -
+    and re-uploading the same file after that must still write nothing, or the
+    45-row loop stops being a loop."""
+    tea = await _material(api, "CTC black tea")
+    first = await _load(api, _row(components=[_component(tea, usable_share="0.85")]))
+    item_id = first.json()["menu_item"]["id"]
+    assert first.json()["version"] == 1
+
+    # 0.8500 read back from the column is 0.85 typed in the sheet.
+    again = await _load(api, _row(components=[_component(tea, usable_share="0.85")]))
+    assert again.json()["outcome"] == "unchanged"
+    assert len(await _versions(db, item_id)) == 1
+
+    moved = await _load(api, _row(components=[_component(tea, usable_share="0.80")]))
+    assert moved.json()["outcome"] == "version_added"
+    assert moved.json()["version"] == 2
+
+
+@requires_db
+async def test_taking_the_share_off_a_line_is_a_new_recipe_too(api, db):
+    """No share and a share of 1 cost the same and are not the same line: the
+    card's words are the only audit a typed quantity has, and "500 g" and
+    "500 g at 100% usable" say different things about a kitchen."""
+    tea = await _material(api, "CTC black tea")
+    await _load(api, _row(components=[_component(tea, usable_share="1")]))
+    response = await _load(api, _row(components=[_component(tea)]))
+    assert response.json()["outcome"] == "version_added"
+    assert response.json()["version"] == 2
+
+
+@requires_db
 async def test_a_changed_yield_is_a_new_recipe(api):
     tea = await _material(api, "CTC black tea")
     await _load(api, _row(yield_portions="40", components=[_component(tea, qty="220")]))
@@ -428,6 +492,18 @@ async def test_the_loader_refuses_what_the_by_hand_door_refuses(api):
             "nothing and read as pure margin",
         ),
         (_row(name="   ", components=[_component(tea)]), 422, "a menu item needs a name"),
+        (
+            _row(components=[_component(tea, usable_share="85")]),
+            422,
+            "'85' is not a usable share for CTC black tea: send the share of what is "
+            'bought that reaches the pot, above 0 and at most 1, like "0.85" for 85%',
+        ),
+        (
+            _row(components=[_component(tea, usable_share="0")]),
+            422,
+            "'0' is not a usable share for CTC black tea: send the share of what is "
+            'bought that reaches the pot, above 0 and at most 1, like "0.85" for 85%',
+        ),
     ]
     for body, status, sentence in cases:
         response = await _load(api, body)
