@@ -26,6 +26,21 @@ A fixed number of queries whatever the menu's length or the branch count
 from the list. The menu is costed twice - at the prices in force on the
 period's last day, and today's - from one set of recipe and item rows, so a
 row can carry today's cost beside its own when they differ (C12.4a, D20).
+
+The read itself is `read_dashboard`, and the route a thin wrapper that reads
+today's date and turns two exceptions into their status codes (M10 WP-101,
+Docs/M10_DECOMPOSITION.md §2 and C15.1). The daily brief is composed by a
+worker job, which cannot present a token and must not - a job's tenant comes
+from its payload (C2 as amended) - so the read has to be callable without a
+request, the way `ratio.resolve_period` was lifted out of `sales.py` one
+milestone earlier. The route's JSON is the function's, field for field.
+
+`total` and every league row carry `cost` and `costed_sales` beside the
+contribution figures (**C6 extended by two fields**, M10 2026-09-08): the
+brief's materials line is the raw-material cost of what was sold at the
+latest prices and its share of the sales it covers, and both numbers are
+already inside the `Contribution` this read holds - serialising them costs
+no query and no arithmetic. The screen ignores them.
 """
 
 import datetime
@@ -49,6 +64,13 @@ from .signals import _short_branch
 # exist without the token check, and per handler, to receive the tenant.
 router = APIRouter(prefix="/api", dependencies=[Depends(require_context)])
 Context = Annotated[AuthContext, Depends(require_context)]
+
+
+class BranchNotFound(LookupError):
+    """A `branch_id` the tenant does not own. The route answers 404 - a row
+    outside the tenant is absent, never forbidden - and a caller with no
+    request, such as the brief job, catches it instead."""
+
 
 #: Past this many days since the newest loaded day the freshness line carries
 #: the word *estimated* beside the sentence (P6): a chain that stops uploading
@@ -292,6 +314,11 @@ def _league_row_json(row: ratio.BranchRow, figure: contribution.Contribution) ->
         "contribution": _dec(figure.contribution),
         "contribution_pct": _dec(figure.contribution_pct),
         "costed_share_pct": _dec(figure.costed_share_pct),
+        # C6 extended by two fields (M10): what the plates cost, and the sales
+        # those plates were sold for - the denominator of the kept percentage
+        # and never the branch's whole net sales (C12.7).
+        "cost": _dec(figure.cost),
+        "costed_sales": _dec(figure.net_item_sales),
         "ratio_quality": row.quality.value,
         "ratio_notes": list(row.notes),
         "contribution_quality": figure.quality.value,
@@ -341,10 +368,17 @@ def price_moves_block(
     period: ratio.Period,
     scope: signals.Scope,
     currency: str,
+    limit: int = PRICE_MOVES_LISTED,
 ) -> dict:
     """Supplier price moves as a block of their own (WP-99, §4.3), from the
     moves the read already has in hand - no second query, which is why the
     enumerated query list does not move.
+
+    `limit` is how many of the ranked moves are listed; `count` is always the
+    whole number of them. The panel takes the five that fit beside "what to
+    look at" and the daily brief takes three rises past that (M10 WP-101),
+    out of one ranking in one set of words, so a move can never be quoted in
+    two ways for two amounts.
 
     **Each material's latest move, inside this window**, and the caption says
     so. `menu.price_moves` returns at most one move per material, the newest
@@ -412,7 +446,7 @@ def price_moves_block(
                 "plates": row.words.plates,
                 "evidence": row.words.evidence,
             }
-            for row in listed[:PRICE_MOVES_LISTED]
+            for row in listed[:limit]
         ],
     }
 
@@ -437,42 +471,57 @@ def _group_pairs(lines: Iterable[asyncpg.Record]) -> dict[str, list[asyncpg.Reco
     return pairs
 
 
-# --- the route ------------------------------------------------------------------
+# --- the read -------------------------------------------------------------------
 
 
-@router.get("/dashboard")
-async def dashboard(
-    request: Request,
-    ctx: Context,
-    date_from: Annotated[datetime.date | None, Query(alias="from")] = None,
-    date_to: Annotated[datetime.date | None, Query(alias="to")] = None,
+async def read_dashboard(
+    db: Database,
+    tenant_id: str,
+    *,
+    today: datetime.date,
+    date_from: datetime.date | None = None,
+    date_to: datetime.date | None = None,
     branch_id: str | None = None,
+    price_moves_limit: int = PRICE_MOVES_LISTED,
 ) -> dict:
-    """The whole owner screen in one read (§3.1). `branch_id` filters the
-    league, the item rows and the signals to that branch - the signals then
-    about the branch against the chain's benchmark (C13.6), the papers
-    narrowed to it - and `total` always stays the chain, so a branch is
-    compared to the chain and never to itself. A branch outside the tenant
-    is absent, not forbidden: 404."""
-    db: Database = request.app.state.db
-    tenant_id = ctx.tenant_id
-    today = datetime.datetime.now(datetime.UTC).date()
+    """The whole owner screen in one read (§3.1), as a function so that a
+    caller without an HTTP request can make it (M10 WP-101).
 
+    `branch_id` filters the league, the item rows and the signals to that
+    branch - the signals then about the branch against the chain's benchmark
+    (C13.6), the papers narrowed to it - and `total` always stays the chain,
+    so a branch is compared to the chain and never to itself.
+
+    `today` is the caller's date, not the machine's: the route passes the UTC
+    date it has always passed, and the brief job passes the recipient's local
+    date, so a morning brief ages the day the recipient's way (C15.6).
+
+    Raises `ratio.PeriodError` for a period the rule refuses and
+    `BranchNotFound` for a branch the tenant does not own; the route turns
+    the first into 422 and the second into 404, which is what they were
+    before this function existed.
+
+    The payload's shape is the screen's: `period`, `answer`, `freshness`,
+    `latest_day`, `approvals`, `league`, `unassigned`, `scope`, `total`,
+    `items`, `signals`, `price_moves`, `unmapped`, `menu`. Money is a string
+    and percentages are strings to a tenth (C4, C11); `total` and each league
+    row carry `cost` (what the plates cost) and `costed_sales` (the sales
+    those plates were sold for, the kept percentage's own denominator)
+    beside the contribution figures, C6 extended by two fields for the daily
+    brief's materials line.
+    """
     # The reads, in the enumerated order `test_dashboard.py` counts.
     newest_by_branch = await db.newest_sales_dates(tenant_id=tenant_id)
     newest = max(newest_by_branch.values()) if newest_by_branch else None
     months = await db.sales_months(tenant_id=tenant_id)
-    try:
-        period, default = ratio.resolve_period(newest, date_from, date_to, today=today)
-    except ratio.PeriodError as error:
-        raise HTTPException(status_code=422, detail=str(error)) from error
+    period, default = ratio.resolve_period(newest, date_from, date_to, today=today)
     currency = await db.tenant_currency(tenant_id) or ""
     branches = await db.list_branches(tenant_id=tenant_id)
     names = {branch["id"]: branch["name"] for branch in branches}
     scope = signals.CHAIN
     if branch_id is not None:
         if branch_id not in names:
-            raise HTTPException(status_code=404, detail="branch not found")
+            raise BranchNotFound(branch_id)
         scope = signals.Scope(branch_id, names[branch_id])
 
     days = [
@@ -657,6 +706,10 @@ async def dashboard(
             "contribution": _dec(chain.contribution),
             "contribution_pct": _dec(chain.contribution_pct),
             "costed_share_pct": _dec(chain.costed_share_pct),
+            # C6 extended by two fields (M10): the same two the league rows
+            # carry, for the chain.
+            "cost": _dec(chain.cost),
+            "costed_sales": _dec(chain.net_item_sales),
             "ratio_quality": ratio_total.quality.value,
             "ratio_notes": list(ratio_total.notes),
             "contribution_quality": chain.quality.value,
@@ -672,7 +725,13 @@ async def dashboard(
         },
         "signals": [_signal_json(s) for s in fired],
         "price_moves": price_moves_block(
-            moves, sales, all_rows, period=period, scope=scope, currency=currency
+            moves,
+            sales,
+            all_rows,
+            period=period,
+            scope=scope,
+            currency=currency,
+            limit=price_moves_limit,
         ),
         "unmapped": {"names": unmapped.names, "value": _dec(unmapped.value)},
         "menu": {
@@ -682,3 +741,36 @@ async def dashboard(
             ),
         },
     }
+
+
+# --- the route ------------------------------------------------------------------
+
+
+@router.get("/dashboard")
+async def dashboard(
+    request: Request,
+    ctx: Context,
+    date_from: Annotated[datetime.date | None, Query(alias="from")] = None,
+    date_to: Annotated[datetime.date | None, Query(alias="to")] = None,
+    branch_id: str | None = None,
+) -> dict:
+    """`read_dashboard` over HTTP, and nothing else: the tenant from the
+    verified token (C10), the date from the clock, and the two refusals as
+    the status codes they have always been - 422 with the period rule's own
+    sentence, 404 for a branch outside the tenant. Every figure and every
+    word is the function's; the screen and the daily brief read the same
+    payload (M10 WP-101)."""
+    db: Database = request.app.state.db
+    try:
+        return await read_dashboard(
+            db,
+            ctx.tenant_id,
+            today=datetime.datetime.now(datetime.UTC).date(),
+            date_from=date_from,
+            date_to=date_to,
+            branch_id=branch_id,
+        )
+    except ratio.PeriodError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except BranchNotFound as error:
+        raise HTTPException(status_code=404, detail="branch not found") from error

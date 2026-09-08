@@ -17,7 +17,9 @@ Run from apps/api with its venv (the modules are imported from src):
         ../web/src/lib/mock/dashboard src
 
 The answer and freshness sentences here are copies of dashboard.py's; a
-change there is a change here. The price-moves block is **not** copied: the
+change there is a change here - and so are the two serialisers below, which
+carry `cost` and `costed_sales` on `total` and on every league row from M10
+(C6 extended by two fields, WP-101). The price-moves block is **not** copied: the
 route's own `dashboard.price_moves_block` is imported and called, so the
 panel's gate, ranking and three sentences can never drift from the API's.
 """
@@ -521,7 +523,8 @@ def league_row_json(row: R.BranchRow, c: C.Contribution):
         "window": {"from": iso(row.window.start), "to": iso(row.window.end), "days": row.window.days},
         "net_sales": s(row.net_sales), "takings": s(row.takings), "purchases": s(row.purchases),
         "ratio_pct": s(row.ratio_pct), "contribution": s(c.contribution), "contribution_pct": s(c.contribution_pct),
-        "costed_share_pct": s(c.costed_share_pct), "ratio_quality": row.quality.value, "ratio_notes": list(row.notes),
+        "costed_share_pct": s(c.costed_share_pct), "cost": s(c.cost), "costed_sales": s(c.net_item_sales),
+        "ratio_quality": row.quality.value, "ratio_notes": list(row.notes),
         "contribution_quality": c.quality.value, "contribution_notes": list(c.notes),
         "days_loaded": row.days_loaded, "days_missing": row.days_missing, "deliveries": row.deliveries,
         "sales_through": iso(row.sales_through), "last_purchase_on": iso(row.last_purchase_on),
@@ -628,7 +631,8 @@ def payload(*, menu, sales, invoices, today, approvals, papers, moves, scope_id=
         "scope": {"branch_id": scope_id, "branch_name": NAMES.get(scope_id)},
         "total": {"net_sales": s(ratio_total.net_sales), "purchases": s(ratio_total.purchases), "ratio_pct": s(ratio_total.ratio_pct),
                   "contribution": s(chain.contribution), "contribution_pct": s(chain.contribution_pct),
-                  "costed_share_pct": s(chain.costed_share_pct), "ratio_quality": ratio_total.quality.value,
+                  "costed_share_pct": s(chain.costed_share_pct), "cost": s(chain.cost),
+                  "costed_sales": s(chain.net_item_sales), "ratio_quality": ratio_total.quality.value,
                   "ratio_notes": list(ratio_total.notes), "contribution_quality": chain.quality.value,
                   "contribution_notes": list(chain.notes)},
         "items": {"top": [item_row_json(r) for r in costed[:5]], "bottom": [item_row_json(r) for r in costed[-5:]] if len(costed) > 5 else [],

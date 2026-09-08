@@ -17,6 +17,7 @@ door, papers confirmed through the real path.
 """
 
 import datetime
+import json
 from decimal import Decimal
 
 import httpx
@@ -25,6 +26,7 @@ from fastapi import FastAPI
 
 from faida_api import ratio
 from faida_api.api import router as api_router
+from faida_api.dashboard import PRICE_MOVES_LISTED, BranchNotFound, read_dashboard
 from faida_api.dashboard import router as dashboard_router
 from faida_api.menu import router as menu_router
 from faida_api.sales import router as sales_router
@@ -722,3 +724,141 @@ async def test_the_read_makes_the_enumerated_queries_and_no_more_as_the_menu_gro
     assert len((await api.get("/api/menu-items", headers=AUTH)).json()["menu_items"]) == 45
     large = await _count(api, db)
     assert large == MAX_QUERIES == small
+
+
+# --- the read as a function, and the two fields the brief needs (M10 WP-101) ----
+
+
+async def test_the_route_is_the_function_and_nothing_else(api, db):
+    """The daily brief is composed by a worker job, which cannot present a
+    token and must not - a job's tenant comes from its payload (C2) - so the
+    read is a function and the route a wrapper around it. What the screen
+    gets and what the brief gets are one dict, chain scope and branch scope
+    alike, and the two refusals are the function's own."""
+    await _stage(api, db)
+    today = datetime.datetime.now(datetime.UTC).date()
+    for params in ({}, {"branch_id": BRANCH_2}):
+        route = await _read(api, **params)
+        direct = await read_dashboard(
+            db, TENANT, today=today, date_from=_on(0), date_to=_on(6), **params
+        )
+        assert json.loads(json.dumps(direct)) == route
+
+    with pytest.raises(ratio.PeriodError, match="both 'from' and 'to'"):
+        await read_dashboard(db, TENANT, today=today, date_from=_on(0))
+    for bad in ("b0000000-0000-0000-0000-000000000011", "not-a-branch"):
+        with pytest.raises(BranchNotFound):
+            await read_dashboard(db, TENANT, today=today, branch_id=bad)
+
+
+async def test_the_chain_and_the_league_carry_the_cost_and_the_sales_it_covered(api, db):
+    """C6 extended by two fields: the brief's materials line is the cost of
+    the plates that were sold and its share of the sales those plates made,
+    so both numbers travel beside the contribution. Each is the sum over the
+    rows that produced numbers - never the branch's whole net sales, which
+    would divide by money no plate was costed against (C12.7)."""
+    await _stage(api, db)
+    payload = await _read(api)
+
+    costed = [row for row in payload["items"]["all"] if row["cost"] is not None]
+    assert costed
+    assert Decimal(payload["total"]["cost"]) == sum(Decimal(r["cost"]) for r in costed)
+    assert Decimal(payload["total"]["costed_sales"]) == sum(
+        Decimal(r["net_item_sales"]) for r in costed
+    )
+    # The kept figure is what the two make: the sales those plates made, less
+    # what they cost. A reader can subtract the printed figures and land on it.
+    assert Decimal(payload["total"]["contribution"]) == Decimal(
+        payload["total"]["costed_sales"]
+    ) - Decimal(payload["total"]["cost"])
+    # Never more than the chain took, and on this stage exactly it, because
+    # every till name here is mapped and every plate costed.
+    assert Decimal(payload["total"]["costed_sales"]) <= Decimal(payload["total"]["net_sales"])
+    assert payload["total"]["costed_share_pct"] == "100.0"
+
+    for row in payload["league"]:
+        branch = await _read(api, branch_id=row["branch_id"])
+        rows = [r for r in branch["items"]["all"] if r["cost"] is not None]
+        assert _money(row["cost"]) == sum((Decimal(r["cost"]) for r in rows), Decimal(0))
+        assert Decimal(row["costed_sales"]) == sum(
+            (Decimal(r["net_item_sales"]) for r in rows), Decimal(0)
+        )
+    # The branch with nothing loaded costed nothing and sold nothing.
+    assert payload["league"][-1]["cost"] is None
+    assert payload["league"][-1]["costed_sales"] == "0.00"
+
+
+async def test_the_price_moves_limit_lets_a_caller_look_past_the_panels_five(api, db):
+    """The panel lists five because five fit beside "what to look at"; the
+    brief takes three rises out of the same ranking. The limit is a slice of
+    one ranking in one set of words, never a second weighing, and `count`
+    stays the whole number whatever is listed."""
+    scenario = await _stage(api, db)
+    cup_pack = await db.pool.fetchval(
+        "select id::text from supplier_items where tenant_id = $1 and canonical_name = $2",
+        TENANT,
+        "PAPER CUP 50PCS",
+    )
+    await _again(db, scenario, scenario["tea_pack"], pack_size="5kg", price="102.50", offset=1)
+    await _again(db, scenario, scenario["milk_pack"], pack_size="1l", price="7.00", offset=0)
+    await _again(db, scenario, cup_pack, pack_size="50 pcs", price="12.00", offset=2)
+    spices = [
+        await _spice(db, api, scenario, name, base=base, moved=moved, offset=offset)
+        for name, base, moved, offset in (
+            ("Saffron", "500.00", "560.00", 3),
+            ("Cardamom", "80.00", "96.00", 4),
+            ("Ginger", "20.00", "24.00", 5),
+        )
+    ]
+    dish = await _menu_item(api, "Masala Karak", "14.00")
+    await _recipe(api, dish, [{"ingredient_id": i, "qty": "2", "unit": "g"} for i in spices])
+
+    today = datetime.datetime.now(datetime.UTC).date()
+
+    async def read(**kw) -> dict:
+        return await read_dashboard(db, TENANT, today=today, date_from=_on(0), date_to=_on(6), **kw)
+
+    default = await read()
+    assert default["price_moves"]["count"] == 6
+    assert len(default["price_moves"]["moves"]) == PRICE_MOVES_LISTED
+    assert default["price_moves"] == (await _read(api))["price_moves"]
+
+    wider = await read(price_moves_limit=10)
+    assert wider["price_moves"]["count"] == 6
+    assert len(wider["price_moves"]["moves"]) == 6
+    assert wider["price_moves"]["moves"][:PRICE_MOVES_LISTED] == default["price_moves"]["moves"]
+    assert {k: v for k, v in wider.items() if k != "price_moves"} == {
+        k: v for k, v in default.items() if k != "price_moves"
+    }
+
+    three = await read(price_moves_limit=3)
+    assert three["price_moves"]["count"] == 6
+    assert three["price_moves"]["moves"] == default["price_moves"]["moves"][:3]
+
+
+async def test_a_month_to_date_period_resolves_and_still_names_the_latest_day(api, db):
+    """The brief's first read is the month to date - the first of the newest
+    loaded day's month to that day (C15.1) - so the newest day is inside the
+    period by construction and `latest_day` is there for the brief's second
+    line. The chain's sales are its branches' clipped windows added up."""
+    await _stage(api, db)
+    newest = _on(6)
+    first = newest.replace(day=1)
+    payload = await read_dashboard(
+        db,
+        TENANT,
+        today=datetime.datetime.now(datetime.UTC).date(),
+        date_from=first,
+        date_to=newest,
+    )
+
+    assert payload["period"]["from"] == first.isoformat()
+    assert payload["period"]["to"] == newest.isoformat()
+    assert payload["period"]["default"] is False
+    assert payload["period"]["sales_through"] == newest.isoformat()
+    assert payload["latest_day"]["date"] == newest.isoformat()
+    assert payload["freshness"]["sentence"].startswith("Sales loaded to ")
+    assert Decimal(payload["total"]["net_sales"]) == sum(
+        _money(row["net_sales"]) for row in payload["league"]
+    )
+    assert Decimal(payload["total"]["net_sales"]) > 0
