@@ -1361,6 +1361,17 @@ export interface DashboardSignal {
   ingredient_name: string | null;
   invoice_id: string | null;
   moved_on: string | null;
+  /** The numbers the sentence is written from, as fields, so the screen can
+   * draw them (the tracks, 2026-09-08): a dish's or a branch's kept share
+   * against its benchmark (the menu's, or the chain's over the branch's own
+   * window), or a move's price before and after per display unit with the
+   * change between them. Each is null on the kinds it does not describe. */
+  kept_pct: string | null;
+  benchmark_pct: string | null;
+  price_before: string | null;
+  price_after: string | null;
+  unit: string | null;
+  change_pct: string | null;
 }
 
 /** Till names with sales in the window that have no dish and no exclusion,
@@ -1402,6 +1413,13 @@ export interface DashboardPriceMove {
   /** "was AED 22.40 per kg · AED 210 at stake on the 1,240 portions sold
    * since 25 Aug." */
   evidence: string;
+  /** The two prices the sentence is written from, per display unit, and the
+   * change between them, one decimal and signed - the track the screen
+   * draws. All null for a basis change, which has no before and after. */
+  price_before: string | null;
+  price_after: string | null;
+  unit: string | null;
+  change_pct: string | null;
 }
 
 /** `count` is every move that qualified; `moves` is the first five, ranked

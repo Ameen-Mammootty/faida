@@ -277,6 +277,10 @@ def test_ten_points_below_fires_and_the_sentence_carries_both_figures():
     assert signal.quality is Quality.RELIABLE
     assert signal.menu_item_id == "m-chicken"
     assert signal.branch_id is None
+    # The two figures the sentence is written from, as fields (the track).
+    assert signal.kept_pct == D("40.0")
+    assert signal.benchmark_pct == D("60.0")
+    assert signal.price_before is None and signal.change_pct is None
 
 
 def test_the_low_margin_boundary_is_inclusive():
@@ -358,6 +362,13 @@ def test_a_five_percent_rise_fires_on_the_boundary_and_one_unit_under_is_silent(
         "AED 4 off contribution on the 70 portions sold since it landed, across 1 item."
     )
     assert signal.invoice_id == "inv-current"
+    # The two prices the sentence is written from, per display unit, and the
+    # change the gate was judged on - one decimal, signed.
+    assert signal.price_before == D("40.00")
+    assert signal.price_after == D("42.00")
+    assert signal.unit == "kg"
+    assert signal.change_pct == D("5.0")
+    assert signal.kept_pct is None
     assert signal.moved_on == DAY_ONE
 
     under = _milk_move(current_cost="0.0419")  # 4.75%
@@ -611,6 +622,8 @@ def test_the_branch_gap_boundary_is_inclusive():
     assert signal.money_at_stake == D("200.00")  # 5% of AED 4,000
     assert signal.branch_id == ROLLA
     assert signal.branch_name == "Rolla Branch"
+    assert signal.kept_pct == D("55.0")
+    assert signal.benchmark_pct == D("60.0")
 
     # 55.5% against a chain of 60.4%: 4.9 points, silent.
     menu_ = _menu(ITEM_A, _item("m-b", "Item B", cost="17.800"))

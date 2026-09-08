@@ -199,10 +199,12 @@ def freshness_sentence(newest: datetime.date | None, today: datetime.date) -> st
 def branch_answer(
     ranked: Sequence[contribution.Contribution], scope: signals.Scope
 ) -> tuple[str | None, contribution.Contribution | None]:
-    """The branch to look at first, in the "of every 100" lens: the top row of
-    `contribution.rank` (C12.9, D21), the least of however many carry a
-    figure. Under a branch scope the sentence is about that branch alone. An
-    incomplete top row says so in the same breath."""
+    """The branch to look at first, as one crisp line: the top row of
+    `contribution.rank` (C12.9, D21), what it keeps as a whole number, the
+    least of however many carry a figure. Under a branch scope the line is
+    about that branch alone. An incomplete top row says so in the same
+    breath. Bullet-short since 2026-09-08 (the founder: "crisp, directly to
+    the point"), the "of every 100" prose before it."""
     rated = [c for c in ranked if c.contribution_pct is not None]
     if not rated:
         return None, None
@@ -210,20 +212,14 @@ def branch_answer(
     kept = top.contribution_pct.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
     name = _short_branch(top.branch_name or "")
     if scope.branch_id is not None:
-        sentence = f"{name} keeps about AED {kept} of every 100 it takes."
+        sentence = f"{name}: keeps {kept}%."
     elif len(rated) == 1:
-        sentence = (
-            f"Look at {name} first: it keeps about AED {kept} of every 100 it takes, "
-            "the only branch with a figure."
-        )
+        sentence = f"Look at {name}: keeps {kept}%, the only branch with a figure."
     else:
         count = _NUMBER_WORDS.get(len(rated), str(len(rated)))
-        sentence = (
-            f"Look at {name} first: it keeps about AED {kept} of every 100 it takes, "
-            f"the least of the {count}."
-        )
+        sentence = f"Look at {name}: keeps {kept}%, the least of the {count} branches."
     if top.quality is Quality.INCOMPLETE:
-        sentence += " Its figure is incomplete - its row says why."
+        sentence += " Its figure is incomplete."
     return sentence, top
 
 
@@ -234,18 +230,27 @@ def item_answer(
     currency: str,
 ) -> tuple[str | None, contribution.ItemRow | None]:
     """The dish that sells and does not earn: among the popular-and-low-margin
-    candidates (C13.2), the one that sold the most - the wire example's
-    sentence, composed here so the screen never words it a second way."""
+    candidates (C13.2), the one that sold the most, as one crisp line with
+    its whole-number share against the menu's - composed here so the screen
+    never words it a second way. A dish below zero loses money on every
+    plate, and the line says that instead of a negative share."""
     fired = signals.popular_low_margin(rows, chain, scope=scope, currency=currency)
     if not fired:
         return None, None
     by_id = {r.menu_item_id: r for r in rows if r.branch_id == scope.branch_id}
     best = max(fired, key=lambda s: by_id[s.menu_item_id].net_item_sales)
+    row = by_id[best.menu_item_id]
     where = "" if scope.branch_name is None else f" at {_short_branch(scope.branch_name)}"
+    if row.contribution_pct is not None and row.contribution_pct < 0:
+        return f"{best.menu_item_name}: sells well{where} but loses money on every plate.", row
+    if row.contribution_pct is None or chain.contribution_pct is None:
+        return f"{best.menu_item_name}: sells well{where} but keeps less than the menu.", row
+    kept = row.contribution_pct.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    menu = chain.contribution_pct.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
     return (
-        f"{best.menu_item_name} sells more than any item{where} that earns under "
-        "the menu's average.",
-        by_id[best.menu_item_id],
+        f"{best.menu_item_name}: sells well{where} but keeps only {kept}% "
+        f"against the menu's {menu}%.",
+        row,
     )
 
 
@@ -346,6 +351,13 @@ def _signal_json(signal: signals.Signal) -> dict:
         "ingredient_name": signal.ingredient_name,
         "invoice_id": signal.invoice_id,
         "moved_on": _iso(signal.moved_on),
+        # The numbers behind the sentence, for the screen to draw.
+        "kept_pct": _dec(signal.kept_pct),
+        "benchmark_pct": _dec(signal.benchmark_pct),
+        "price_before": _dec(signal.price_before),
+        "price_after": _dec(signal.price_after),
+        "unit": signal.unit,
+        "change_pct": _dec(signal.change_pct),
     }
 
 
@@ -445,6 +457,17 @@ def price_moves_block(
                 "sentence": row.words.sentence,
                 "plates": row.words.plates,
                 "evidence": row.words.evidence,
+                # The two prices the sentence is written from, per display
+                # unit, and the change between them - the track the screen
+                # draws. A basis change has no before and after (D3).
+                "price_before": _dec(row.move.previous.per_display_unit)
+                if row.move.kind == "moved"
+                else None,
+                "price_after": _dec(row.move.current.per_display_unit)
+                if row.move.kind == "moved"
+                else None,
+                "unit": row.move.current.display_unit if row.move.kind == "moved" else None,
+                "change_pct": _dec(signals.move_change_pct(row.move)),
             }
             for row in listed[:limit]
         ],
