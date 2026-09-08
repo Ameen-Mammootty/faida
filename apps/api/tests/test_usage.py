@@ -193,7 +193,7 @@ def _line(
     *,
     ingredient_id: str | None,
     raw_name: str,
-    qty: str,
+    qty: str | None,
     pack_size: str | None,
     unit: str | None = None,
     branch: str | None = QUSAIS,
@@ -217,7 +217,7 @@ def _line(
         purchased_on=on,
         supplier_name="Gulf Foods Trading L.L.C.",
         raw_name=raw_name,
-        qty=D(qty),
+        qty=None if qty is None else D(qty),
         unit=unit,
         pack_size=pack_size,
         unit_price=None if unit_price is None else D(unit_price),
@@ -871,6 +871,61 @@ def test_an_unmapped_packs_line_is_reported_with_its_printed_spend_and_never_in_
     assert _rows([], _menu(), lines, [_window()]) == []
 
 
+def test_one_unmapped_line_says_has_and_two_say_have():
+    """The sentence agrees with the count it carries. It is the first line an
+    owner reads about purchases the panel could not place, and "1 purchase
+    line ... have no material yet" reads as a typo in the product."""
+    one = usage.unmapped_packs(
+        [
+            _line(
+                ingredient_id=None,
+                raw_name="CLEANING FLUID 5L",
+                qty="2",
+                pack_size="5L",
+                supplier_item_id="s-clean",
+                line_total="120.00",
+            )
+        ]
+    )
+    assert one.sentence == (
+        "1 purchase line on 1 product has no material yet, AED 120 on the printed line totals"
+    )
+
+
+def test_a_line_whose_quantity_cell_was_never_read_is_unmeasured_and_never_zero():
+    """`invoice_lines.qty` is nullable, and the confirm door costs no line
+    without one - so a paper can carry a readable pack and no quantity at all.
+    The line delivered an unknown amount: the row's bought figure is withheld
+    with the count named and the measured part under its own name, and nothing
+    is counted as zero, which would read as a delivery of nothing."""
+    sales, menu, lines = _karak_week()
+    lines.append(
+        _line(
+            ingredient_id=SUGAR,
+            raw_name="SUGAR 50KG",
+            qty=None,
+            pack_size="50kg",
+            supplier_item_id="s-sugar",
+            position=9,
+            unit_price=None,
+            line_total=None,
+        )
+    )
+    rows = _rows(sales, menu, lines, [_window()])
+    sugar = _by(rows, SUGAR)
+
+    assert sugar.bought_base is None
+    assert sugar.bought_measured == D("100000")
+    assert sugar.bought_measured_words == "100 kg"
+    assert sugar.unmeasured_lines == 1
+    assert sugar.quality is ratio.Quality.INCOMPLETE
+    assert "1 line could not be measured - see Can't be costed yet" in sugar.notes
+    unread = next(entry for entry in sugar.lines if entry.qty is None)
+    assert unread.base_qty is None
+    assert unread.measured is False
+    assert unread.blocked == "missing_quantity"
+
+
 def test_a_line_that_reached_no_product_is_an_orphan_with_its_paper():
     """D3: the confirm door creates no product for a foreign paper and none
     for a line with no price, and a product is the only path to a material."""
@@ -1517,7 +1572,7 @@ def test_the_stage_speaks_every_kind_of_sentence():
         "recipe written after this period",
         "at an estimated AED",
         "recipes cover",
-        "have no material yet",
+        "no material yet",
         "reached no product",
         "not counted here",
         "no sales loaded",
