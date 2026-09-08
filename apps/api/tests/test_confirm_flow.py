@@ -382,10 +382,20 @@ ACK_MADINA = (
 )
 
 
+# good_invoice()'s two lines as the read-out lists them (WP-126): the printed
+# words when nothing in the catalog matched, the catalog's words when it did.
+RAW_ITEMS = ["1. MILK PWDR 2.5KG NIDO · 12 x 54.50", "2. KARAK TEA DUST · 3 x 18.75"]
+
+
 def read_it(
-    total: str | None = "745.76", currency: str = "AED", *, booked_under: str | None = None
+    total: str | None = "745.76",
+    currency: str = "AED",
+    *,
+    booked_under: str | None = None,
+    items: list[str] = RAW_ITEMS,
 ) -> str:
-    """The header block of good_invoice()'s read-out (WP-125)."""
+    """The header block and the item list of good_invoice()'s read-out
+    (WP-125, WP-126)."""
     lines = [
         "✅ Read it",
         "*Gulf Foods Trading LLC*",
@@ -394,7 +404,7 @@ def read_it(
     ]
     if booked_under is not None:
         lines.append(f"_Booked under {booked_under}_")
-    return "\n".join(lines)
+    return "\n".join([*lines, "", "*Items*", *items])
 
 
 async def quoted_photos(db) -> list[str | None]:
@@ -737,7 +747,8 @@ async def test_selector_routes_a_correction_to_the_numbered_invoice(api, db):
     )
     await drain_jobs(db, app, None)
 
-    assert (await outbound_bodies(db))[-1] == f"{read_it()}\n\n{CLOSING_ALL_GREEN}"
+    renamed = [RAW_ITEMS[0], "2. Karak Chai Mix · 3 x 18.75"]
+    assert (await outbound_bodies(db))[-1] == f"{read_it(items=renamed)}\n\n{CLOSING_ALL_GREEN}"
     gulf = await db.pool.fetchrow(
         "select * from invoices where supplier_name = 'Gulf Foods Trading LLC'"
     )
@@ -1471,4 +1482,7 @@ async def test_a_correction_reply_still_says_where_the_paper_was_filed(api, db):
     await post_webhook(client, wa_text_payload("line 1 qty 12", message_id="wamid.fix"))
     await drain_jobs(db, app, None)
     reply = (await outbound_bodies(db))[-1]
-    assert reply == f"{read_it(booked_under='Gulf Foods Trading L.L.C.')}\n\n{CLOSING_ALL_GREEN}"
+    filed = ["1. Milk Powder 2.5kg · 12 x 54.50", RAW_ITEMS[1]]
+    assert reply == (
+        f"{read_it(booked_under='Gulf Foods Trading L.L.C.', items=filed)}\n\n{CLOSING_ALL_GREEN}"
+    )

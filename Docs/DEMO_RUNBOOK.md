@@ -6,7 +6,7 @@ Since 2026-08-28 the full demo is two acts and gates at M6 (§1: the loop, then 
 **Act two** (section F, added 2026-08-31 by WP-66) is the screens - materials, then menu margins, closing on "push this, fix that".
 **Act three** (section G) is the branches, and **act four** (section H, added 2026-09-05 by WP-95) is the dashboard: what the chain kept, the dish that sells and does not earn, and what one delivery did to both.
 Every reply quoted below is the exact template from `apps/api/src/faida_api/replies.py`, so if the phone shows different words, something is wrong.
-Since WP-125 (2026-09-07) every reply about a paper arrives as a WhatsApp quoted reply above that invoice's photo, with the supplier and total in bold and the closing line last; the blank lines in the blocks below are part of the message.
+Since WP-125 (2026-09-07) every reply about a paper arrives as a WhatsApp quoted reply above that invoice's photo, with the supplier and total in bold and the closing line last; since WP-126 (2026-09-08) the read-out lists the items under the total - the catalog name each line was filed under, quantity times unit price, eight at most; the blank lines in the blocks below are part of the message.
 
 > **What gates and what only rehearses.** The staged menu in `supabase/demo_seed.sql` exists so act two can be practised today, on a laptop, without waiting on anything. It is **not** what the milestone closes on: M6's done-when ("one real menu loads in under a day of consultant time") and the demo gate both close on F7's real menu, loaded through `/menu/load`. Rehearse on the seed; gate on the real one.
 
@@ -107,13 +107,17 @@ The script from plan.md §6 M4, verbatim: forward invoice, reply appears with pr
    Invoice INV-1041 · 20 Aug 2026 · 2 lines
    Total *AED 745.76*
 
+   *Items*
+   1. Milk Powder 2.5kg · 12 x 54.50
+   2. Karak Tea Dust · 3 x 18.75
+
    *Price moves since your last purchase*
    📈 Milk Powder 2.5kg up AED 4.00 (50.50 to 54.50, +7.9%)
    📉 Karak Tea Dust down AED 3.25 (22.00 to 18.75, -14.8%)
 
    Reply *OK* to confirm.
    ```
-8. Point at the price-moves lines and say: "That is the money moment: milk powder went up four dirhams, nearly eight percent, and the owner knows before the invoice is even filed."
+8. Point at the two item lines and say: "It read both lines: what came off the truck, how many, at what price." Then at the price-moves lines: "That is the money moment: milk powder went up four dirhams, nearly eight percent, and the owner knows before the invoice is even filed."
 9. Reply `OK`.
 10. The confirmation arrives, quoted above the photo, in three lines: `✅ Confirmed` / `*Gulf Foods Trading LLC*, AED 745.76 recorded.` / `I'll watch these prices for you.`
 11. Open the review screen: the invoice photo sits on the left, the extracted fields on the right, every field green with its check icon.

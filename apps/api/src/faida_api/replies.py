@@ -24,6 +24,7 @@ invite; WP-23 constructs the PriceAlert values this module only renders.
 """
 
 import datetime
+from collections.abc import Sequence
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Literal
 
@@ -38,6 +39,9 @@ DEFAULT_CURRENCY = "AED"
 # At most this many amber-field questions per reply; the rest overflow to the
 # review screen (plan.md §5 layer 5: amber drives one specific question).
 MAX_AMBER_QUESTIONS = 3
+# At most this many item lines in the read-out (WP-126); the rest are counted
+# and left to the review screen, so a big delivery never becomes a wall.
+MAX_ITEM_LINES = 8
 
 # --- markup ---------------------------------------------------------------
 # The five icons. Each is always followed by a word that says the same thing
@@ -151,6 +155,7 @@ REPLY_UNKNOWN_SENDER = (
 # --- headings and closing lines --------------------------------------------
 
 READ_IT = f"{ICON_DONE} Read it"
+ITEMS_HEADING = bold("Items")
 PRICE_MOVES_HEADING = bold("Price moves since your last purchase")
 CHECK_HEADING = f"{ICON_CHECK} {bold('Please check')}"
 
@@ -288,8 +293,9 @@ def compose_invoice_reply(
     tenant_currency: str | None = None,
     booked_under: str | None = None,
     similar_to: SimilarPaper | None = None,
+    item_names: Sequence[str | None] | None = None,
 ) -> str:
-    """The extraction reply: the header, the price moves, at most
+    """The extraction reply: the header, the items, the price moves, at most
     MAX_AMBER_QUESTIONS amber-field questions (most material first, overflow
     deferred to the review screen), the similar-paper note, then the confirm
     prompt - always last.
@@ -298,14 +304,19 @@ def compose_invoice_reply(
     mismatch adds its own question. None means "don't check" - the manual and
     test paths that have no tenant in hand. `booked_under` is the catalog
     name the paper is filed under when that is not the name printed on it
-    (WP-87); `similar_to` the earlier paper it looks close to (WP-44)."""
+    (WP-87); `similar_to` the earlier paper it looks close to (WP-44);
+    `item_names` the catalog name each line was filed under, None for a line
+    that matched nothing, so the list shows the words the price history will
+    carry (WP-126)."""
     if invoice.total is None:
         closing = CLOSING_TOTAL_NEEDED
     elif _has_ambers(invoice, validation, tenant_currency):
         closing = CLOSING_WITH_AMBERS
     else:
         closing = CLOSING_ALL_GREEN
-    return _compose(invoice, validation, alerts, closing, tenant_currency, booked_under, similar_to)
+    return _compose(
+        invoice, validation, alerts, closing, tenant_currency, booked_under, similar_to, item_names
+    )
 
 
 def compose_cash_hold_reply(
@@ -316,6 +327,7 @@ def compose_cash_hold_reply(
     tenant_currency: str | None = None,
     booked_under: str | None = None,
     similar_to: SimilarPaper | None = None,
+    item_names: Sequence[str | None] | None = None,
 ) -> str:
     """The extraction reply for a cash invoice held as needs_review (WP-24):
     same body, but the closing notes the owner-approval hold instead of
@@ -323,7 +335,14 @@ def compose_cash_hold_reply(
     WP-26's missing-total closing: this invoice is not confirmable from the
     phone at all, and the total question is already in the body."""
     return _compose(
-        invoice, validation, alerts, CASH_HOLD_NOTE, tenant_currency, booked_under, similar_to
+        invoice,
+        validation,
+        alerts,
+        CASH_HOLD_NOTE,
+        tenant_currency,
+        booked_under,
+        similar_to,
+        item_names,
     )
 
 
@@ -386,8 +405,11 @@ def _compose(
     tenant_currency: str | None = None,
     booked_under: str | None = None,
     similar_to: SimilarPaper | None = None,
+    item_names: Sequence[str | None] | None = None,
 ) -> str:
     sections = [_summary_lines(invoice, booked_under)]
+    if invoice.lines:
+        sections.append([ITEMS_HEADING, *_item_lines(invoice, item_names)])
     if alerts:
         sections.append([PRICE_MOVES_HEADING, *(render_price_alert(alert) for alert in alerts)])
     questions = _amber_questions(invoice, validation, tenant_currency)
@@ -420,6 +442,28 @@ def _summary_lines(invoice: ExtractedInvoice, booked_under: str | None) -> list[
         lines.append(f"Total {bold(f'{_currency(invoice)} {_money(invoice.total)}')}")
     if booked_under is not None:
         lines.append(render_booked_under(booked_under))
+    return lines
+
+
+def _item_lines(invoice: ExtractedInvoice, item_names: Sequence[str | None] | None) -> list[str]:
+    """WP-126: one line per item, numbered the way the correction grammar
+    numbers them, so "line 4" points at something the sender can see - the
+    name the line was filed under (the catalog's word when it matched, the
+    printed word when it did not), then the quantity times the unit price.
+    No line total: arithmetic already checked it, and the name and the
+    quantity are the two facts only the person who saw the delivery can
+    vouch for. An unreadable value is a question mark, and gets its own
+    question below. Eight at most, then the count left for the screen."""
+    lines: list[str] = []
+    for index, line in enumerate(invoice.lines[:MAX_ITEM_LINES], start=1):
+        filed_as = item_names[index - 1] if item_names is not None else None
+        name = plain(filed_as or line.raw_name, f"Line {index}")
+        qty = "?" if line.qty is None else _qty(line.qty)
+        price = "?" if line.unit_price is None else _money(line.unit_price)
+        lines.append(f"{index}. {name} · {qty} x {price}")
+    overflow = len(invoice.lines) - MAX_ITEM_LINES
+    if overflow > 0:
+        lines.append(OVERFLOW_LINE.format(count=overflow))
     return lines
 
 

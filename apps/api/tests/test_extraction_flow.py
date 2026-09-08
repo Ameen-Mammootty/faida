@@ -81,11 +81,22 @@ def api(settings, db):
     return app, client, fake_meta, fake_storage
 
 
+# good_invoice()'s two lines as the read-out lists them (WP-126): the printed
+# words when nothing in the catalog matched, the catalog's words when it did.
+RAW_ITEMS = ["1. MILK PWDR 2.5KG NIDO · 12 x 54.50", "2. KARAK TEA DUST · 3 x 18.75"]
+FILED_ITEMS = ["1. Milk Powder 2.5kg · 12 x 54.50", "2. Karak Tea Dust · 3 x 18.75"]
+
+
 def read_it(
-    total: str = "745.76", *, invoice_no: str = "INV-1041", booked_under: str | None = None
+    total: str = "745.76",
+    *,
+    invoice_no: str = "INV-1041",
+    booked_under: str | None = None,
+    items: list[str] = RAW_ITEMS,
 ) -> str:
-    """The header block of good_invoice()'s read-out (WP-125), with the
-    filing note when the paper is booked under another name."""
+    """The header block and the item list of good_invoice()'s read-out
+    (WP-125, WP-126), with the filing note when the paper is booked under
+    another name."""
     lines = [
         "✅ Read it",
         "*Gulf Foods Trading LLC*",
@@ -94,7 +105,7 @@ def read_it(
     ]
     if booked_under is not None:
         lines.append(f"_Booked under {booked_under}_")
-    return "\n".join(lines)
+    return "\n".join([*lines, "", "*Items*", *items])
 
 
 async def last_quoted_photo(db) -> str | None:
@@ -499,7 +510,7 @@ async def test_price_alert_fires_in_the_extraction_reply(api, db):
     # reply says where it filed this one, under the total, while it is still
     # one keystroke to move. WP-125: the demo reply, byte-exact, and quoted.
     assert (await outbound_bodies(db))[-1] == (
-        f"{read_it(booked_under='Gulf Foods Trading L.L.C.')}\n"
+        f"{read_it(booked_under='Gulf Foods Trading L.L.C.', items=FILED_ITEMS)}\n"
         "\n"
         f"{PRICE_MOVES_HEADING}\n"
         f"{ICON_DOWN} Karak Tea Dust down AED 3.25 (22.00 to 18.75, -14.8%)\n"
@@ -565,10 +576,11 @@ async def test_no_alert_when_either_threshold_is_unmet(api, db):
     # Both lines snapped - the silence is the thresholds, not a missed match.
     assert all(line["supplier_item_id"] is not None for line in lines)
 
-    assert (await outbound_bodies(db))[-1] == (
-        f"{read_it('704.34', invoice_no='INV-2044', booked_under='Gulf Foods Trading L.L.C.')}"
-        f"\n\n{CLOSING_ALL_GREEN}"
+    filed = ["1. Milk Powder 2.5kg · 12 x 54.50", "2. Paratha Wrap · 20 x 0.84"]
+    card = read_it(
+        "704.34", invoice_no="INV-2044", booked_under="Gulf Foods Trading L.L.C.", items=filed
     )
+    assert (await outbound_bodies(db))[-1] == f"{card}\n\n{CLOSING_ALL_GREEN}"
 
 
 async def test_cash_invoice_is_held_for_review(api, db):

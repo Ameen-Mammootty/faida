@@ -353,6 +353,7 @@ async def _persist_extracted(
             tenant_currency=tenant_currency,
             booked_under=booked_under,
             similar_to=similar_to,
+            item_names=filed_names(snapped_items),
         )
 
     started = time.monotonic()
@@ -456,6 +457,13 @@ def _same_supplier(row: Row, supplier_id: str | None, supplier_name: str | None)
     # One definition of "the same name" for the whole product (matching.same_name):
     # equal after normalization, and never two empty names.
     return same_name(row["supplier_name"], supplier_name)
+
+
+def filed_names(snapped_items: list[Row | None]) -> list[str | None]:
+    """WP-126: per line, the catalog name it snapped to, or None when it
+    matched nothing - what the read-out lists, so the sender sees the words
+    the price history will carry."""
+    return [None if item is None else item["canonical_name"] for item in snapped_items]
 
 
 def price_alerts(

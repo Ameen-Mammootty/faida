@@ -1,5 +1,5 @@
 """Unit tests for the WP-20 reply composer (plan.md §6 M2, §7.3), in the
-card look of WP-125.
+card look of WP-125 with the items of WP-126.
 
 Every message shape the product sends, rendered and asserted: exact strings
 for the fixed set, structure plus exact money formatting for the composed
@@ -30,6 +30,8 @@ from faida_api.replies import (
     ICON_DOWN,
     ICON_HELD,
     ICON_UP,
+    ITEMS_HEADING,
+    MAX_ITEM_LINES,
     OVERFLOW_LINE,
     PRICE_MOVES_HEADING,
     QUESTION_MISSING_DATE,
@@ -108,6 +110,9 @@ def _green_invoice() -> ExtractedInvoice:
     return _invoice(lines, subtotal="100.00", tax="5.00", total="105.00")
 
 
+GREEN_ITEMS = [ITEMS_HEADING, "1. item · 2 x 30.00", "2. item · 4 x 10.00"]
+
+
 def _reply(invoice: ExtractedInvoice, alerts: list[PriceAlert] | None = None) -> str:
     return compose_invoice_reply(invoice, validate_invoice(invoice), alerts or [])
 
@@ -116,6 +121,10 @@ def _header(total: str, count: int = 2, supplier: str = "Gulf Foods Trading") ->
     """The four header lines for a dated, numbered Gulf Foods invoice."""
     lines = "line" if count == 1 else "lines"
     return f"✅ Read it\n*{supplier}*\nInvoice 4471 · 5 Jul 2026 · {count} {lines}\nTotal {total}"
+
+
+def _items(*rows: str) -> str:
+    return "\n".join([ITEMS_HEADING, *rows])
 
 
 def _busy_reply() -> str:
@@ -142,6 +151,7 @@ def _busy_reply() -> str:
             invoice_no="4470",
             received_on=datetime.date(2026, 7, 4),
         ),
+        item_names=["Milk Powder 2.5kg", None, "Tea"],
     )
 
 
@@ -186,6 +196,7 @@ def test_fixed_messages_exact():
 
 def test_closings_and_headings_exact():
     assert READ_IT == "✅ Read it"
+    assert ITEMS_HEADING == "*Items*"
     assert PRICE_MOVES_HEADING == "*Price moves since your last purchase*"
     assert CHECK_HEADING == f"{ICON_CHECK} *Please check*"
     assert CLOSING_ALL_GREEN == "Reply *OK* to confirm."
@@ -213,6 +224,7 @@ def test_no_em_or_en_dashes_in_any_message():
         REPLY_EXTRACTION_FAILED,
         REPLY_UNKNOWN_SENDER,
         READ_IT,
+        ITEMS_HEADING,
         PRICE_MOVES_HEADING,
         CHECK_HEADING,
         CLOSING_ALL_GREEN,
@@ -242,7 +254,8 @@ def test_markup_is_balanced_in_a_busy_reply():
 
 def test_user_text_cannot_break_the_markup():
     # A supplier called "A*B*C" must not open a bold run; a raw name with a
-    # backtick or a tilde must not open code or strike-through.
+    # backtick or a tilde must not open code or strike-through - in the item
+    # list or in the question about it.
     line = _line("2", "30.00", "60.00", name="x`y~z")
     invoice = _invoice([line], supplier="A*B*C", invoice_no="44*71", tax="0", total="60.00")
     validation = ValidationResult(
@@ -262,9 +275,13 @@ def test_user_text_cannot_break_the_markup():
     lines = reply.splitlines()
     assert lines[1] == "*ABC*"
     assert lines[2] == "Invoice 4471 · 5 Jul 2026 · 1 line"
+    assert lines[6] == "1. xyz · 2 x 30.00"
     assert '- *Line 1*: I couldn\'t match "xyz" to your usual items. Is it right?' in lines
     assert "A*B" not in reply
     _assert_markup_balanced(reply)
+    # A catalog name is sanitised the same way.
+    filed = compose_invoice_reply(invoice, validation, [], item_names=["Milk *Powder*"])
+    assert filed.splitlines()[6] == "1. Milk Powder · 2 x 30.00"
     # The sanitiser itself: item codes keep their underscores, whitespace
     # collapses, nothing left means the fallback.
     assert plain("MILK_PWDR 2.5KG", "x") == "MILK_PWDR 2.5KG"
@@ -299,6 +316,7 @@ def test_closing_is_always_the_last_line():
         assert lines[-2] == ""
         assert lines[-3] == render_duplicate_note(note)
         assert lines[4] == render_booked_under("Gulf Foods Trading L.L.C.")
+        assert lines[6] == ITEMS_HEADING
 
 
 def test_icons_never_stand_alone():
@@ -327,9 +345,61 @@ def test_empty_sections_are_omitted():
     green = _reply(_green_invoice())
     assert PRICE_MOVES_HEADING not in green
     assert CHECK_HEADING not in green
-    for text in [green, _busy_reply(), compose_disambiguation_reply([])]:
+    # No lines at all: no Items heading over nothing.
+    bare = _invoice([], total="0.00", tax="0")
+    assert ITEMS_HEADING not in _reply(bare)
+    for text in [green, _busy_reply(), compose_disambiguation_reply([]), _reply(bare)]:
         assert "\n\n\n" not in text
         assert not text.endswith("\n")
+
+
+# --- the items (WP-126) ---
+
+
+def test_items_list_the_filed_name_and_fall_back_to_the_printed_one():
+    # The catalog's word when the line matched (what the price history will
+    # carry), the printed word when it did not; quantity times unit price,
+    # never the line total, numbered the way the correction grammar counts.
+    lines = [
+        _line("12", "54.50", "654.00", name="MILK PWDR 2.5KG NIDO"),
+        _line("3", "18.75", "56.25", name="KARAK TEA DUST"),
+    ]
+    invoice = _invoice(lines, subtotal="710.25", tax="35.51", total="745.76")
+    reply = compose_invoice_reply(
+        invoice, validate_invoice(invoice), [], item_names=["Milk Powder 2.5kg", None]
+    )
+    assert reply == (
+        f"{_header('*AED 745.76*')}\n"
+        "\n"
+        f"{_items('1. Milk Powder 2.5kg · 12 x 54.50', '2. KARAK TEA DUST · 3 x 18.75')}\n"
+        "\n"
+        f"{CLOSING_ALL_GREEN}"
+    )
+    # No names at all (the manual and test paths): the printed words.
+    assert _reply(invoice).splitlines()[6] == "1. MILK PWDR 2.5KG NIDO · 12 x 54.50"
+
+
+def test_items_are_capped_at_eight_with_the_rest_counted():
+    lines = [_line("1", "1.00", "1.00", name=f"Item {n}") for n in range(1, 15)]
+    invoice = _invoice(lines, tax="0", total="14.00")
+    body = _reply(invoice).splitlines()
+    assert MAX_ITEM_LINES == 8
+    assert body[5] == ITEMS_HEADING
+    assert body[6:14] == [f"{n}. Item {n} · 1 x 1.00" for n in range(1, 9)]
+    assert body[14] == OVERFLOW_LINE.format(count=6)
+    assert body[15] == ""
+    assert body[16] == CLOSING_ALL_GREEN
+    # Exactly eight: every line listed, nothing counted.
+    exact = _invoice(lines[:8], tax="0", total="8.00")
+    assert OVERFLOW_LINE.format(count=0) not in _reply(exact)
+    assert "more to check" not in _reply(exact)
+
+
+def test_unreadable_values_show_as_question_marks_in_the_list():
+    lines = [_line(None, "5.00", "10.00"), _line("2", None, "20.00"), _line(None, None, "30.00")]
+    invoice = _invoice(lines, tax="0", total="60.00")
+    body = _reply(invoice).splitlines()
+    assert body[6:9] == ["1. item · ? x 5.00", "2. item · 2 x ?", "3. item · ? x ?"]
 
 
 # --- price alerts ---
@@ -382,12 +452,13 @@ def test_multi_alert_reply_keeps_alert_order_under_the_heading():
         PriceAlert(item_name="Tea", prev_price=Decimal("12.00"), new_price=Decimal("11.00")),
     ]
     lines = _reply(_green_invoice(), alerts).splitlines()
-    assert lines[4] == ""
-    assert lines[5] == PRICE_MOVES_HEADING
-    assert lines[6] == f"{ICON_UP} Milk up AED 4.00 (50.50 to 54.50, +7.9%)"
-    assert lines[7] == f"{ICON_DOWN} Tea down AED 1.00 (12.00 to 11.00, -8.3%)"
+    assert lines[5:8] == GREEN_ITEMS
     assert lines[8] == ""
-    assert lines[9] == CLOSING_ALL_GREEN
+    assert lines[9] == PRICE_MOVES_HEADING
+    assert lines[10] == f"{ICON_UP} Milk up AED 4.00 (50.50 to 54.50, +7.9%)"
+    assert lines[11] == f"{ICON_DOWN} Tea down AED 1.00 (12.00 to 11.00, -8.3%)"
+    assert lines[12] == ""
+    assert lines[13] == CLOSING_ALL_GREEN
 
 
 # --- composed invoice reply ---
@@ -400,6 +471,10 @@ def test_all_green_reply_exact_and_ends_with_ok_prompt():
         "*Gulf Foods Trading*\n"
         "Invoice 4471 · 5 Jul 2026 · 2 lines\n"
         "Total *AED 105.00*\n"
+        "\n"
+        "*Items*\n"
+        "1. item · 2 x 30.00\n"
+        "2. item · 4 x 10.00\n"
         "\n"
         "Reply *OK* to confirm."
     )
@@ -436,6 +511,9 @@ def test_unknown_supplier_and_unreadable_total_fallbacks():
         "Invoice 4471 · 5 Jul 2026 · 1 line",
         "Total unreadable",
         "",
+        ITEMS_HEADING,
+        "1. item · 1 x 10.00",
+        "",
         CHECK_HEADING,
         "- *Total*: I couldn't read it. The lines come to AED 10.00. Is that the whole "
         "invoice, VAT included? Reply like `total 10.00 inc vat 5%` or `total 10.00 no vat`, "
@@ -461,6 +539,12 @@ def test_amber_ordering_doc_first_then_lines_by_materiality_with_cap_and_overflo
     assert reply.splitlines() == [
         *_header("*AED 800.00*", count=4).splitlines(),
         "",
+        ITEMS_HEADING,
+        "1. item · ? x 5.00",
+        "2. item · 10 x 45.00",
+        "3. item · 2 x 30.00",
+        "4. item · ? x ?",
+        "",
         CHECK_HEADING,
         "- *Totals*: the lines come to 770.00 but the invoice total says 800.00. Which is right?",
         "- *Line 2*: 10 x 45.00 = 450.00 but the line says 500.00. Which is right?",
@@ -482,6 +566,10 @@ def test_unreadable_line_total_is_most_material():
     assert reply.splitlines() == [
         *_header("*AED 920.00*").splitlines(),
         "",
+        ITEMS_HEADING,
+        "1. item · ? x 5.00",
+        "2. item · 2 x 10.00",
+        "",
         CHECK_HEADING,
         "- *Line 2*: I couldn't read the line total. What does it say? "
         "Reply like `line 2 total 90.00`.",
@@ -502,8 +590,8 @@ def test_exactly_three_ambers_ask_all_three_with_no_overflow_line():
     invoice = _invoice(lines, tax="0", total="60.00")
     reply = _reply(invoice)
     body = reply.splitlines()
-    assert body[5] == CHECK_HEADING
-    assert [ln.split(":")[0] for ln in body[6:9]] == ["- *Line 3*", "- *Line 2*", "- *Line 1*"]
+    assert body[10] == CHECK_HEADING
+    assert [ln.split(":")[0] for ln in body[11:14]] == ["- *Line 3*", "- *Line 2*", "- *Line 1*"]
     assert "more to check on the review screen" not in reply
     assert body[-1] == CLOSING_WITH_AMBERS
 
@@ -532,6 +620,9 @@ def test_taint_amber_document_does_not_burn_a_question_slot():
     assert reply.splitlines() == [
         *_header("*AED 6.26*", count=1).splitlines(),
         "",
+        ITEMS_HEADING,
+        "1. item · 2 x 3.10",
+        "",
         CHECK_HEADING,
         "- *Line 1*: 2 x 3.10 = 6.20 but the line says 6.26. Which is right?",
         "",
@@ -542,6 +633,7 @@ def test_taint_amber_document_does_not_burn_a_question_slot():
 def test_fractional_qty_renders_plainly_in_the_math_question():
     invoice = _invoice([_line("2.5", "4.00", "11.00")], tax="0", total="11.00")
     lines = _reply(invoice).splitlines()
+    assert "1. item · 2.5 x 4.00" in lines
     assert "- *Line 1*: 2.5 x 4.00 = 10.00 but the line says 11.00. Which is right?" in lines
 
 
@@ -589,6 +681,9 @@ def test_missing_date_and_number_each_get_their_question_and_flip_the_closing():
         "1 line",
         "Total *AED 60.00*",
         "",
+        ITEMS_HEADING,
+        "1. item · 2 x 30.00",
+        "",
         CHECK_HEADING,
         f"- {QUESTION_MISSING_DATE}",
         f"- {QUESTION_MISSING_INVOICE_NO}",
@@ -630,7 +725,11 @@ def test_ambiguous_date_reply_exact():
 def test_cash_hold_reply_green_exact():
     invoice = _green_invoice()
     reply = compose_cash_hold_reply(invoice, validate_invoice(invoice), [])
-    assert reply == f"{_header('*AED 105.00*')}\n\n{CASH_HOLD_NOTE}"
+    assert reply == (
+        f"{_header('*AED 105.00*')}\n\n"
+        f"{_items('1. item · 2 x 30.00', '2. item · 4 x 10.00')}\n\n"
+        f"{CASH_HOLD_NOTE}"
+    )
     assert "*OK*" not in reply and "to confirm" not in reply
 
 
@@ -656,10 +755,11 @@ def test_cash_hold_reply_keeps_alerts_and_questions_but_closes_with_the_hold():
     alert = PriceAlert(item_name="Milk", prev_price=Decimal("50.50"), new_price=Decimal("54.50"))
     reply = compose_cash_hold_reply(invoice, validate_invoice(invoice), [alert])
     lines = reply.splitlines()
-    assert lines[5] == PRICE_MOVES_HEADING
-    assert lines[6] == f"{ICON_UP} Milk up AED 4.00 (50.50 to 54.50, +7.9%)"
-    assert lines[8] == CHECK_HEADING
-    assert lines[9] == (
+    assert lines[5:7] == [ITEMS_HEADING, "1. item · ? x 5.00"]
+    assert lines[8] == PRICE_MOVES_HEADING
+    assert lines[9] == f"{ICON_UP} Milk up AED 4.00 (50.50 to 54.50, +7.9%)"
+    assert lines[11] == CHECK_HEADING
+    assert lines[12] == (
         "- *Line 1*: I couldn't read the quantity. How many were delivered? "
         "Reply like `line 1 qty 16`."
     )
@@ -833,6 +933,8 @@ def test_booked_under_and_similar_note_render_and_sit_where_they_belong():
         *_header("*AED 105.00*").splitlines(),
         "_Booked under Gulf Foods Trading L.L.C._",
         "",
+        *GREEN_ITEMS,
+        "",
         render_duplicate_note(note),
         "",
         CLOSING_ALL_GREEN,
@@ -850,6 +952,8 @@ def test_missing_total_question_shows_the_line_sum_and_asks_the_two_facts():
     assert reply.splitlines() == [
         *_header("unreadable").splitlines(),
         "",
+        *GREEN_ITEMS,
+        "",
         CHECK_HEADING,
         "- *Total*: I couldn't read it. The lines come to AED 100.00. Is that the whole "
         "invoice, VAT included? Reply like `total 100.00 inc vat 5%` or `total 100.00 no vat`, "
@@ -864,7 +968,8 @@ def test_missing_total_with_an_unreadable_line_asks_plainly_with_no_sum():
     # there is no figure worth showing - and the line question carries the gap.
     invoice = _invoice([_line("2", "30.00", "60.00"), _line("4", "10.00", None)])
     questions = _reply(invoice).splitlines()
-    assert questions[6] == (
+    assert questions[9] == CHECK_HEADING
+    assert questions[10] == (
         "- *Total*: I couldn't read it. What does it say? Reply like `total 976.50`."
     )
     assert questions[-1] == CLOSING_TOTAL_NEEDED
@@ -914,6 +1019,9 @@ def test_currency_mismatch_asks_and_names_the_consequence():
     assert reply.splitlines() == [
         *_header("*USD 60.00*", count=1).splitlines(),
         "",
+        ITEMS_HEADING,
+        "1. item · 2 x 30.00",
+        "",
         CHECK_HEADING,
         "- *Currency*: this invoice is in USD, not your usual AED. Is that right? I'll record "
         "it as printed and keep it out of your price history. If it's a misread, reply "
@@ -943,15 +1051,18 @@ def test_currency_question_ranks_under_the_totals_block_and_over_the_required_fi
     lines = compose_invoice_reply(
         invoice, validate_invoice(invoice), [], tenant_currency="AED"
     ).splitlines()
-    assert lines[:6] == [
+    assert lines[:9] == [
         "✅ Read it",
         "*Gulf Foods Trading*",
         "1 line",
         "Total unreadable",
         "",
+        ITEMS_HEADING,
+        "1. item · 2 x 30.00",
+        "",
         CHECK_HEADING,
     ]
-    questions = lines[6:-2]
+    questions = lines[9:-2]
     assert questions[0].startswith("- *Total*: I couldn't read it.")
     assert questions[1].startswith("- *Currency*: this invoice is in USD")
     assert questions[2] == f"- {QUESTION_MISSING_DATE}"
@@ -964,7 +1075,8 @@ def test_currency_question_ranks_under_the_totals_block_and_over_the_required_fi
 def test_unknown_tenant_currency_asks_nothing():
     invoice = _invoice([_line("2", "30.00", "60.00")], currency="USD", total="60.00", tax="0")
     assert compose_invoice_reply(invoice, validate_invoice(invoice), []) == (
-        f"{_header('*USD 60.00*', count=1)}\n\n{CLOSING_ALL_GREEN}"
+        f"{_header('*USD 60.00*', count=1)}\n\n{_items('1. item · 2 x 30.00')}\n\n"
+        f"{CLOSING_ALL_GREEN}"
     )
 
 

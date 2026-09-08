@@ -962,6 +962,44 @@ the live number first. A tap on an old read-out while a newer paper waits resolv
 **Priority:** P3
 **Depends on:** WP-125, and a customer quote (§2 rule 8) or the pilot's first week of real forwards.
 
+### Ask about an item that matches nothing, once a supplier has a catalog
+
+**What:** Turn the composer's "I couldn't match X to your usual items. Is it right?" question on: a
+line that snaps to nothing while the supplier already has a catalog turns amber and is asked about,
+under the three-question cap. A brand-new supplier stays quiet, since everything is new on day one.
+
+**Why:** Arithmetic cannot see identity errors - a line read as "Milk Powder 25kg" when the bags were
+2.5kg, or a new item born under the wrong name - and those names feed price history and recipe
+costs. Today `pipeline._persist_extracted` copies the snapped flag onto the line check but never
+recomputes the status ("in M1 an unsnapped line keeps its green arithmetic"), so the question exists
+in `replies._line_question` and never fires from the pipeline. WP-126's item list makes the wrong
+name visible; this makes it a question.
+
+**Context:** One status recomputation in `pipeline.py` after snapping, gated on the supplier having
+at least one catalog item; the M2 gate test and the demo stage decide the gate's shape (KAS-5 on the
+real stage must still read green). Decided with the founder as a proposal, not built, on 2026-09-08.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** WP-126; a rehearsal on the practice stage first.
+
+### A "new items" check on the screen
+
+**What:** Items that a confirm created (the catalog self-builds from the cleaned raw name in
+`db.record_confirmed_prices`) sit in a short queue on the materials screen until someone names or
+merges them once, the way till names are mapped on the sales screen - one audit row each.
+
+**Why:** A wrong name is cheapest to fix at birth; after a week it is in price history and a recipe.
+The owner is the person who can judge the catalog, and the screen is where they look.
+
+**Context:** M5's raw-materials mapping is already a screen; this is a filter on it ("created by a
+confirm, never looked at") plus a "looks right" keystroke. Proposed with the items decision on
+2026-09-08, not built.
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** M5's materials screen; a customer quote or the pilot's first fortnight.
+
 ## Extraction & matching
 
 ### A handwritten margin note gets folded into an item name and splits the catalog

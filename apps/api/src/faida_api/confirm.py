@@ -96,7 +96,7 @@ from .db import Database, SupplierAliasCollision
 from .extraction.currency import normalize_currency
 from .extraction.dates import parse_printed_date
 from .extraction.normalize import blank_to_none
-from .extraction.pipeline import find_duplicate, price_alerts
+from .extraction.pipeline import filed_names, find_duplicate, price_alerts
 from .extraction.schema import ExtractedInvoice, ExtractedLine
 from .extraction.validate import validate_invoice
 from .matching import Row, filed_under, snap_item
@@ -971,6 +971,7 @@ async def _apply_correction(
         alerts,
         tenant_currency=tenant_currency,
         booked_under=filed_under(invoice.supplier_name, booked_under),
+        item_names=filed_names(snapped_items),
     )
 
 
