@@ -2,33 +2,43 @@ import { describe, expect, it } from "vitest";
 import {
   ANSWER_EMPTY,
   ANSWER_NO_MENU,
+  BEST_HEADING,
+  COST_COVERS,
+  ITEMS_LINK,
+  KEPT_ABOUT,
+  LEAGUE_LINK,
+  MOVES_ABOUT,
   MOVES_LINK,
   NO_CHAIN_AVERAGE,
   NO_PRICE_MOVES,
   SCREEN_ABOUT,
+  SIGNALS_ABOUT,
+  SOLD_ABOUT,
   SPLIT_AT,
-  answerCaveat,
+  SUPPLIERS_ABOUT,
+  WORST_HEADING,
+  answer,
   answerChip,
-  answerLines,
   answerTip,
   approvalsHref,
   branchOptions,
   branchParam,
   cardLine,
   componentLink,
-  coverageStrip,
   daysInclusive,
+  everyHundred,
   filteredEmpty,
   firstRun,
   footnoteTip,
   freshnessLine,
   incompleteItems,
   isFirstRun,
-  itemCaption,
   itemPanel,
-  itemsHeading,
   itemsTip,
   keptBar,
+  latestDay,
+  leagueChip,
+  leagueChips,
   leagueFootnote,
   leagueLine,
   leagueLink,
@@ -37,31 +47,44 @@ import {
   noContributionWords,
   noMenuSentence,
   noRatioWords,
-  points,
+  noSalesWords,
+  moveTrack,
+  moveWhenLine,
   portionsWords,
   priceMoveLink,
   priceMoveMoney,
   priceMovePanel,
-  priceMoveTag,
   priceMoveTip,
-  priceMovesCaption,
+  priceTrack,
+  rowChip,
+  shareTrack,
   showAllLabel,
   showAllMovesLabel,
   showAllSignalsLabel,
   signalHref,
   signalMoney,
+  signalName,
   signalPanel,
   signalTip,
+  signalTrack,
   signalWhen,
-  signalsCount,
+  signalWhenLine,
+  signalsChips,
   signalsFootnote,
+  soldWords,
   statusTip,
+  tileChip,
   tiles,
-  totalTip,
   todaysPlateLink,
+  todo,
+  totalTip,
+  unassignedLine,
+  wholeChange,
+  wholePercent,
   withBranch,
 } from "../dashboardScreen";
 import { anchorBranchId, anchorItemId } from "../anchor";
+import { points } from "../format";
 import { SCENARIOS, mockGetDashboard } from "../mock/dashboard";
 import type {
   DashboardItemRow,
@@ -73,12 +96,17 @@ import type {
 
 /**
  * M9 WP-93: the pure decisions behind the owner dashboard - the first-run
- * paragraph, the freshness line, the framing of the API's answer sentences,
- * the league's words, the five-and-five slicing, the signals' framing, the
- * coverage strip, the branch filter's URL round trip - pinned here so the
- * component stays a renderer. Nothing here composes a sentence about a
- * number the API did not already say, and nothing re-ranks: C13.5 puts both
- * in Python, and a test pinning a second copy would be pinning the bug.
+ * paragraph, the freshness line, the to-do strip, the framing of the API's
+ * answer sentences, the three tiles, the league's words and chips, the
+ * five-and-five slicing, the signals' and the price moves' framing, the
+ * branch filter's URL round trip - pinned here so the component stays a
+ * renderer. Nothing here composes a sentence about a number the API did not
+ * already say, and nothing re-ranks: C13.5 puts both in Python, and a test
+ * pinning a second copy would be pinning the bug.
+ *
+ * The simple screen (2026-09-08) is pinned in the same file: plain labels
+ * on the face, the formal names the contracts pin as the first line behind
+ * the icon, whole numbers, and a chip only where the word is a caveat.
  *
  * The fixtures are the mock's own scenarios, which were produced by the
  * shipped Python modules over a hand-built week, so a decision tested here is
@@ -165,6 +193,12 @@ function signal(overrides: Partial<DashboardSignal> = {}): DashboardSignal {
     ingredient_name: null,
     invoice_id: null,
     moved_on: null,
+    kept_pct: "38.1",
+    benchmark_pct: "67.4",
+    price_before: null,
+    price_after: null,
+    unit: null,
+    change_pct: null,
     ...overrides,
   };
 }
@@ -189,6 +223,10 @@ function priceMove(overrides: Partial<DashboardPriceMove> = {}): DashboardPriceM
     sentence: "A sentence the API composed.",
     plates: "A plates clause the API composed.",
     evidence: "An evidence line the API composed.",
+    price_before: "58.00",
+    price_after: "61.40",
+    unit: "kg",
+    change_pct: "5.9",
     ...overrides,
   };
 }
@@ -267,36 +305,14 @@ describe("the first run", () => {
 });
 
 describe("the freshness line", () => {
-  it("carries the API's sentence, the newest day's takings and the papers link", async () => {
-    const line = freshnessLine(await scenario("full"));
-    // The API's own stop goes when a middle dot joins the next piece on:
-    // "5 days ago. · AED 9,493" is a punctuation mistake, not a sentence.
-    expect(line).toEqual({
-      sentence: "Sales loaded to Mon 31 Aug, 5 days ago",
+  it("is the API's sentence alone, with the word past seven days", async () => {
+    expect(freshnessLine(await scenario("full"))).toEqual({
+      sentence: "Sales loaded to Mon 31 Aug, 5 days ago.",
       estimated: false,
-      takings: "AED 9,493 taken that day across 3 branches",
-      papers: { label: "2 papers waiting for you", href: "/invoices?status=needs_review" },
     });
-  });
-
-  it("carries the word past seven days, and that branch's own day under the filter", async () => {
-    const partial = freshnessLine(await scenario("partial"));
-    expect(partial?.sentence).toBe("Sales loaded to Mon 31 Aug, 12 days ago");
-    // Nothing joins on, so the sentence keeps the stop the API printed.
-    const alone = freshnessLine({
-      ...(await scenario("full")),
-      latest_day: null,
-      approvals: { count: 0, duplicates: 0, awaiting_confirm: 0, invoices: [] },
-    });
-    expect(alone?.sentence).toBe("Sales loaded to Mon 31 Aug, 5 days ago.");
-    expect(partial?.estimated).toBe(true);
-    const karama = freshnessLine(await scenario("full", "br-02"));
-    expect(karama?.takings).toBe("AED 2,987 taken that day at Karama");
-    expect(karama?.papers).toBeNull(); // Karama holds no paper for review
-    const quoz = freshnessLine(await scenario("full", "br-01"));
-    expect(quoz?.papers).toEqual({
-      label: "2 papers waiting for you",
-      href: "/invoices?status=needs_review&branch_id=br-01",
+    expect(freshnessLine(await scenario("partial"))).toEqual({
+      sentence: "Sales loaded to Mon 31 Aug, 12 days ago.",
+      estimated: true,
     });
   });
 
@@ -306,58 +322,113 @@ describe("the freshness line", () => {
   });
 });
 
-describe("the answer", () => {
-  it("frames the API's two sentences and never composes one of its own", async () => {
+// The simple screen: the newest day's takings, the papers and the queue
+// left the freshness line for the Sold tile and the to-do strip.
+describe("the to-do strip", () => {
+  it("is a count and a door each: the papers, the names, the dishes", async () => {
     const full = await scenario("full");
-    expect(answerLines(full)).toEqual({
-      branch: "Look at Deira first: it keeps about AED 61 of every 100 it takes, the least of the three.",
-      item: "Chicken 65 Dry sells more than any item that earns under the menu's average.",
-      empty: null,
+    const items = todo(full);
+    expect(items.map((item) => item.key)).toEqual(["papers", "names", "dishes"]);
+    expect(items[0]).toEqual({
+      key: "papers",
+      label: "2 papers waiting for you",
+      href: "/invoices?status=needs_review",
+      tip: [],
     });
-    expect(answerCaveat(full)).toBe(
-      "Estimated: covers 82% of this branch's sales value · 1 item cannot be costed yet · 1 till name with sales is not mapped to a menu item",
+    expect(items[1]).toEqual({
+      key: "names",
+      label: "3 till names with no dish yet",
+      href: "/sales",
+      tip: ["3 till names worth AED 8,320 have no dish yet. Map them on the Sales screen."],
+    });
+    expect(items[2].label).toBe("2 dishes cannot be costed yet");
+    expect(items[2].href).toBe("/menu");
+    // The reasons, in the API's own notes, one dish to a line.
+    expect(items[2].tip.map((line) => line.split(":")[0]).sort()).toEqual([
+      "Chicken Mandi",
+      "Honey Cake",
+    ]);
+    expect(items[2].tip.find((line) => line.startsWith("Chicken Mandi"))).toMatch(
+      /^Chicken Mandi: No supplier product is mapped to Chicken yet\./,
     );
   });
 
-  it("shows one sentence when only one side can be answered, and its own when neither can", async () => {
-    const quiet = await scenario("quiet");
-    const lines = answerLines(quiet);
-    expect(lines.item).toBeNull();
-    expect(lines.branch).toMatch(/^Look at Deira first/);
-    expect(lines.empty).toBeNull();
-    expect(answerCaveat(quiet)).toBeNull();
-
-    const nomenu = await scenario("nomenu");
-    expect(answerLines(nomenu)).toEqual({ branch: null, item: null, empty: ANSWER_NO_MENU });
-    expect(answerCaveat(nomenu)).toBeNull();
-    expect(answerLines({ ...nomenu, menu: { items: 3, costed: 0 } }).empty).toBe(ANSWER_EMPTY);
+  it("follows the branch filter to that branch's papers and its own queue", async () => {
+    const quoz = todo(await scenario("full", "br-01"));
+    expect(quoz[0].href).toBe("/invoices?status=needs_review&branch_id=br-01");
+    expect(quoz[1].label).toBe("1 till name with no dish yet");
+    expect(quoz[1].tip).toEqual([
+      "1 till name worth AED 3,120 has no dish yet. Map them on the Sales screen.",
+    ]);
   });
 
-  it("says incomplete inside the sentence when the top row is", async () => {
-    const partial = await scenario("partial");
-    expect(answerLines(partial).branch).toMatch(/Its figure is incomplete - its row says why\.$/);
-    expect(answerCaveat(partial)).toMatch(/^Incomplete: 1 of 7 days has no sales/);
+  it("is nothing at all on a quiet week, and never counts dishes without a menu", async () => {
+    expect(todo(await scenario("quiet"))).toEqual([]);
+    const nomenu = todo(await scenario("nomenu"));
+    expect(nomenu.map((item) => item.key)).toEqual(["papers", "names"]);
+    expect(nomenu[1].label).toBe("17 till names with no dish yet");
+  });
+});
+
+describe("the answer", () => {
+  it("frames the API's two lines as bullets and never re-words them", async () => {
+    const full = await scenario("full");
+    expect(answer(full)).toEqual({
+      lines: [
+        "Look at Deira: keeps 61%, the least of the three branches.",
+        "Chicken 65 Dry: sells well but keeps only 38% against the menu's 67%.",
+      ],
+      own: false,
+    });
+    expect(answer(full).lines).toEqual([full.answer.branch, full.answer.item]);
+  });
+
+  it("is about that branch alone under the filter, and one line when only one side can be answered", async () => {
+    expect(answer(await scenario("full", "br-01"))).toEqual({
+      lines: [
+        "Al Quoz: keeps 70%.",
+        "Chicken 65 Dry: sells well at Al Quoz but keeps only 38% against the menu's 67%.",
+      ],
+      own: false,
+    });
+    const quiet = answer(await scenario("quiet"));
+    expect(quiet.lines).toEqual(["Look at Deira: keeps 77%, the least of the three branches."]);
+    expect(quiet.own).toBe(false);
+  });
+
+  it("uses its own sentence only when neither side can be answered", async () => {
+    const nomenu = await scenario("nomenu");
+    expect(answer(nomenu)).toEqual({ lines: [ANSWER_NO_MENU], own: true });
+    expect(answer({ ...nomenu, menu: { items: 3, costed: 0 } }).lines).toEqual([ANSWER_EMPTY]);
+  });
+
+  it("says incomplete inside the line when the top row is", async () => {
+    const partial = answer(await scenario("partial"));
+    expect(partial.lines[0]).toBe(
+      "Look at Karama: keeps 69%, the least of the two branches. Its figure is incomplete.",
+    );
   });
 });
 
 describe("the league", () => {
-  it("puts the window and the deliveries under the name", () => {
+  it("puts the window and the deliveries behind the name", () => {
     expect(leagueLine(leagueRow())).toBe("25-31 Aug, 7 days · 1 delivery");
     expect(leagueLine(leagueRow({ deliveries: 3, window: { from: "2026-08-28", to: "2026-09-03", days: 7 } }))).toBe(
       "28 Aug-3 Sep, 7 days · 3 deliveries",
     );
   });
 
-  it("puts words in a cell that has no figure, never 0%", () => {
+  it("puts words in a cell that has no figure, never 0%, and says them once a row", () => {
     expect(noRatioWords(leagueRow({ ratio_pct: null, deliveries: 0 }))).toBe("No confirmed purchases");
-    expect(noRatioWords(leagueRow({ net_sales: null, deliveries: 0 }))).toBe("Nothing loaded");
-    expect(noRatioWords(leagueRow({ net_sales: null, deliveries: 2 }))).toBe("No sales loaded");
+    expect(noSalesWords(leagueRow({ net_sales: null, deliveries: 0 }))).toBe("Nothing loaded");
+    expect(noSalesWords(leagueRow({ net_sales: null, deliveries: 2 }))).toBe("No sales loaded");
     expect(noRatioWords(leagueRow({ ratio_pct: null, deliveries: 2 }))).toBe("Net sales not positive");
-    expect(noContributionWords(leagueRow({ net_sales: null, contribution: null }))).toBe("Nothing loaded");
+    // The sold cell has already said "Nothing loaded"; the kept cell does not say it again.
+    expect(noContributionWords(leagueRow({ net_sales: null, contribution: null }))).toBe("-");
     expect(noContributionWords(leagueRow({ contribution: null }))).toBe("Nothing costed");
   });
 
-  it("puts the contribution's word in the status chip and the ratio's story in the ratio cell", () => {
+  it("puts the contribution's word in the status chip and the ratio's story behind the icon", () => {
     const row = leagueRow({
       ratio_quality: "unavailable",
       ratio_notes: ["no confirmed purchases 25-31 Aug"],
@@ -370,10 +441,36 @@ describe("the league", () => {
     });
   });
 
-  it("writes the card's caption from the row's own figures", () => {
-    expect(cardLine(leagueRow())).toBe("Kept AED 7,828 of AED 15,846 · purchases ÷ net sales 26.0%");
-    expect(cardLine(leagueRow({ ratio_pct: null, deliveries: 0 }))).toBe(
-      "Kept AED 7,828 of AED 15,846 · no confirmed purchases",
+  it("says the shared word once, each row's own when they differ, and none with nothing costed", async () => {
+    const full = await scenario("full");
+    expect(leagueChips(full)).toEqual({ shared: "estimated", perRow: false });
+    expect(leagueChip(full)).toBe("estimated");
+    expect(rowChip(full.league[0], leagueChips(full))).toBeNull();
+
+    const partial = await scenario("partial");
+    const chips = leagueChips(partial);
+    expect(chips).toEqual({ shared: null, perRow: true });
+    expect(leagueChip(partial)).toBeNull();
+    expect(partial.league.map((row) => rowChip(row, chips))).toEqual([
+      "incomplete",
+      "estimated",
+      null, // Deira has nothing loaded, so there is no figure for a word to qualify
+    ]);
+    expect(rowChip(partial.total, chips)).toBe("incomplete");
+
+    // A good week shares the reliable word, and the heading prints no chip for it.
+    const quiet = await scenario("quiet");
+    expect(leagueChips(quiet)).toEqual({ shared: "reliable_with_limitations", perRow: false });
+    expect(leagueChip(quiet)).toBeNull();
+
+    // Nothing costed anywhere: no word, no column.
+    expect(leagueChips(await scenario("nomenu"))).toEqual({ shared: null, perRow: false });
+  });
+
+  it("writes the card's line from the row's own figures", () => {
+    expect(cardLine(leagueRow())).toBe("Kept AED 7,828 of AED 15,846 sold");
+    expect(cardLine(leagueRow({ contribution: null, contribution_pct: null }))).toBe(
+      "Nothing costed · AED 15,846 sold",
     );
     expect(
       cardLine(leagueRow({ net_sales: null, ratio_pct: null, contribution: null, contribution_pct: null, deliveries: 0 })),
@@ -383,12 +480,21 @@ describe("the league", () => {
     ).toBe("No sales loaded");
   });
 
-  it("names the costing date in the footnote and the two screens' different keys", async () => {
+  it("gives the papers with no branch one line, and none when there are none", () => {
+    expect(unassignedLine({ count: 0, purchases: "0.00" })).toBeNull();
+    expect(unassignedLine({ count: 1, purchases: "412.40" })).toBe(
+      "1 invoice with no branch · AED 412 paid to suppliers · counted in the total, ranked nowhere",
+    );
+    expect(unassignedLine({ count: 2, purchases: "1200.00" })).toMatch(/^2 invoices with no branch/);
+  });
+
+  it("names the costing date in the footnote and says what kept is not", async () => {
     const note = leagueFootnote(await scenario("full"));
-    expect(note).toMatch(/costed at the prices in force on 31 Aug 2026/);
+    expect(note).toMatch(/^Kept is what is left after ingredients and packaging, costed at the prices in force on 31 Aug 2026\./);
     expect(note).toMatch(/It is not profit/);
-    expect(note).toMatch(/Ranked by Kept, lowest first; the Sales screen ranks the same branches by purchases ÷ net sales\.$/);
+    expect(note).toMatch(/Ranked by what each branch keeps of every 100 it takes, lowest first\.$/);
     expect(note).not.toMatch(/food cost/i);
+    expect(LEAGUE_LINK).toEqual({ href: "/sales", label: "All on Sales" });
   });
 
   it("keeps the API's order and never re-ranks", async () => {
@@ -472,8 +578,66 @@ describe("the signals", () => {
     expect(signalHref(spike)).toBe("/invoices/inv-1001");
     const gap = signal({ kind: "branch_gap", branch_id: "br-03", branch_name: "Deira", menu_item_id: null });
     expect(signalHref(gap)).toBe("/dashboard?branch=br-03");
-    expect(signalsCount([popular, spike, gap])).toBe("3 this window, largest first");
-    expect(signalsCount([])).toBeNull();
+    expect(SIGNALS_ABOUT).toMatch(/largest first/);
+  });
+
+  it("draws a dish or a branch as its kept share against the benchmark, a spike as its prices", async () => {
+    expect(shareTrack("38.1", "67.4", "menu")).toEqual({
+      fill: 38.1,
+      tick: 67.4,
+      loss: false,
+      fell: false,
+      left: { figure: "38%", words: "kept" },
+      right: "menu 67%",
+      change: null,
+    });
+    // A share below zero: an empty track, the figure in plum, and the words say so.
+    expect(shareTrack("-5.3", "67.4", "menu")).toEqual({
+      fill: 0,
+      tick: 67.4,
+      loss: true,
+      fell: false,
+      left: { figure: "-5%", words: "kept · loses money" },
+      right: "menu 67%",
+      change: null,
+    });
+    expect(signalTrack(signal())?.right).toBe("menu 67%");
+    expect(
+      signalTrack(signal({ kind: "branch_gap", branch_id: "br-03", branch_name: "Deira Branch", menu_item_id: null, menu_item_name: null, kept_pct: "60.9" }))?.right,
+    ).toBe("chain 67%");
+    const spike = signal({
+      kind: "price_spike",
+      menu_item_id: null,
+      menu_item_name: null,
+      ingredient_id: "ing-nido",
+      ingredient_name: "Milk Powder",
+      kept_pct: null,
+      benchmark_pct: null,
+      price_before: "58.00",
+      price_after: "61.40",
+      unit: "kg",
+      change_pct: "5.9",
+    });
+    expect(signalTrack(spike)?.left).toEqual({ figure: "AED 61.40", words: "/kg" });
+    expect(signalName(spike)).toBe("Milk Powder");
+    expect(signalName(signal())).toBe("Chicken 65 Dry");
+    expect(signalName(signal({ menu_item_name: null, branch_name: "Deira Branch" }))).toBe("Deira");
+    // Nothing to draw: the row prints the sentence.
+    expect(signalTrack(signal({ kept_pct: null, benchmark_pct: null }))).toBeNull();
+    expect(wholeChange("5.9")).toBe("+6%");
+    expect(wholeChange("-9.1")).toBe("-9%");
+    expect(wholeChange("0.0")).toBe("0%");
+
+    // The mock: every chain signal is a share track, the branch view adds two price tracks.
+    const full = await scenario("full");
+    expect(full.signals.map((s) => signalTrack(s)?.change ?? null)).toEqual([null, null, null, null, null]);
+    expect(signalTrack(full.signals[0])?.loss).toBe(true);
+    const quoz = await scenario("full", "br-01");
+    expect(quoz.signals.filter((s) => s.kind === "price_spike").map((s) => signalTrack(s)?.change)).toEqual(["+6%", "+5%"]);
+    // The word said once when every row carries it, per row when they differ.
+    expect(signalsChips(full.signals)).toEqual({ shared: "estimated", perRow: false });
+    expect(signalsChips(quoz.signals)).toEqual({ shared: null, perRow: true });
+    expect(signalsChips([])).toEqual({ shared: null, perRow: false });
   });
 
   it("arrive ranked by money, capped at five, and the fifth shows where the tail starts", async () => {
@@ -499,20 +663,43 @@ describe("the signals", () => {
 });
 
 describe("the supplier price moves", () => {
-  it("names the kind in the screen's own words, with a tone and a glyph beside each", () => {
-    expect(priceMoveTag(priceMove())).toEqual({
-      label: "Price moved",
-      tone: "caution",
-      direction: "up",
+  it("draws a move as one track: the fill is the price now, the tick is where it was", () => {
+    expect(moveTrack(priceMove())).toEqual({
+      fill: 100,
+      tick: expect.closeTo(94.46, 1),
+      loss: false,
+      fell: false,
+      left: { figure: "AED 61.40", words: "/kg" },
+      right: "was 58.00",
+      change: "+6%",
     });
-    expect(priceMoveTag(priceMove({ direction: "down" }))).toEqual({
-      label: "Price fell",
-      tone: "verified",
-      direction: "down",
-    });
+    const fall = moveTrack(
+      priceMove({ direction: "down", price_before: "16.50", price_after: "15.00", unit: "litre", change_pct: "-9.1" }),
+    );
+    expect(fall?.fell).toBe(true);
+    expect(fall?.tick).toBe(100);
+    expect(fall?.fill).toBeCloseTo(90.9, 0);
+    expect(fall?.left).toEqual({ figure: "AED 15.00", words: "/litre" });
+    expect(fall?.right).toBe("was 16.50");
+    expect(fall?.change).toBe("-9%");
+    // A basis change has no before and after: the row prints the sentence.
     expect(
-      priceMoveTag(priceMove({ kind: "basis_changed", direction: null })),
-    ).toEqual({ label: "Price basis changed", tone: "stone", direction: null });
+      moveTrack(
+        priceMove({
+          kind: "basis_changed",
+          direction: null,
+          money_at_stake: null,
+          price_before: null,
+          price_after: null,
+          unit: null,
+          change_pct: null,
+        }),
+      ),
+    ).toBeNull();
+    expect(priceTrack("3.80", "4.00", "kg", "5.3").change).toBe("+5%");
+    expect(priceTrack("1.00", "1.10", "each", "10.0").left.words).toBe("each");
+    expect(moveWhenLine(priceMove())).toBe("since 21 Aug");
+    expect(MOVES_ABOUT).toMatch(/latest price move/);
   });
 
   it("prints the money off its magnitude and lets the direction choose the word", () => {
@@ -542,15 +729,6 @@ describe("the supplier price moves", () => {
     expect(showAllMovesLabel(0, false)).toBeNull();
   });
 
-  it("counts the window in the head, and says when the list it holds is capped", () => {
-    const moves = ["a", "b", "c", "d"].map((id) => priceMove({ ingredient_id: id }));
-    expect(priceMovesCaption({ count: 4, moves })).toBe("4 moved this window · latest move each");
-    expect(priceMovesCaption({ count: 6, moves: [...moves, priceMove({ ingredient_id: "e" })] })).toBe(
-      "6 moved this window · the 5 largest listed",
-    );
-    expect(priceMovesCaption({ count: 0, moves: [] })).toBeNull();
-  });
-
   it("links the newest line on its paper, at the app's one anchor idiom", () => {
     expect(priceMoveLink(priceMove())).toEqual({
       href: "/invoices/inv-1001#line-1",
@@ -558,13 +736,13 @@ describe("the supplier price moves", () => {
     });
     expect(priceMoveLink(priceMove({ line_position: 0 }))?.href).toBe("/invoices/inv-1001#line-0");
     expect(priceMoveLink(priceMove({ invoice_id: "" }))).toBeNull();
-    expect(MOVES_LINK).toEqual({ href: "/menu", label: "Every price move on Menu" });
+    expect(MOVES_LINK).toEqual({ href: "/menu", label: "All on Menu" });
   });
 
-  it("puts the plates and the evidence behind the icon, in the API's own words", () => {
+  it("puts the sentence, the plates and the evidence behind the icon, in the API's own words", () => {
     const move = priceMove();
-    expect(priceMoveTip(move)).toEqual([move.plates, move.evidence]);
-    expect(priceMoveTip(priceMove({ plates: null }))).toEqual([move.evidence]);
+    expect(priceMoveTip(move)).toEqual([move.sentence, move.plates, move.evidence]);
+    expect(priceMoveTip(priceMove({ plates: null }))).toEqual([move.sentence, move.evidence]);
   });
 
   it("arrives with every kind the panel has to render, ranked, the basis change last", async () => {
@@ -572,11 +750,13 @@ describe("the supplier price moves", () => {
     const moves = full.price_moves.moves;
     expect(full.price_moves.count).toBe(moves.length);
     expect(moves.length).toBeGreaterThanOrEqual(3);
-    const tags = moves.map((move) => priceMoveTag(move).label);
-    expect(new Set(tags)).toEqual(
-      new Set(["Price moved", "Price fell", "Price basis changed"]),
-    );
-    expect(tags[tags.length - 1]).toBe("Price basis changed");
+    expect(new Set(moves.map((move) => move.kind))).toEqual(new Set(["moved", "basis_changed"]));
+    expect(moves[moves.length - 1].kind).toBe("basis_changed");
+    // Every real move draws a track from the API's two prices; the basis
+    // change draws nothing and prints its sentence.
+    expect(moves.map((move) => moveTrack(move) !== null)).toEqual([true, true, true, true, false]);
+    expect(moveTrack(moves[0])?.left).toEqual({ figure: "AED 61.40", words: "/kg" });
+    expect(moveTrack(moves[1])?.fell).toBe(true);
     // Ranked by the money it moved whichever way, with the moneyless last.
     const weighed = moves
       .filter((move) => move.money_at_stake !== null)
@@ -593,7 +773,6 @@ describe("the supplier price moves", () => {
     for (const name of ["quiet", "nomenu", "empty"] as const) {
       const result = await scenario(name);
       expect(result.price_moves).toEqual({ count: 0, moves: [] });
-      expect(priceMovesCaption(result.price_moves)).toBeNull();
       expect(priceMovePanel(result.price_moves.moves, false)).toEqual([]);
     }
     expect(NO_PRICE_MOVES).toBe("No price moves in this window.");
@@ -615,7 +794,7 @@ describe("the supplier price moves", () => {
   });
 });
 
-describe("the items", () => {
+describe("the dishes", () => {
   it("shows five and five from the API's own slices when there are more than ten, and all otherwise", async () => {
     const full = await scenario("full");
     const split = itemPanel(full.items, false);
@@ -625,6 +804,7 @@ describe("the items", () => {
     expect(split.bottom).toEqual(full.items.bottom);
     expect(split.hidden).toBe(full.items.count - 10);
     expect(SPLIT_AT).toBe(10);
+    expect([BEST_HEADING, WORST_HEADING]).toEqual(["Best earners", "Weakest earners"]);
 
     const all = itemPanel(full.items, true);
     expect(all.kind).toBe("all");
@@ -636,29 +816,22 @@ describe("the items", () => {
     const quiet = await scenario("quiet");
     expect(itemPanel(quiet.items, false).kind).toBe("all");
     expect(itemPanel((await scenario("nomenu")).items, false).kind).toBe("none");
+    expect(ITEMS_LINK).toEqual({ href: "/menu", label: "All on Menu" });
   });
 
-  it("captions the first row Best and the first of the bottom five Worst, in the name cell", () => {
-    expect(itemCaption("top", 0, 5)).toBe("Best");
-    expect(itemCaption("top", 1, 5)).toBeNull();
-    expect(itemCaption("bottom", 0, 5)).toBe("Worst");
-    expect(itemCaption("bottom", 4, 5)).toBeNull();
-    expect(itemCaption("all", 0, 4)).toBe("Best");
-    expect(itemCaption("all", 3, 4)).toBe("Worst");
-    expect(itemCaption("all", 0, 1)).toBe("Best");
-  });
-
-  it("lists the rows with no numbers under the ranking, the /menu pattern", async () => {
+  it("takes the rows with no numbers out of the ranking and into the to-dos", async () => {
     const full = await scenario("full");
     const holes = incompleteItems(full.items);
     expect(holes.map((r) => r.menu_item_name).sort()).toEqual(["Chicken Mandi", "Honey Cake"]);
     expect(holes.every((r) => r.contribution === null && r.cost === null)).toBe(true);
-    expect(itemsHeading(full.items)).toBe("12 costed of 14");
-    expect(showAllLabel(12, false)).toBe("Show all 12 items");
+    expect(showAllLabel(12, false)).toBe("Show all 12 dishes");
     expect(showAllLabel(12, true)).toBe("Show the top 5 and bottom 5 only");
   });
 
   it("frames the drill from the row's fields and the API's notes", () => {
+    expect(soldWords(itemRow())).toBe("412 sold");
+    expect(soldWords(itemRow({ qty_sold: "1980.000" }))).toBe("1,980 sold");
+    expect(soldWords(itemRow({ qty_sold: null }))).toBe("no quantity");
     expect(portionsWords(itemRow())).toBe("412 sold");
     expect(portionsWords(itemRow({ qty_refunded: "2.000" }))).toBe("412 sold · 2 refunded");
     expect(portionsWords(itemRow({ qty_sold: null, qty_refunded: null }))).toBeNull();
@@ -705,11 +878,12 @@ describe("the items", () => {
     }
   });
 
-  it("marks an item that loses money by its own figure, and the mock carries one", async () => {
+  it("marks a dish that loses money by its own figure, and the mock carries one", async () => {
     const full = await scenario("full");
     const lemonade = full.items.all.find((r) => r.menu_item_name === "Mint Lemonade");
     expect(lemonade?.contribution?.startsWith("-")).toBe(true);
     expect(lemonade?.notes).toContain("this item costs more than it sells for");
+    expect(wholePercent(lemonade?.contribution_pct ?? null)).toBe("-5%");
     const chicken = full.items.all.find((r) => r.menu_item_name === "Chicken 65 Dry");
     expect(chicken?.quality).toBe("estimated");
     expect(chicken?.cost_per_portion_today).toBe("25.400");
@@ -717,159 +891,120 @@ describe("the items", () => {
   });
 });
 
+// The simple screen (2026-09-08): three tiles in plain words, the formal
+// name the contract pins as the first line behind the icon, a chip only
+// where the word is a caveat.
 describe("the headline tiles", () => {
-  it("is the chain's four figures, each with the sentence that qualifies it", async () => {
+  it("is sold, kept and paid to suppliers, in plain words with one line each", async () => {
     const full = await scenario("full");
-    const [netSales, ratio, contribution, share] = tiles(full);
+    const [sold, kept, suppliers] = tiles(full);
+    expect(tiles(full)).toHaveLength(3);
 
-    expect(netSales).toEqual({
-      key: "net_sales",
-      label: "Net sales",
+    expect(sold).toEqual({
+      key: "sold",
+      label: "Sold",
       figure: "AED 67,471",
       words: null,
       loss: false,
-      sentence: "from the till, net of VAT · loaded to Mon 31 Aug",
-      line: "to Mon 31 Aug",
-      tip: ["From the till, net of VAT."],
+      line: "AED 9,493 on Mon 31 Aug",
+      status: null,
       bar: null,
+      tip: [SOLD_ABOUT, "Taken across 3 branches that day."],
       caption: null,
-      status: null,
-      link: null,
     });
-    expect(ratio.label).toBe("Purchases ÷ net sales (cash basis)");
-    expect(ratio.figure).toBe("23.7%");
-    expect(ratio.sentence).toBe("AED 16,019 of confirmed papers in this window");
-    expect(ratio.status).toEqual({
-      quality: "incomplete",
-      sentence: "1 of 3 branches incomplete.",
-    });
-    expect(contribution.label).toBe("Contribution before overheads (estimate)");
-    expect(contribution.figure).toBe("AED 37,952");
-    expect(contribution.sentence).toBe(
-      "keeps 67.4% of costed sales · after ingredients and packaging",
-    );
-    expect(contribution.status?.quality).toBe("estimated");
-    expect(share).toEqual({
-      key: "costed_share",
-      label: "Costed share of sales",
-      figure: "84.2%",
-      words: null,
-      loss: false,
-      sentence: "3 till names worth AED 8,320 have no dish yet.",
-      line: "3 till names unmapped",
-      tip: [
-        "These figures cover 84.2% of what was sold.",
-        "3 till names worth AED 8,320 have no dish yet.",
-      ],
-      bar: 84.2,
-      caption: null,
-      status: null,
-      link: { href: "/sales", label: "Map them" },
-    });
-  });
 
-  // The founder's redesign (2026-09-07): the tile prints one short line and
-  // the clauses it drops go behind the icon. Nothing is rewritten to get
-  // there - every word below is a word the tile's own sentence already used.
-  it("prints one short line and puts the clauses it drops behind the icon", async () => {
-    const [netSales, ratio, contribution, share] = tiles(await scenario("full"));
-    expect(netSales.line).toBe("to Mon 31 Aug");
-    expect(netSales.tip).toEqual(["From the till, net of VAT."]);
-    expect(ratio.line).toBe("AED 16,019 of confirmed papers");
-    expect(ratio.tip).toEqual(["1 of 3 branches incomplete."]);
-    expect(contribution.line).toBe("keeps 67.4% of costed sales");
-    expect(contribution.tip).toEqual([
-      "After ingredients and packaging.",
+    expect(kept.label).toBe("Kept after ingredients");
+    expect(kept.figure).toBe("AED 37,952");
+    expect(kept.line).toBe("AED 67 of every 100 sold");
+    expect(kept.status).toBe("estimated");
+    expect(kept.bar).toEqual({ width: 84.2, words: "covers 84% of what sold" });
+    // The formal name first, then what the cost covers, then the API's notes.
+    expect(kept.tip).toEqual([
+      KEPT_ABOUT,
+      COST_COVERS,
       "Covers 84% of the chain's sales value.",
+      "5 branch items left out of the figure.",
+      "3 till names with sales are not mapped to a menu item.",
+      "Waste and variable fees are not recorded anywhere, so they are not subtracted.",
     ]);
-    // The strip that used to close the screen, whole, in its only home.
-    expect(share.tip).toEqual([
-      "These figures cover 84.2% of what was sold.",
-      "3 till names worth AED 8,320 have no dish yet.",
-    ]);
-    expect(share.bar).toBe(84.2);
-  });
+    expect(KEPT_ABOUT).toMatch(/^Contribution before overheads \(estimate\)/);
+    expect(KEPT_ABOUT).toMatch(/It is not profit\.$/);
 
-  it("names the chain in one word on the line, and the whole clause behind the icon", async () => {
-    const [netSales, ratio, contribution, share] = tiles(await scenario("full", "br-01"));
-    expect(netSales.caption).toBe("Al Quoz");
-    expect(ratio.line).toBe("AED 11,898 of confirmed papers · chain 23.7%");
-    expect(contribution.line).toBe("keeps 69.9% of costed sales · chain 67.4%");
-    expect(contribution.tip[0]).toBe("After ingredients and packaging.");
-    expect(share.line).toBe("1 till name unmapped");
-    expect(share.tip).toEqual([
-      "These figures cover 86.0% of what was sold.",
-      "1 till name worth AED 3,120 has no dish yet.",
+    expect(suppliers.label).toBe("Paid to suppliers");
+    expect(suppliers.figure).toBe("AED 16,019");
+    expect(suppliers.line).toBe("AED 24 of every 100 sold");
+    expect(suppliers.status).toBe("incomplete");
+    expect(suppliers.tip).toEqual([
+      SUPPLIERS_ABOUT,
+      "Purchases ÷ net sales (cash basis): 23.7%.",
+      "1 of 3 branches incomplete.",
     ]);
-  });
-
-  it("has no line and no tip on the tiles a missing menu empties", async () => {
-    const nomenu = tiles(await scenario("nomenu"));
-    for (const tile of [nomenu[2], nomenu[3]]) {
-      expect(tile.line).toBe("");
-      expect(tile.tip).toEqual([]);
-      expect(tile.bar).toBeNull();
+    // Never the forbidden words, anywhere on a tile.
+    for (const tile of tiles(full)) {
+      const words = [tile.label, tile.line, ...tile.tip].join(" ");
+      expect(words).not.toMatch(/food cost|net profit/i);
     }
-    const quiet = tiles(await scenario("quiet"));
-    expect(quiet[3].line).toBe("Every till name is mapped.");
-    expect(quiet[3].bar).toBe(100);
   });
 
-  it("carries the word beside the date when the sales are old", async () => {
-    const partial = tiles(await scenario("partial"));
-    expect(partial[0].figure).toBe("AED 51,595");
-    expect(partial[0].status).toEqual({ quality: "estimated", sentence: null });
-    expect(partial[1].status?.sentence).toBe("2 of 3 branches incomplete.");
-    expect(partial[2].sentence).toBe(
-      "keeps 69.4% of costed sales · after ingredients and packaging",
-    );
+  it("carries a chip only where the word is a caveat", async () => {
+    expect(tileChip("estimated")).toBe("estimated");
+    expect(tileChip("incomplete")).toBe("incomplete");
+    expect(tileChip("reliable_with_limitations")).toBeNull();
+    expect(tileChip("unavailable")).toBeNull();
+    const [sold, kept, suppliers] = tiles(await scenario("quiet"));
+    expect([sold.status, kept.status, suppliers.status]).toEqual([null, null, null]);
+    expect(kept.bar).toEqual({ width: 100, words: "covers 100% of what sold" });
   });
 
-  it("says every till name is mapped, with nothing to click", async () => {
-    const quiet = tiles(await scenario("quiet"));
-    expect(quiet[3].figure).toBe("100.0%");
-    expect(quiet[3].sentence).toBe("Every till name is mapped.");
-    expect(quiet[3].link).toBeNull();
-    expect(quiet[1].status?.sentence).toBe("Every day loaded, every paper confirmed.");
+  it("carries the word beside the day when the sales are old", async () => {
+    const [sold, kept, suppliers] = tiles(await scenario("partial"));
+    expect(sold.figure).toBe("AED 51,595");
+    expect(sold.line).toBe("AED 7,726 on Mon 31 Aug");
+    expect(sold.status).toBe("estimated");
+    expect(sold.tip).toEqual([SOLD_ABOUT, "Taken across 2 branches that day."]);
+    expect(kept.status).toBe("incomplete");
+    expect(suppliers.status).toBe("incomplete");
+    expect(suppliers.line).toBe("AED 31 of every 100 sold");
   });
 
   it("is the branch's own row under the filter, with the chain named beside it", async () => {
     const quoz = await scenario("full", "br-01");
-    const [netSales, ratio, contribution, share] = tiles(quoz);
-
-    // The branch's figures, never the chain's - the league row and the strip
-    // on the same screen say the same numbers.
-    expect(netSales.figure).toBe("AED 30,719");
-    expect(netSales.caption).toBe("Al Quoz");
-    expect(ratio.figure).toBe("38.7%");
-    expect(ratio.sentence).toBe(
-      "AED 11,898 of confirmed papers in this window · the chain reads 23.7%",
-    );
-    expect(contribution.figure).toBe("AED 18,319");
-    expect(contribution.sentence).toBe(
-      "keeps 69.9% of costed sales · after ingredients and packaging · the chain keeps 67.4%",
-    );
-    expect(share.figure).toBe("86.0%");
-    expect(share.sentence).toBe("1 till name worth AED 3,120 has no dish yet.");
+    const [sold, kept, suppliers] = tiles(quoz);
+    // The branch's figures, never the chain's - the league row on the same
+    // screen says the same numbers - and the branch named once.
+    expect(sold.caption).toBe("Al Quoz");
+    expect(sold.figure).toBe("AED 30,719");
+    expect(sold.line).toBe("AED 4,385 on Mon 31 Aug");
+    expect(sold.tip).toEqual([SOLD_ABOUT]);
+    expect(kept.caption).toBeNull();
+    expect(kept.figure).toBe("AED 18,319");
+    expect(kept.line).toBe("AED 70 of every 100 sold · chain AED 67");
+    expect(kept.bar).toEqual({ width: 86, words: "covers 86% of what sold" });
     // Not the chain's 84.2%, which the same read still carries.
     expect(quoz.total.costed_share_pct).toBe("84.2");
-    expect(coverageStrip(quoz).lead).toBe("These figures cover 86.0% of what was sold.");
+    expect(suppliers.figure).toBe("AED 11,898");
+    expect(suppliers.line).toBe("AED 39 of every 100 sold · chain AED 24");
+    expect(suppliers.status).toBeNull();
+    expect(suppliers.tip).toEqual([
+      SUPPLIERS_ABOUT,
+      "Purchases ÷ net sales (cash basis): 38.7%.",
+      "3 deliveries in this window.",
+    ]);
   });
 
-  it("says why the last two tiles are empty when there is no menu", async () => {
-    const nomenu = tiles(await scenario("nomenu"));
-    expect(nomenu[0].figure).toBe("AED 67,471");
-    expect(nomenu[1].figure).toBe("23.7%");
-    for (const tile of [nomenu[2], nomenu[3]]) {
-      expect(tile.figure).toBeNull();
-      expect(tile.words).toBe("No menu is loaded, so nothing can be costed yet.");
-      expect(tile.sentence).toBe("");
-      expect(tile.status).toBeNull();
-      expect(tile.link).toBeNull();
-    }
+  it("says why the kept tile is empty when there is no menu, and still counts the papers", async () => {
+    const [sold, kept, suppliers] = tiles(await scenario("nomenu"));
+    expect(sold.figure).toBe("AED 67,471");
+    expect(kept.figure).toBeNull();
+    expect(kept.words).toBe("No menu is loaded, so nothing can be costed yet.");
+    expect(kept.line).toBe("");
+    expect(kept.status).toBeNull();
+    expect(kept.bar).toBeNull();
+    expect(kept.tip).toEqual([]);
+    expect(suppliers.figure).toBe("AED 16,019");
     const filtered = tiles(await scenario("nomenu", "br-01"));
     expect(filtered[0].caption).toBe("Al Quoz");
-    expect(filtered[2].words).toBe("No menu is loaded, so nothing can be costed yet.");
+    expect(filtered[1].words).toBe("No menu is loaded, so nothing can be costed yet.");
   });
 
   it("shows no tile at all on a first run", async () => {
@@ -877,18 +1012,39 @@ describe("the headline tiles", () => {
     expect(tiles(await scenario("empty", "br-01"))).toEqual([]);
   });
 
-  it("names a loss as a loss, rounded up by its size", async () => {
+  it("names a loss as a loss, rounded up by its size, with no share beside it", async () => {
     const quiet = await scenario("quiet");
     const losing = {
       ...quiet,
       total: { ...quiet.total, contribution: "-411.50", contribution_pct: "-1.4" },
     };
-    const [, , contribution] = tiles(losing);
-    expect(contribution.loss).toBe(true);
-    expect(contribution.figure).toBe("-AED 412");
-    expect(contribution.sentence).toBe(
-      "keeps -1.4% of costed sales · after ingredients and packaging",
-    );
+    const [, kept] = tiles(losing);
+    expect(kept.loss).toBe(true);
+    expect(kept.figure).toBe("-AED 412");
+    expect(kept.line).toBe("");
+  });
+
+  it("says no confirmed purchases in words rather than printing AED 0", async () => {
+    const full = await scenario("full");
+    const nothing = { ...full, total: { ...full.total, purchases: "0.00", ratio_pct: null } };
+    const [, , suppliers] = tiles(nothing);
+    expect(suppliers.figure).toBeNull();
+    expect(suppliers.words).toBe("No confirmed purchases");
+    expect(suppliers.line).toBe("");
+    expect(suppliers.status).toBeNull();
+  });
+
+  it("names the newest loaded day, the chain's or the branch's own", async () => {
+    const full = await scenario("full");
+    expect(latestDay(full)).toEqual({
+      line: "AED 9,493 on Mon 31 Aug",
+      tip: "Taken across 3 branches that day.",
+    });
+    expect(latestDay({ ...full, latest_day: null })).toBeNull();
+    expect(latestDay(await scenario("full", "br-02"))).toEqual({
+      line: "AED 2,987 on Mon 31 Aug",
+      tip: null,
+    });
   });
 });
 
@@ -911,10 +1067,6 @@ describe("the info tips", () => {
       "1 item cannot be costed yet.",
       "1 till name with sales is not mapped to a menu item.",
     ]);
-    // The one-line caveat is still what the notes join into.
-    expect(answerCaveat(full)).toBe(
-      "Estimated: covers 82% of this branch's sales value · 1 item cannot be costed yet · 1 till name with sales is not mapped to a menu item",
-    );
 
     const partial = await scenario("partial");
     expect(answerChip(partial)).toBe("incomplete");
@@ -931,7 +1083,7 @@ describe("the info tips", () => {
     const [deira, karama] = full.league;
     expect(leagueTip(deira)).toEqual([
       "25-31 Aug, 7 days · 1 delivery",
-      "AED 4,121 purchases",
+      "AED 4,121 paid to suppliers, AED 26 of every 100 sold",
       "Covers 82% of this branch's sales value.",
       "1 item cannot be costed yet.",
       "1 till name with sales is not mapped to a menu item.",
@@ -943,7 +1095,7 @@ describe("the info tips", () => {
     expect(leagueTip(karama).slice(2)).toEqual(statusTip(karama));
     // The chain has no window of its own to name.
     expect(totalTip(full.total)).toEqual([
-      "AED 16,019 purchases",
+      "AED 16,019 paid to suppliers, AED 24 of every 100 sold",
       ...statusTip(full.total),
     ]);
     const nothing = { ...full.total, purchases: "0.00", ratio_pct: null };
@@ -966,9 +1118,10 @@ describe("the info tips", () => {
     expect(tip[1]).toMatch(/^It is not profit/);
   });
 
-  it("puts a signal's detail behind the icon, and the date a price moved on", () => {
+  it("puts a signal's sentence and detail behind the icon, and the date a price moved on under its name", () => {
     const popular = signal();
-    expect(signalTip(popular)).toEqual([popular.detail]);
+    expect(signalTip(popular)).toEqual([popular.sentence, popular.detail]);
+    expect(signalWhenLine(popular)).toBeNull();
     const spike = signal({
       kind: "price_spike",
       invoice_id: "inv-1001",
@@ -976,12 +1129,13 @@ describe("the info tips", () => {
       menu_item_id: null,
       detail: "Milk Powder is AED 2.10 a kg dearer than the last paper. (estimated)",
     });
-    expect(signalTip(spike)).toEqual([spike.detail, "since 21 Aug"]);
+    expect(signalTip(spike)).toEqual([spike.sentence, spike.detail]);
+    expect(signalWhenLine(spike)).toBe("since 21 Aug");
   });
 
-  it("keeps the item panel's paragraph, word for word, behind its heading", () => {
+  it("keeps the dishes' paragraph, word for word, behind its heading", () => {
     expect(itemsTip()).toEqual([
-      "Contribution is the till's own net takings for the item less what its recipe costs at the prices in force on the period's last day; it is not profit, and cost covers what the recipe lists.",
+      "Kept is the till's own net takings for the dish less what its recipe costs at the prices in force on the period's last day; it is not profit, and cost covers what the recipe lists.",
     ]);
   });
 
@@ -1000,7 +1154,7 @@ describe("the info tips", () => {
     expect(keptBar("60.9")).toBe(60.9);
     expect(keptBar("100.0")).toBe(100);
     expect(keptBar("0.0")).toBe(0);
-    // A branch that lost money gets an empty track; the words beside it say so.
+    // A branch that lost money gets an empty track; the figure beside it says so.
     expect(keptBar("-1.4")).toBe(0);
     expect(keptBar("140.2")).toBe(100);
     expect(keptBar(null)).toBeNull();
@@ -1008,21 +1162,16 @@ describe("the info tips", () => {
   });
 });
 
-describe("the coverage strip", () => {
-  it("is a sentence and a link to the queue, never a second queue", async () => {
-    expect(coverageStrip(await scenario("full"))).toEqual({
-      lead: "These figures cover 84.2% of what was sold.",
-      rest: "3 till names worth AED 8,320 have no dish yet.",
-      link: { href: "/sales", label: "Map them on Sales" },
-    });
-    expect(coverageStrip(await scenario("quiet"))).toEqual({
-      lead: "These figures cover 100.0% of what was sold.",
-      rest: "Every till name is mapped.",
-      link: null,
-    });
-    const deira = coverageStrip(await scenario("full", "br-03"));
-    expect(deira.lead).toBe("These figures cover 82.3% of what was sold.");
-    expect(deira.rest).toBe("1 till name worth AED 2,400 has no dish yet.");
+describe("the whole numbers", () => {
+  it("round a percentage the way the API's own sentences do, and never divide", () => {
+    expect(wholePercent("60.9")).toBe("61%");
+    expect(wholePercent("67.4")).toBe("67%");
+    expect(wholePercent("100.0")).toBe("100%");
+    expect(wholePercent("-5.3")).toBe("-5%");
+    expect(wholePercent(null)).toBeNull();
+    expect(wholePercent("not a number")).toBeNull();
+    expect(everyHundred("23.7")).toBe("AED 24 of every 100");
+    expect(everyHundred("60.9")).toBe("AED 61 of every 100");
   });
 });
 

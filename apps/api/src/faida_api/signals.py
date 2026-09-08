@@ -164,6 +164,16 @@ class Signal:
     ingredient_name: str | None = None
     invoice_id: str | None = None
     moved_on: datetime.date | None = None
+    #: The numbers the sentence is written from, as fields, so a screen can
+    #: draw them (the dashboard's tracks, 2026-09-08) without re-reading the
+    #: sentence: a dish's or a branch's kept share against its benchmark, or
+    #: a move's price before and after per display unit with the change.
+    kept_pct: Decimal | None = None
+    benchmark_pct: Decimal | None = None
+    price_before: Decimal | None = None
+    price_after: Decimal | None = None
+    unit: str | None = None
+    change_pct: Decimal | None = None
 
 
 # --- words ------------------------------------------------------------------
@@ -263,6 +273,8 @@ def popular_low_margin(
                 branch_name=scope.branch_name,
                 menu_item_id=row.menu_item_id,
                 menu_item_name=row.menu_item_name,
+                kept_pct=row.contribution_pct,
+                benchmark_pct=benchmark,
             )
         )
     return out
@@ -345,6 +357,20 @@ def moved_enough(move: "PriceMove") -> bool:
         return False
     base = move.previous.cost_per_base_unit
     return base > 0 and abs(delta) >= SPIKE_MIN_PCT * base
+
+
+def move_change_pct(move: "PriceMove") -> Decimal | None:
+    """The move as a percentage of the price it moved from, one decimal,
+    signed - the figure the 5% gate is judged on, sent as a field so the
+    dashboard's track can print it beside the two prices. None for a basis
+    change (no before and after) and for a baseline of zero."""
+    delta = move.delta_per_base_unit
+    if delta is None:
+        return None
+    base = move.previous.cost_per_base_unit
+    if base <= 0:
+        return None
+    return (delta / base * 100).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
 
 
 def weigh_move(
@@ -621,6 +647,10 @@ def price_spike(
                 ingredient_name=move.ingredient_name,
                 invoice_id=move.current.invoice_id,
                 moved_on=moved_on,
+                price_before=move.previous.per_display_unit,
+                price_after=move.current.per_display_unit,
+                unit=move.current.display_unit,
+                change_pct=move_change_pct(move),
             )
         )
     return out
@@ -694,6 +724,8 @@ def branch_gap(
                 quality=quality,
                 branch_id=own.branch_id,
                 branch_name=own.branch_name,
+                kept_pct=own.contribution_pct,
+                benchmark_pct=benchmark,
             )
         )
     return out

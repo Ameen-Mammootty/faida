@@ -462,14 +462,14 @@ def branch_answer(ranked_league, scope_name=None):
     kept = top.contribution_pct.quantize(D("1"), rounding=ROUND_HALF_UP)
     name = short_branch(top.branch_name or "")
     if scope_name is not None:
-        sentence = f"{name} keeps about AED {kept} of every 100 it takes."
+        sentence = f"{name}: keeps {kept}%."
     elif len(rated) == 1:
-        sentence = f"Look at {name} first: it keeps about AED {kept} of every 100 it takes, the only branch with a figure."
+        sentence = f"Look at {name}: keeps {kept}%, the only branch with a figure."
     else:
         n = NUMBER_WORDS.get(len(rated), str(len(rated)))
-        sentence = f"Look at {name} first: it keeps about AED {kept} of every 100 it takes, the least of the {n}."
+        sentence = f"Look at {name}: keeps {kept}%, the least of the {n} branches."
     if top.quality is Quality.INCOMPLETE:
-        sentence += " Its figure is incomplete - its row says why."
+        sentence += " Its figure is incomplete."
     return sentence, top
 
 
@@ -479,9 +479,16 @@ def item_answer(rows, chain, scope):
         return None, None
     by_id = {r.menu_item_id: r for r in rows if r.branch_id == scope.branch_id}
     best = max(fired, key=lambda s: by_id[s.menu_item_id].net_item_sales)
+    row = by_id[best.menu_item_id]
     where = "" if scope.branch_name is None else f" at {short_branch(scope.branch_name)}"
-    return (f"{best.menu_item_name} sells more than any item{where} that earns under the menu's average.",
-            by_id[best.menu_item_id])
+    if row.contribution_pct is not None and row.contribution_pct < 0:
+        return f"{best.menu_item_name}: sells well{where} but loses money on every plate.", row
+    if row.contribution_pct is None or chain.contribution_pct is None:
+        return f"{best.menu_item_name}: sells well{where} but keeps less than the menu.", row
+    kept = row.contribution_pct.quantize(D("1"), rounding=ROUND_HALF_UP)
+    menu = chain.contribution_pct.quantize(D("1"), rounding=ROUND_HALF_UP)
+    return (f"{best.menu_item_name}: sells well{where} but keeps only {kept}% against the menu's {menu}%.",
+            row)
 
 
 # --- serialisation ------------------------------------------------------------
@@ -534,6 +541,9 @@ def signal_json(sig: S.Signal):
         "sentence": sig.sentence, "detail": sig.detail, "branch_id": sig.branch_id, "branch_name": sig.branch_name,
         "menu_item_id": sig.menu_item_id, "menu_item_name": sig.menu_item_name, "ingredient_id": sig.ingredient_id,
         "ingredient_name": sig.ingredient_name, "invoice_id": sig.invoice_id, "moved_on": iso(sig.moved_on),
+        "kept_pct": s(sig.kept_pct), "benchmark_pct": s(sig.benchmark_pct),
+        "price_before": s(sig.price_before), "price_after": s(sig.price_after), "unit": sig.unit,
+        "change_pct": s(sig.change_pct),
     }
 
 
