@@ -28,6 +28,18 @@ from .takings import FILS, code_key, day_key, name_key, till_item_key
 RETRY_LIMIT = 3
 RETRY_BACKOFF_SECONDS = 30
 
+#: How long a job may sit `running` before another worker may take it (M10
+#: WP-103, P12). A process killed mid-job leaves its row `running` for ever
+#: otherwise: a graceful stop finishes the job first (main.py's lifespan), a
+#: hard kill does not, and nothing ever looked at those rows again. For an
+#: extract job that stranding is visible - a document stuck in `processing` on
+#: the invoice list - but a stranded morning brief shows nowhere at all, which
+#: is why the reclaim landed with it. Every handler is already idempotent under
+#: retries (C2), and `attempts` keeps counting, so a job cannot loop: the cost
+#: is that a legitimately slow job over ten minutes runs twice, and extraction
+#: aims at twenty seconds with 155 s the worst ever observed.
+STALE_RUNNING_MINUTES = 10
+
 #: One supplier as everything that matches, books or picks one sees it (M9
 #: WP-87): the catalog row plus every printed name that means it, aggregated
 #: from `supplier_aliases`. The alias array is still called `name_aliases`
@@ -3682,6 +3694,201 @@ class Database:
             outcome,
         )
 
+    # -- Brief recipients (M10) ----------------------------------------------
+
+    async def add_brief_recipient(
+        self,
+        *,
+        tenant_id: str,
+        phone_e164: str,
+        timezone: str,
+        send_at_local: datetime.time,
+        actor: str,
+        evidence: str,
+    ) -> str:
+        """Register a phone for the morning brief, with the decision beside it
+        (M10 WP-103; C8 extended, P14). Returns the new recipient id.
+
+        The row and its `brief_recipient.added` audit event are written in one
+        transaction, because the row is state and says nothing about consent:
+        who asked for a daily message about their own money, when, and on what
+        evidence is the audit row's job, and a recipient row without one is a
+        number nobody here can account for. `evidence` is the pointer to the
+        owner's own request - a WhatsApp message id, an onboarding sheet with
+        its date, or, for the founder's own phone, the founder's decision.
+
+        A phone already registered for this tenant raises asyncpg's unique
+        violation: adding a number twice is the same recipient, never a second
+        morning."""
+        async with self.pool.acquire() as conn, conn.transaction():
+            recipient_id = str(
+                await conn.fetchval(
+                    """
+                    insert into brief_recipients (tenant_id, phone_e164, timezone, send_at_local)
+                    values ($1, $2, $3, $4)
+                    returning id
+                    """,
+                    tenant_id,
+                    phone_e164,
+                    timezone,
+                    send_at_local,
+                )
+            )
+            await _insert_audit_event(
+                conn,
+                tenant_id=tenant_id,
+                actor=actor,
+                action="brief_recipient.added",
+                subject_type="brief_recipient",
+                subject_id=recipient_id,
+                detail={
+                    "phone_e164": phone_e164,
+                    "timezone": timezone,
+                    "send_at_local": send_at_local.isoformat(timespec="minutes"),
+                    "evidence": evidence,
+                },
+            )
+        return recipient_id
+
+    async def pause_brief_recipient(self, recipient_id: str, *, tenant_id: str, actor: str) -> bool:
+        """Stop this one recipient's morning without losing the number
+        (C15.5). False when it was already paused - no second audit row for a
+        no-op, the `archive_menu_item` rule."""
+        return await self._set_paused(
+            recipient_id,
+            tenant_id=tenant_id,
+            actor=actor,
+            paused=True,
+            action="brief_recipient.paused",
+        )
+
+    async def resume_brief_recipient(
+        self, recipient_id: str, *, tenant_id: str, actor: str
+    ) -> bool:
+        """The way back, one row and one audit event. False when it was not
+        paused."""
+        return await self._set_paused(
+            recipient_id,
+            tenant_id=tenant_id,
+            actor=actor,
+            paused=False,
+            action="brief_recipient.resumed",
+        )
+
+    async def _set_paused(
+        self, recipient_id: str, *, tenant_id: str, actor: str, paused: bool, action: str
+    ) -> bool:
+        async with self.pool.acquire() as conn, conn.transaction():
+            row = await conn.fetchval(
+                f"""
+                update brief_recipients
+                set paused_at = {"now()" if paused else "null"}
+                where id = $1 and tenant_id = $2
+                  and paused_at is {"null" if paused else "not null"}
+                returning id
+                """,
+                recipient_id,
+                tenant_id,
+            )
+            if row is None:
+                return False
+            await _insert_audit_event(
+                conn,
+                tenant_id=tenant_id,
+                actor=actor,
+                action=action,
+                subject_type="brief_recipient",
+                subject_id=recipient_id,
+            )
+        return True
+
+    async def list_active_brief_recipients(self) -> list[asyncpg.Record]:
+        """Every tenant's unpaused recipients, for the worker's tick.
+
+        The one read of this table that takes no tenant, and the reason is the
+        clock: the tick asks "whose morning has come" of the whole database
+        once a minute, and a tenant-scoped read would need a list of tenants
+        to ask about first. Each row carries its own `tenant_id`, which is
+        what the job it enqueues is scoped by (C2), so nothing downstream
+        works without a tenant - only this one query, which decides nothing
+        and writes nothing. Ordered so two ticks see the same rows in the same
+        order."""
+        return await self.pool.fetch(
+            """
+            select id::text as id, tenant_id::text as tenant_id, phone_e164, timezone,
+                   send_at_local, paused_at, created_at
+            from brief_recipients
+            where paused_at is null
+            order by created_at, id
+            """
+        )
+
+    async def get_brief_recipient(
+        self, recipient_id: str, *, tenant_id: str
+    ) -> asyncpg.Record | None:
+        """One of this tenant's recipients, or None - the send job reads its
+        row scoped by the tenant its payload carries and refuses a mismatch
+        (C2), so a job cannot deliver one tenant's figures to another
+        tenant's phone. A paused row is still returned: the job decides what
+        to do about a recipient paused between the tick and the send."""
+        return await self.pool.fetchrow(
+            """
+            select id::text as id, tenant_id::text as tenant_id, phone_e164, timezone,
+                   send_at_local, paused_at, created_at
+            from brief_recipients
+            where id = $1 and tenant_id = $2
+            """,
+            recipient_id,
+            tenant_id,
+        )
+
+    async def brief_recipient_for_phone(self, phone: str) -> asyncpg.Record | None:
+        """The recipient a phone belongs to, whatever the tenant - the second
+        lookup in the one resolver, after `branch_for_phone` (C15.10).
+
+        Tenant-free for the same reason that one is: an inbound message
+        arrives with a phone number and nothing else, and which tenant it
+        belongs to is the answer, not the question. Unpaused rows only: a
+        paused recipient receives nothing and is answered like any other
+        number we do not know. Oldest first, deterministically, on the chance
+        that one phone is registered under two tenants."""
+        return await self.pool.fetchrow(
+            """
+            select id::text as id, tenant_id::text as tenant_id, phone_e164, timezone,
+                   send_at_local, paused_at, created_at
+            from brief_recipients
+            where phone_e164 = $1 and paused_at is null
+            order by created_at, id
+            limit 1
+            """,
+            phone,
+        )
+
+    async def outbound_brief_exists(self, *, recipient_id: str, brief_date: str) -> bool:
+        """Whether this recipient already has a brief for this local day
+        (C15.3). The handler asks before it sends, so a job run twice for one
+        payload sends once - the second half of the guard whose first half is
+        `jobs_send_brief_uidx`, and the half that survives a job row being
+        replayed by hand.
+
+        Rehearsals are excluded: a `--send --to` from the CLI is a founder
+        proving the template at some other hour and is outside the day's key,
+        so it must not silence the morning."""
+        return await self.pool.fetchval(
+            """
+            select exists (
+                select 1 from wa_messages
+                where direction = 'out'
+                  and msg_type = 'template'
+                  and payload->>'recipient_id' = $1
+                  and payload->>'brief_date' = $2
+                  and payload->>'rehearsal' = 'false'
+            )
+            """,
+            str(recipient_id),
+            str(brief_date),
+        )
+
     # -- Jobs ----------------------------------------------------------------
 
     async def enqueue(self, kind: str, payload: dict[str, Any]) -> int:
@@ -3710,13 +3917,47 @@ class Database:
             payload,
         )
 
+    async def enqueue_brief_once(self, payload: dict[str, Any]) -> int | None:
+        """One brief per recipient per local day, ever (C15.3). Inserts
+        against 0022's `jobs_send_brief_uidx` and tolerates the conflict:
+        returns the new job id, or None when a job for this (recipient, date)
+        already exists in any status.
+
+        `enqueue_once` is not widened to cover it because the two indexes key
+        on different fields, and a single method that guessed which one from
+        the kind would be a third place the rule lives. Same shape, same
+        reason: the index is the guard, not a flag in Python - so a second
+        tick, a second API instance and a restart mid-tick all enqueue
+        nothing, without any of them knowing about each other."""
+        return await self.pool.fetchval(
+            """
+            insert into jobs (kind, payload) values ($1, $2)
+            on conflict (kind, (payload->>'recipient_id'), (payload->>'brief_date'))
+            where kind = 'send_brief'
+            do nothing
+            returning id
+            """,
+            JobKind.SEND_BRIEF,
+            payload,
+        )
+
     async def claim_job(self) -> asyncpg.Record | None:
-        """Claim one queued job (SKIP LOCKED so multiple workers stay safe later)."""
+        """Claim one queued job (SKIP LOCKED so multiple workers stay safe later).
+
+        A row left `running` by a process that died mid-job is claimed too,
+        once it has been untouched for `STALE_RUNNING_MINUTES` (P12): nothing
+        else ever looked at those rows, so the morning brief - whose stranding
+        shows on no screen - would simply never arrive. `attempts` counts up
+        on a reclaim like any other attempt, so a job that strands three times
+        fails rather than looping."""
         async with self.pool.acquire() as conn, conn.transaction():
             job = await conn.fetchrow(
-                """
+                f"""
                 select * from jobs
-                where status = 'queued' and run_after <= now()
+                where run_after <= now()
+                  and (status = 'queued'
+                       or (status = 'running'
+                           and updated_at < now() - interval '{STALE_RUNNING_MINUTES} minutes'))
                 order by id
                 limit 1
                 for update skip locked

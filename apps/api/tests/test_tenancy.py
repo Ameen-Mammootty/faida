@@ -78,6 +78,7 @@ TENANT_TABLES = (
     "sales_daily",
     "sales_lines",
     "branch_aliases",
+    "brief_recipients",
 )
 
 

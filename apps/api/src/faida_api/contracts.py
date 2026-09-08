@@ -31,6 +31,17 @@ job and the webhook that enqueues it stays dumb and fast. A phone no branch is
 registered to resolves to nothing: the inbound row is stamped
 `ignored_unknown_sender` before anything else, the phone is answered once a
 day, and no document, job or model call exists for it.
+
+C2 amended again 2026-09-08 (M10, C15.10; WP-103 built it): the resolver has a
+second lookup. A phone that is not a branch's but does receive the morning
+brief is an owner writing back to a message we sent, and telling an owner to
+"ask the owner to add this number" is the wrong sentence: the inbound row is
+stamped `ignored_brief_recipient` before anything else, the phone is told once
+a day what the number is for (`replies.REPLY_BRIEF_RECIPIENT`), and nothing is
+created - no document, no job, no model call, exactly as for a phone we do not
+know. A phone that is both a branch and a recipient is a branch, because the
+branch lookup comes first: the founder's own handset is both, and forwarding an
+invoice from it must keep working.
 """
 
 from enum import StrEnum
@@ -50,6 +61,14 @@ class JobKind(StrEnum):
     # "branch_id": str | None}. One per document, ever (jobs_extract_document_uidx,
     # 0018): enqueued through Database.enqueue_once.
     EXTRACT_DOCUMENT = "extract_document"
+    # Composes one morning's brief out of the dashboard read and sends it as
+    # an approved template (M10 WP-103). Payload: {"tenant_id": str,
+    # "recipient_id": str, "brief_date": str} - the recipient's own local
+    # date, which is also the `today` the read is made for (C15.6). One per
+    # recipient per local day, ever (jobs_send_brief_uidx, 0022): enqueued
+    # through Database.enqueue_brief_once by the worker's tick, never by a
+    # request.
+    SEND_BRIEF = "send_brief"
 
 
 # wa_messages.status for an inbound message from a phone no branch is
@@ -57,6 +76,14 @@ class JobKind(StrEnum):
 # ignore the phone is recorded whether or not Meta ever delivered the reply,
 # and the 24 h silence is derived from rows carrying it.
 WA_STATUS_IGNORED_UNKNOWN_SENDER = "ignored_unknown_sender"
+# wa_messages.status for an inbound message from a phone that receives the
+# morning brief and is no branch's (C2 as amended, C15.10). The same rule as
+# above with a different sentence back: stamped before the reply, so the
+# decision is on record whether or not the reply left, and the once-a-day
+# silence is derived from rows carrying this status - separately from the
+# unknown-sender ones, so an owner who wrote yesterday as a stranger is still
+# answered today as an owner.
+WA_STATUS_IGNORED_BRIEF_RECIPIENT = "ignored_brief_recipient"
 # wa_messages.status for an inbound reaction (a thumbs-up on one of our
 # replies). A reaction is a receipt, not a message: stamped so the log says
 # why nothing happened, and never answered - not even for an unknown phone.

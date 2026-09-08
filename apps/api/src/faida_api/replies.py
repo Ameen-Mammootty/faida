@@ -152,6 +152,14 @@ REPLY_UNKNOWN_SENDER = (
     "Ask the owner to add this number, then forward the invoice again."
 )
 
+# M10 WP-103 (C2 as amended, C15.10): the same once-a-day answer for a phone
+# that receives the morning brief and is no branch's. It is the owner's own
+# phone writing back to a message we sent, so the sentence says what the
+# number does rather than telling the owner to ask the owner.
+REPLY_BRIEF_RECIPIENT = (
+    "This number receives the morning brief. To forward invoices, use a branch's phone."
+)
+
 # --- headings and closing lines --------------------------------------------
 
 READ_IT = f"{ICON_DONE} Read it"
