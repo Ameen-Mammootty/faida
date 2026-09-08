@@ -42,6 +42,14 @@ class Settings(BaseSettings):
     worker_enabled: bool = True
     worker_poll_seconds: float = 2.0
 
+    # The morning brief's kill switch, beside the worker's (M10 C15.5). True
+    # by default because an empty brief_recipients table is already the safe
+    # state - the tick finds nobody and enqueues nothing. It exists for the
+    # day a brief has to stop without SQL and without a deploy: one variable
+    # on Railway, and no morning leaves. A paused recipient row is the same
+    # switch for one phone.
+    brief_enabled: bool = True
+
 
 @lru_cache
 def get_settings() -> Settings:
