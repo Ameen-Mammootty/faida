@@ -856,12 +856,14 @@ over-buying; the ranked table and each row's own caveat carry the reader until a
 
 ### A fifth slot in the daily brief
 
-**What:** `usage.answer` as a brief slot (M9 P8 pinned four).
+**What:** The top material row's own words (`usage.quantity_words` and its direction sentence, M12 C14.6) as a
+sixth variable in the brief's template (M9 P8 pinned four; M10 fills five). Rewritten 2026-09-07: the entry
+named `usage.answer`, which M12's D9 removed - the materials panel has no answer sentence.
 
-**Why:** C13.5 makes it free - the sentence is on the wire - and whether the template has room is M10's decision
-when the template is drafted.
+**Why:** C13.5 makes it free - the words are on the wire - and the template has room (`Docs/M10_DECOMPOSITION.md`
+§4.1: 584 of 1,024 characters on the widest committed morning). It is a template edit, which is a Meta review.
 
-**Depends on:** M10, M12. Trigger: the template is drafted and the founder wants the shelf in it.
+**Depends on:** M10 live, M12 phase two. Trigger: the founder wants the shelf in the brief.
 
 ### A drill route for a material's purchase lines
 
@@ -999,6 +1001,115 @@ confirm, never looked at") plus a "looks right" keystroke. Proposed with the ite
 **Effort:** M
 **Priority:** P3
 **Depends on:** M5's materials screen; a customer quote or the pilot's first fortnight.
+## The daily WhatsApp brief (deferred by the M10 decomposition, 2026-09-07)
+
+M10 was decomposed in `Docs/M10_DECOMPOSITION.md` on 2026-09-07, as a planning lane beside WP-96's sitting,
+and reviewed the same day by one outside voice (Codex at medium reasoning against the file path, thirteen
+findings, all folded, three of them now proposals P12 to P14); it awaits the founder's decisions on its §5. The entries below are what the decomposition consciously left out, each
+with the trigger that brings it back and the decision it hangs on where there is one.
+
+### A door and a screen for the brief's recipient
+
+**What:** `POST` and `DELETE /api/briefs/recipients` with the three audit actions (`brief_recipient.added`,
+`.paused`, `.resumed`), and a settings section on the console for the phone, the send time and the pause.
+
+**Why:** The pilot's recipient row is written by the founder's paste file, the branch-phone precedent
+(`supabase/demo_seed.sql:562-570`); a settings screen for one phone field, for one tenant, is the vertical
+slice rule's letter and not its point (M10 §5 P2). The console has no settings screen anywhere.
+
+**Depends on:** M10 live. Trigger: the second tenant, or the pilot owner asks to change the number.
+
+### "brief off" and "brief on" from the recipient's own phone
+
+**What:** One parser in `confirm.py`'s shape: the recipient phone texts `brief off` or `brief on`, the row's
+`paused_at` moves, the audit row carries the `whatsapp:<phone>` actor, and the reply says what happened.
+
+**Why:** M10 C15.10 gives a recipient phone that is not a branch phone a stamp and one fixed reply a day; a
+pause by chat is the first thing an owner who wants fewer messages will try.
+
+**Depends on:** M10 live. Trigger: the pilot owner replies asking to stop, or Meta's quality rating for the
+template dips.
+
+### Per-branch briefs for the branch manager
+
+**What:** A nullable `branch_id` on `brief_recipients`, the read under the branch filter
+(`dashboard.py:473-476`), `?branch=<id>` in the template's button (a template edit and a review).
+
+**Why:** PRD §27.4's "optionally each branch manager" has no user, no role and no phone that is a person until
+WP-78 (`TODOS.md`, auth section); a manager's brief without a manager's role sends a branch's money to a phone
+nobody vouched for (M10 §5 P6).
+
+**Depends on:** WP-78. Trigger: WP-78's own - a pilot chain asks for a branch manager on the screen.
+
+### A second language for the brief
+
+**What:** One template per language, and a composer per language for every sentence the brief carries
+(`dashboard.py`, `signals.py`, `ratio.py`, `contribution.py`, `brief.py`).
+
+**Why:** English only for the pilot, the founder's answer of 2026-09-07 and the demo-scope decision extended
+(`plan.md` §3). Every sentence on the wire is composed in English in Python, so a second language is not a
+second template alone.
+
+**Depends on:** M10 live. Trigger: a pilot owner who does not read English.
+
+### A magic-link tap-through
+
+**What:** A signed-in link per brief, minted through Supabase's admin `generate_link` at send time and carried
+in a dynamic URL button, so the tap lands on `/dashboard` with no password.
+
+**Why:** The pilot's button is a static link behind the login gate (M10 §5 P5): a magic link is a session in a
+chat log, forwardable and either expired before the tap or alive as the credential the product refuses to
+hold. If the password stops the owner, this is the answer, with the expiry and the forwarding risk decided then.
+
+**Depends on:** M10 live. Trigger: the pilot owner says signing in on the phone stops them.
+
+### The cash-approval notice as a utility template
+
+**What:** A second template and one call in `api.py`'s approval notice (`api.py:712-737`), so a branch phone
+hears back about a cash paper approved after its 24-hour window closed.
+
+**Why:** The WP-74 Decision Log row records the gap: "outside Meta's 24 h window the branch learns nothing
+until M10's utility template". Once M10's `send_template` and the outbound record exist it is one more
+template and one branch in the notice.
+
+**Depends on:** M10 live. Trigger: a branch phone misses an approval notice because the window had closed.
+
+### Delivery and read status on a screen
+
+**What:** The outbound row's `status` (`sent`, `delivered`, `read`, `failed` with Meta's error), which M10
+WP-102 stamps from the webhook's `statuses`, shown somewhere a person can read it without SQL.
+
+**Why:** The first morning the owner says nothing arrived is answered by SQL at the sitting; a screen for it is
+a write with no reader until someone asks.
+
+**Depends on:** M10 live. Trigger: an owner disputes receiving a brief.
+
+### A weekly digest, or a cadence per recipient
+
+**What:** A weekday set beside `send_at_local`, and a clause in the due query.
+
+**Why:** The done-when says each morning; nobody has asked for less.
+
+**Depends on:** M10 live. Trigger: a customer quote.
+
+### Meta's template status webhooks
+
+**What:** Subscribing the app to `message_template_status_update` and recording a paused, disabled or
+recategorised template.
+
+**Why:** The app subscribes to `messages` only (`Docs/DEMO_RUNBOOK.md` §A); a paused template fails the send
+synchronously (132015) anyway, so the job's own failure is the record until a pause happens.
+
+**Depends on:** M10 live. Trigger: a template paused once in production.
+
+### A dynamic URL button on the brief
+
+**What:** `https://<host>/{{1}}` with the suffix composed per send.
+
+**Why:** Meta appends the variable to the end of the URL and percent-encodes it, which is why the pilot's
+button is static; the manager's brief and a per-tenant custom domain both need the suffix.
+
+**Depends on:** M10 live. Trigger: the manager's brief, or a custom domain that changes per tenant.
 
 ## Extraction & matching
 
