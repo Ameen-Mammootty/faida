@@ -23,7 +23,7 @@
  * this file parses money into a number.
  */
 
-import type { Ingredient, MenuItemDetail, MenuItemSummary } from "./types";
+import type { Ingredient, MenuItemDetail, MenuItemLoadInput, MenuItemSummary } from "./types";
 
 /**
  * The template's columns, and the spellings a real export uses for them.
@@ -45,6 +45,17 @@ const COLUMNS = {
   ingredient: ["ingredient", "raw_material", "material"],
   qty: ["qty", "qty_as_purchased", "quantity", "amount"],
   unit: ["unit", "uom", "measure"],
+  /**
+   * M12 WP-119 (D13): the conversion yield, optional everywhere. A sheet
+   * without this column loads exactly as it did before it existed.
+   *
+   * "yield" on its own is deliberately absent from this list and stays with
+   * `yield_portions`, where it has meant portions per batch since M6 - a
+   * consultant's file that says "yield 40" means forty cups, and reading it
+   * as a share would silently rewrite the recipe. The percent sign survives
+   * `normalizeHeader`, so "usable %" arrives here as "usable_%".
+   */
+  usable_share: ["usable_share", "usable", "usable_pct", "usable_%", "yield_pct", "yield_%"],
   source_text: ["source_text", "source", "card_says", "recipe_card"],
 } as const;
 
@@ -69,6 +80,7 @@ const COLUMN_WORDS: Record<ColumnName, string> = {
   ingredient: "ingredient",
   qty: "qty",
   unit: "unit",
+  usable_share: "usable share",
   source_text: "source text",
 };
 
@@ -170,6 +182,96 @@ function sameNumber(a: string, b: string): boolean {
   return numberKey(a) === numberKey(b);
 }
 
+/** A decimal string against 1, without parsing it into a number. */
+function aboveOne(text: string): boolean {
+  const [whole, decimals = ""] = text.split(".");
+  const digits = whole.replace(/^0+(?=\d)/, "");
+  if (digits.length > 1) return true;
+  if (digits !== "1") return false;
+  return /[1-9]/.test(decimals);
+}
+
+/** A hundredth of a decimal string: the point moved two places left, "85" ->
+ * "0.85". A string operation, because 33.33 divided in floating point comes
+ * back with a tail of noise on it and this number is stored to four places. */
+function hundredth(text: string): string {
+  const [whole, decimals = ""] = text.split(".");
+  const digits = `00${whole}${decimals}`;
+  const point = digits.length - decimals.length - 2;
+  return `${digits.slice(0, point)}.${digits.slice(point)}`;
+}
+
+/** The column the API stores is `numeric(5,4)`, so four places is all that
+ * survives the trip. Cut rather than rounded, so what the screen shows, what
+ * is sent and what is stored are one number. */
+function toFourPlaces(text: string): string {
+  const dot = text.indexOf(".");
+  return dot === -1 ? text : numberKey(text.slice(0, dot + 5));
+}
+
+/**
+ * M12 WP-119 (D13): the conversion yield on one recipe line, read into the
+ * one form the API stores - a decimal fraction - or the sentence that stops
+ * the item.
+ *
+ * A sheet writes the same fact three ways and one consultant will use all
+ * three in one file: "85%", "85" and "0.85" are the same 85% of the sack
+ * reaching the pot. A bare number above 1 is therefore a percent, because a
+ * share of eighty-five times the purchased amount is not something anybody
+ * means. Blank is null, and null is the whole compatibility story: a recipe
+ * with no share is as-purchased, exactly as every recipe written before this
+ * column existed.
+ *
+ * The API refuses anything outside (0, 1] with a sentence of its own; a
+ * blocked row never reaches it, because a fix belongs in the spreadsheet
+ * before the button, not in a refusal after it.
+ */
+function usableShare(
+  value: string,
+  ingredient: string,
+): { share: string | null } | { problem: string } {
+  const text = value.trim();
+  if (text === "") return { share: null };
+  const named = ingredient.trim() === "" ? "this line" : ingredient.trim();
+  const percent = text.endsWith("%");
+  const written = (percent ? text.slice(0, -1) : text).trim();
+  if (!/^\d+(\.\d+)?$/.test(written)) {
+    return {
+      problem:
+        `"${text}" is not a usable share for ${named} - write it as a percent ` +
+        "like 85% or a fraction like 0.85",
+    };
+  }
+  const fraction = numberKey(percent || aboveOne(written) ? hundredth(written) : written);
+  if (/^0+(\.0+)?$/.test(fraction)) {
+    return {
+      problem: `the usable share for ${named} is zero - it must be above 0 and at most 100%`,
+    };
+  }
+  if (aboveOne(fraction)) {
+    return {
+      problem: `the usable share for ${named} is "${text}" - it must be above 0 and at most 100%`,
+    };
+  }
+  return { share: toFourPlaces(fraction) };
+}
+
+/**
+ * The share in the words the preview shows beside a quantity: "0.85" is
+ * "85% usable". The percent is the fraction with its point moved two places
+ * right - a string operation, the mirror of `hundredth` above.
+ *
+ * This is the sheet's own cell read back, not the API's sentence: the
+ * sentence on the menu screen names the purchased amount, and that amount is
+ * a division nothing on this side is allowed to do.
+ */
+export function shareWords(share: string): string {
+  const [whole, decimals = ""] = share.split(".");
+  const padded = `${decimals}00`;
+  const percent = numberKey(`${whole}${padded.slice(0, 2)}.${padded.slice(2)}`);
+  return `${percent}% usable`;
+}
+
 /** Case- and space-insensitive, the way a person reads two names as one. */
 function nameKey(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, " ");
@@ -184,6 +286,11 @@ export interface LoadLine {
   ingredient: string;
   qty: string;
   unit: string;
+  /** The conversion yield as the API stores it - a fraction string, "0.85"
+   * being 85% usable - or null for a line whose quantity is already the
+   * purchased amount (M12 WP-119). Whatever the sheet wrote, it arrives here
+   * in this one form. */
+  usableShare: string | null;
   sourceText: string | null;
   /** The material in Faida, once it exists. */
   ingredientId: string | null;
@@ -387,18 +494,22 @@ export function readMenuCsv(header: string[], rows: string[][]): ReadResult {
     const unit = cell(row, "unit");
     const measure = measureOf(unit);
     const badNumber = positiveNumber(qty, "quantity");
+    const share = usableShare(cell(row, "usable_share"), ingredient);
     item.lines.push({
       row: line,
       ingredient,
       qty,
       unit,
+      usableShare: "share" in share ? share.share : null,
       sourceText: cell(row, "source_text") || null,
       ingredientId: null,
       base: "unit" in measure ? measure.unit.base : null,
       problem:
         ingredient === ""
           ? "no ingredient named"
-          : (badNumber ?? ("problem" in measure ? measure.problem : null)),
+          : (badNumber ??
+            ("problem" in measure ? measure.problem : null) ??
+            ("problem" in share ? share.problem : null)),
     });
   });
 
@@ -517,19 +628,30 @@ export function planLoad(
   });
 }
 
-/** One recipe line's identity: which material, how much, in what measure. */
-function lineKey(ingredientId: string, qty: string, unit: string): string {
+/**
+ * One recipe line's identity: which material, how much, in what measure, and
+ * what share of it reaches the pot.
+ *
+ * The share is part of the identity because the door's own key includes it
+ * (M12 WP-119): setting 85% on a line that had none changes what the recipe
+ * takes out of the storeroom, so it is a new version, and a preview that
+ * called it "no change" would have the consultant believe the load did
+ * nothing.
+ */
+function lineKey(ingredientId: string, qty: string, unit: string, share: string | null): string {
   const word = unit.trim().toLowerCase();
-  return `${ingredientId}|${numberKey(qty)}|${UNITS.get(word)?.canonical ?? word}`;
+  const yielded = share === null ? "as purchased" : numberKey(share);
+  return `${ingredientId}|${numberKey(qty)}|${UNITS.get(word)?.canonical ?? word}|${yielded}`;
 }
 
 /**
  * D8's rule, as the grid predicts it: the same yield and the same multiset of
- * (ingredient, amount, measure). Order is not information - a consultant who
- * sorts their sheet has not changed a recipe - and a measure spelled "mls"
- * rather than "ml" is formatting. A magnitude is not: 1 kg and 1000 g are the
- * same amount but a different card, and the card's words are the only audit a
- * typed quantity has.
+ * (ingredient, amount, measure, usable share). Order is not information - a
+ * consultant who sorts their sheet has not changed a recipe - and a measure
+ * spelled "mls" rather than "ml" is formatting. A magnitude is not: 1 kg and
+ * 1000 g are the same amount but a different card, and the card's words are
+ * the only audit a typed quantity has. Neither is the share (M12 WP-119): the
+ * same 1200 g of chicken at 85% usable is a different draw on the storeroom.
  *
  * `source_text` is outside the comparison, by D8's own wording - it is free
  * text a spreadsheet reflows constantly. `reworded` names that case on the
@@ -543,10 +665,12 @@ function sameRecipe(
   if (!sameNumber(current.yield_portions, item.yieldPortions)) return false;
   if (current.components.length !== lines.length) return false;
   const stored = current.components
-    .map((component) => lineKey(component.ingredient_id, component.qty, component.unit))
+    .map((component) =>
+      lineKey(component.ingredient_id, component.qty, component.unit, component.usable_share),
+    )
     .sort();
   const incoming = lines
-    .map((line) => lineKey(line.ingredientId ?? "", line.qty, line.unit))
+    .map((line) => lineKey(line.ingredientId ?? "", line.qty, line.unit, line.usableShare))
     .sort();
   return stored.every((value, position) => value === incoming[position]);
 }
@@ -554,14 +678,42 @@ function sameRecipe(
 function reworded(current: NonNullable<MenuItemDetail["recipe"]>, lines: LoadLine[]): boolean {
   const stored = new Map(
     current.components.map((component) => [
-      lineKey(component.ingredient_id, component.qty, component.unit),
+      lineKey(component.ingredient_id, component.qty, component.unit, component.usable_share),
       component.source_text ?? "",
     ]),
   );
   return lines.some((line) => {
-    const before = stored.get(lineKey(line.ingredientId ?? "", line.qty, line.unit));
+    const before = stored.get(
+      lineKey(line.ingredientId ?? "", line.qty, line.unit, line.usableShare),
+    );
     return before !== undefined && before !== (line.sourceText ?? "");
   });
+}
+
+/**
+ * One item as the door takes it (`POST /api/menu-items/load`).
+ *
+ * The shape lives here rather than inside the screen so that what goes on the
+ * wire has a test: a field that quietly stopped being sent would look like a
+ * recipe that simply had no yield on it, and nothing on any screen would say
+ * otherwise. Only a committable item is ever passed in, which is why every
+ * line is known to have a material behind it.
+ */
+export function loadInput(item: LoadItem): MenuItemLoadInput {
+  return {
+    name: item.name,
+    category: item.category,
+    selling_price: item.sellingPrice,
+    yield_portions: item.yieldPortions,
+    yield_label: item.yieldLabel,
+    components: item.lines.map((line) => ({
+      ingredient_id: line.ingredientId as string,
+      qty: line.qty,
+      unit: line.unit,
+      usable_share: line.usableShare,
+      source_text: line.sourceText,
+    })),
+  };
 }
 
 /** The plain-words summary the grid puts in its "what will change" column. */

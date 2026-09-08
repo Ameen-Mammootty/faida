@@ -739,6 +739,10 @@ export interface MenuItemLoadInput {
     ingredient_id: string;
     qty: string;
     unit: string;
+    /** M12 WP-119: the conversion yield the sheet carried, already read into
+     * a fraction ("0.85"), or null when the column was blank or absent. The
+     * API validates it again and refuses anything outside (0, 1]. */
+    usable_share: string | null;
     source_text: string | null;
   }[];
 }
