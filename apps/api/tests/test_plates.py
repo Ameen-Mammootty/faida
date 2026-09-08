@@ -440,7 +440,10 @@ async def test_the_door_refuses_a_usable_share_outside_the_bounds(api, db):
         "is not a usable share for CTC Black Tea: send the share of what is bought "
         'that reaches the pot, above 0 and at most 1, like "0.85" for 85%'
     )
-    for bad in ["0", "1.2", "85", "-0.5", "most of it"]:
+    # "0.00001" is the odd one: it passes the bounds and then rounds away to
+    # nothing in a four-decimal column, so the door refuses what the check
+    # constraint would otherwise refuse with a 500.
+    for bad in ["0", "1.2", "85", "-0.5", "most of it", "0.00001"]:
         response = await api.post(
             f"/api/menu-items/{item_id}/recipe",
             json={

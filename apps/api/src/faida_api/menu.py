@@ -66,6 +66,11 @@ from .db import Database
 from .extraction import units
 from .extraction.constants import VAT_RATE_BY_CURRENCY
 
+#: What `recipe_components.usable_share` holds (migration 0021): four
+#: decimals, because a share is never more precise than a kitchen scale.
+#: The door quantizes to this so it validates the number that will be stored.
+SHARE_QUANTUM = Decimal("0.0001")
+
 # Declared twice like api.py: at the router, so no route here can exist
 # without the token check, and per handler, to receive the tenant and actor.
 router = APIRouter(prefix="/api", dependencies=[Depends(require_context)])
@@ -178,23 +183,29 @@ def _usable_share(value: str | None, ingredient: asyncpg.Record) -> Decimal | No
     45-row spreadsheet finds the cell.
 
     Zero, negatives and non-numbers get the same sentence as a share above 1:
-    one bound, one rule, one thing to fix."""
+    one bound, one rule, one thing to fix. So does a share too small to
+    survive the column's four decimals - 0.00001 stores as nothing at all, and
+    the check constraint would answer that with a 500 where the door can
+    answer it with a sentence. The value returned is the value stored, so what
+    the door approved is what the card later reads back."""
     if value is None:
         return None
     text = value.strip()
     if not text:
         return None
     share = _parse_number(text)
-    if share is None or share <= 0 or share > 1:
-        raise HTTPException(
-            status_code=422,
-            detail=(
-                f"'{text}' is not a usable share for {ingredient['name']}: send the "
-                "share of what is bought that reaches the pot, above 0 and at most 1, "
-                'like "0.85" for 85%'
-            ),
-        )
-    return share
+    if share is not None and 0 < share <= 1:
+        share = share.quantize(SHARE_QUANTUM, rounding=ROUND_HALF_UP)
+        if share > 0:
+            return share
+    raise HTTPException(
+        status_code=422,
+        detail=(
+            f"'{text}' is not a usable share for {ingredient['name']}: send the "
+            "share of what is bought that reaches the pot, above 0 and at most 1, "
+            'like "0.85" for 85%'
+        ),
+    )
 
 
 def _component_unit(unit_text: str, ingredient: asyncpg.Record) -> str:
