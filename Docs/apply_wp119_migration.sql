@@ -10,13 +10,15 @@
 --   Open it, select all, copy, paste into the Supabase SQL editor, run once.
 --   Every byte of this file is SQL. There is nothing in it to select wrongly.
 --
--- EITHER ORDER IS SAFE - BEFORE OR AFTER THE DEPLOY.
---   This migration only adds a column, and it is nullable with no default.
---   The build running today never names it, so nothing on the live site
---   changes the moment you run this: no recipe moves, no plate cost moves, no
---   menu margin moves. WP-119's build reads it and treats null exactly as it
---   treats a recipe with no share today. So run it whenever suits - before the
---   deploy, or after - and nothing is in a broken half-state in between.
+-- RUN THIS BEFORE M12 MERGES TO MASTER, AND DEPLOY AFTER.
+--   The order matters in one direction only. The build running today never
+--   names the column, so running this first changes nothing on the live site:
+--   no recipe moves, no plate cost moves, no menu margin moves. But WP-119's
+--   build selects `usable_share` in every recipe read (the menu, the loader,
+--   the dashboard's costed menu), so deploying it against a database without
+--   the column fails those reads with an "undefined column" error until this
+--   runs. Migration first, then merge, and there is no broken half-state.
+--   (An earlier draft of this note said either order was safe. It was wrong.)
 --
 --   A backup never hurts and Supabase's dashboard has the button, but unlike
 --   0020 this migration removes nothing and rewrites no row, so rolling back

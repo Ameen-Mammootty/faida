@@ -1,9 +1,11 @@
 -- 0021: conversion yields on a recipe component (plan.md §8 M12, WP-119, D13).
 -- Appended per contract C7; the manager squashes periodically (plan.md §4 policy).
 --
--- EITHER ORDER IS SAFE. The column is nullable with no default, so the build
--- on master today simply does not select it and every existing recipe keeps
--- behaving byte-identically. Apply it before or after WP-119 deploys.
+-- APPLY THIS BEFORE WP-119 MERGES TO MASTER. The column is nullable with no
+-- default, so the build on master today does not select it and every existing
+-- recipe keeps behaving byte-identically once it is there; but WP-119's build
+-- selects `usable_share` in every recipe read, so deploying it first fails
+-- those reads until the column exists. Migration first, then deploy.
 -- Docs/apply_wp119_migration.sql is the paste-ready copy with a pre-flight.
 --
 -- WHY. A recipe is written for costing, so it says what goes in the pot: 500 g
