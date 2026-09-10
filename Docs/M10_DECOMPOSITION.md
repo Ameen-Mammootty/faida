@@ -552,6 +552,7 @@ Two chains, one of code and one of Meta's, that meet at the first 07:00.
 **Meta's chain (the founder; external, serial, the long clock):**
 
 1. Now, under the test account: create `faida_daily_brief` in WhatsApp Manager from §3.1 (name, Utility, English, header Image with `Docs/brief/faida_daily_brief_sample.png` as the sample, the body of shape A, its five samples, the button); submit; note the date.
+   **Done 2026-09-10:** submitted as Utility, English (`en`), with the sample card; "In review". The app's WhatsApp overview showed business verification (Meta's step 3 below) already complete, so step 3 of this chain is done and step 4 is what remains for production.
    Review is "up to 24 hours".
    Confirm the demo phone is among the test number's registered recipients (`README.md:167`) and the access token's `expires_at` is 0 (`Docs/DEMO_RUNBOOK.md:24-34`).
 2. On approval: the rehearsal send from the CLI (`--send --to`) at any hour, then the 07:00 brief after the recipient row lands (step 6 below).
