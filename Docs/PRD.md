@@ -461,7 +461,19 @@ Same, scoped to one brand's branches. Not built: there is one tenant level today
 The same screen filtered to one branch, `/dashboard?branch=<id>` - never a second route (M9 P7). Every headline figure becomes that branch's own, with the chain's figure named beside it for comparison; the league, the items and the signals follow the filter while the chain total never does; the branch's invoices needing confirm sit in the same papers-waiting block. Stock counts and the recorded difference between what the recipes needed and what was bought arrive with M12, and are never called variance or waste (C14).
 
 ### 27.4 Daily WhatsApp brief
-A templated utility message each morning to the owner (and optionally each branch manager): net sales, **purchases ÷ net sales (cash basis)**, the biggest supplier price move, and one flagged issue. Tapping through opens the dashboard. The four slots are already composed and on the wire, so the brief fills them and words nothing itself: `freshness.sentence`, `latest_day`, `league[0]` and `signals[0..1]` from `GET /api/dashboard` (M9 P8). Fixed sentence shapes, number slots, no generation. This is the primary consumption surface for a non-tech owner who will never open a BI dashboard unprompted.
+> **Aligned to the shipped M10 on 2026-09-11.** The four slots this section named (M9 P8) are superseded by the founder's own direction of 2026-09-08 - "very basic KPIs" - and by what was built to it: the brief carries seven things, not four, and the cost figure is the recipe cost of what was sold at the latest prices, not purchases ÷ net sales (cash basis), which stays on the dashboard (M10 P16).
+
+A templated message each morning at 07:00 in the owner's own timezone (and, when a chain asks, to a second phone with its own morning). It carries a picture card - the four figures as tiles, one row per branch with the same three, the three items earning the most and the three earning the least by money kept, and the three biggest supplier price rises - with the four figures repeated in the message text, so the chat-list preview and a screen reader get them without opening the picture. Tapping through opens the dashboard.
+
+The four figures are the newest loaded day named and aged, that day's net sales, month-to-date net sales with the days actually loaded named, the raw-material cost of what was sold at the latest prices, and that cost's share of the sales it covers. That share is labelled **materials share of costed sales**, never food cost %, and the covered share is printed beside it; contribution is never called profit and nothing is called verified. "Yesterday" appears only on a morning when the newest loaded day really is yesterday - a chain that has stopped uploading is told the age instead (M9 P6).
+
+Every figure comes from `GET /api/dashboard`'s own read, made twice for the same tenant - the month to date, and the default 28 days for the price rises - so the brief fills slots and words nothing itself: fixed sentence shapes, number slots, no generation, and a figure the read withholds said in words with the read's own note rather than as a zero.
+
+The recipient is a row the owner asked for, with its own timezone and hour, and the record of who asked, when and on what evidence sits in the audit trail beside it - nobody here can manufacture an owner's consent to a daily message about their money.
+
+The message is a template because it arrives outside any conversation. Utility is the category it belongs in, and it is the category this document's cost model assumes (§11); the pilot's template was approved as marketing instead, accepted for the pilot because the test number is free either way, and the production number gets the same figures worded as the owner's own account statement, which is what the utility category describes.
+
+This is the primary consumption surface for a non-tech owner who will never open a BI dashboard unprompted.
 
 ---
 

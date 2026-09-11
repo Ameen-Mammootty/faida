@@ -58,6 +58,7 @@ Run through this list the day before, and again 30 minutes before going on.
       seed's own purchase dates) and upload it after every `demo_seed.sql` run, because that
       reset clears the week; the loop reset spares it. **The demo's sales are invented; its
       purchases are not; the screen's honesty claim is about the second.**
+- [ ] **The brief's own preconditions are §J** (added 2026-09-11, M10): the approved template, `BRIEF_ENABLED`, the recipient row and its local hour. Nothing in the morning brief is part of the four acts, but it sends on its own clock while the stage is being rehearsed, so read §J once before a demo week rather than being surprised by a message at seven.
 - [ ] **One warm-up forward before going on.** On the Opus fallback this is load-bearing: the
       first request after a schema change pays a server-side grammar compilation measured in
       minutes (155 s observed 2026-08-28) - run `apps/api/.venv/bin/python -m eval.schema_probe`
@@ -650,3 +651,136 @@ Say: "The panel is what moved; the list on the left is what it is costing you. C
       ```
 - [ ] Run `act_four.py --stage real` once before a rehearsal week and read its figures against the screen (CI runs the same read on every push since the menu CSV was committed, 2026-09-07). If they disagree, one of three things: the stage is not the committed week, the papers are not KAS-1..5, or a till name is mapped to the wrong dish (the box above).
 - [ ] **On the practice stage act four is a walk-through, not the script.** `demo_seed.sql`'s five items are all tea, every one keeps between 81% and 86%, and the seed's own price history moves nothing by 5% - so no dish is ten points below the average, no branch is five points below the chain, and **the signals panel is empty**, correctly. `act_four.py --stage practice` prints exactly that, and `tests/test_demo_seed.py` pins it. Rehearse the sentence, the league and the item panel there; gate act four on the real stage.
+
+## J. The morning brief (added 2026-09-11, M10)
+
+The brief is one WhatsApp message a morning to a phone the owner asked us to send it to: a picture card carrying the four figures, a row per branch, the three items earning most and the three earning least, and the three biggest supplier price rises, with five lines of text under it - the day, the latest day's sales, the month so far, what the materials cost, and that cost's share of the sales it covers - and a button that opens the dashboard.
+Every figure on it comes out of the same read the dashboard answers with, made twice for the same tenant: the month to date for the figures, the branches and the items, and the default 28 days for the price rises.
+It is due at 07:00 in the recipient's own timezone, one morning per recipient, and nothing on it is stored or scheduled anywhere but in the recipient's row and the worker's own tick.
+
+There is no screen for any of this, and that is deliberate (M10 §9): the recipient is a row, the rehearsal is a command, and the read-back is three queries.
+
+### The brief's preconditions
+
+Run this list beside §A's, not instead of it.
+
+- [ ] **The template reads `APPROVED` in WhatsApp Manager, under the account the sending number belongs to.** `faida_daily_brief`, language English (`en`), an image header and five body variables - the names and the count are constants in `brief.py`, so a template edited behind the code fails the send rather than sending something else. Approved 2026-09-11, as **Marketing** rather than Utility: the pilot proceeds with it because the test number is free either way, and production gets the account-statement wording (`faida_account_statement`, plan.md §7.3 row 107) submitted under the real number.
+- [ ] **`BRIEF_ENABLED` is unset or `true` on Railway.** It sits beside `WORKER_ENABLED` (§A) and is the kill switch for every send at once; unset means true, because an empty recipient table is already the safe state. The tick lives inside the worker's loop, so `WORKER_ENABLED=false` silences the brief too.
+- [ ] **The recipient row is there and not paused.** The third query below prints it with the local time it implies - a `send_at_local` later than noon never fires at all, and that is a row to fix, not a case to work around.
+- [ ] **The recipient's phone is registered on the test number**, the same §A line the demo phones pass: an unregistered number is refused, template or not.
+- [ ] **The access token's `expires_at` is 0**, §A's own `debug_token` check. On the brief an expired token is not silence, it is a 401 in `jobs.last_error` - but it is still a morning nobody received.
+
+### The rehearsal: one real brief, at any hour
+
+The command prints the brief, writes its card, and - only with `--send` - sends it. Run it from `apps/api` with the live `.env`, which is where `DATABASE_URL` and the Meta values are:
+
+```bash
+cd apps/api
+python -m faida_api.brief_cli --tenant <tenant id>                             # print the five lines and the parameter JSON
+python -m faida_api.brief_cli --tenant <tenant id> --today 2026-09-11          # the same for a named day
+python -m faida_api.brief_cli --tenant <tenant id> --card out.png              # write the morning's picture to a file
+python -m faida_api.brief_cli --tenant <tenant id> --send --to 9715XXXXXXXX    # send it now, once, as a rehearsal
+```
+
+Without `--send` it reads and writes nothing, so it is safe against the live database at any hour, and `--card` is where Meta's sample picture came from at submission.
+With `--send` it takes the same three steps a morning takes, in the same order and through the same functions - store the card, upload it, send the template - so a rehearsal proves the real path and not a copy of it.
+A rehearsal is recorded like any other send, with `rehearsal: true` on the row, which keeps it **outside** the day's one-per-recipient key: a rehearsal at four in the afternoon does not silence the next morning's brief.
+Its card is stored under its own name, `{tenant_id}/briefs/{date}/rehearsal-{phone}.png`, so it never takes the key the 07:00 card will want.
+Adding a recipient is not on this command and never will be: a phone that gets a daily message about someone's money is a decision with evidence behind it, and it goes in through the paste file's insert with its audit row (`Docs/apply_m10_migration.sql`, P14).
+
+### The read-back after a morning
+
+Three queries against the live project, in the order the morning happened.
+
+```sql
+-- 1. The day's job: one row per recipient, done, one attempt, no error.
+select id, status, attempts, run_after, last_error, payload->>'recipient_id' as recipient
+  from jobs
+ where kind = 'send_brief'
+   and payload->>'brief_date' = '2026-09-12'      -- the recipient's local date
+ order by id;
+
+-- 2. What went out, and how far Meta's receipt got.
+select created_at, to_phone, status,
+       payload->>'template'  as template,
+       payload->>'card_path' as card_path,
+       payload->>'rehearsal' as rehearsal,
+       payload->'error'      as error
+  from wa_messages
+ where direction = 'out' and msg_type = 'template'
+ order by created_at desc
+ limit 5;
+
+-- 3. Who gets a brief, in their own time, and on whose evidence (the paste file's own read-back).
+select r.phone_e164, r.timezone, r.send_at_local, r.paused_at,
+       (now() at time zone r.timezone)::date as its_local_date,
+       (now() at time zone r.timezone)::time as its_local_time,
+       a.actor, a.detail->>'evidence' as evidence
+  from brief_recipients r
+  left join audit_events a
+    on a.subject_type = 'brief_recipient' and a.subject_id = r.id
+   and a.action = 'brief_recipient.added';
+```
+
+What good looks like: one job `done` on one attempt with `last_error` null, one outbound row reading `delivered` or `read` with a `card_path` and `rehearsal` false, and one recipient row whose local time is past its send hour and whose `paused_at` is null.
+`card_path` is the picture the phone actually showed, stored immutably beside the invoice originals, so a morning can be opened again months later.
+The status only ever moves forward - `sent`, then `delivered`, then `read`, with `failed` terminal - so a row that reads `read` was read, and a late receipt for a status already passed is ignored.
+
+**The 2026-09-11 proof.** The founder's recipient row went in at 11:33 Dubai with its `brief_recipient.added` audit row; it was before noon, so the deployed tick queued job 172 at 11:34:02, the worker sent at 11:34:12 on the first attempt, and the outbound row read `delivered` when Meta's receipt came back through the deployed webhook. The rehearsal from `--send --to` had landed on the same phone at 11:21.
+
+### When the morning does not arrive
+
+In §D's shape: what the phone shows, then where to look.
+
+**No message, and `jobs.last_error` names the template.**
+`132001` means the template does not exist, or is not approved under that name and language, for the number that is sending - check WhatsApp Manager under the account the sending number belongs to, not the other one.
+`132015` means Meta paused it for quality; `132000` means the template was edited to a different variable count.
+The code asserts its five parameters before any send and a test pins the count, so a 132000 in production means the template moved behind the code: fix it in WhatsApp Manager and the next morning goes.
+Nothing was sent in any of these, so there is no message to un-send.
+
+**No message, and `jobs.last_error` is a 401.**
+The access token has expired: §A's `debug_token` check, then a fresh permanent token in Railway's `META_ACCESS_TOKEN`.
+Prove the new one with a `--send --to` rehearsal rather than waiting for tomorrow.
+
+**No message, and `jobs.last_error` is a 500 from Meta.**
+Meta was down. The job retried twice more at 30 s, then went `failed` with the error; nothing was sent and nothing half-sent, because the message is composed in full before the send.
+Do nothing: tomorrow is a new job with a new key.
+
+**The morning was skipped because it was past noon.**
+The Railway log says so, once per recipient per day: `brief skipped: 13:04 local is past 12:00 for recipient <id>; tomorrow's is next`.
+A morning brief that arrives at ten at night is noise, and tomorrow's is nine hours away.
+An API that was down at 07:00 catches up the moment it returns, as long as it returns before noon local.
+
+**A `send_brief` job sitting at `running`.**
+A hard kill between the send and the record leaves the row claimed. `claim_job` takes back any `running` row untouched for ten minutes - for every job kind, not only this one - so the brief goes within the same morning on its own.
+Wait the ten minutes before touching anything.
+The one honest limit, pinned by a test rather than discovered live: if Meta accepted the message and the record write then raised, the retry finds no row and sends the same brief a second time, which shows as two outbound rows for one morning.
+
+**The row says `sent` and never `delivered`.**
+The message very likely arrived; the receipt did not come back.
+Meta's receipts reach us through the same webhook as everything else, so this is §A's two checks - the webhook subscribed to the `messages` field, and the app subscribed to the WABA - and it is the WABA subscription far more often than not.
+
+**The owner replies to the brief.**
+That number answers once a day with one fixed sentence and creates nothing: `This number receives the morning brief. To forward invoices, use a branch's phone.`
+The inbound row is stamped `ignored_brief_recipient` before anything else happens - no document, no job, no model call.
+A phone that is both a branch's and a recipient's is a branch, so the founder's demo phone still forwards papers exactly as it did before.
+
+**Stopping it.**
+`BRIEF_ENABLED=false` on Railway stops every send for every tenant in one variable.
+`update brief_recipients set paused_at = now() where phone_e164 = '9715XXXXXXXX';` stops one phone and keeps the row, which is the one that says which number the owner had asked for; nulling `paused_at` starts it again.
+Neither needs a code change, and neither loses a fact.
+
+### What the resets do to the mornings
+
+Read against both files, 2026-09-11: **neither reset names `brief_recipients`, and neither touches storage at all.**
+
+**The loop reset (`supabase/demo_reset_loop.sql`, the real stage) leaves the mornings completely intact.**
+Every delete in it is scoped to the props' fixed invoice numbers and the documents behind them: the `audit_events` delete is by those invoices' and documents' subject ids, so the `brief_recipient.added` row is out of its reach; the `jobs` delete is by `payload->>'document_id'` and `payload->>'message_id'`, and a `send_brief` payload carries neither; the `wa_messages` delete is by the props' own inbound media message ids, so an outbound template row is not in it.
+So the recipient row, the record of who asked for it, the mornings already sent and their stored cards all survive a rehearsal reset - which is what the milestone's done-when asked for, and what makes the brief safe to leave running through a demo week.
+
+**`supabase/demo_seed.sql` (the practice stage only) leaves the recipient row too, but not the record around it.**
+It names `brief_recipients` nowhere, so the row that decides the morning survives a re-seed.
+Two of its deletes are wider than the loop reset's, though: it clears **every** `audit_events` row for the demo chain, which takes the `brief_recipient.added` entry with it, and it clears every `wa_messages` row to or from a demo-branch phone, which takes an outbound brief sent to a phone that is also a branch's - the founder's demo phone is one.
+Nothing there stops a morning; it loses the practice database's record of one. And `demo_seed.sql` must never run on the real stage anyway (§C).
+
+Storage is untouched by both: the cards stay under `{tenant_id}/briefs/...` the way the invoice originals stay under `{tenant_id}/documents/...`, immutable and unreferenced by any reset.
