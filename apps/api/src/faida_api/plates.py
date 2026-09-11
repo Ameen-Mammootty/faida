@@ -116,6 +116,26 @@ class ComponentCost:
     missing: str | None = None
 
 
+def bought_base_qty(base_qty: Decimal, usable_share: Decimal | None) -> Decimal:
+    """What the storeroom issued for a recipe line that puts `base_qty` in the
+    pot (M12 WP-119, D13).
+
+    A recipe is written for costing, so its quantities are what goes *in*:
+    500 g of chicken means 500 g in the curry. Trim, bone and a cooking loss
+    mean more than that left the shelf, and the plate must cost what left the
+    shelf - so a share of 0.85 costs 588 g, not 500.
+
+    Null means the quantity is already as-purchased, the M6 convention every
+    recipe written before WP-119 was typed under, and it returns the quantity
+    untouched rather than dividing by a manufactured 1: this function is the
+    one place the two conventions meet, so no caller has to know which it
+    holds. The door and the 0021 check keep the share inside (0, 1], so this
+    never divides by zero and never shrinks a quantity."""
+    if usable_share is None:
+        return base_qty
+    return base_qty / usable_share
+
+
 def cost_component(
     *,
     position: int,
@@ -125,13 +145,20 @@ def cost_component(
     has_packs: bool,
     price: Priced | None,
     no_price_reason: str | None = None,
+    usable_share: Decimal | None = None,
 ) -> ComponentCost:
     """One component costed against its material's current price.
 
     The missing sentences name the *next action*, not the failure: an
     unmapped material sends the consultant to the mapping screen, an uncosted
     one to the blocked-cost queue (`no_price_reason` carries that queue's own
-    WP-55 sentence when the newest purchase is known and blocked)."""
+    WP-55 sentence when the newest purchase is known and blocked).
+
+    `usable_share` (M12 WP-119, D13) is what the kitchen loses on the way to
+    the pot: the cost is the *purchased* quantity times the price, so a plate
+    and M12's usage figure always describe the same amount of the same
+    material. Null - every recipe on file before 0021 - costs the quantity as
+    typed, byte for byte as it did before this argument existed."""
     if price is None:
         if not has_packs:
             return ComponentCost(
@@ -154,7 +181,48 @@ def cost_component(
     quality = component_quality(price.quality)
     if price.stale:
         quality = Quality.ESTIMATED
-    return ComponentCost(position, cost=base_qty * price.cost_per_base_unit, quality=quality)
+    bought = bought_base_qty(base_qty, usable_share)
+    return ComponentCost(position, cost=bought * price.cost_per_base_unit, quality=quality)
+
+
+def _plain_number(value: Decimal) -> str:
+    """A stored numeric as a person writes it: `220.0000` is "220", `27.5000`
+    is "27.5". The columns carry four decimals because a karak draws 0.006 g
+    of saffron; a sentence that printed those zeros back would read as false
+    precision on every line of every recipe card."""
+    trimmed = value.normalize()
+    # `normalize()` turns 1000 into 1E+3, which is the same number and the
+    # wrong words. Integers go back through `quantize` to get their digits.
+    if trimmed == trimmed.to_integral_value():
+        trimmed = trimmed.quantize(Decimal(1))
+    return f"{trimmed:f}"
+
+
+def usable_words(qty: Decimal, unit: str, usable_share: Decimal | None) -> str | None:
+    """The recipe card's line about a conversion yield, composed here and
+    never on a screen (M12 WP-119): "500 g at 85% usable, 588 g bought".
+
+    Three numbers, in the order a cook reads them: what goes in the pot, as
+    typed and in the unit it was typed in; the share, as a percent because
+    that is how a kitchen says it; and what that costs off the shelf, which
+    is the number the plate actually multiplied and the one nobody could
+    otherwise check.
+
+    The bought amount rounds to the typed quantity's own precision (half up,
+    the M9 display rule): a whole 500 g buys a whole 588 g, and a typed 27.5
+    buys 32.4 - printing 588.2352941 would claim the recipe is precise to a
+    milligram when the share it divides by has four decimals at most.
+
+    None when there is no share, so the caller has nothing to decide: the
+    screen prints these words when they exist and the quantity alone when
+    they do not."""
+    if usable_share is None:
+        return None
+    typed = _plain_number(qty)
+    percent = _plain_number(usable_share * 100)
+    decimals = max(0, -qty.normalize().as_tuple().exponent)
+    bought = (qty / usable_share).quantize(Decimal(1).scaleb(-decimals), rounding=ROUND_HALF_UP)
+    return f"{typed} {unit} at {percent}% usable, {_plain_number(bought)} {unit} bought"
 
 
 def margin_impact(

@@ -671,6 +671,24 @@ export interface MenuComponent {
   /** The recipe card's own words ("1 cup"), kept beside the conversion -
    * the only audit a typed quantity will ever have. */
   source_text: string | null;
+  /**
+   * M12 WP-119 (D13): the share of what is bought that reaches the pot, as a
+   * decimal fraction string - "0.85" is 85% usable, the rest being trim,
+   * bone or peel. Null means the quantity above is already the purchased
+   * amount, which is every recipe written before this column existed.
+   *
+   * It arrives at the column's own precision - "0.8500" for the "0.85" that
+   * was sent, the way `qty` comes back "220.0000" - so it is compared
+   * through the same normaliser quantities use and never as raw text.
+   */
+  usable_share: string | null;
+  /**
+   * The API's own sentence for that share - "500 g at 85% usable, 588 g
+   * bought" - composed there and printed here exactly as it arrives. The
+   * bought amount is arithmetic, and arithmetic on this side would be a
+   * second implementation of it.
+   */
+  usable_words: string | null;
   /** Exactly one of these is set. */
   cost: MenuComponentCost | null;
   missing: string | null;
@@ -725,6 +743,10 @@ export interface MenuItemLoadInput {
     ingredient_id: string;
     qty: string;
     unit: string;
+    /** M12 WP-119: the conversion yield the sheet carried, already read into
+     * a fraction ("0.85"), or null when the column was blank or absent. The
+     * API validates it again and refuses anything outside (0, 1]. */
+    usable_share: string | null;
     source_text: string | null;
   }[];
 }

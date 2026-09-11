@@ -14,10 +14,12 @@ import {
 import { money, quantity } from "@/lib/format";
 import {
   committable,
+  loadInput,
   newMaterials,
   planLoad,
   planWords,
   readMenuCsv,
+  shareWords,
   type LoadItem,
   type MissingMaterial,
 } from "@/lib/menuLoad";
@@ -258,19 +260,7 @@ export default function MenuLoader() {
         continue;
       }
       try {
-        const result = await loadMenuItem({
-          name: item.name,
-          category: item.category,
-          selling_price: item.sellingPrice,
-          yield_portions: item.yieldPortions,
-          yield_label: item.yieldLabel,
-          components: item.lines.map((line) => ({
-            ingredient_id: line.ingredientId as string,
-            qty: line.qty,
-            unit: line.unit,
-            source_text: line.sourceText,
-          })),
-        });
+        const result = await loadMenuItem(loadInput(item));
         if (result.outcome === "created") tally.created += 1;
         else if (result.outcome === "version_added") tally.versioned += 1;
         else tally.unchanged += 1;
@@ -359,6 +349,12 @@ export default function MenuLoader() {
             repeated on each of its rows. Quantities are <strong>as purchased</strong> - what you
             would buy to make it, not what ends up on the plate - because that is what an invoice
             price multiplies.
+          </p>
+          <p className="mt-2 max-w-2xl text-sm text-stone">
+            Where trimming or cooking loses part of what is bought, put the share that reaches the
+            pot in the optional <strong>usable share</strong> column - &ldquo;85%&rdquo;,
+            &ldquo;85&rdquo; and &ldquo;0.85&rdquo; all mean the same thing. Leave it blank and the
+            quantity is taken as purchased, which is how every recipe already loaded reads.
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <label className="inline-flex min-h-11 cursor-pointer items-center rounded-sm bg-palm px-4 py-2 text-sm font-medium text-cream hover:bg-palm-deep">
@@ -695,6 +691,12 @@ function LoadRow({
                     <span className="text-stone">
                       {" "}
                       · {line.qty} {line.unit}
+                      {/* M12 WP-119: the sheet's own cell read back, so a
+                          consultant can see that "85%", "85" and "0.85" were
+                          all understood as the same share. What it costs and
+                          what it draws from the storeroom are the API's to
+                          say, on the menu screen. */}
+                      {line.usableShare ? ` · ${shareWords(line.usableShare)}` : ""}
                     </span>
                     {line.sourceText ? (
                       <span className="block text-xs text-stone">

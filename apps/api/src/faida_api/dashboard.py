@@ -133,9 +133,13 @@ def _menu_items(
     """The menu as `contribution` reads it: each item's as-of plate, its
     current recipe version, and every component with the invoice line behind
     the price that costed it (C12.4a). The batch cost is the same
-    multiplication `plates.cost_component` makes - the quantity in base units
+    multiplication `plates.cost_component` makes - the quantity in base units,
+    divided by the conversion yield when the line has one (M12 WP-119, D13),
     times the price per base unit - and None when there is no price or the
-    unit does not convert, so a hole is a hole here too."""
+    unit does not convert, so a hole is a hole here too.
+
+    The share rides along on the component too, so the dish's contribution and
+    M12's usage figure divide by the same number this cost did."""
     menu: dict[str, contribution.MenuItem] = {}
     for row in rows:
         components: list[contribution.RecipeComponent] = []
@@ -145,7 +149,8 @@ def _menu_items(
             if price is not None:
                 converted = plates.to_base_qty(component["qty"], component["unit"])
                 if converted is not None and converted[1] == price["cost_base_unit"]:
-                    batch_cost = converted[0] * price["cost_per_base_unit"]
+                    bought = plates.bought_base_qty(converted[0], component["usable_share"])
+                    batch_cost = bought * price["cost_per_base_unit"]
                 invoice_id = price["invoice_id"]
                 position = price["position"]
                 purchased_on = price["purchased_on"]
@@ -159,6 +164,7 @@ def _menu_items(
                     invoice_id=invoice_id,
                     line_position=position,
                     purchased_on=purchased_on,
+                    usable_share=component["usable_share"],
                 )
             )
         archived_at = row["archived_at"]
@@ -174,8 +180,42 @@ def _menu_items(
             components=tuple(components),
             archived=archived_at is not None,
             archived_on=None if archived_at is None else archived_at.date(),
+            recipe_created_on=(
+                None if row["recipe_created_at"] is None else row["recipe_created_at"].date()
+            ),
         )
     return menu
+
+
+def _branch_ratio_rows(
+    branches: Sequence[asyncpg.Record],
+    *,
+    days: Sequence,
+    invoices: Sequence,
+    period: ratio.Period,
+    currency: str,
+    newest_by_branch: Mapping[str, datetime.date],
+) -> dict[str, ratio.BranchRow]:
+    """Every branch's ratio row for the period, each clipped to that branch's
+    own loaded range - `ratio.period_row` called once per branch and nowhere
+    else (C11, C12.9).
+
+    Lifted out of the handler so M12's printout (`usage_report.py`, WP-120)
+    builds the same windows from the same rows: a window built two ways is a
+    figure that can disagree with the screen above it.
+    """
+    return {
+        branch["id"]: ratio.period_row(
+            branch_id=branch["id"],
+            branch_name=branch["name"],
+            days=days,
+            invoices=invoices,
+            period=period,
+            tenant_currency=currency,
+            latest_sales_day=newest_by_branch.get(branch["id"]),
+        )
+        for branch in branches
+    }
 
 
 # --- the sentences that are about the whole screen ------------------------------
@@ -559,23 +599,19 @@ async def read_dashboard(
             tenant_id=tenant_id, date_from=period.start, date_to=period.end
         )
     ]
-    ratio_rows = {
-        branch["id"]: ratio.period_row(
-            branch_id=branch["id"],
-            branch_name=branch["name"],
-            days=days,
-            invoices=invoices,
-            period=period,
-            tenant_currency=currency,
-            latest_sales_day=newest_by_branch.get(branch["id"]),
-        )
-        for branch in branches
-    }
+    ratio_rows = _branch_ratio_rows(
+        branches,
+        days=days,
+        invoices=invoices,
+        period=period,
+        currency=currency,
+        newest_by_branch=newest_by_branch,
+    )
     unassigned = ratio.unassigned_group(invoices, period, currency)
     ratio_total = ratio.chain_total(list(ratio_rows.values()), unassigned)
 
     # The menu twice from one set of rows: the period's plates and today's.
-    menu_rows, components_by_item, plate_by_item, vat_rate, prices = await _menu_context(
+    menu_rows, components_by_item, plate_by_item, vat_rate, prices, _stale = await _menu_context(
         db, tenant_id, as_of=period.end
     )
     prices_today, stale_today, _ = await _pricing(db, tenant_id)

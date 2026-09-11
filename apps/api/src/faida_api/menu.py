@@ -26,6 +26,8 @@ implied (eng review D7), and each refusal answers with its own plain sentence -
     a duplicate live name               two rows, one dish, split history
     a unit units.py cannot convert      "2 cups milk" - a karak cup is a
                                         serving vessel, not a measure (PRD §16)
+    a usable share outside (0, 1]       85 instead of 0.85 would divide the
+                                        plate by eighty-five (M12 WP-119)
 
 Editing writes a whole new version and never touches an old one; two
 concurrent saves cannot mint the same version number (D17) - the loser gets a
@@ -64,6 +66,11 @@ from .db import Database
 from .extraction import units
 from .extraction.constants import VAT_RATE_BY_CURRENCY
 
+#: What `recipe_components.usable_share` holds (migration 0021): four
+#: decimals, because a share is never more precise than a kitchen scale.
+#: The door quantizes to this so it validates the number that will be stored.
+SHARE_QUANTUM = Decimal("0.0001")
+
 # Declared twice like api.py: at the router, so no route here can exist
 # without the token check, and per handler, to receive the tenant and actor.
 router = APIRouter(prefix="/api", dependencies=[Depends(require_context)])
@@ -96,13 +103,22 @@ class MenuItemPrice(BaseModel):
 class RecipeComponent(BaseModel):
     """One line of the card: which material, how much, in what measure, and
     the card's own words when the consultant converted them (`source_text` -
-    a typed quantity's only audit, PRD §17-18)."""
+    a typed quantity's only audit, PRD §17-18).
+
+    `usable_share` is optional and is M12's conversion yield (WP-119, D13):
+    the share of what is *bought* that reaches the pot, as a fraction above 0
+    and at most 1 - "0.85" for chicken that loses 15% to trim and bone.
+    Omitted or null means the quantity is already as-purchased, which is what
+    every recipe written before this field says. A screen may let a person
+    type "85%" and send the fraction, but the door validates the fraction
+    itself and trusts no caller to have converted it."""
 
     model_config = ConfigDict(extra="forbid")
 
     ingredient_id: uuid.UUID
     qty: str
     unit: str
+    usable_share: str | None = None
     source_text: str | None = None
 
 
@@ -152,6 +168,44 @@ def _positive_number(value: str, *, what: str, example: str) -> "object":
             detail=f"'{value}' is not a {what}: send an amount above zero, like \"{example}\"",
         )
     return number
+
+
+def _usable_share(value: str | None, ingredient: asyncpg.Record) -> Decimal | None:
+    """The conversion yield as a fraction in (0, 1], or None for a line that
+    is already as-purchased (M12 WP-119, D13).
+
+    Validated here and not at the schema, and not trusted from any caller: the
+    web loader turns "85%" and "85" into "0.85" before it posts, but a share
+    that arrived as 85 would divide the plate by eighty-five and cost the
+    karak in fractions of a fil - silently, and on every dish that named it.
+    So the door refuses anything outside the bounds with the material's own
+    name in the sentence, which is the only way a consultant staring at a
+    45-row spreadsheet finds the cell.
+
+    Zero, negatives and non-numbers get the same sentence as a share above 1:
+    one bound, one rule, one thing to fix. So does a share too small to
+    survive the column's four decimals - 0.00001 stores as nothing at all, and
+    the check constraint would answer that with a 500 where the door can
+    answer it with a sentence. The value returned is the value stored, so what
+    the door approved is what the card later reads back."""
+    if value is None:
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    share = _parse_number(text)
+    if share is not None and 0 < share <= 1:
+        share = share.quantize(SHARE_QUANTUM, rounding=ROUND_HALF_UP)
+        if share > 0:
+            return share
+    raise HTTPException(
+        status_code=422,
+        detail=(
+            f"'{text}' is not a usable share for {ingredient['name']}: send the "
+            "share of what is bought that reaches the pot, above 0 and at most 1, "
+            'like "0.85" for 85%'
+        ),
+    )
 
 
 def _component_unit(unit_text: str, ingredient: asyncpg.Record) -> str:
@@ -224,6 +278,7 @@ async def _validated_components(
                 "ingredient_id": str(component.ingredient_id),
                 "qty": qty,
                 "unit": unit,
+                "usable_share": _usable_share(component.usable_share, ingredient),
                 "source_text": _clean(component.source_text),
             }
         )
@@ -285,6 +340,7 @@ def _cost_component(
             has_packs=row["has_packs"],
             price=None,
             no_price_reason=reason,
+            usable_share=row["usable_share"],
         )
     basis = price_row["cost_basis"] or {}
     return plates.cost_component(
@@ -299,6 +355,7 @@ def _cost_component(
             quality=basis.get("quality"),
             stale=stale_line is not None,
         ),
+        usable_share=row["usable_share"],
     )
 
 
@@ -338,6 +395,7 @@ async def _menu_context(
     dict[str, plates.Plate],
     Decimal | None,
     dict[str, asyncpg.Record],
+    dict[str, asyncpg.Record],
 ]:
     """The whole menu, costed, from a fixed number of queries (D10): every
     item row, each item's current components, each item's plate answer, the
@@ -351,7 +409,10 @@ async def _menu_context(
     every onboarding month incomplete. A period row says *recipe version N*
     so a reader can see which one costed it. The prices are returned too (the
     fifth value, WP-90's hand-off to WP-92) so a contribution row can name the
-    invoice line behind each component's price with no further read."""
+    invoice line behind each component's price with no further read. The
+    stale map is the sixth (M12 D17): the materials whose newest purchase
+    could not be costed, so a money figure valued at a price the stale flag
+    qualifies can say so instead of reading reliable."""
     prices, stale, vat_rate = await _pricing(db, tenant_id, as_of=as_of)
     components_by_item: dict[str, list[asyncpg.Record]] = {}
     for row in await db.list_current_recipe_components(tenant_id=tenant_id):
@@ -359,7 +420,7 @@ async def _menu_context(
 
     rows = await db.list_menu_items(tenant_id=tenant_id)
     plate_by_item = _plates_for(rows, components_by_item, prices, stale, vat_rate)
-    return rows, components_by_item, plate_by_item, vat_rate, prices
+    return rows, components_by_item, plate_by_item, vat_rate, prices, stale
 
 
 def _plate_payload(result: plates.Plate) -> dict:
@@ -385,9 +446,22 @@ def _component_cost_payload(
 ) -> dict:
     """One component's cost with its full forensics - the material price it
     multiplied, down to the invoice line id and the photo behind it - or the
-    plain-words reason there is no number."""
+    plain-words reason there is no number.
+
+    `usable_share` and `usable_words` ride along on both answers (M12 WP-119,
+    D13), because the conversion yield is a fact about the recipe line and not
+    about its price: a component whose material has no pack yet still says
+    what the kitchen loses to trim. The words are composed in `plates.py` and
+    the screen prints them - it never multiplies or divides to get the bought
+    amount, so the number a reader checks by hand is the number the plate
+    costed."""
+    share = row["usable_share"]
+    yield_words = {
+        "usable_share": _dec(share),
+        "usable_words": plates.usable_words(row["qty"], row["unit"], share),
+    }
     if costed.cost is None:
-        return {"cost": None, "missing": costed.missing}
+        return {"cost": None, "missing": costed.missing, **yield_words}
     ingredient_id = row["ingredient_id"]
     return {
         "cost": {
@@ -396,6 +470,7 @@ def _component_cost_payload(
             "price": _material_price(prices[ingredient_id], stale.get(ingredient_id)),
         },
         "missing": None,
+        **yield_words,
     }
 
 
@@ -493,7 +568,7 @@ async def list_menu_items(request: Request, ctx: Context) -> dict:
     tenant currency - joined in Python, nothing stored, nothing to
     invalidate."""
     db: Database = request.app.state.db
-    rows, _, plate_by_item, _, _ = await _menu_context(db, ctx.tenant_id)
+    rows, _, plate_by_item, _, _, _ = await _menu_context(db, ctx.tenant_id)
     return {
         "menu_items": [
             {
@@ -1002,6 +1077,6 @@ async def list_price_moves(request: Request, ctx: Context) -> dict:
     pairs: dict[str, list[asyncpg.Record]] = {}
     for line in await db.list_price_move_pairs(tenant_id=tenant_id):
         pairs.setdefault(line["ingredient_id"], []).append(line)
-    rows, components_by_item, plate_by_item, _, _ = await _menu_context(db, tenant_id)
+    rows, components_by_item, plate_by_item, _, _, _ = await _menu_context(db, tenant_id)
     moves = price_moves(pairs, rows, components_by_item, plate_by_item)
     return {"moves": [_move_payload(move) for move in moves]}

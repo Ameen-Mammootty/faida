@@ -42,7 +42,10 @@ describe("parseCsv, as it always read", () => {
     const parsed = parseCsv(MENU_TEMPLATE);
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
-    expect(parsed.header).toHaveLength(9);
+    // Ten since M12 WP-119 added the optional usable-share column; every cell
+    // of it is blank in the worked example, because nothing in a karak is
+    // trimmed away before it reaches the pot.
+    expect(parsed.header).toHaveLength(10);
     expect(parsed.ragged).toEqual([]);
     const read = readMenuCsv(parsed.header, parsed.rows);
     expect(read.ok).toBe(true);
@@ -50,6 +53,7 @@ describe("parseCsv, as it always read", () => {
     expect(read.items.map((item) => item.name)).toEqual(["Karak Tea (Cup)", "Cappuccino"]);
     expect(read.items[0].lines).toHaveLength(5);
     expect(read.items[1].lines).toHaveLength(4);
+    expect(read.items[0].lines.every((line) => line.usableShare === null)).toBe(true);
   });
 
   it("reads the sales template with its closed-day row and no ragged rows", () => {

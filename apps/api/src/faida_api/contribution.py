@@ -180,6 +180,9 @@ class RecipeComponent:
     invoice_id: str | None = None
     line_position: int | None = None
     purchased_on: datetime.date | None = None
+    #: The share of what is bought that reaches the pot (M12 D13, WP-119):
+    #: 0 < share <= 1, None meaning the quantity is already as-purchased.
+    usable_share: Decimal | None = None
 
 
 @dataclass(frozen=True)
@@ -206,6 +209,9 @@ class MenuItem:
     components: tuple[RecipeComponent, ...] = ()
     archived: bool = False
     archived_on: datetime.date | None = None
+    #: When the current recipe version was written (M12 D14): a recipe created
+    #: after a period's end makes that period's usage row estimated.
+    recipe_created_on: datetime.date | None = None
 
 
 # --- outputs ----------------------------------------------------------------

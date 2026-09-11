@@ -692,7 +692,7 @@ async def sales_coverage(
             tenant_id=tenant_id, date_from=period.start, date_to=period.end
         )
     ]
-    menu_rows, _, plate_by_item, _, _ = await _menu_context(db, tenant_id)
+    menu_rows, _, plate_by_item, _, _, _ = await _menu_context(db, tenant_id)
     plates = {
         row["id"]: ratio.MenuPlate(
             menu_item_id=row["id"],

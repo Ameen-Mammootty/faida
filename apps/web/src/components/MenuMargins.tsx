@@ -304,7 +304,14 @@ function ComponentRow({ component }: { component: MenuComponent }) {
           {component.ingredient_name}
           <span className="text-stone">
             {" "}
-            · {quantity(component.qty)} {component.unit}
+            ·{" "}
+            {/* M12 WP-119: where a component has a conversion yield, the API
+                sends the whole quantity as one sentence - "1200 g at 85%
+                usable, 1412 g bought" - and it replaces the plain quantity
+                rather than sitting beside it, because it already contains it.
+                Printed exactly as it arrives: the bought amount is a division,
+                and this screen does no arithmetic. */}
+            {component.usable_words ?? `${quantity(component.qty)} ${component.unit}`}
           </span>
         </p>
         {component.source_text ? (
