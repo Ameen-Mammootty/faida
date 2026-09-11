@@ -65,6 +65,7 @@ then fix up three things:
 | Variable | Value |
 |---|---|
 | `WORKER_ENABLED` | `true` — locally it is often `false`; in production the worker must run |
+| `BRIEF_ENABLED` | leave unset - it defaults to `true`, and an empty `brief_recipients` table already sends nothing. Set it to `false` to stop every morning brief at once, for every tenant, without SQL and without a code change (M10; one recipient is stopped instead with `paused_at` on its row) |
 | `DATABASE_URL` | the session-pooler URI with the real password and **no `[ ]` brackets** |
 | `PORT` | do not set it — Railway injects it and the container's CMD already honours it |
 | `WEB_ORIGIN` | the deployed web origin, scheme+host only, no trailing slash (e.g. `https://faida-web.vercel.app`). CORS allows exactly this one origin; a leftover `http://localhost:3000` from `.env` silently breaks the deployed review screen |
@@ -165,6 +166,21 @@ Then set `WEB_ORIGIN` on Railway to the Vercel production origin - preview deplo
    You do **not** need to publish the app or complete business verification for this. Publishing
    is an M5 concern (plan.md §11).
 7. API setup → add the demo phone(s) as recipients (up to 5) and confirm the code sent to them.
+8. **The morning brief's template (M10).** The daily brief goes out as a template, because it is a
+   message nobody asked for in the last 24 hours. In WhatsApp Manager, under the **test** account,
+   create `faida_daily_brief`: language **English (`en`)**, header type **Image** with
+   `Docs/brief/faida_daily_brief_sample.png` as the sample picture, and the body, the five sample
+   values and the `Open dashboard` button exactly as `Docs/M10_DECOMPOSITION.md` §3.1 prints them.
+   Submit it and wait - Meta says up to 24 hours, and the brief sends nothing until it reads
+   `APPROVED`.
+   Ours came back approved as **Marketing** rather than Utility (Meta reads a recurring daily
+   message with a title and a button as a newsletter), which costs nothing on the free test number;
+   the production number gets a reworded template, `faida_account_statement`, which says what the
+   message is to the person receiving it - a statement of their own account - and is the wording
+   the utility category describes. It is in the same §3.1.
+   Nothing else is needed to send: the recipient is a row in `brief_recipients`
+   (`Docs/apply_m10_migration.sql` has the insert and its audit row), and `Docs/DEMO_RUNBOOK.md` §J
+   is the operating manual.
 
 ### 4. Prove M0 (the "done when")
 From a demo phone, send any photo to the test number. Within seconds you should get
