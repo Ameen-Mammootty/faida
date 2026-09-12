@@ -24,6 +24,7 @@ import hashlib
 import logging
 import time
 import zoneinfo
+from collections.abc import Sequence
 
 import httpx
 
@@ -319,6 +320,43 @@ async def _store_card(storage: Storage, card_path: str, png: bytes) -> None:
         logger.info("card already stored at %s; the retry carries on", card_path)
 
 
+async def send_card(
+    wa: WhatsAppClient,
+    storage: Storage,
+    png: bytes,
+    *,
+    phone: str,
+    card_path: str,
+    template: str,
+    language: str,
+    parameters: Sequence[str],
+) -> str:
+    """Store a drawn card, upload it and send a template with it as the
+    header. Returns Meta's message id (M10 WP-106, C15.4; shared by the
+    scoreboard from M13 WP-130).
+
+    The one door for a picture that leaves the building: the brief's 07:00
+    job, the scoreboard's, and the founder's rehearsals from the command line
+    all come through here, so the picture on the phone, the copy in storage
+    and the header on the message cannot drift apart between them. The caller
+    draws the card and owns the record row, because those are the two things
+    the cards say differently.
+
+    The order is store, upload, send, and it is the order for a reason: the
+    evidence exists before the message does. A card stored and never sent is a
+    stray object nobody reads; a card sent and never stored is a morning we
+    cannot show back to the owner who asks what the picture said. An upload
+    Meta refuses raises here, before any message leaves, so a half-sent card
+    is not a thing that can happen (§7's card failure row)."""
+    # a. The immutable copy, before anything is sent: what the phone showed
+    #    can be opened again (C15.4).
+    await _store_card(storage, card_path, png)
+    # b. Meta wants the file itself, not a link; a refusal fails the job here.
+    media_id = await wa.upload_media(png, "image/png")
+    # c. The header component names that media id and comes first (§3.1).
+    return await wa.send_template(phone, template, language, parameters, header_image_id=media_id)
+
+
 async def send_brief_card(
     wa: WhatsAppClient,
     storage: Storage,
@@ -327,37 +365,18 @@ async def send_brief_card(
     phone: str,
     card_path: str,
 ) -> str:
-    """Draw the card, store it, upload it and send the template with it as the
-    header. Returns Meta's message id (M10 WP-106, C15.4).
-
-    The one door for a brief that leaves the building: the 07:00 job and the
-    founder's rehearsal from the command line both come through here, so the
-    picture on the phone, the copy in storage and the header on the message
-    cannot drift apart between them. The caller owns the record row, because
-    that is the only thing the two doors say differently (a rehearsal sits
-    outside the day's key).
-
-    The order is store, upload, send, and it is the order for a reason: the
-    evidence exists before the message does. A card stored and never sent is a
-    stray object nobody reads; a card sent and never stored is a morning we
-    cannot show back to the owner who asks what the picture said. An upload
-    Meta refuses raises here, before any message leaves, so a half-sent brief
-    is not a thing that can happen (§7's card failure row)."""
-    # a. The picture, drawn from the same `Brief` the five parameters came
-    #    from, so the card and the text can never quote two mornings.
-    png = brief_card.render_card(morning)
-    # b. The immutable copy, before anything is sent: what the phone showed
-    #    can be opened again (C15.4).
-    await _store_card(storage, card_path, png)
-    # c. Meta wants the file itself, not a link; a refusal fails the job here.
-    media_id = await wa.upload_media(png, "image/png")
-    # d. The header component names that media id and comes first (§3.1).
-    return await wa.send_template(
-        phone,
-        brief.TEMPLATE_NAME,
-        brief.TEMPLATE_LANGUAGE,
-        morning.parameters,
-        header_image_id=media_id,
+    """The brief through the shared door: drawn from the same `Brief` the
+    five parameters came from, so the card and the text can never quote two
+    mornings, then stored, uploaded and sent by `send_card`."""
+    return await send_card(
+        wa,
+        storage,
+        brief_card.render_card(morning),
+        phone=phone,
+        card_path=card_path,
+        template=brief.TEMPLATE_NAME,
+        language=brief.TEMPLATE_LANGUAGE,
+        parameters=morning.parameters,
     )
 
 
@@ -420,8 +439,7 @@ async def send_brief(db: Database, wa: WhatsAppClient, storage: Storage, payload
         language=brief.TEMPLATE_LANGUAGE,
         parameters=list(morning.parameters),
         tenant_id=tenant_id,
-        recipient_id=recipient_id,
-        brief_date=brief_date,
+        key={"recipient_id": recipient_id, "brief_date": brief_date},
         rehearsal=False,
         card_path=card_path,
     )

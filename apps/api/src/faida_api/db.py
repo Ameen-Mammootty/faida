@@ -453,20 +453,27 @@ class Database:
         language: str,
         parameters: list[str],
         tenant_id: str,
-        recipient_id: str,
-        brief_date: str | datetime.date,
+        key: dict[str, Any] | None = None,
+        recipient_id: Any = None,
+        brief_date: Any = None,
         rehearsal: bool,
         card_path: str | None = None,
     ) -> None:
-        """The record of a brief that left the building (M10 WP-102, C15.4).
+        """The record of a template that left the building (M10 WP-102,
+        C15.4; shared with the scoreboard from M13 WP-130).
 
         One outbound row per send, carrying what was sent (the template, its
-        language and the five values as the phone showed them), the picture
-        beside it (`card_path`, the immutable copy in storage), and the key
-        the morning is - tenant, recipient and the recipient's own local date
-        - so "did the owner get Tuesday's brief?" is one row, not a
-        reconstruction. `rehearsal` marks a send the founder asked for from
-        the CLI at some other hour, which is outside the day's key.
+        language and the values as the phone showed them), the picture beside
+        it (`card_path`, the immutable copy in storage), the tenant, and the
+        `key` the send is - for a brief the recipient and the recipient's own
+        local date, for a scoreboard the branch, the local day and the
+        variant - so "did the owner get Tuesday's brief?" is one row, not a
+        reconstruction. The key's fields land flat on the payload, which is
+        what `outbound_brief_exists` and its scoreboard twin query; the
+        brief's two, `recipient_id` and `brief_date`, may also be passed by
+        name, as its callers always did. `rehearsal` marks a send the founder
+        asked for from the CLI at some other hour, which is outside the day's
+        key.
 
         There is no audit row: a scheduled send is not a human decision (C8).
 
@@ -481,14 +488,18 @@ class Database:
         jsonb, and a `uuid` or a `date` object handed to the encoder would
         raise *here* - after Meta has already accepted the message, which is
         the one failure that costs a second brief (C15.3's named limit)."""
+        fields = dict(key or {})
+        if recipient_id is not None:
+            fields["recipient_id"] = recipient_id
+        if brief_date is not None:
+            fields["brief_date"] = brief_date
         payload = {
             "template": template,
             "language": language,
             "parameters": list(parameters),
             "card_path": card_path,
             "tenant_id": str(tenant_id),
-            "recipient_id": str(recipient_id),
-            "brief_date": str(brief_date),
+            **{field: str(value) for field, value in fields.items()},
             "rehearsal": rehearsal,
             "error": None,
         }

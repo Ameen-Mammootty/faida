@@ -119,8 +119,7 @@ async def run(
         language=brief.TEMPLATE_LANGUAGE,
         parameters=list(morning.parameters),
         tenant_id=tenant_id,
-        recipient_id=recipient_id,
-        brief_date=today,
+        key={"recipient_id": recipient_id, "brief_date": today.isoformat()},
         rehearsal=True,
         card_path=card_path,
     )
