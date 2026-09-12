@@ -69,6 +69,15 @@ class JobKind(StrEnum):
     # through Database.enqueue_brief_once by the worker's tick, never by a
     # request.
     SEND_BRIEF = "send_brief"
+    # Draws one branch's scoreboard card and sends it as an approved template
+    # (M13 WP-133, WP-134). Payload: {"tenant_id": str, "branch_id": str,
+    # "day": str, "variant": "daily" | "final", "scheme_month_id": str} - the
+    # branch's own local date for a daily card (also the `today` the read is
+    # made for), the scheme month's first day for the final one. One per
+    # (branch, variant, day), ever (jobs_send_scoreboard_uidx, 0023): enqueued
+    # through Database.enqueue_scoreboard_once by the worker's tick for the
+    # daily card and by the approval door for the final one.
+    SEND_SCOREBOARD = "send_scoreboard"
 
 
 # wa_messages.status for an inbound message from a phone no branch is
