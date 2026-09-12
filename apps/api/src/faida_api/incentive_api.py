@@ -1,5 +1,5 @@
 """The owner's incentive screen, served (M13, plan.md §8 D18; issues #8, #9,
-#10).
+#10, #11).
 
 One read serves the whole `/incentive` screen - `GET /api/incentive?month=` -
 the dashboard's rule (M9): every figure on the screen comes out of one
@@ -8,15 +8,22 @@ the pool and the statement are derived on every read by `incentive.py` and
 stored nowhere (C16); only what the owner typed and what the owner approved
 are rows.
 
-Three blocks are served so far and the read grows one per ticket. The role
-shares that split a pool between the manager, the supervisor and the sales
-team (D2, issue #8); the scheme month: a calendar month with a net sales
-target, a percentage of net sales above it and an optional cap per branch,
-its push weeks laid out Monday to Sunday clipped to the month, and the shares
-snapshotted the day it was created (D3, D4, D5, issue #9); and each week's
-push list with the menu beside it to build the next one from (D6, D7, issue
-#10). Each branch's statement lands in the ticket after this one, out of this
-same request.
+Four blocks. The role shares that split a pool between the manager, the
+supervisor and the sales team (D2, issue #8); the scheme month: a calendar
+month with a net sales target, a percentage of net sales above it and an
+optional cap per branch, its push weeks laid out Monday to Sunday clipped to
+the month, and the shares snapshotted the day it was created (D3, D4, D5,
+issue #9); each week's push list with the menu beside it to build the next
+one from (D6, D7, issue #10); and each branch's statement for the month -
+what the push weeks scored, what the month sold, what the pool has earned so
+far, and how many of the month's days are loaded (D9, D10, D11, issue #11).
+
+A statement is read and never stored, which is the whole of C16: the screen
+cannot disagree with the sales days because it *is* the sales days, re-added
+on every request. It is provisional until every calendar day of the month is
+loaded for that branch and says how many are; it is final only once the owner
+has approved it, and then what is shown is the figures as approved - what was
+paid - with the live ones beside them when a day has been replaced since.
 
 What a plate keeps after ingredients - the figure beside every rate box, so
 a rate is chosen as a share of what the dish actually earns - comes from
@@ -37,8 +44,10 @@ is flat whatever the chain's size: the currency, the branches with their
 pauses, the tenant's scheme months for the picker, the previous month's sales
 days for the advice figure, the costed menu with its till mapping, and - only
 when a month exists for the month in view - that month, its branch targets,
-its push weeks and their lists. Sixteen queries at most, whatever the number
-of branches, weeks, dishes or push items.
+its push weeks and their lists, then the month's loaded days, its item-days
+and its approvals, which are the whole of every branch's statement. Nineteen
+queries at most, whatever the number of branches, weeks, dishes, push items
+or statements.
 """
 
 import datetime
@@ -294,6 +303,90 @@ def _scheme_month(
     )
 
 
+async def _statements(
+    db: Database,
+    tenant_id: str,
+    scheme: incentive.SchemeMonth,
+    branches: list[asyncpg.Record],
+    currency: str,
+) -> list[dict]:
+    """Each branch's statement for the month in view, derived on this request
+    out of the branch's own loaded days and stored nowhere (D10, D11, C16).
+
+    Three reads whatever the chain's size, all three on the month's own
+    window: the loaded days, for the net sales and for the count against the
+    calendar that keeps a statement provisional; the item-days, for the
+    portions each push week scored; and the approvals, which are what make a
+    statement final.
+
+    Portions are the till's own net quantity - what it sold less what it
+    refunded (D9), never a quantity worked back out of money - read through
+    `till_items.menu_item_id` at read time and never stored on a line. That is
+    why re-mapping a till name corrects every past day at once, and why a
+    mapping removed after a list was set reads as a named hole rather than as
+    a nought. A name the owner marked "not a menu item" - a delivery charge, a
+    discount line - is a portion of nothing, which is the rule
+    `contribution.py` already holds the whole product to, and an unmapped name
+    scores against no dish by the same rule.
+
+    A branch with no target in this month gets no statement: a month's targets
+    cover every branch that existed the day it was created (D3, D4), and a
+    branch opened since was never given a figure to be measured against. The
+    targets table above says "No target" for it in the same breath.
+    """
+    first, last = incentive.month_start(scheme.month), incentive.month_end(scheme.month)
+    days = [
+        incentive.LoadedDay(
+            branch_id=row["branch_id"],
+            business_date=row["business_date"],
+            net_sales=row["net_sales"],
+        )
+        for row in await db.list_sales_days(tenant_id=tenant_id, date_from=first, date_to=last)
+    ]
+    items = [
+        incentive.ItemDay(
+            branch_id=row["branch_id"],
+            business_date=row["business_date"],
+            menu_item_id=row["menu_item_id"],
+            qty_net=row["qty_sold"] - row["qty_refunded"],
+            no_qty_lines=row["no_qty_lines"],
+        )
+        for row in await db.list_period_item_sales(
+            tenant_id=tenant_id, date_from=first, date_to=last
+        )
+        if row["menu_item_id"] is not None and row["excluded_at"] is None
+    ]
+    approvals = {
+        row["branch_id"]: incentive.Approval(
+            approved_at=row["approved_at"],
+            actor=row["actor"],
+            reason=row["reason"],
+            figures=row["figures"],
+        )
+        for row in await db.list_statement_approvals(scheme.scheme_month_id, tenant_id=tenant_id)
+    }
+    newest: dict[str, datetime.date] = {}
+    for day in days:
+        if day.business_date > newest.get(day.branch_id, datetime.date.min):
+            newest[day.branch_id] = day.business_date
+    return [
+        incentive.statement_json(
+            incentive.compose_statement(
+                scheme,
+                branch["id"],
+                days=days,
+                items=items,
+                newest_loaded=newest.get(branch["id"]),
+                approval=approvals.get(branch["id"]),
+                currency=currency,
+            ),
+            branch_name=branch["name"],
+        )
+        for branch in branches
+        if branch["id"] in scheme.targets
+    ]
+
+
 async def _read(db: Database, tenant_id: str, month_key: str | None) -> dict:
     """The whole screen for one month. A month key that is not this tenant's
     is not an error: it reads as no scheme month, with the branches and the
@@ -322,9 +415,7 @@ async def _read(db: Database, tenant_id: str, month_key: str | None) -> dict:
             created_at=row["created_at"],
             today=today,
             kept=menu.kept,
-            # The statements fill in with the ticket that builds them, so
-            # nothing here reads a branch's sales days for the month in view.
-            statements=[],
+            statements=await _statements(db, tenant_id, scheme, branches, currency),
             currency=currency,
         )
 

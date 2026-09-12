@@ -11,6 +11,7 @@ import {
   createStanding,
   draftGroups,
   guidanceWords,
+  loadedThrough,
   menuIndex,
   monthOf,
   monthOptions,
@@ -26,7 +27,10 @@ import {
   shareBody,
   shareDraft,
   sharesUpdatedWords,
+  soFar,
   standing,
+  statementFigures,
+  statementWeeks,
   sumWords,
   targetDrafts,
   targetOf,
@@ -692,3 +696,112 @@ describe("the week's push list", () => {
 function filled(read: IncentiveRead, value: string): Record<string, string> {
   return Object.fromEntries(read.branches.map((branch) => [branch.id, value]));
 }
+
+// --- the statement (M13.5, issue #11) ---------------------------------------
+
+describe("a branch's statement", () => {
+  const scheme = FULL.scheme_month!;
+  const quoz = scheme.statements[0];
+  const karama = scheme.statements[1];
+
+  it("says so far on every figure that is still moving", () => {
+    expect(quoz.status).toBe("provisional");
+    const labels = statementFigures(quoz).map((row) => row.label);
+    expect(labels).toContain("Net sales so far");
+    expect(labels).toContain("Pool so far");
+    expect(soFar({ ...quoz, status: "final" }, "Pool")).toBe("Pool");
+  });
+
+  it("quotes the API's own words for the net sales and the pool", () => {
+    const rows = statementFigures(quoz);
+    expect(rows.map((row) => [row.key, row.value])).toEqual([
+      ["net", "AED 36,750 of AED 60,000"],
+      ["items", "AED 136.50"],
+      ["above", "AED 0.00"],
+      ["pool", "AED 137"],
+    ]);
+    expect(rows[2].label).toBe("Earned on sales above target (10%)");
+  });
+
+  it("draws no cap row for a month that set no cap", () => {
+    expect(quoz.figures.cap).toBeNull();
+    expect(statementFigures(quoz).some((row) => row.key === "cap")).toBe(false);
+  });
+
+  it("says a cap has been reached and leaves the figure before it to the API", () => {
+    const cap = statementFigures(karama).find((row) => row.key === "cap")!;
+    expect(cap.label).toBe("Cap, reached");
+    expect(cap.value).toBe("AED 1,500.00");
+    // The pool beside it is the cap, and what the portions actually earned is
+    // the API's own note under the block.
+    expect(statementFigures(karama).at(-1)!.value).toBe("AED 1,500");
+    expect(karama.notes).toContain(
+      "capped at AED 1,500; AED 2,018 earned before the cap",
+    );
+  });
+
+  it("a cap that has not bound is a figure and not a warning", () => {
+    const under = {
+      ...karama,
+      figures: { ...karama.figures, capped: false },
+    };
+    expect(
+      statementFigures(under).find((row) => row.key === "cap")!.label,
+    ).toBe("Cap");
+  });
+
+  it("never turns a pool it does not have into a nought", () => {
+    const nothing = {
+      ...quoz,
+      newest_loaded: null,
+      figures: {
+        ...quoz.figures,
+        pool: null,
+        pool_rounded: null,
+        split: null,
+        pool_words: "nothing loaded yet",
+      },
+    };
+    expect(statementFigures(nothing).at(-1)!.value).toBe("nothing loaded yet");
+    expect(loadedThrough(nothing)).toBe(
+      "No day of this month is loaded for this branch yet.",
+    );
+  });
+
+  it("labels a scored week the way the month's own tab labels it", () => {
+    const weeks = statementWeeks(scheme, quoz);
+    expect(weeks.map((week) => week.label)).toEqual(
+      weekTabs(scheme.weeks, FULL.today).map((tab) => tab.label),
+    );
+    expect(weeks[0].words).toBe("2 on the list");
+    expect(weeks[0].earned).toBe("AED 54.00");
+  });
+
+  it("a week the owner left empty carries its own sentence and no rows", () => {
+    const last = statementWeeks(scheme, quoz).at(-1)!;
+    expect(last.empty).toBe(true);
+    expect(last.words).toBe("no push list");
+    expect(last.rows).toEqual([]);
+  });
+
+  it("shows a dish's portions against its target in the API's words", () => {
+    const karak = statementWeeks(scheme, quoz)[0].rows[0];
+    expect(karak.name).toBe("Karak Tea (Cup)");
+    expect(karak.words).toBe("1,020 of 900 portions");
+    expect(karak.earned).toBe("30.00");
+    expect(karak.hole).toBe(false);
+  });
+
+  it("a dish that cannot be counted carries its sentence and no figure", () => {
+    const cake = statementWeeks(scheme, quoz)[1].rows[2];
+    expect(cake.hole).toBe(true);
+    expect(cake.earned).toBeNull();
+    expect(cake.words).toBe(
+      "Honey Cake cannot be counted: no till name is mapped to it",
+    );
+  });
+
+  it("says which day the figures were read up to", () => {
+    expect(loadedThrough(quoz)).toBe("Read up to 15 Sep 2026.");
+  });
+});

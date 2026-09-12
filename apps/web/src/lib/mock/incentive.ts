@@ -1,5 +1,5 @@
 /**
- * The staff incentive screen, offline (M13.2 to M13.4, issues #8, #9 and #10,
+ * The staff incentive screen, offline (M13.2 to M13.5, issues #8 to #11,
  * against `GET /api/incentive?month=`, `PUT /api/incentive/shares`,
  * `POST /api/incentive/months` and `PUT /api/incentive/weeks/{id}`).
  *
@@ -31,6 +31,12 @@
  * anything a product rule would refuse: the screen offers Save and Create only
  * for a form that is finished, and every refusal sentence lives in the Python
  * module the real doors call.
+ *
+ * The statements a scenario carries are scored figures, and this file will
+ * not score: a week's list saved here therefore moves the list and leaves the
+ * statement under it as the fixture wrote it. The real read derives both out
+ * of one request and cannot disagree with itself (C16); offline, the list is
+ * the thing being designed and the statement beside it is a still.
  *
  * The create and push-list doors are the two places this file substitutes
  * anything into a fixture: the targets, rates and portion targets the owner

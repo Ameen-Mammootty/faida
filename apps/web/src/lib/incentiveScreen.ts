@@ -4,10 +4,10 @@
  * (the `dashboardScreen.ts` rule: a choice left inside a component would be
  * untested by construction).
  *
- * Three blocks so far: the role shares that split a pool (M13.2, issue #8),
- * the scheme month with its per-branch targets and its push weeks (M13.3,
- * issue #9), and each week's push list with the menu to build it from
- * (M13.4, issue #10).
+ * Four blocks: the role shares that split a pool (M13.2, issue #8), the
+ * scheme month with its per-branch targets and its push weeks (M13.3, issue
+ * #9), each week's push list with the menu to build it from (M13.4, issue
+ * #10), and each branch's statement for the month (M13.5, issue #11).
  *
  * The screen never words a refusal. A share that does not add to a hundred, a
  * negative target, a month already created - each is refused by
@@ -24,6 +24,7 @@ import type {
   IncentiveCategory,
   IncentiveMenuItem,
   IncentiveRead,
+  IncentiveStatement,
   PushListInput,
   PushWeek,
   RoleShares,
@@ -701,7 +702,8 @@ export function pushStanding(
   // A week that has ended with nothing on it says so: the frozen sentence
   // alone leaves the owner unable to tell an empty week from one whose list
   // the screen has not drawn.
-  if (week.frozen) return rows.length === 0 ? `${week.note} ${NO_LIST_SET}` : week.note;
+  if (week.frozen)
+    return rows.length === 0 ? `${week.note} ${NO_LIST_SET}` : week.note;
   const stranded = rows.filter((row) => {
     const entry = index[row.menu_item_id];
     return entry === undefined || !entry.item.mapped;
@@ -720,3 +722,169 @@ export function pushStanding(
 
 export const LIST_CAPTION =
   "What the team is asked to push this week, what a portion above target earns, and how many portions each branch is held to.";
+
+// --- the statement ----------------------------------------------------------
+
+/**
+ * What a branch has earned so far this month, under the targets that month
+ * was created with (M13.5, issue #11).
+ *
+ * Every figure below is the API's own, derived on the read out of the
+ * branch's loaded sales days and stored nowhere (C16). The screen adds
+ * nothing up and re-words nothing: the day count, the net sales against
+ * target, the pool, each dish's portions against its target and the reason a
+ * dish cannot be counted at all are sentences `faida_api/incentive.py`
+ * composed, so the screen, the morning card and the statement quote one
+ * figure in one set of words. What is decided here is the screen's own: what
+ * a figure is called, which rows a month with no cap never draws, and the one
+ * word that keeps a half-loaded month from being read as a closed one.
+ *
+ * The rounding inside the block: the pool is a headline and reads as the API
+ * worded it, rounded to whole dirhams like every headline in the product;
+ * what the pool is made of - what the push lists earned, what the sales above
+ * target earned, the cap, each dish's own earning - is exact to the fil,
+ * because this is the detail a payout is read off and a dirham rounded away
+ * here is a dirham somebody is short.
+ */
+
+/** A figure that stands on its own carries the currency, the way every
+ * standalone figure on the shipped screens does; a figure inside a column
+ * under a heading does not. Fils-precise, because this is the detail a
+ * payout is read off. */
+function exact(value: string): string {
+  return `AED ${groupedMoney(value)}`;
+}
+
+/** "Pool so far" while the month is still being loaded, "Pool" once it is
+ * final. Said on each figure that is still moving rather than once at the top
+ * of the block: a figure read on its own out of the middle is the one that
+ * gets quoted to a team. */
+export function soFar(statement: IncentiveStatement, label: string): string {
+  return statement.status === "provisional" ? `${label} so far` : label;
+}
+
+/** One line of the statement's figures: what it is called and what it says.
+ * Both are strings by the time they are here - money is never a number on
+ * these screens. */
+export interface StatementFigure {
+  key: string;
+  label: string;
+  value: string;
+}
+
+/**
+ * The statement's figures in the order the owner reads them: what the branch
+ * sold against its target, the two things the pool is made of, the cap where
+ * the month set one, and the pool itself last.
+ *
+ * A month with no cap draws no cap row - a blank one would read as a cap of
+ * nothing, which is the opposite of what an empty cap box means (D8). A cap
+ * that has bound says so in its label, because the pool beside it is then the
+ * cap and not what the team's portions actually earned; the API's note under
+ * the block carries the figure before the cap.
+ */
+export function statementFigures(
+  statement: IncentiveStatement,
+): StatementFigure[] {
+  const figures = statement.figures;
+  const rows: StatementFigure[] = [
+    {
+      key: "net",
+      label: soFar(statement, "Net sales"),
+      value: figures.net_words,
+    },
+    {
+      key: "items",
+      label: "Earned on the push lists",
+      value: exact(figures.items_earned),
+    },
+    {
+      key: "above",
+      label: `Earned on sales above target (${plainPct(figures.above_target_pct)}%)`,
+      value: exact(figures.net_earned),
+    },
+  ];
+  if (figures.cap !== null) {
+    rows.push({
+      key: "cap",
+      label: figures.capped ? "Cap, reached" : "Cap",
+      value: exact(figures.cap),
+    });
+  }
+  rows.push({
+    key: "pool",
+    label: soFar(statement, "Pool"),
+    value: figures.pool_words,
+  });
+  return rows;
+}
+
+/** One dish on a scored week: what it sold against its target in the API's
+ * words, and what the rate paid on it - or nothing at all, because a dish
+ * that cannot be counted has no figure to show and a nought would be read as
+ * one (D10). */
+export interface StatementItemRow {
+  key: string;
+  name: string;
+  /** "150 of 100 portions", or the sentence saying why it cannot be counted. */
+  words: string;
+  /** Exact to the fil, or null for a hole. */
+  earned: string | null;
+  hole: boolean;
+}
+
+/** One push week as the statement scored it. */
+export interface StatementWeekRow {
+  key: string;
+  /** "1-5 Jul", the month's own tab label for the same week. */
+  label: string;
+  /** "3 on the list", or "no push list" for a week the owner left empty. */
+  words: string;
+  earned: string;
+  empty: boolean;
+  rows: StatementItemRow[];
+}
+
+/**
+ * The month's weeks as the statement scored them, in the month's own order.
+ *
+ * The label comes from the scheme month's own week, which is where the screen
+ * gets every other week label: the scored week carries its dates and how many
+ * dishes were on it, and a week named two ways on one screen is a week the
+ * owner has to match up by eye.
+ */
+export function statementWeeks(
+  scheme: SchemeMonth,
+  statement: IncentiveStatement,
+): StatementWeekRow[] {
+  const labels = new Map(scheme.weeks.map((week) => [week.id, week.words]));
+  return statement.figures.weeks.map((week) => ({
+    key: week.push_week_id,
+    label: labels.get(week.push_week_id) ?? `${week.start} - ${week.end}`,
+    words: week.words,
+    earned: exact(week.earned),
+    empty: week.empty,
+    rows: week.items.map((item) => ({
+      key: item.push_item_id,
+      name: item.name,
+      words: item.words,
+      earned: item.hole === null ? groupedMoney(item.earned) : null,
+      hole: item.hole !== null,
+    })),
+  }));
+}
+
+/** How far into the month the figures were read: the newest day this branch
+ * has loaded, or that it has loaded none of it at all. The day count itself
+ * is the API's `status_words` beside it - this says which day, so a branch
+ * that stopped uploading on the 10th is not read as a branch that sells
+ * nothing. */
+export function loadedThrough(statement: IncentiveStatement): string {
+  if (statement.newest_loaded === null) {
+    return "No day of this month is loaded for this branch yet.";
+  }
+  return `Read up to ${formatDate(statement.newest_loaded)}.`;
+}
+
+export const STATEMENT_CAPTION =
+  "What each branch has earned so far, read from its loaded days every time this screen opens.";

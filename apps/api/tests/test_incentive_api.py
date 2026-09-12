@@ -1,6 +1,7 @@
 """The incentive doors on `/api/incentive`, against real Postgres: the role
-shares (M13.2, issue #8) and the scheme month with its per-branch targets and
-its clipped push weeks (M13.3, issue #9).
+shares (M13.2, issue #8), the scheme month with its per-branch targets and
+its clipped push weeks (M13.3, issue #9), each week's push list (M13.4, issue
+#10) and each branch's statement for the month (M13.5, issue #11).
 
 The arithmetic and every refusal sentence are proven in `test_incentive.py`
 over the pure module; here the proof is that the route stores what the owner
@@ -19,11 +20,13 @@ from fastapi import FastAPI
 from faida_api import incentive_api
 from faida_api.incentive_api import router as incentive_router
 from faida_api.menu import router as menu_router
+from faida_api.sales import router as sales_router
+from faida_api.storage import Storage
 
-from .conftest import AUTH, DEMO_TENANT_ID, TEST_ACTOR, requires_db, wire_auth
+from .conftest import AUTH, DEMO_TENANT_ID, TEST_ACTOR, FakeStorage, requires_db, wire_auth
 from .test_plates import _CountingPool, _karak, _menu_item
 from .test_sales_api import BRANCH, BRANCH_2, BRANCH_3, _branches
-from .test_sales_load import TENANT_B, _audit, _other_tenant
+from .test_sales_load import TENANT_B, _audit, _item_day, _line, _other_tenant
 
 pytestmark = requires_db
 
@@ -85,11 +88,15 @@ def api(settings, db):
     app = FastAPI()
     app.include_router(incentive_router)
     # The menu's own door, for staging: a push list is built out of costed
-    # dishes, and they are created the way the owner creates them.
+    # dishes, and they are created the way the owner creates them. The sales
+    # door for the same reason: a statement is read out of loaded days, and a
+    # day staged by hand would prove a sum this product never makes.
     app.include_router(menu_router)
+    app.include_router(sales_router)
     app.state.settings = settings
     wire_auth(app)
     app.state.db = db
+    app.state.storage = Storage(settings, transport=FakeStorage().transport())
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
 
 
@@ -506,6 +513,11 @@ READS = [
     "list_push_weeks",
     "list_push_items",
     "list_push_item_targets",
+    # The statements: the month's loaded days, its item-days and its
+    # approvals, one read each for the whole chain (issue #11).
+    "list_sales_days",
+    "list_period_item_sales",
+    "list_statement_approvals",
     "get_role_shares",
 ]
 
@@ -913,3 +925,259 @@ async def test_a_rate_that_is_not_a_number_is_refused_as_the_wires_own_complaint
         refused = await _save(client, _weeks(read)[0]["id"], [_push(ids["karak"], "half a dirham")])
     assert refused.status_code == 422, refused.text
     assert "is not a rate per portion" in refused.json()["detail"]
+
+
+# --- the statement (M13.5, issue #11) ---------------------------------------------
+#
+# What the owner reads under the month: what each branch's push weeks scored,
+# what it sold, what the pool has earned so far, and how much of the month is
+# loaded. Every figure is derived on the request out of the branch's own sales
+# days and stored nowhere (C16), which is what these tests are really about:
+# the portions on the screen are the till's own printed quantities, net of
+# what it refunded, and the day count is the honest one.
+#
+# The arithmetic itself - the cap, the split's remainder, the hole, the banned
+# words - is proven over the pure module in `test_incentive.py`, with no
+# database in the room. What is proven here is the wiring: the right days, the
+# right lines, the right branch.
+
+#: Al Quoz's own days. July 2026 begins on a Wednesday, so the month's first
+#: push week is 1 to 5 July and its second 6 to 12 - fixed dates, which is
+#: what lets a test say which week a portion was sold in.
+QUOZ_DAYS = [
+    ("2026-07-01", [("KARAK", "400.00", "80")]),
+    # The refund the till printed on the 2nd: 76 karak sold, 6 given back.
+    ("2026-07-02", [("KARAK", "380.00", "76"), ("KARAK", "-30.00", "6")]),
+    # The second week: mandi, 14 against a target of 10.
+    ("2026-07-07", [("MANDI", "392.00", "14")]),
+]
+
+
+async def _push_item(
+    db, week_id: str, menu_item_id: str, *, rate: str, targets: dict[str, str]
+) -> str:
+    """A dish on one week's list, staged straight into the tables.
+
+    The list door is proven above and it refuses a week already under way -
+    which every week with a day of sales in it is, by definition. A statement
+    test that went through the door could therefore only ever score an empty
+    list."""
+    item_id = str(
+        await db.pool.fetchval(
+            "insert into push_items (tenant_id, push_week_id, menu_item_id, rate_per_portion) "
+            "values ($1, $2, $3, $4) returning id",
+            TENANT,
+            week_id,
+            menu_item_id,
+            Decimal(rate),
+        )
+    )
+    for branch_id, target in targets.items():
+        await db.pool.execute(
+            "insert into push_item_targets (tenant_id, push_item_id, branch_id, portion_target) "
+            "values ($1, $2, $3, $4)",
+            TENANT,
+            item_id,
+            branch_id,
+            Decimal(target),
+        )
+    return item_id
+
+
+def _day(date: str, lines: list[tuple[str, str, str]], *, branch: str = BRANCH) -> dict:
+    """One branch-day as the till's own file says it: names, money and
+    printed quantities, VAT out of the amounts so the day's net sales are the
+    sum on the page."""
+    return _item_day(
+        date,
+        [
+            _line(position, name, amount, qty=qty)
+            for position, (name, amount, qty) in enumerate(lines)
+        ],
+        branch=branch,
+        basis="exclusive",
+    )
+
+
+async def _load(client, days: list[dict]) -> dict:
+    """Sales through the branch-day door itself (M8), so what a statement is
+    read from is what a real till export would have written."""
+    response = await client.post("/api/sales/days", json={"days": days}, headers=AUTH)
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+async def _july_with_sales(client, db) -> dict:
+    """Where every statement test starts: July 2026 created after it was over,
+    karak on its first push week and mandi on its second, and three branches
+    that loaded what they loaded - Al Quoz three days, Karama one, and Deira
+    nothing at all."""
+    ids, read = await _month_with_menu(client, db, JULY)
+    weeks = _weeks(read)
+    await _push_item(
+        db,
+        weeks[0]["id"],
+        ids["karak"],
+        rate="0.25",
+        targets={BRANCH: "100", BRANCH_2: "50", BRANCH_3: "10"},
+    )
+    await _push_item(
+        db,
+        weeks[1]["id"],
+        ids["mandi"],
+        rate="2.00",
+        targets={BRANCH: "10", BRANCH_2: "5", BRANCH_3: "2"},
+    )
+    await _load(
+        client,
+        [_day(date, lines) for date, lines in QUOZ_DAYS]
+        + [_day("2026-07-01", [("KARAK", "100.00", "20")], branch=BRANCH_2)],
+    )
+    return ids
+
+
+def _statement(read: dict, branch_id: str) -> dict:
+    return next(s for s in read["scheme_month"]["statements"] if s["branch_id"] == branch_id)
+
+
+async def _july(client) -> dict:
+    response = await client.get(f"/api/incentive?month={JULY}", headers=AUTH)
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+async def test_each_branch_reads_its_own_portions_net_of_refunds_and_its_own_days(api, db):
+    """Three branches, three different months on one screen: the branch that
+    loaded three days, the branch that loaded one, and the branch that loaded
+    none. A portion is what the till printed less what it gave back (D9)."""
+    async with api as client:
+        await _july_with_sales(client, db)
+        read = await _july(client)
+
+    quoz = _statement(read, BRANCH)
+    assert quoz["branch_name"] == "Al Barsha Branch"
+    assert quoz["status"] == "provisional"
+    assert quoz["status_words"] == "provisional, 3 of 31 days loaded"
+    assert quoz["newest_loaded"] == "2026-07-07"
+    # 400 + 380 - 30 + 392: the days themselves, summed.
+    assert quoz["figures"]["net_sales"] == "1142.00"
+    assert quoz["figures"]["net_words"] == "AED 1,142 of AED 60,000"
+    first, second = quoz["figures"]["weeks"][0], quoz["figures"]["weeks"][1]
+    # 80 on the 1st, 76 less the 6 refunded on the 2nd: 150, not 156.
+    assert [(item["name"], item["portions"], item["words"]) for item in first["items"]] == [
+        ("Karak Cup", "150.000", "150 of 100 portions")
+    ]
+    assert first["earned"] == "12.50"
+    assert [(item["name"], item["portions"], item["earned"]) for item in second["items"]] == [
+        ("Chicken Mandi", "14.000", "8.00")
+    ]
+
+    karama = _statement(read, BRANCH_2)
+    assert karama["status_words"] == "provisional, 1 of 31 days loaded"
+    assert karama["figures"]["net_sales"] == "100.00"
+    # Karama's own 20 karak, not Al Quoz's 150, and its own target of 50.
+    assert [
+        (item["portions"], item["portion_target"], item["earned"])
+        for item in karama["figures"]["weeks"][0]["items"]
+    ] == [("20.000", "50.000", "0.00")]
+    assert karama["figures"]["weeks"][1]["items"][0]["portions"] == "0.000"
+
+
+async def test_a_branch_with_no_day_loaded_has_no_pool_rather_than_a_pool_of_nothing(api, db):
+    """A branch that loaded nothing has earned nothing *so far as anyone
+    knows*, which is not the same as having earned zero - and a zero on the
+    screen beside a team's name would be read as the second."""
+    async with api as client:
+        await _july_with_sales(client, db)
+        read = await _july(client)
+
+    deira = _statement(read, BRANCH_3)
+    assert deira["status_words"] == "provisional, 0 of 31 days loaded"
+    assert deira["newest_loaded"] is None
+    assert deira["figures"]["pool"] is None
+    assert deira["figures"]["pool_rounded"] is None
+    assert deira["figures"]["split"] is None
+    assert deira["figures"]["pool_words"] == "nothing loaded yet"
+    assert deira["figures"]["net_sales"] == "0.00"
+
+
+async def test_the_pool_is_a_string_to_the_fil_with_a_whole_dirham_headline(api, db):
+    """Money is a string on the wire, never a JSON number, and the headline
+    is the rounded one with the exact figure beneath it (the display rule,
+    2026-09-05): 50 karak above target at 0.25 and 4 mandi at 2.00 is 20.50,
+    which reads as 21 in the headline and 20.50 everywhere it is added up."""
+    async with api as client:
+        await _july_with_sales(client, db)
+        read = await _july(client)
+
+    figures = _statement(read, BRANCH)["figures"]
+    assert figures["pool"] == "20.50"
+    assert figures["pool_rounded"] == "21"
+    # The sentence beside the figure is the rounded one, which is why the
+    # headline has to round the same way: a truncated 21 beside "AED 21"
+    # would read a dirham under what the team earned.
+    assert figures["pool_words"] == "AED 21"
+    # 40 / 25 / 35 of 20.50, the remainder on the sales team's share so the
+    # three add to the pool exactly.
+    split = figures["split"]
+    assert (split["manager"], split["supervisor"], split["sales"]) == ("8.20", "5.13", "7.17")
+    assert Decimal(split["manager"]) + Decimal(split["supervisor"]) + Decimal(split["sales"]) == (
+        Decimal(figures["pool"])
+    )
+    assert all(
+        isinstance(figures[field], str)
+        for field in ("pool", "pool_rounded", "net_sales", "net_earned", "net_sales_target")
+    )
+
+
+async def test_a_dish_unmapped_after_its_week_was_scored_is_a_named_hole_on_the_statement(api, db):
+    """The founder's rule (D10): a broken mapping is never read as nothing
+    sold. The dish is named, its portions are blank, and it pays nothing -
+    the same sentence the week's list carries."""
+    async with api as client:
+        ids, read = await _month_with_menu(client, db, JULY)
+        await _push_item(
+            db,
+            _weeks(read)[0]["id"],
+            ids["karak"],
+            rate="0.25",
+            targets={BRANCH: "100", BRANCH_2: "50", BRANCH_3: "10"},
+        )
+        await _load(client, [_day(date, lines) for date, lines in QUOZ_DAYS])
+        before = _statement(await _july(client), BRANCH)
+        till_item = await db.pool.fetchval(
+            "select id::text from till_items where tenant_id = $1 and name_key = 'karak'", TENANT
+        )
+        await db.unmap_till_item(till_item, tenant_id=TENANT, actor=TEST_ACTOR)
+        after = _statement(await _july(client), BRANCH)
+
+    assert before["figures"]["weeks"][0]["items"][0]["portions"] == "150.000"
+    item = after["figures"]["weeks"][0]["items"][0]
+    assert item["portions"] is None
+    assert item["earned"] == "0.00"
+    assert item["hole"] == "Karak Cup cannot be counted: no till name is mapped to it"
+    assert after["figures"]["pool"] == "0.00"
+    assert item["hole"] in after["notes"][0]
+
+
+async def test_another_tenants_days_are_never_this_tenants_portions(api, db):
+    """The tenancy rule at the one place it could go wrong quietly: a
+    statement is a sum over rows, and a sum that reached across tenants would
+    look like a good month."""
+    await _other_tenant(db)
+    async with api as client:
+        await _july_with_sales(client, db)
+        await db.pool.execute(
+            """
+            insert into sales_daily (tenant_id, branch_id, business_date, granularity,
+                                     amount_basis, takings, net_sales, line_count, loaded_by)
+            select $1, id, '2026-07-03', 'item', 'exclusive', 9999, 9999, 1, 'test'
+            from branches where tenant_id = $1 limit 1
+            """,
+            TENANT_B,
+        )
+        read = await _july(client)
+
+    quoz = _statement(read, BRANCH)
+    assert quoz["figures"]["net_sales"] == "1142.00"
+    assert quoz["status_words"] == "provisional, 3 of 31 days loaded"

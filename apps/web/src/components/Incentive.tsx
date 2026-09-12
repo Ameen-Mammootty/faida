@@ -17,6 +17,7 @@ import {
   SHARES_CAPTION,
   SHARE_LABEL,
   SHARE_ROLES,
+  STATEMENT_CAPTION,
   WEEKS_CAPTION,
   canCreateMonth,
   canSavePushList,
@@ -25,6 +26,7 @@ import {
   createStanding,
   draftGroups,
   guidanceWords,
+  loadedThrough,
   menuIndex,
   monthOptions,
   pickerGroups,
@@ -38,6 +40,8 @@ import {
   shareDraft,
   sharesUpdatedWords,
   standing,
+  statementFigures,
+  statementWeeks,
   sumWords,
   targetDrafts,
   targetOf,
@@ -66,8 +70,15 @@ import type { IncentiveRead } from "@/lib/types";
  * Each week tab opens that week's push list (M13.4, D6, D7): the dishes the
  * team is asked to push, what a portion above target earns with what the plate
  * keeps beside the box, and a portion target per branch. A week under way is
- * shown and not editable; every branch's statement lands in the ticket that
- * follows, out of this same one read.
+ * shown and not editable.
+ *
+ * Under the weeks is where each branch stands (M13.5, D9 to D11): its own
+ * statement out of the same one read, the month's figures against the targets
+ * it was created with and the open week's dishes scored against their portion
+ * targets. It is provisional and says how much of the month is loaded until
+ * every day of it is; the approval that makes it final is the ticket after
+ * this one. Nothing here is stored anywhere - it is the branch's sales days,
+ * added up again on every read (C16).
  */
 /** What a dish says beside its name on the list: what its plate keeps, or
  * why it cannot be counted at all. The API's own words in both cases; the
@@ -753,6 +764,130 @@ export default function Incentive() {
                     </div>
                   )}
                 </div>
+              )}
+            </div>
+
+            {/* --- where each branch stands -------------------------------
+                The month's own figures per branch, and the open week's
+                dishes scored against their portion targets: the tab strip
+                above picks the week for the list and for the score alike, so
+                a dish and what it did sit on one screen. */}
+            <div className="space-y-3 border-t border-ink/10 pt-4">
+              <h3 className="text-sm font-semibold text-ink">
+                Where each branch stands
+              </h3>
+              <p className="max-w-2xl text-sm text-stone">
+                {STATEMENT_CAPTION}
+              </p>
+
+              {scheme.statements.length === 0 ? (
+                <p className="text-sm text-stone">
+                  No branch has a statement for this month: a branch is scored
+                  against the target it was given when the month was created.
+                </p>
+              ) : (
+                scheme.statements.map((statement) => {
+                  const week =
+                    statementWeeks(scheme, statement).find(
+                      (scored) => scored.key === openWeek,
+                    ) ?? null;
+                  return (
+                    <section
+                      key={statement.branch_id}
+                      aria-label={`${statement.branch_name}, ${statement.status_words}`}
+                      className="space-y-3 rounded-sm border border-ink/10 p-3"
+                    >
+                      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                        <h4 className="text-sm font-semibold text-ink">
+                          {statement.branch_name}
+                        </h4>
+                        <p className="text-xs text-stone">
+                          {statement.status_words}
+                        </p>
+                        <p className="text-xs text-stone">
+                          {loadedThrough(statement)}
+                        </p>
+                      </div>
+
+                      {/* The figures wrap rather than sit in a table: four
+                          short columns on a laptop, stacked on a phone, and
+                          no row that scrolls sideways. */}
+                      <dl className="flex flex-wrap gap-x-8 gap-y-3">
+                        {statementFigures(statement).map((figure) => (
+                          <div key={figure.key} className="space-y-0.5">
+                            <dt className="text-xs text-stone">
+                              {figure.label}
+                            </dt>
+                            <dd
+                              className={`tabular-nums text-ink ${
+                                figure.key === "pool"
+                                  ? "text-base font-semibold"
+                                  : "text-sm"
+                              }`}
+                            >
+                              {figure.value}
+                            </dd>
+                          </div>
+                        ))}
+                      </dl>
+
+                      {week === null ? null : (
+                        <table className="w-full text-sm">
+                          <caption className="pb-1 text-left text-xs text-stone">
+                            {week.label}: {week.words}
+                            {week.empty ? "" : `, ${week.earned} earned`}
+                          </caption>
+                          {week.rows.length === 0 ? null : (
+                            <>
+                              <thead>
+                                <tr className="text-left text-xs font-medium text-stone">
+                                  <th scope="col" className="pb-1 pr-3">
+                                    Dish
+                                  </th>
+                                  <th scope="col" className="pb-1 pr-3">
+                                    Portions
+                                  </th>
+                                  <th scope="col" className="pb-1 text-right">
+                                    Earned
+                                  </th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {week.rows.map((row) => (
+                                  <tr
+                                    key={row.key}
+                                    className="border-t border-ink/10"
+                                  >
+                                    <th
+                                      scope="row"
+                                      className="py-1 pr-3 text-left font-normal text-ink"
+                                    >
+                                      {row.name}
+                                    </th>
+                                    <td className="py-1 pr-3 text-stone">
+                                      {row.words}
+                                    </td>
+                                    <td className="py-1 text-right tabular-nums text-ink">
+                                      {row.earned ?? "-"}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </>
+                          )}
+                        </table>
+                      )}
+
+                      {statement.notes.length === 0 ? null : (
+                        <ul className="space-y-1 text-xs leading-relaxed text-stone">
+                          {statement.notes.map((note) => (
+                            <li key={note}>{note}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </section>
+                  );
+                })
               )}
             </div>
           </div>
