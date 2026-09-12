@@ -591,6 +591,7 @@ The MVP is complete when a cafeteria (single shop or multi-branch chain) can:
 11. Trace any value back to its source evidence (image, invoice, recipe version, cost snapshot).
 12. Operate with enforced tenant/branch isolation, RLS, audit, and private storage.
 13. Reprocess and recalculate without duplicating or corrupting data.
+14. Run a **staff incentive** on the till's own figures - a scheme month, push weeks, a daily scoreboard to the branch phone and an owner-approved statement - never paid on contribution (§33).
 
 ---
 
@@ -607,3 +608,29 @@ External sales → canonical menu items → versioned recipes
 ```
 
 The most valuable part is not the AI model. It is the **trusted operational graph** connecting sales, recipes, inventory, purchasing, costs, and branches — fed frictionlessly through WhatsApp, set up for the customer by consultants, and read back deterministically. AI sits at exactly one point — reading documents — and never replaces the ledger or the deterministic financial engine.
+
+---
+
+## 33. Staff incentive (M13)
+
+Visibility alone does not move the floor.
+The owner turns the dashboard's answer into a **scheme month**: a calendar month, frozen when created, with a net sales target per branch, a rate per portion and a percentage of net sales above target, an optional cap, and **push weeks** - Monday to Sunday clipped to the month - each carrying a chain-wide **push list** of menu items grouped by the menu's own category, with a portion target per branch.
+A week not yet started may be re-aimed on any day; a week under way is frozen, so a supplier price move this month is the input to the next list, never a change to the one staff are already selling against.
+
+The branch team earns a **pool**, split by **role shares** (manager, supervisor, sales team) set per tenant, editable at any time and applied from the next scheme month.
+No person is scored, no one on the floor gets a login, and Faida never moves money.
+A target is always an absolute figure the owner types in the till's own units, and the pool is scored on portions (net, as the till prints them) and net sales, never on contribution: contribution is an estimate that moves with supplier prices and is withheld for an incomplete plate, so it informs what to push and what rate to offer, and is never the thing paid on (`Docs/adr/0001`).
+The staff-facing word is **bonus**; profit share and commission are never printed.
+
+Every morning at 07:00 in the branch's own timezone, the branch's registered WhatsApp phone receives a **scoreboard** card: this week's push list with each item's portions so far against target, the month's net sales so far against target, the pool so far marked provisional, and the newest loaded day with its age.
+Monday's card carries the new list.
+The manager forwards it to the staff group.
+The card is only as fresh as the newest loaded sales day, so a daily load of the till file is the pilot's commitment, and a WhatsApp door for the till export from the branch phone is the follow-on.
+
+The month's **statement** is provisional until every day is loaded for that branch, and the approval door refuses a provisional month.
+The owner approves it with a reason through the cash approval's own door, one audit row, and only then does the final statement card go to the branch.
+A sales day inside an approved month may still be replaced; the statement keeps its figures with a note that the till now says otherwise, because the truth of the till outranks the bonus paid on it.
+The owner's screen is `/incentive`, the sixth in the shell, with the month as the unit and each branch's statement below its targets.
+
+Not in M13: payroll, a staff login, a leaderboard of people, per-person scores, per-branch push lists, a cross-sell KPI (the till carries daily item totals, not receipts), a language other than English.
+Each waits for a trigger named in `TODOS.md`.

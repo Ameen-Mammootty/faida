@@ -1111,6 +1111,66 @@ button is static; the manager's brief and a per-tenant custom domain both need t
 
 **Depends on:** M10 live. Trigger: the manager's brief, or a custom domain that changes per tenant.
 
+## Staff incentive (deferred by the M13 grilling, 2026-09-12)
+
+### A roster and per-person scores
+
+**What:** Names and roles per branch, so the statement names each person and divides a role's
+share equally, with a rule for someone who joins or leaves mid-month; and, where the till export
+carries a cashier or server column, portions scored per person through the loader's column map.
+
+**Why:** The till carries no people today, and a roster would be Faida's first record of people,
+with joiners, leavers and pro-rata to argue over, before the pilot has shown that a named line
+motivates more than a team figure. The pool split by role shares is honest about what the data
+supports (M13 D2).
+
+**Depends on:** M13 shipped. Trigger: the pilot's till export carrying a cashier column, or the
+owner asking for names on the statement.
+
+### A per-branch push list
+
+**What:** A branch's own push list overriding the chain's for a push week.
+
+**Why:** The chain sells one menu and the owner's attention is the scarce input; one list with
+per-branch targets covers the pilot (M13 D6).
+
+**Depends on:** M13 shipped. Trigger: an owner asking to push different items at different
+branches, in their own words.
+
+### A WhatsApp door for the till export
+
+**What:** The branch manager forwards the till's own CSV export to the branch's WhatsApp number;
+the loader applies the saved layout and the branch alias, and the day lands as `loaded`,
+`unchanged` or `replaced` with the same audit row as the console upload. A file no saved layout
+matches is answered with one reply naming the console.
+
+**Why:** The daily scoreboard is only as fresh as the newest loaded day, and today the load is a
+person in the console. The daily habit is the real dependency; this door is what makes the habit
+cheap. PRD §4.3 promised "forward invoices and sales via WhatsApp" (M13 D16).
+
+**Depends on:** M13's scoreboard live. Trigger: the pilot's manager missing the daily load twice
+in a week, or asking for it.
+
+### The scoreboard card in a second language
+
+**What:** A per-branch card language (Malayalam, Hindi, Arabic), the card's fixed words
+translated once, the figures and item names untouched.
+
+**Why:** The manager reads English and forwards; the first request names which language (M13
+D17).
+
+**Depends on:** M13 shipped. Trigger: a manager asking, by language.
+
+### A cross-sell KPI
+
+**What:** An attach rate (a drink with every plate) as a target kind.
+
+**Why:** The till carries daily item totals, not receipts, so an attach rate cannot be computed;
+"sell more drinks" is a push item today (M13 D3).
+
+**Depends on:** Receipt-level till data through a POS connector. Trigger: a till export that
+carries a receipt id per line.
+
 ## Extraction & matching
 
 ### A handwritten margin note gets folded into an item name and splits the catalog
