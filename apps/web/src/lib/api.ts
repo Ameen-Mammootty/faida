@@ -70,7 +70,7 @@ import {
   mockUnmapTillItem,
 } from "./mock/sales";
 import { mockGetDashboard } from "./mock/dashboard";
-import { mockGetIncentive, mockSetRoleShares } from "./mock/incentive";
+import { mockCreateSchemeMonth, mockGetIncentive, mockSetRoleShares } from "./mock/incentive";
 import {
   mockApproveInvoice,
   mockConfirmInvoice,
@@ -89,7 +89,7 @@ import type {
   BranchAlias,
   Correction,
   DashboardResult,
-  IncentiveResult,
+  IncentiveRead,
   Ingredient,
   IngredientCreateInput,
   IngredientMappingInput,
@@ -108,6 +108,7 @@ import type {
   PriceMove,
   RejectionResult,
   RoleShares,
+  SchemeMonthInput,
   SalesBranchesResult,
   SalesCoverageResult,
   SalesDay,
@@ -606,15 +607,22 @@ export async function excludeTillItem(tillItemId: string): Promise<TillItem> {
 //
 // One read serves the whole screen, the dashboard's rule: every figure on
 // /incentive comes out of one request, so nothing on it can disagree with
-// anything else on it. This ticket fills its shares block; the scheme month,
-// the push lists and the statements join the same payload.
+// anything else on it. Every door returns that same read, so a save and a
+// create refresh the screen from one shape rather than patching it in place.
+// `IncentiveRead` is what the API serves today and grows a block per ticket.
 
-export async function getIncentive(): Promise<Pick<IncentiveResult, "shares">> {
-  if (MOCK) return mockGetIncentive();
-  return request<Pick<IncentiveResult, "shares">>("/api/incentive");
+export async function getIncentive(month?: string): Promise<IncentiveRead> {
+  if (MOCK) return mockGetIncentive(month);
+  const query = month === undefined ? "" : `?month=${encodeURIComponent(month)}`;
+  return request<IncentiveRead>(`/api/incentive${query}`);
 }
 
-export async function setRoleShares(body: RoleShares): Promise<Pick<IncentiveResult, "shares">> {
+export async function setRoleShares(body: RoleShares): Promise<IncentiveRead> {
   if (MOCK) return mockSetRoleShares(body);
-  return request<Pick<IncentiveResult, "shares">>("/api/incentive/shares", jsonInit("PUT", body));
+  return request<IncentiveRead>("/api/incentive/shares", jsonInit("PUT", body));
+}
+
+export async function createSchemeMonth(body: SchemeMonthInput): Promise<IncentiveRead> {
+  if (MOCK) return mockCreateSchemeMonth(body);
+  return request<IncentiveRead>("/api/incentive/months", jsonInit("POST", body));
 }

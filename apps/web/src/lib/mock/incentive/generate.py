@@ -29,6 +29,10 @@ Scenarios (reachable on the screen by `?scenario=`):
                otherwise
     complete   August 2026 with every day loaded and nothing approved yet:
                the approval control shows on every branch
+    created    September 2026 just created and not yet filled: five push
+               weeks as empty tabs, the targets as typed, no statements -
+               what the create door hands back, and what the mock's own
+               create door returns
     empty      the shares are set and no scheme month exists yet
     noshares   nothing is set at all
 """
@@ -342,3 +346,35 @@ EMPTY_BRANCHES = [
 
 write("empty", payload(month=SEPT, months=[], shares=SHARES_JSON, branches=EMPTY_BRANCHES))
 write("noshares", payload(month=SEPT, months=[], shares=None, branches=EMPTY_BRANCHES))
+
+# --- created: the month the moment it exists, before any list is filled ------------
+#
+# What `POST /api/incentive/months` hands back and what the mock's own create
+# door returns: the weeks laid out and empty, the targets as the owner typed
+# them, and no statement yet. The three targets here are placeholders the
+# TypeScript door replaces with what was actually typed - the one thing it may
+# substitute, because it is echoing the owner's own input and not a figure.
+
+CREATED = scheme(
+    SEPT,
+    {
+        "br-01": ("60000", "10", None),
+        "br-02": ("40000", "10", "1500"),
+        "br-03": ("30000", "8", None),
+    },
+    {},
+    scheme_id="sm-2026-09",
+)
+
+write(
+    "created",
+    payload(
+        month=SEPT,
+        months=FULL_MONTHS,
+        shares=SHARES_JSON,
+        branches=EMPTY_BRANCHES,
+        sch=CREATED,
+        created_at=NOW,
+        statements=[],
+    ),
+)

@@ -4392,6 +4392,23 @@ class Database:
             )
         return approval_id
 
+    async def list_incentive_branches(self, *, tenant_id: str) -> list[asyncpg.Record]:
+        """Every branch of the chain with its incentive pause, in one query:
+        the branch block of the incentive read, which needs the name to word a
+        refusal by branch, the timezone to know what day it is, and the pause
+        to draw the control (D18). A branch never paused has a null
+        `paused_at` like one resumed."""
+        return await self.pool.fetch(
+            """
+            select b.id::text as id, b.name, b.timezone, p.paused_at
+            from branches b
+            left join incentive_branches p on p.branch_id = b.id and p.tenant_id = b.tenant_id
+            where b.tenant_id = $1
+            order by b.name, b.id
+            """,
+            tenant_id,
+        )
+
     async def get_incentive_branch(
         self, branch_id: str, *, tenant_id: str
     ) -> asyncpg.Record | None:

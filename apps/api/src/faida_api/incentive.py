@@ -189,18 +189,91 @@ def shares_problem(
 def targets_problem(
     net_sales_target: Decimal | None, above_target_pct: Decimal | None, cap: Decimal | None
 ) -> str | None:
-    """The refusal sentence for a branch's targets, or None."""
+    """The refusal sentence for one branch's targets, or None. The branch is
+    named by `branch_targets_problem`, which is the only caller: these say
+    what is wrong with a figure, never which box it came from."""
     if net_sales_target is None:
-        return "a net sales target is needed for every branch"
+        return "a net sales target is needed"
     if net_sales_target < 0:
         return "a net sales target cannot be negative"
     if above_target_pct is None:
-        return "the percentage of net sales above target is needed for every branch"
+        return "the percentage of net sales above target is needed"
     if above_target_pct < 0 or above_target_pct > _HUNDRED:
         return "the percentage of net sales above target must be between 0 and 100"
     if cap is not None and cap < 0:
         return "a cap cannot be negative; leave it blank for no cap"
     return None
+
+
+#: The one refusal when no shares have been set yet: a scheme month is
+#: created *with* the shares in force, so there is nothing to snapshot (D2,
+#: D4). Worded here because the door that refuses it and the screen that
+#: prevents it must say the same thing.
+SHARES_NOT_SET = (
+    "the role shares are not set: a scheme month is created with the shares in force that day, "
+    "so set the three shares first"
+)
+
+
+def month_taken_sentence(month: datetime.date) -> str:
+    """Why a second scheme month for the same calendar month is refused (D4):
+    the first one was frozen when it was created, and a second would be a
+    second set of rules for one month."""
+    return (
+        f"{month_words(month)} already has a scheme month: it was frozen when it was created, "
+        "so its targets cannot be set a second time"
+    )
+
+
+@dataclass(frozen=True)
+class TypedTarget:
+    """What the owner typed into one branch's three boxes on the create form,
+    before it is known to be a target: any of the three may be missing, and
+    the cap is blank for no cap. `BranchTargets` is the same figures once
+    they are a target - stored, frozen and scored on."""
+
+    branch_id: str
+    net_sales_target: Decimal | None
+    above_target_pct: Decimal | None
+    cap: Decimal | None
+
+
+def branch_targets_problem(
+    branch_names: Mapping[str, str], targets: Sequence[TypedTarget]
+) -> str | None:
+    """The refusal sentence for a whole month's branch targets, or None (D3).
+
+    Every branch of the chain gets exactly one target and no branch outside it
+    gets any, because a scheme month scores every branch and a branch the
+    owner did not type a figure for would be scored against nothing. Each
+    target is then checked by `targets_problem` and named by the branch whose
+    box it came from, so an owner looking at three boxes is told which one.
+    """
+    seen: list[str] = []
+    for target in targets:
+        name = branch_names.get(target.branch_id)
+        if name is None:
+            return "a target was sent for a branch that is not in this chain"
+        if target.branch_id in seen:
+            return f"{name} was sent two targets; every branch gets one"
+        seen.append(target.branch_id)
+        problem = targets_problem(target.net_sales_target, target.above_target_pct, target.cap)
+        if problem is not None:
+            return f"{name}: {problem}"
+    missing = [name for branch_id, name in branch_names.items() if branch_id not in seen]
+    if missing:
+        return (
+            f"{_list_words(missing)} {'has' if len(missing) == 1 else 'have'} no target: "
+            "every branch of the chain needs one for the month"
+        )
+    return None
+
+
+def _list_words(names: Sequence[str]) -> str:
+    """ "Deira", "Deira and Karama", "Deira, Karama and Al Quoz"."""
+    if len(names) == 1:
+        return names[0]
+    return f"{', '.join(names[:-1])} and {names[-1]}"
 
 
 def frozen_week_sentence(window: Window, today: datetime.date) -> str | None:

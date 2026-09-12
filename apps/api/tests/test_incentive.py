@@ -167,6 +167,24 @@ def test_month_words_and_keys():
 # --- the refusals the doors share ------------------------------------------------
 
 
+#: A chain of three, as the create form knows them: the id in the box and the
+#: name the refusal has to say.
+BRANCH_NAMES = {"b1": "Al Quoz", "b2": "Karama", "b3": "Deira"}
+
+
+def _typed(rows) -> list[incentive.TypedTarget]:
+    """What the owner typed into the boxes, strings as the form holds them."""
+    return [
+        incentive.TypedTarget(
+            branch_id=branch,
+            net_sales_target=None if net is None else Decimal(net),
+            above_target_pct=None if pct is None else Decimal(pct),
+            cap=None if cap is None else Decimal(cap),
+        )
+        for branch, net, pct, cap in rows
+    ]
+
+
 @pytest.mark.parametrize(
     "shares, sentence",
     [
@@ -211,6 +229,39 @@ def test_branch_targets_are_checked_in_one_place(targets, sentence):
         assert problem is None
     else:
         assert sentence in problem
+
+
+@pytest.mark.parametrize(
+    "targets, sentence",
+    [
+        ([("b1", "50000", "10", None)], "Karama and Deira have no target"),
+        ([("b1", "50000", "10", None), ("b2", "40000", "10", None)], "Deira has no target"),
+        ([], "Al Quoz, Karama and Deira have no target"),
+        ([("b1", "50000", "10", None), ("b1", "50000", "10", None)], "Al Quoz was sent two"),
+        ([("b9", "50000", "10", None)], "not in this chain"),
+        ([("b1", "-1", "10", None)], "Al Quoz: a net sales target cannot be negative"),
+        ([("b1", "50000", "101", None)], "Al Quoz: the percentage"),
+        ([("b1", "50000", "10", "-1")], "Al Quoz: a cap cannot be negative"),
+        ([("b1", None, "10", None)], "Al Quoz: a net sales target is needed"),
+    ],
+)
+def test_a_months_targets_cover_every_branch_and_name_the_one_that_is_wrong(targets, sentence):
+    """Every branch of the chain gets exactly one target, because a scheme
+    month scores every branch and one the owner typed no figure for would be
+    scored against nothing; and an owner looking at three boxes is told which
+    box is wrong (D3)."""
+    problem = incentive.branch_targets_problem(BRANCH_NAMES, _typed(targets))
+    assert problem is not None and sentence in problem
+
+
+def test_a_target_for_every_branch_is_no_problem_at_all():
+    whole = [("b1", "50000", "10", None), ("b2", "40000", "10", "1500"), ("b3", "30000", "8", None)]
+    assert incentive.branch_targets_problem(BRANCH_NAMES, _typed(whole)) is None
+
+
+def test_a_month_already_created_is_refused_by_its_own_name():
+    assert incentive.month_taken_sentence(SEPT).startswith("September 2026 already has")
+    assert "frozen" in incentive.month_taken_sentence(SEPT)
 
 
 def test_an_unmapped_or_archived_menu_item_is_refused_by_name():

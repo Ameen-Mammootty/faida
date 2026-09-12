@@ -1670,6 +1670,18 @@ export interface IncentiveResult {
   scheme_month: SchemeMonth | null;
 }
 
+/**
+ * What `GET /api/incentive` serves today. The read grows one block per M13
+ * ticket and this type grows with it, so the screen can never read a field
+ * the API has not started sending: the push lists inside `scheme_month.weeks`
+ * and the per-branch `statements` arrive with the tickets that build them,
+ * and `menu` with the push-list picker.
+ */
+export type IncentiveRead = Pick<
+  IncentiveResult,
+  "month" | "month_words" | "today" | "months" | "shares" | "branches" | "scheme_month"
+>;
+
 /** POST /api/incentive/months */
 export interface SchemeMonthInput {
   month: string;

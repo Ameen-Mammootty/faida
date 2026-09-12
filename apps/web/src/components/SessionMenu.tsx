@@ -72,7 +72,7 @@ export default function SessionMenu() {
         <span
           // min-w-0 so a long address truncates rather than pushing the row
           // wide; the cap is the sidebar's own width from 1280 px.
-          className="min-w-0 max-w-64 truncate text-xs text-stone sm:hidden md:inline xl:max-w-full xl:text-cream/70"
+          className="min-w-0 max-w-64 truncate text-xs text-stone md:hidden lg:inline xl:max-w-full xl:text-cream/70"
           title={email}
         >
           {email}

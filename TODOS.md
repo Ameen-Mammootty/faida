@@ -1113,7 +1113,7 @@ button is static; the manager's brief and a per-tenant custom domain both need t
 
 ## Staff incentive (deferred by the M13 grilling, 2026-09-12)
 
-### The top bar scrolls sideways in two narrow bands
+### ~~The top bar scrolls sideways in two narrow bands~~ done 2026-09-12
 
 **What:** Between 640 and about 668 px, and again between 768 and about 803 px, the console's top
 bar is wider than the window, so every screen scrolls sideways by 27 to 35 px.
@@ -1137,6 +1137,21 @@ result, not a drive-by inside a migrations ticket.
 
 **Depends on:** nothing. Trigger: the M13 records ticket (issue #17), or any owner on a laptop
 at a window that narrow.
+
+**Done 2026-09-12, in M13.3, and it was worse than this entry knew.** A width sweep from 360 to
+1300 px found a third fault the DOM probe had not been pointed at: below 640 px the session slot
+was pinned at `top-[57px]`, one pixel under a header row of `h-14`, and once there were six words
+the words wrapped to a second line and the row under them moved down - leaving the address and
+Sign out printed over "Sales" and "Incentive" on every screen in the app at 390 px.
+The fix is not the shrink this entry proposed. The slot is pinned to the bottom of the header
+(`bottom-0 h-9`), which is the quiet second row whatever the rows above it do; and the two
+breakpoints where the bar becomes one row each move out one step - the row from 768 px rather
+than 640 px (`sm:` to `md:` on the nav's nowrap, the chip, the quiet row, the divider and the
+slot), and the signed-in address back from 1024 px rather than 768 px (`SessionMenu`'s
+`sm:hidden md:inline` to `md:hidden lg:inline`), so the bar is a single row only where a single
+row fits. The same sweep now reports no overflow at any width from 360 to 1300 px, and the
+founder's eye this entry wanted is owed on the result: the chrome is unchanged in kind, but two
+measured breakpoints moved.
 
 
 ### A roster and per-person scores

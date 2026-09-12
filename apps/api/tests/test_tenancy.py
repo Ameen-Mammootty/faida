@@ -588,6 +588,27 @@ MATRIX: list[dict] = [
         "url": lambda r: "/api/incentive/shares",
         "json": {"manager_pct": "40", "supervisor_pct": "25", "sales_pct": "35"},
     },
+    # M13.3: the create door names the branches it is typed for, so tenant B
+    # sending it is sending A's branch ids - refused in words, with no month
+    # created in either chain, and no id of A's echoed back to B.
+    {
+        "method": "POST",
+        "path": "/api/incentive/months",
+        "url": lambda r: "/api/incentive/months",
+        "json": lambda r: {
+            "month": "2026-07",
+            "targets": [
+                {
+                    "branch_id": r["branch"],
+                    "net_sales_target": "50000",
+                    "above_target_pct": "10",
+                    "cap": None,
+                }
+            ],
+        },
+        "expect": 201,
+        "expect_b": 422,
+    },
 ]
 
 
