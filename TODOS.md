@@ -1113,6 +1113,32 @@ button is static; the manager's brief and a per-tenant custom domain both need t
 
 ## Staff incentive (deferred by the M13 grilling, 2026-09-12)
 
+### The top bar scrolls sideways in two narrow bands
+
+**What:** Between 640 and about 668 px, and again between 768 and about 803 px, the console's top
+bar is wider than the window, so every screen scrolls sideways by 27 to 35 px.
+The fix is one line in `AppShell.tsx`: the session slot (`absolute top-[57px] right-4 ...
+sm:static sm:max-w-none`) holds the signed-in address and Sign out as `whitespace-nowrap` flex
+items, so its min-content width cannot shrink into the room the row actually has.
+
+**Why not now:** It is not M13's, and it is not new - found on the way while proving the sixth
+nav word (M13.2, 2026-09-12) with a DOM probe against a dev server, and measured on the shipped
+`/sales` at exactly the same widths (667 px at a 640 px window, 803 px at 768 px).
+Adding "Incentive" moved it by 1 px at 640 px and not at all at 768 px, because the squeeze
+already lands on the address rather than on the words.
+Both bands are narrow and neither is a phone (390 px is clean, and so is every width from 1024 px
+up); the lower band needs mock mode's "Sample data" chip, so a signed-in owner does not see it.
+Changing shipped chrome that every one of the six screens draws wants the founder's eye on the
+result, not a drive-by inside a migrations ticket.
+
+**How to see it:** `npx next dev -p 3311`, then at a 768 px window read
+`document.documentElement.scrollWidth` - 803, not 768. Headless screenshots do not show it
+(they clip rather than scroll), which is why the probe reads the DOM.
+
+**Depends on:** nothing. Trigger: the M13 records ticket (issue #17), or any owner on a laptop
+at a window that narrow.
+
+
 ### A roster and per-person scores
 
 **What:** Names and roles per branch, so the statement names each person and divides a role's

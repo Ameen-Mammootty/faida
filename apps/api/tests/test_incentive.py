@@ -175,6 +175,15 @@ def test_month_words_and_keys():
         ((Decimal("-1"), Decimal("51"), Decimal("50")), "the manager share cannot be negative"),
         ((Decimal("50"), Decimal("20"), Decimal("20")), "sum to 90%, not 100%"),
         ((Decimal("33.3"), Decimal("33.3"), Decimal("33.3")), "sum to 99.9%, not 100%"),
+        # A share is kept to two decimals. These three sum to exactly 100 and
+        # are still refused, because the row would round each one down and
+        # then hold 99.99 - which the table's own check refuses in SQL, which
+        # is no way to tell an owner they typed one decimal too many.
+        (
+            (Decimal("33.334"), Decimal("33.333"), Decimal("33.333")),
+            "the manager share is written to more decimals",
+        ),
+        ((Decimal("33.34"), Decimal("33.33"), Decimal("33.33")), None),
     ],
 )
 def test_role_shares_are_three_percentages_summing_to_one_hundred(shares, sentence):

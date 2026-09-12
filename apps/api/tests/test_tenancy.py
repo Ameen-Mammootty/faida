@@ -28,6 +28,7 @@ from faida_api.api import router as api_router
 from faida_api.auth import AuthContext, require_context
 from faida_api.contracts import InvoiceStatus
 from faida_api.dashboard import router as dashboard_router
+from faida_api.incentive_api import router as incentive_router
 from faida_api.main import app as production_app
 from faida_api.menu import router as menu_router
 from faida_api.sales import router as sales_router
@@ -79,6 +80,14 @@ TENANT_TABLES = (
     "sales_lines",
     "branch_aliases",
     "brief_recipients",
+    "role_shares",
+    "scheme_months",
+    "scheme_month_targets",
+    "push_weeks",
+    "push_items",
+    "push_item_targets",
+    "statement_approvals",
+    "incentive_branches",
 )
 
 
@@ -156,6 +165,7 @@ async def rig(settings, db):
     app.include_router(menu_router)
     app.include_router(sales_router)
     app.include_router(dashboard_router)
+    app.include_router(incentive_router)
     app.include_router(waitlist_router)
     app.state.settings = settings
     wire_auth(app)
@@ -567,6 +577,16 @@ MATRIX: list[dict] = [
         "method": "POST",
         "path": "/api/till-items/{till_item_id}/exclude",
         "url": lambda r: f"/api/till-items/{r['till_item']}/exclude",
+    },
+    # The incentive (M13.2): a tenant reads its own shares and nobody else's.
+    # There is no id in either path, so tenant B is answered - with its own
+    # empty read, and with a write that lands in B.
+    {"method": "GET", "path": "/api/incentive", "url": lambda r: "/api/incentive"},
+    {
+        "method": "PUT",
+        "path": "/api/incentive/shares",
+        "url": lambda r: "/api/incentive/shares",
+        "json": {"manager_pct": "40", "supervisor_pct": "25", "sales_pct": "35"},
     },
 ]
 

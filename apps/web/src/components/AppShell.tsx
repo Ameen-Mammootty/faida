@@ -30,9 +30,11 @@ import SessionMenu from "./SessionMenu";
  * slot that CSS moves - the phone's second row, the header row from 640 px,
  * and the sidebar foot from 1280 px - so a page load reads the session once.
  */
-type Screen = "dashboard" | "invoices" | "materials" | "menu" | "sales";
+type Screen = "dashboard" | "incentive" | "invoices" | "materials" | "menu" | "sales";
 
-/** The sidebar's five words, in the three groups confirmed by D5. */
+/** The sidebar's six words, in the three groups confirmed by D5. The incentive
+ * joined Operations in M13 (issue #8), under Sales: it is read against the
+ * till's own days and acted on month by month. */
 const GROUPS: { caption: string; entries: { screen: Screen; href: string; label: string }[] }[] = [
   {
     caption: "Overview",
@@ -43,6 +45,7 @@ const GROUPS: { caption: string; entries: { screen: Screen; href: string; label:
     entries: [
       { screen: "invoices", href: "/invoices", label: "Invoices" },
       { screen: "sales", href: "/sales", label: "Sales" },
+      { screen: "incentive", href: "/incentive", label: "Incentive" },
     ],
   },
   {
@@ -220,6 +223,13 @@ export default function AppShell({
                 className={linkClasses("sales")}
               >
                 Sales
+              </Link>
+              <Link
+                href="/incentive"
+                aria-current={current === "incentive" ? "page" : undefined}
+                className={linkClasses("incentive")}
+              >
+                Incentive
               </Link>
               <span aria-hidden="true" className="hidden h-4 w-px bg-ink/10 sm:block" />
             </div>

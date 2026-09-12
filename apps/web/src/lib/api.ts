@@ -70,6 +70,7 @@ import {
   mockUnmapTillItem,
 } from "./mock/sales";
 import { mockGetDashboard } from "./mock/dashboard";
+import { mockGetIncentive, mockSetRoleShares } from "./mock/incentive";
 import {
   mockApproveInvoice,
   mockConfirmInvoice,
@@ -88,6 +89,7 @@ import type {
   BranchAlias,
   Correction,
   DashboardResult,
+  IncentiveResult,
   Ingredient,
   IngredientCreateInput,
   IngredientMappingInput,
@@ -105,6 +107,7 @@ import type {
   PriceHistory,
   PriceMove,
   RejectionResult,
+  RoleShares,
   SalesBranchesResult,
   SalesCoverageResult,
   SalesDay,
@@ -597,4 +600,21 @@ export async function excludeTillItem(tillItemId: string): Promise<TillItem> {
     { method: "POST" },
   );
   return body.till_item;
+}
+
+// --- the staff incentive (M13) ----------------------------------------------
+//
+// One read serves the whole screen, the dashboard's rule: every figure on
+// /incentive comes out of one request, so nothing on it can disagree with
+// anything else on it. This ticket fills its shares block; the scheme month,
+// the push lists and the statements join the same payload.
+
+export async function getIncentive(): Promise<Pick<IncentiveResult, "shares">> {
+  if (MOCK) return mockGetIncentive();
+  return request<Pick<IncentiveResult, "shares">>("/api/incentive");
+}
+
+export async function setRoleShares(body: RoleShares): Promise<Pick<IncentiveResult, "shares">> {
+  if (MOCK) return mockSetRoleShares(body);
+  return request<Pick<IncentiveResult, "shares">>("/api/incentive/shares", jsonInit("PUT", body));
 }

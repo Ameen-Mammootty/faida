@@ -160,12 +160,24 @@ def shares_problem(
     manager: Decimal | None, supervisor: Decimal | None, sales: Decimal | None
 ) -> str | None:
     """The refusal sentence for a set of role shares, or None when they are
-    three percentages summing to one hundred (D2)."""
+    three percentages summing to one hundred (D2).
+
+    Two decimals at most, because that is what a share is stored as
+    (`numeric(5,2)`): a third decimal would be rounded away on the way in, and
+    three shares that summed to a hundred before the rounding need not sum to
+    a hundred after it - which the table's own check would then refuse, in
+    SQL, long past the door that should have said so in words.
+    """
     for name, value in (("manager", manager), ("supervisor", supervisor), ("sales team", sales)):
         if value is None:
             return f"the {name} share is missing: three percentages summing to 100 are needed"
         if value < 0:
             return f"the {name} share cannot be negative"
+        if value.as_tuple().exponent < -2:
+            return (
+                f"the {name} share is written to more decimals than a share is kept to: "
+                "two at most, like 33.33"
+            )
     if manager + supervisor + sales != _HUNDRED:
         return (
             f"the three shares sum to {_pct_plain(manager + supervisor + sales)}%, not 100%: "
