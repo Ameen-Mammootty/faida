@@ -4,9 +4,10 @@
  * (the `dashboardScreen.ts` rule: a choice left inside a component would be
  * untested by construction).
  *
- * Two blocks so far: the role shares that split a pool (M13.2, issue #8) and
+ * Three blocks so far: the role shares that split a pool (M13.2, issue #8),
  * the scheme month with its per-branch targets and its push weeks (M13.3,
- * issue #9).
+ * issue #9), and each week's push list with the menu to build it from
+ * (M13.4, issue #10).
  *
  * The screen never words a refusal. A share that does not add to a hundred, a
  * negative target, a month already created - each is refused by
@@ -20,7 +21,10 @@ import { formatDate, groupedMoney } from "./format";
 import type {
   IncentiveBranch,
   IncentiveBranchTarget,
+  IncentiveCategory,
+  IncentiveMenuItem,
   IncentiveRead,
+  PushListInput,
   PushWeek,
   RoleShares,
   RoleSharesRow,
@@ -137,7 +141,8 @@ function total(scaled: number[]): number {
  */
 export function sumWords(draft: ShareDraft): string {
   const scaled = drafted(draft);
-  if (scaled === null) return "Three percentages, adding to 100, split the pool.";
+  if (scaled === null)
+    return "Three percentages, adding to 100, split the pool.";
   const sum = total(scaled);
   if (sum === WHOLE_POOL) return "The three shares split the whole pool.";
   if (sum < WHOLE_POOL) {
@@ -149,7 +154,10 @@ export function sumWords(draft: ShareDraft): string {
 /** Whether Save is offered: three percentages, none negative, adding to a
  * hundred, and not the three already on file. The API refuses anything else
  * in its own words, so this decides and never explains. */
-export function canSaveShares(draft: ShareDraft, saved: RoleSharesRow | null): boolean {
+export function canSaveShares(
+  draft: ShareDraft,
+  saved: RoleSharesRow | null,
+): boolean {
   const scaled = drafted(draft);
   if (scaled === null) return false;
   if (scaled.some((value) => value < 0)) return false;
@@ -157,13 +165,16 @@ export function canSaveShares(draft: ShareDraft, saved: RoleSharesRow | null): b
   if (saved === null) return true;
   // Sending the same three shares again would write a row and an audit line
   // that record nothing.
-  return SHARE_ROLES.some((role, index) => scaled[index] !== hundredths(saved[FIELD[role]]));
+  return SHARE_ROLES.some(
+    (role, index) => scaled[index] !== hundredths(saved[FIELD[role]]),
+  );
 }
 
 // --- the block's own words --------------------------------------------------
 
 /** The heading's second line: what the shares are for. */
-export const SHARES_CAPTION = "How a month's pool is split between the people who earned it.";
+export const SHARES_CAPTION =
+  "How a month's pool is split between the people who earned it.";
 
 /** The note beside Save: a change never touches a month already created,
  * because a scheme month keeps the shares it was created with (D4). */
@@ -245,7 +256,11 @@ export function monthOptions(read: IncentiveRead): MonthOption[] {
   return [...keys]
     .sort()
     .reverse()
-    .map((month) => ({ month, words: monthWords(month), created: created.has(month) }));
+    .map((month) => ({
+      month,
+      words: monthWords(month),
+      created: created.has(month),
+    }));
 }
 
 // --- the create form --------------------------------------------------------
@@ -293,7 +308,10 @@ function typed(value: string): boolean {
  * percentages summing to a hundred is arithmetic the owner cannot check by
  * eye, and a target is not.
  */
-export function canCreateMonth(drafts: TargetDrafts, branches: IncentiveBranch[]): boolean {
+export function canCreateMonth(
+  drafts: TargetDrafts,
+  branches: IncentiveBranch[],
+): boolean {
   if (branches.length === 0) return false;
   return branches.every((branch) => {
     const draft = drafts[branch.id];
@@ -303,7 +321,11 @@ export function canCreateMonth(drafts: TargetDrafts, branches: IncentiveBranch[]
 
 /** The wire body of the create door: the strings as typed, trimmed, with a
  * blank cap sent as no cap. */
-export function schemeMonthBody(month: string, drafts: TargetDrafts, branches: IncentiveBranch[]): SchemeMonthInput {
+export function schemeMonthBody(
+  month: string,
+  drafts: TargetDrafts,
+  branches: IncentiveBranch[],
+): SchemeMonthInput {
   return {
     month,
     targets: branches.map((branch) => {
@@ -320,8 +342,12 @@ export function schemeMonthBody(month: string, drafts: TargetDrafts, branches: I
 
 /** The sentence under the create form: what is still needed, and once it is
  * all there, what creating the month commits to (D4). */
-export function createStanding(drafts: TargetDrafts, branches: IncentiveBranch[]): string {
-  if (branches.length === 0) return "This chain has no branches to set targets for.";
+export function createStanding(
+  drafts: TargetDrafts,
+  branches: IncentiveBranch[],
+): string {
+  if (branches.length === 0)
+    return "This chain has no branches to set targets for.";
   if (!canCreateMonth(drafts, branches)) {
     return "Type a net sales target and a percentage of sales above it for every branch. A cap is optional.";
   }
@@ -345,14 +371,17 @@ export interface WeekTab {
 
 const NO_PUSH_LIST = "No push list yet.";
 
+/** What a week that has started or ended with an empty list says. */
+const NO_LIST_SET = "No push list was set for it.";
+
 /**
  * The month's weeks as the screen's tabs. A week that has started is frozen
  * and says why in the API's own sentence (D5); a week still coming may be
  * re-aimed, and until it has a list says so.
  *
- * Every week is empty in this ticket - the push lists land in the next one -
- * so the note is the same for every coming week today. It is written against
- * `items` rather than against the ticket, so it stops saying so on its own.
+ * The note is written against the week's own `items`, so a week filled in
+ * this session says how many dishes are on it without the tab strip being
+ * told anything about the list below it.
  */
 export function weekTabs(weeks: PushWeek[], today: string): WeekTab[] {
   return weeks.map((week) => {
@@ -429,3 +458,265 @@ export function standing(read: IncentiveRead): string {
   }
   return `${read.month_words} is set. Fill each week's push list to tell the team what to push.`;
 }
+
+// --- the week's push list ---------------------------------------------------
+
+/** One row of the list as the owner is typing it: the dish, what a portion
+ * above target earns, and a portion target per branch. Strings, because a
+ * half-typed figure is a string and rounding one while the owner types would
+ * fight the keyboard. */
+export interface PushRow {
+  menu_item_id: string;
+  rate: string;
+  /** Branch id to the portions typed for it. */
+  targets: Record<string, string>;
+}
+
+/** The dish behind a row, and the category the API filed it under - `Other`
+ * for a dish the menu gives none. */
+export interface MenuEntry {
+  item: IncentiveMenuItem;
+  category: string;
+  guidance: string;
+}
+
+export type MenuIndex = Record<string, MenuEntry>;
+
+/**
+ * The menu by dish id, carrying the category the API filed each dish under.
+ *
+ * The category comes off the read rather than off the dish's own `category`
+ * field so that `Other` is spelt once, in Python, and the screen never has a
+ * second opinion about where an uncategorised dish belongs.
+ */
+export function menuIndex(
+  menu: IncentiveCategory<IncentiveMenuItem>[],
+): MenuIndex {
+  const index: MenuIndex = {};
+  for (const group of menu) {
+    for (const item of group.items) {
+      index[item.id] = {
+        item,
+        category: group.category,
+        guidance: group.guidance,
+      };
+    }
+  }
+  return index;
+}
+
+/** The week's stored list as a draft to edit: the rates and targets exactly
+ * as the week holds them, so opening a filled week and saving it again
+ * changes nothing. */
+export function pushDraft(
+  week: PushWeek | null,
+  branches: IncentiveBranch[],
+): PushRow[] {
+  if (week === null) return [];
+  return week.items.map((item) => ({
+    menu_item_id: item.menu_item_id,
+    rate: plainPct(item.rate_per_portion),
+    targets: Object.fromEntries(
+      branches.map((branch) => {
+        const target = item.targets.find((row) => row.branch_id === branch.id);
+        return [
+          branch.id,
+          target === undefined ? "" : trimZeros(target.portion_target),
+        ];
+      }),
+    ),
+  }));
+}
+
+/** "300.500" as "300.5", "1000.000" as "1000" - a stored portion count put
+ * back in a box the way a person would have typed it. String surgery, never
+ * arithmetic: a figure crosses the wire as a string and is never a float
+ * here (C6). */
+function trimZeros(value: string): string {
+  const text = value.trim();
+  if (!/^-?\d+\.\d+$/.test(text)) return text;
+  return text.replace(/0+$/, "").replace(/\.$/, "");
+}
+
+/** An empty row for a dish just picked: nothing typed, so the owner types
+ * the rate and every branch's portions. */
+export function pushRowFor(
+  menuItemId: string,
+  branches: IncentiveBranch[],
+): PushRow {
+  return {
+    menu_item_id: menuItemId,
+    rate: "",
+    targets: Object.fromEntries(branches.map((branch) => [branch.id, ""])),
+  };
+}
+
+/** The list being typed, grouped the way the menu reads (D6). */
+export function draftGroups(
+  rows: PushRow[],
+  index: MenuIndex,
+  menu: IncentiveCategory<IncentiveMenuItem>[],
+): { category: string; guidance: string; items: PushRow[] }[] {
+  return groupLikeMenu(
+    rows,
+    (row) => index[row.menu_item_id]?.category ?? OFF_THE_MENU,
+    menu,
+  );
+}
+
+/**
+ * Anything that belongs to a dish, grouped by the menu's own categories in
+ * the menu's own order.
+ *
+ * The order is the read's own - the API has already sorted the categories and
+ * put `Other` last - so a list being typed, a list just saved and a list read
+ * back can never fall into three different orders, and the ordering rule is
+ * not written a second time in TypeScript. A category the read does not carry
+ * goes last, which is where a dish archived off the menu since the list was
+ * set ends up: still on the week, and still to be taken off it.
+ */
+export function groupLikeMenu<T>(
+  items: T[],
+  categoryOf: (item: T) => string,
+  menu: IncentiveCategory<IncentiveMenuItem>[],
+): { category: string; guidance: string; items: T[] }[] {
+  const order = menu.map((group) => group.category);
+  const buckets = new Map<string, T[]>();
+  for (const item of items) {
+    const category = categoryOf(item);
+    const bucket = buckets.get(category);
+    if (bucket === undefined) buckets.set(category, [item]);
+    else bucket.push(item);
+  }
+  return [...buckets.keys()]
+    .sort((left, right) => bucketRank(left, order) - bucketRank(right, order))
+    .map((category) => ({
+      category,
+      guidance:
+        menu.find((group) => group.category === category)?.guidance ?? "",
+      items: buckets.get(category) ?? [],
+    }));
+}
+
+/** The heading a dish that has left the menu sits under: not a category the
+ * menu has, so it is never confused with one. */
+export const OFF_THE_MENU = "No longer on the menu";
+
+function bucketRank(category: string, order: string[]): number {
+  const at = order.indexOf(category);
+  return at === -1 ? order.length : at;
+}
+
+/** What a category says beside its dishes: how many are on it, and the API's
+ * own guidance when that is outside the one to three it suggests.
+ *
+ * Shown and never enforced (D6): Save stays open on a fourth snack, because
+ * a week that needs four snacks is the owner's call. The guidance sentence is
+ * the API's, passed through - it is not written twice.
+ */
+export function guidanceWords(count: number, guidance: string): string {
+  const many = `${count} ${count === 1 ? "dish" : "dishes"}`;
+  return count >= 1 && count <= 3 ? many : `${many} - ${guidance}`;
+}
+
+/** The dishes still on offer: every live dish the draft does not already
+ * hold. A dish with no till name mapped to it stays in the list and is
+ * offered greyed, because "not offered" teaches nothing and "offered with
+ * the reason beside it" sends the owner to the Sales screen to fix it. */
+export function pickerGroups(
+  menu: IncentiveCategory<IncentiveMenuItem>[],
+  rows: PushRow[],
+): IncentiveCategory<IncentiveMenuItem>[] {
+  const taken = new Set(rows.map((row) => row.menu_item_id));
+  return menu
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => !taken.has(item.id)),
+    }))
+    .filter((group) => group.items.length > 0);
+}
+
+/** What a dish reads as in the picker: its name, then what its plate keeps -
+ * or why it cannot be pushed at all. Both halves are the API's own words. */
+export function pickerLabel(item: IncentiveMenuItem): string {
+  return item.mapped
+    ? `${item.name} - ${item.kept_words}`
+    : `${item.name} - no till name mapped`;
+}
+
+/**
+ * Whether Save is offered for this week's list: the week is still open, and
+ * every row has a rate and a portion target for every branch.
+ *
+ * Stricter than the create form for the reason the shares block is: a branch
+ * silently left without a target would be scored against a target of zero and
+ * pay the team for every portion it sold, which is money and not a typo. A
+ * dish that has lost its till name, or left the menu, blocks the save too -
+ * it can only be refused, and taking it off the week is the owner's next
+ * move either way.
+ */
+export function canSavePushList(
+  rows: PushRow[],
+  branches: IncentiveBranch[],
+  index: MenuIndex,
+  week: WeekTab | null,
+): boolean {
+  if (week === null || week.frozen) return false;
+  if (branches.length === 0) return false;
+  return rows.every((row) => {
+    const entry = index[row.menu_item_id];
+    if (entry === undefined || !entry.item.mapped) return false;
+    if (!typed(row.rate)) return false;
+    return branches.every((branch) => typed(row.targets[branch.id] ?? ""));
+  });
+}
+
+/** The wire body of the push-list door: the strings as typed, trimmed. */
+export function pushListBody(
+  rows: PushRow[],
+  branches: IncentiveBranch[],
+): PushListInput {
+  return {
+    items: rows.map((row) => ({
+      menu_item_id: row.menu_item_id,
+      rate_per_portion: row.rate.trim(),
+      targets: branches.map((branch) => ({
+        branch_id: branch.id,
+        portion_target: (row.targets[branch.id] ?? "").trim(),
+      })),
+    })),
+  };
+}
+
+/** The sentence under the week's list: why it cannot be edited, what is
+ * still needed, or what saving it does. Never a refusal - those are the
+ * API's, in its own words. */
+export function pushStanding(
+  rows: PushRow[],
+  branches: IncentiveBranch[],
+  index: MenuIndex,
+  week: WeekTab | null,
+): string {
+  if (week === null) return "";
+  // A week that has ended with nothing on it says so: the frozen sentence
+  // alone leaves the owner unable to tell an empty week from one whose list
+  // the screen has not drawn.
+  if (week.frozen) return rows.length === 0 ? `${week.note} ${NO_LIST_SET}` : week.note;
+  const stranded = rows.filter((row) => {
+    const entry = index[row.menu_item_id];
+    return entry === undefined || !entry.item.mapped;
+  });
+  if (stranded.length > 0) {
+    return "A dish on this list has no till name mapped to it any more. Take it off the week, or map a till name to it on the Sales screen.";
+  }
+  if (rows.length === 0) {
+    return "Nothing on this week yet. Pick a dish to push, or leave the week empty - the card still goes out with the month's net sales on it.";
+  }
+  if (!canSavePushList(rows, branches, index, week)) {
+    return "Type a rate per portion and a portion target for every branch.";
+  }
+  return "The team is paid this rate on every portion above the branch's target.";
+}
+
+export const LIST_CAPTION =
+  "What the team is asked to push this week, what a portion above target earns, and how many portions each branch is held to.";

@@ -597,6 +597,129 @@ def test_the_kept_and_last_month_words():
     assert incentive.previous_month_words(None, "AED") == "no sales loaded last month"
 
 
+# --- the push list, as the owner types it -------------------------------------------
+
+
+MENU = {
+    "menu-k": incentive.MenuFact("Karak", archived=False, mapped=True),
+    "menu-s": incentive.MenuFact("Sulaimani", archived=False, mapped=True),
+    "menu-c": incentive.MenuFact("Honey Cake", archived=False, mapped=False),
+    "menu-h": incentive.MenuFact("Ramadan Harees", archived=True, mapped=True),
+}
+PUSH_BRANCHES = {A: "Al Quoz", B: "Deira"}
+BOTH = {A: "100", B: "50"}
+
+
+def _row(menu_item_id: str, rate, targets) -> incentive.TypedPushItem:
+    return incentive.TypedPushItem(
+        menu_item_id=menu_item_id,
+        rate_per_portion=None if rate is None else Decimal(rate),
+        targets=[
+            incentive.TypedPortionTarget(
+                branch_id=branch, portion_target=None if target is None else Decimal(target)
+            )
+            for branch, target in targets.items()
+        ],
+    )
+
+
+def _refusal(items) -> str | None:
+    return incentive.push_list_problem(MENU, PUSH_BRANCHES, items)
+
+
+def test_a_finished_push_list_is_refused_for_nothing():
+    assert _refusal([_row("menu-k", "0.50", BOTH), _row("menu-s", "0.25", BOTH)]) is None
+
+
+def test_an_empty_list_is_a_decision_and_not_a_refusal():
+    """A week the owner takes off the scheme still brings a card with the
+    month's net sales on it (D5), so there is nothing to refuse."""
+    assert _refusal([]) is None
+
+
+@pytest.mark.parametrize(
+    ("items", "expected"),
+    [
+        pytest.param(
+            [_row("menu-x", "0.50", BOTH)],
+            "a dish was sent that is not on this menu",
+            id="a dish off another menu",
+        ),
+        pytest.param(
+            [_row("menu-c", "0.50", BOTH)],
+            "Honey Cake has no till name mapped to it, so it could only ever score zero; "
+            "map a till name to it on the Sales screen first",
+            id="no till name maps to it",
+        ),
+        pytest.param(
+            [_row("menu-h", "0.50", BOTH)],
+            "Ramadan Harees is archived from the menu and cannot be pushed",
+            id="archived off the menu",
+        ),
+        pytest.param(
+            [_row("menu-k", "0.50", BOTH), _row("menu-k", "0.60", BOTH)],
+            "Karak is on the list twice: one row per dish",
+            id="the same dish twice",
+        ),
+        pytest.param(
+            [_row("menu-k", None, BOTH)],
+            "Karak has no rate per portion: type what one portion above target earns",
+            id="the rate box left empty",
+        ),
+        pytest.param(
+            [_row("menu-k", "-0.50", BOTH)],
+            "Karak: a rate per portion cannot be negative",
+            id="a negative rate",
+        ),
+        pytest.param(
+            [_row("menu-k", "0.505", BOTH)],
+            "Karak: a rate per portion is kept to the fil, two decimals at most, like 0.25",
+            id="a rate to a third decimal",
+        ),
+        pytest.param(
+            [_row("menu-k", "0.50", {A: "100"})],
+            "Karak has no portion target for Deira: every branch of the chain needs one",
+            id="a branch left out",
+        ),
+        pytest.param(
+            [_row("menu-k", "0.50", {A: "100", B: None})],
+            "Karak has no portion target for Deira: every branch needs one",
+            id="a target box left empty",
+        ),
+        pytest.param(
+            [_row("menu-k", "0.50", {A: "100", B: "-1"})],
+            "Karak: a portion target cannot be negative",
+            id="a negative target",
+        ),
+        pytest.param(
+            [_row("menu-k", "0.50", {A: "100", B: "50.0001"})],
+            "Karak: a portion target is counted to three decimals at most, like 250",
+            id="a target to a fourth decimal",
+        ),
+        pytest.param(
+            [_row("menu-k", "0.50", {A: "100", B: "50", "br-z": "10"})],
+            "Karak was given a target for a branch that is not in this chain",
+            id="a branch outside the chain",
+        ),
+    ],
+)
+def test_a_push_list_that_would_pay_the_team_on_nothing_is_refused_by_name(items, expected):
+    """Every refusal names the dish, and a target names the branch whose box
+    it came from (D6, D7) - the screen shows a grid, so an owner told only
+    that "a target is missing" would have to hunt for it."""
+    assert _refusal(items) == expected
+
+
+def test_a_branch_with_no_target_is_refused_rather_than_scored_against_zero():
+    """`score_item` reads a branch with no target as a target of zero, which
+    would pay the team for every portion it sold. The door is where that is
+    caught, so the arithmetic never has to guess."""
+    item = _item("k", "Karak", "0.50", {A: "100"})
+    scored = incentive.score_item(item, Window(_day(SEPT, 7), _day(SEPT, 13)), B, [])
+    assert scored.portion_target == Decimal("0.000")
+    assert _refusal([_row("menu-k", "0.50", {A: "100"})]) is not None
+
+
 # --- the words that are never said --------------------------------------------------
 
 
@@ -618,6 +741,13 @@ def test_no_composed_sentence_says_profit_commission_verified_or_food_cost():
         incentive.frozen_week_sentence(scheme.weeks[0].window, datetime.date(2026, 9, 9)),
         incentive.push_item_problem("Karak", archived=False, mapped=False),
         incentive.push_item_problem("Karak", archived=True, mapped=True),
+        incentive.rate_problem("Karak", None),
+        incentive.rate_problem("Karak", Decimal("-1")),
+        incentive.rate_problem("Karak", Decimal("0.255")),
+        incentive.portion_target_problem("Karak", "Deira", None),
+        incentive.portion_target_problem("Karak", "Deira", Decimal("-1")),
+        incentive.portion_target_problem("Karak", "Deira", Decimal("0.0001")),
+        incentive.push_list_problem({}, {}, [_row("menu-x", "1.00", {})]),
         incentive.shares_problem(Decimal("1"), Decimal("1"), Decimal("1")),
         incentive.targets_problem(Decimal("-1"), Decimal("1"), None),
         incentive.approvable(empty.figures),

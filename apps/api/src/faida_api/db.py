@@ -4210,6 +4210,26 @@ class Database:
             tenant_id,
         )
 
+    async def mapped_menu_item_ids(self, *, tenant_id: str) -> set[str]:
+        """Every menu item at least one till name maps to (M13 D7): what the
+        push-list picker offers and what the push-list door refuses an item
+        for, in one query whatever the menu's length.
+
+        Read on every save and never written onto a push item: a dish whose
+        till name is unmapped after its list was set becomes a named hole on
+        the next read (`incentive.hole_sentence`), which is the opposite of
+        the silent zero that would read as a team that sold none.
+        """
+        rows = await self.pool.fetch(
+            """
+            select distinct menu_item_id::text as menu_item_id
+            from till_items
+            where tenant_id = $1 and menu_item_id is not null
+            """,
+            tenant_id,
+        )
+        return {row["menu_item_id"] for row in rows}
+
     async def list_push_items(
         self, scheme_month_id: str, *, tenant_id: str
     ) -> list[asyncpg.Record]:

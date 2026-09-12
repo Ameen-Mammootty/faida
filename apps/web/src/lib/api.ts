@@ -70,7 +70,12 @@ import {
   mockUnmapTillItem,
 } from "./mock/sales";
 import { mockGetDashboard } from "./mock/dashboard";
-import { mockCreateSchemeMonth, mockGetIncentive, mockSetRoleShares } from "./mock/incentive";
+import {
+  mockCreateSchemeMonth,
+  mockGetIncentive,
+  mockSetPushList,
+  mockSetRoleShares,
+} from "./mock/incentive";
 import {
   mockApproveInvoice,
   mockConfirmInvoice,
@@ -107,6 +112,7 @@ import type {
   PriceHistory,
   PriceMove,
   RejectionResult,
+  PushListInput,
   RoleShares,
   SchemeMonthInput,
   SalesBranchesResult,
@@ -625,4 +631,15 @@ export async function setRoleShares(body: RoleShares): Promise<IncentiveRead> {
 export async function createSchemeMonth(body: SchemeMonthInput): Promise<IncentiveRead> {
   if (MOCK) return mockCreateSchemeMonth(body);
   return request<IncentiveRead>("/api/incentive/months", jsonInit("POST", body));
+}
+
+export async function setPushList(
+  weekId: string,
+  body: PushListInput,
+): Promise<IncentiveRead> {
+  if (MOCK) return mockSetPushList(weekId, body);
+  return request<IncentiveRead>(
+    `/api/incentive/weeks/${encodeURIComponent(weekId)}`,
+    jsonInit("PUT", body),
+  );
 }

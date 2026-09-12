@@ -16,10 +16,12 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
+from faida_api import incentive_api
 from faida_api.incentive_api import router as incentive_router
+from faida_api.menu import router as menu_router
 
 from .conftest import AUTH, DEMO_TENANT_ID, TEST_ACTOR, requires_db, wire_auth
-from .test_plates import _CountingPool
+from .test_plates import _CountingPool, _karak, _menu_item
 from .test_sales_api import BRANCH, BRANCH_2, BRANCH_3, _branches
 from .test_sales_load import TENANT_B, _audit, _other_tenant
 
@@ -82,6 +84,9 @@ async def _create(client, month: str, targets=None):
 def api(settings, db):
     app = FastAPI()
     app.include_router(incentive_router)
+    # The menu's own door, for staging: a push list is built out of costed
+    # dishes, and they are created the way the owner creates them.
+    app.include_router(menu_router)
     app.state.settings = settings
     wire_auth(app)
     app.state.db = db
@@ -488,8 +493,19 @@ READS = [
     "list_incentive_branches",
     "list_scheme_months",
     "list_sales_days",  # last month's, for the advice figure
+    # _menu, for the kept-per-plate figure and the picker: _menu_context's
+    # five (its own currency read included) and the till mapping.
+    "tenant_currency",
+    "list_mapped_pack_costs",
+    "list_newest_purchases",
+    "list_current_recipe_components",
+    "list_menu_items",
+    "mapped_menu_item_ids",
+    # Only when a month exists for the month in view.
     "list_scheme_month_targets",
     "list_push_weeks",
+    "list_push_items",
+    "list_push_item_targets",
     "get_role_shares",
 ]
 
@@ -510,3 +526,390 @@ async def test_the_read_makes_the_enumerated_queries_whatever_the_chains_size(ap
     assert response.status_code == 200, response.text
     assert len(response.json()["scheme_month"]["weeks"]) == 5
     assert counting.queries == len(READS)
+
+
+# --- the push list (M13.4, issue #10) ---------------------------------------------
+
+
+def _key(day: datetime.date) -> str:
+    return f"{day.year:04d}-{day.month:02d}"
+
+
+#: A month that has not begun: every one of its weeks can still be re-aimed.
+#: Derived from today rather than typed, because the freeze rule is measured
+#: against today and a typed month would start failing on a date.
+NEXT_MONTH = _key(datetime.date.today().replace(day=1) + datetime.timedelta(days=32))
+#: A month under way: its first week has started and is frozen.
+THIS_MONTH = _key(datetime.date.today())
+#: A month already over: every week of it has ended.
+LAST_MONTH = _key(datetime.date.today().replace(day=1) - datetime.timedelta(days=1))
+
+#: What the owner types into the three branches' portion boxes for one dish.
+PORTIONS = {BRANCH: "1000", BRANCH_2: "750", BRANCH_3: "300.5"}
+
+
+async def _till_name(db, name: str, menu_item_id: str) -> None:
+    """A till name already mapped to a menu item. The mapping door itself is
+    proven in `test_sales_api.py`; what is under test here is what the push
+    list does with a dish that has one and a dish that has none."""
+    await db.pool.execute(
+        "insert into till_items (tenant_id, name, name_key, menu_item_id) values ($1, $2, $3, $4)",
+        TENANT,
+        name,
+        name.lower(),
+        menu_item_id,
+    )
+
+
+async def _menu(db, client) -> dict:
+    """A small menu with one of each kind of dish a push list meets: the
+    seeded karak, costed to the fil and mapped; a mandi with no recipe, so
+    nothing is known about what its plate keeps; a cake no till name maps to;
+    and a dish archived off the menu."""
+    scenario = await _karak(db, client)
+    karak = scenario["item_id"]
+    mandi = await _menu_item(client, "Chicken Mandi", "28.00")
+    cake = await _menu_item(client, "Honey Cake", "12.00")
+    gone = await _menu_item(client, "Ramadan Harees", "18.00")
+    for item_id, category in ((karak, "Tea Corner"), (mandi, "Rice"), (gone, "Rice")):
+        await db.set_menu_item_category(
+            item_id, tenant_id=TENANT, category=category, actor=TEST_ACTOR
+        )
+    await _till_name(db, "KARAK", karak)
+    await _till_name(db, "MANDI", mandi)
+    await _till_name(db, "HAREES", gone)
+    await db.archive_menu_item(gone, tenant_id=TENANT, actor=TEST_ACTOR)
+    return {"karak": karak, "mandi": mandi, "cake": cake, "gone": gone}
+
+
+def _push(menu_item_id: str, rate: str = "0.25", targets=None) -> dict:
+    return {
+        "menu_item_id": menu_item_id,
+        "rate_per_portion": rate,
+        "targets": [
+            {"branch_id": branch, "portion_target": target}
+            for branch, target in (PORTIONS if targets is None else targets).items()
+        ],
+    }
+
+
+async def _save(client, week_id: str, items: list[dict]):
+    return await client.put(f"/api/incentive/weeks/{week_id}", json={"items": items}, headers=AUTH)
+
+
+def _weeks(read: dict) -> list[dict]:
+    return read["scheme_month"]["weeks"]
+
+
+async def _month_with_menu(client, db, month: str = NEXT_MONTH) -> tuple[dict, dict]:
+    """The owner's starting point for every push-list test: the shares set,
+    the month created, the menu costed. Returns the menu's ids and the
+    created month's read."""
+    await _set_up(client, db)
+    ids = await _menu(db, client)
+    created = await _create(client, month)
+    assert created.status_code == 201, created.text
+    return ids, created.json()
+
+
+async def test_a_list_on_a_coming_week_is_stored_with_its_rates_and_targets(api, db):
+    """The owner filled next month's first week: the dishes, what a portion
+    above target earns and how many portions each branch is held to, read
+    back off the same request that saved them."""
+    async with api as client:
+        ids, read = await _month_with_menu(client, db)
+        week = _weeks(read)[0]
+        assert week["frozen"] is False
+        saved = await _save(client, week["id"], [_push(ids["karak"]), _push(ids["mandi"], "1.50")])
+    assert saved.status_code == 200, saved.text
+    week = _weeks(saved.json())[0]
+    assert [item["name"] for item in week["items"]] == ["Chicken Mandi", "Karak Cup"]
+    karak = next(item for item in week["items"] if item["name"] == "Karak Cup")
+    assert karak["rate_per_portion"] == "0.25"
+    assert karak["hole"] is None
+    assert karak["targets"] == [
+        {"branch_id": BRANCH, "portion_target": "1000.000"},
+        {"branch_id": BRANCH_2, "portion_target": "750.000"},
+        {"branch_id": BRANCH_3, "portion_target": "300.500"},
+    ]
+    assert [week["items"] for week in _weeks(saved.json())[1:]] == [
+        [] for _ in _weeks(saved.json())[1:]
+    ]
+
+
+async def test_the_list_is_grouped_by_the_menus_own_category_with_what_each_plate_keeps(api, db):
+    """The list reads the way the menu reads (D6), and every rate box has
+    what that plate keeps beside it (D7) - fils-precise off the menu's own
+    costing, or the honest word for a dish nobody has costed."""
+    async with api as client:
+        ids, read = await _month_with_menu(client, db)
+        saved = await _save(
+            client, _weeks(read)[0]["id"], [_push(ids["karak"]), _push(ids["mandi"])]
+        )
+    assert saved.status_code == 200, saved.text
+    week = _weeks(saved.json())[0]
+    assert [group["category"] for group in week["categories"]] == ["Rice", "Tea Corner"]
+    assert [group["guidance"] for group in week["categories"]] == [
+        "one to three per category, as a guide",
+        "one to three per category, as a guide",
+    ]
+    karak = week["categories"][1]["items"][0]
+    assert karak["kept_per_plate"] == "8.772"
+    assert karak["kept_words"] == "keeps AED 8.77 per plate"
+    mandi = week["categories"][0]["items"][0]
+    assert mandi["kept_per_plate"] is None
+    assert mandi["kept_words"] == "not costed"
+
+
+async def test_the_picker_offers_the_live_menu_and_leaves_the_archived_out(api, db):
+    """What the owner picks from: every live dish grouped the menu's own way,
+    each saying what it keeps and whether a till name maps to it. An archived
+    dish is not offered - it could only ever be refused."""
+    async with api as client:
+        ids, _ = await _month_with_menu(client, db)
+        read = (await client.get(f"/api/incentive?month={NEXT_MONTH}", headers=AUTH)).json()
+    menu = {item["id"]: item for group in read["menu"] for item in group["items"]}
+    assert ids["gone"] not in menu
+    assert [group["category"] for group in read["menu"]] == ["Rice", "Tea Corner", "Other"]
+    assert menu[ids["karak"]]["mapped"] is True
+    assert menu[ids["karak"]]["kept_per_plate"] == "8.772"
+    assert menu[ids["cake"]]["mapped"] is False
+    assert menu[ids["cake"]]["category"] is None
+    assert menu[ids["mandi"]]["kept_words"] == "not costed"
+
+
+async def test_saving_again_replaces_the_week_and_leaves_a_second_audit_row(api, db):
+    """Setting a list replaces the week's, never merges into it (D6): what
+    the owner sees on the screen is what the week ends up with."""
+    async with api as client:
+        ids, read = await _month_with_menu(client, db)
+        week = _weeks(read)[0]["id"]
+        await _save(client, week, [_push(ids["karak"]), _push(ids["mandi"])])
+        again = await _save(client, week, [_push(ids["mandi"], "2.00")])
+    assert again.status_code == 200, again.text
+    assert [item["name"] for item in _weeks(again.json())[0]["items"]] == ["Chicken Mandi"]
+    assert _weeks(again.json())[0]["items"][0]["rate_per_portion"] == "2.00"
+    rows = await _audit(db, "incentive.push_list_set")
+    assert len(rows) == 2
+    assert [row["actor"] for row in rows] == [TEST_ACTOR, TEST_ACTOR]
+    assert [row["subject_id"] for row in rows] == [week, week]
+    assert len(rows[1]["detail"]["items"]) == 1
+    assert await db.pool.fetchval("select count(*) from push_items") == 1
+    assert await db.pool.fetchval("select count(*) from push_item_targets") == 3
+
+
+async def test_an_empty_list_clears_the_week(api, db):
+    """A week the owner takes off the scheme is a decision, not a refusal
+    (D5): the card still goes out with the month's net sales on it."""
+    async with api as client:
+        ids, read = await _month_with_menu(client, db)
+        week = _weeks(read)[0]["id"]
+        await _save(client, week, [_push(ids["karak"])])
+        cleared = await _save(client, week, [])
+    assert cleared.status_code == 200, cleared.text
+    assert _weeks(cleared.json())[0]["items"] == []
+    assert _weeks(cleared.json())[0]["categories"] == []
+    assert await db.pool.fetchval("select count(*) from push_item_targets") == 0
+
+
+async def test_a_week_under_way_and_a_week_already_over_are_both_refused_by_name(api, db):
+    """Nobody finds the dish they pushed on Wednesday dropped on Thursday
+    (D5), and no list is backdated onto a month the team has already been
+    scored on."""
+    async with api as client:
+        ids, this_month = await _month_with_menu(client, db, THIS_MONTH)
+        today = datetime.date.today().isoformat()
+        running = next(w for w in _weeks(this_month) if w["start"] <= today <= w["end"])
+        started = await _save(client, running["id"], [_push(ids["karak"])])
+        last = await _create(client, LAST_MONTH)
+        ended = await _save(client, _weeks(last.json())[0]["id"], [_push(ids["karak"])])
+    assert started.status_code == 422, started.text
+    assert started.json()["detail"] == f"the week of {running['words']} has started and is frozen"
+    assert ended.status_code == 422, ended.text
+    assert "has ended and is frozen" in ended.json()["detail"]
+    assert await db.pool.fetchval("select count(*) from push_items") == 0
+
+
+async def test_the_freeze_reads_the_chains_own_local_date_and_not_the_servers(api, db, monkeypatch):
+    """The freeze is a rule about a date, and the date is the chain's own
+    (D5). At eight in the evening on Sunday 12 July in London it is already
+    Monday the 13th in a branch fourteen hours ahead, whose staff are pushing
+    that week's dishes - so the same week, at the same instant, is open to a
+    chain on UTC and frozen to a chain that straddles the date line.
+    """
+    moment = datetime.datetime(2026, 7, 12, 20, 0, tzinfo=datetime.UTC)
+    monkeypatch.setattr(incentive_api, "_now", lambda: moment)
+    async with api as client:
+        ids, read = await _month_with_menu(client, db, "2026-07")
+        await db.pool.execute("update branches set timezone = 'UTC' where tenant_id = $1", TENANT)
+        read = (await client.get("/api/incentive?month=2026-07", headers=AUTH)).json()
+        assert read["today"] == "2026-07-12"
+        week = next(w for w in _weeks(read) if w["start"] == "2026-07-13")
+        on_utc = await _save(client, week["id"], [_push(ids["karak"])])
+
+        await db.pool.execute(
+            "update branches set timezone = 'Pacific/Kiritimati' where id = $1", BRANCH_3
+        )
+        ahead = (await client.get("/api/incentive?month=2026-07", headers=AUTH)).json()
+        refused = await _save(client, week["id"], [_push(ids["karak"])])
+    assert on_utc.status_code == 200, on_utc.text
+    assert ahead["today"] == "2026-07-13"
+    assert refused.status_code == 422, refused.text
+    assert refused.json()["detail"] == "the week of 13-19 Jul has started and is frozen"
+
+
+@pytest.mark.parametrize(
+    ("items", "fragment"),
+    [
+        pytest.param(
+            [{"menu_item_id": "{gone}", "rate_per_portion": "1.00", "targets": "{all}"}],
+            "Ramadan Harees is archived from the menu and cannot be pushed",
+            id="archived",
+        ),
+        pytest.param(
+            [{"menu_item_id": "{cake}", "rate_per_portion": "1.00", "targets": "{all}"}],
+            "Honey Cake has no till name mapped to it, so it could only ever score zero",
+            id="unmapped",
+        ),
+        pytest.param(
+            [{"menu_item_id": "{karak}", "rate_per_portion": None, "targets": "{all}"}],
+            "Karak Cup has no rate per portion",
+            id="no rate",
+        ),
+        pytest.param(
+            [{"menu_item_id": "{karak}", "rate_per_portion": "-1", "targets": "{all}"}],
+            "Karak Cup: a rate per portion cannot be negative",
+            id="negative rate",
+        ),
+        pytest.param(
+            [{"menu_item_id": "{karak}", "rate_per_portion": "0.255", "targets": "{all}"}],
+            "Karak Cup: a rate per portion is kept to the fil",
+            id="a third decimal on a rate",
+        ),
+        pytest.param(
+            [{"menu_item_id": "{karak}", "rate_per_portion": "1.00", "targets": "{two}"}],
+            "Karak Cup has no portion target for Rolla Branch",
+            id="a branch with no target",
+        ),
+        pytest.param(
+            [{"menu_item_id": "{karak}", "rate_per_portion": "1.00", "targets": "{blank}"}],
+            "Karak Cup has no portion target for Rolla Branch",
+            id="a target box left empty",
+        ),
+        pytest.param(
+            [{"menu_item_id": "{karak}", "rate_per_portion": "1.00", "targets": "{negative}"}],
+            "Karak Cup: a portion target cannot be negative",
+            id="a negative target",
+        ),
+        pytest.param(
+            [
+                {"menu_item_id": "{karak}", "rate_per_portion": "1.00", "targets": "{all}"},
+                {"menu_item_id": "{karak}", "rate_per_portion": "2.00", "targets": "{all}"},
+            ],
+            "Karak Cup is on the list twice: one row per dish",
+            id="the same dish twice",
+        ),
+    ],
+)
+async def test_a_list_that_would_pay_the_team_on_nothing_is_refused_in_the_modules_own_words(
+    api, db, items, fragment
+):
+    """Every refusal names the dish, and a missing target names the branch
+    whose box it came from - the pure module's sentence, so the screen and
+    the door say the same thing (D6, D7)."""
+    async with api as client:
+        ids, read = await _month_with_menu(client, db)
+        shapes = {
+            "{all}": PORTIONS,
+            "{two}": {BRANCH: "10", BRANCH_2: "10"},
+            "{blank}": {BRANCH: "10", BRANCH_2: "10", BRANCH_3: None},
+            "{negative}": {BRANCH: "10", BRANCH_2: "10", BRANCH_3: "-5"},
+        }
+        body = [
+            {
+                "menu_item_id": ids[item["menu_item_id"].strip("{}")],
+                "rate_per_portion": item["rate_per_portion"],
+                "targets": [
+                    {"branch_id": branch, "portion_target": target}
+                    for branch, target in shapes[item["targets"]].items()
+                ],
+            }
+            for item in items
+        ]
+        refused = await _save(client, _weeks(read)[0]["id"], body)
+    assert refused.status_code == 422, refused.text
+    assert fragment in refused.json()["detail"]
+    assert await db.pool.fetchval("select count(*) from push_items") == 0
+
+
+async def test_a_dish_unmapped_after_the_list_was_set_reads_as_a_named_hole(api, db):
+    """A mapping removed after the fact is never read as a team that sold
+    none (D7): the item stays on the list and says why it cannot be counted.
+    """
+    async with api as client:
+        ids, read = await _month_with_menu(client, db)
+        await _save(client, _weeks(read)[0]["id"], [_push(ids["karak"])])
+        await db.pool.execute("delete from till_items where menu_item_id = $1", ids["karak"])
+        after = (await client.get(f"/api/incentive?month={NEXT_MONTH}", headers=AUTH)).json()
+    item = _weeks(after)[0]["items"][0]
+    assert item["hole"] == "Karak Cup cannot be counted: no till name is mapped to it"
+    assert item["rate_per_portion"] == "0.25"
+
+
+async def test_another_tenants_week_is_not_this_tenants(api, db):
+    """A week outside the tenant is not found, never forbidden (M7): the API
+    does not confirm that another chain has a week at all."""
+    await _other_tenant(db)
+    await db.pool.execute(
+        "insert into role_shares (tenant_id, manager_pct, supervisor_pct, sales_pct) "
+        "values ($1, 10, 10, 80)",
+        TENANT_B,
+    )
+    scheme_month_id = await db.create_scheme_month(
+        tenant_id=TENANT_B,
+        month=datetime.date(2027, 5, 1),
+        shares={
+            "manager_pct": Decimal("10"),
+            "supervisor_pct": Decimal("10"),
+            "sales_pct": Decimal("80"),
+        },
+        targets=[],
+        weeks=[(datetime.date(2027, 5, 3), datetime.date(2027, 5, 9))],
+        actor="user:b",
+    )
+    theirs = (await db.list_push_weeks(scheme_month_id, tenant_id=TENANT_B))[0]["id"]
+    async with api as client:
+        ids, _ = await _month_with_menu(client, db)
+        refused = await _save(client, theirs, [_push(ids["karak"])])
+    assert refused.status_code == 404, refused.text
+    assert await db.pool.fetchval("select count(*) from push_items") == 0
+
+
+async def test_a_dish_from_another_tenants_menu_is_not_on_this_menu(api, db):
+    """The menu the list is checked against is this tenant's, so another
+    chain's dish is refused before the composite keys ever see it."""
+    await _other_tenant(db)
+    theirs = str(
+        await db.pool.fetchval(
+            "insert into menu_items (tenant_id, name, selling_price) values ($1, $2, $3) "
+            "returning id",
+            TENANT_B,
+            "Their Karak",
+            Decimal("10.00"),
+        )
+    )
+    async with api as client:
+        _, read = await _month_with_menu(client, db)
+        refused = await _save(client, _weeks(read)[0]["id"], [_push(theirs)])
+    assert refused.status_code == 422, refused.text
+    assert refused.json()["detail"] == "a dish was sent that is not on this menu"
+
+
+async def test_a_rate_that_is_not_a_number_is_refused_as_the_wires_own_complaint(api, db):
+    """ "That is not a number" is the wire's complaint, not a product rule -
+    the same place `menu.py` and `sales.py` word theirs."""
+    async with api as client:
+        ids, read = await _month_with_menu(client, db)
+        refused = await _save(client, _weeks(read)[0]["id"], [_push(ids["karak"], "half a dirham")])
+    assert refused.status_code == 422, refused.text
+    assert "is not a rate per portion" in refused.json()["detail"]

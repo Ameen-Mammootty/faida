@@ -1,4 +1,5 @@
-"""The owner's incentive screen, served (M13, plan.md §8 D18; issues #8, #9).
+"""The owner's incentive screen, served (M13, plan.md §8 D18; issues #8, #9,
+#10).
 
 One read serves the whole `/incentive` screen - `GET /api/incentive?month=` -
 the dashboard's rule (M9): every figure on the screen comes out of one
@@ -7,31 +8,41 @@ the pool and the statement are derived on every read by `incentive.py` and
 stored nowhere (C16); only what the owner typed and what the owner approved
 are rows.
 
-Two blocks are served so far and the read grows one per ticket. The role
+Three blocks are served so far and the read grows one per ticket. The role
 shares that split a pool between the manager, the supervisor and the sales
-team (D2, issue #8), and the scheme month: a calendar month with a net sales
+team (D2, issue #8); the scheme month: a calendar month with a net sales
 target, a percentage of net sales above it and an optional cap per branch,
 its push weeks laid out Monday to Sunday clipped to the month, and the shares
-snapshotted the day it was created (D3, D4, D5, issue #9). The push lists
-inside those weeks and each branch's statement land in the tickets after
-this one, out of this same request.
+snapshotted the day it was created (D3, D4, D5, issue #9); and each week's
+push list with the menu beside it to build the next one from (D6, D7, issue
+#10). Each branch's statement lands in the ticket after this one, out of this
+same request.
+
+What a plate keeps after ingredients - the figure beside every rate box, so
+a rate is chosen as a share of what the dish actually earns - comes from
+`menu._menu_context`, the one costing path in the product. The Menu screen
+and this one therefore print the same figure for the same dish by
+construction, and neither can drift from the other.
 
 Every refusal about what a figure *is* - a share that does not add to a
 hundred, a negative target, a percentage over a hundred, a branch with no
-target, a month already created - is the pure module's own sentence, so a
-refusal is worded once in the whole product. The two sentences worded here
-are the wire's own ("that is not a percentage", "that is not a month"), which
-is where `menu.py` and `sales.py` word theirs too.
+target, a month already created, a dish with no till name mapped to it, a
+week already under way - is the pure module's own sentence, so a refusal is
+worded once in the whole product. The two sentences worded here are the
+wire's own ("that is not a percentage", "that is not a month"), which is
+where `menu.py` and `sales.py` word theirs too.
 
 The reads, enumerated, because the dashboard's rule is that a screen's read
 is flat whatever the chain's size: the currency, the branches with their
 pauses, the tenant's scheme months for the picker, the previous month's sales
-days for the advice figure, and - only when a month exists for the month in
-view - that month, its branch targets and its push weeks. Seven queries at
-most, whatever the number of branches or weeks.
+days for the advice figure, the costed menu with its till mapping, and - only
+when a month exists for the month in view - that month, its branch targets,
+its push weeks and their lists. Sixteen queries at most, whatever the number
+of branches, weeks, dishes or push items.
 """
 
 import datetime
+import uuid
 import zoneinfo
 from decimal import Decimal
 from typing import Annotated
@@ -44,6 +55,7 @@ from . import incentive
 from .auth import AuthContext, require_context
 from .confirm import DEFAULT_TIMEZONE, _parse_number
 from .db import Database
+from .menu import _menu_context
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_context)])
 Context = Annotated[AuthContext, Depends(require_context)]
@@ -59,6 +71,17 @@ def _local_date(moment: datetime.datetime, timezone_name: str | None) -> datetim
         return moment.astimezone(zoneinfo.ZoneInfo(DEFAULT_TIMEZONE)).date()
 
 
+def _now() -> datetime.datetime:
+    """The one clock this screen reads.
+
+    A named seam rather than a call inlined below, because the freeze rule is
+    a rule about a *date*: the hour a week stops being re-aimable is a
+    boundary, and a boundary with no clock to set cannot be proven at the
+    boundary.
+    """
+    return datetime.datetime.now(datetime.UTC)
+
+
 def _today(branches: list[asyncpg.Record]) -> datetime.date:
     """The day the screen's freeze rule is measured against: the latest local
     date across the chain's branches.
@@ -67,9 +90,10 @@ def _today(branches: list[asyncpg.Record]) -> datetime.date:
     started *anywhere* in the chain has staff pushing its dishes, and the
     whole point of the freeze is that nobody finds the dish they pushed on
     Wednesday dropped on Thursday (D5). A chain in one timezone, which every
-    pilot branch is, sees no difference.
+    pilot branch is, sees no difference; a chain that straddles a date line
+    is held to the branch that got to Monday first.
     """
-    now = datetime.datetime.now(datetime.UTC)
+    now = _now()
     return max((_local_date(now, row["timezone"]) for row in branches), default=now.date())
 
 
@@ -159,12 +183,93 @@ def _branches_payload(
     ]
 
 
+class Menu:
+    """The whole menu as the push list is built and refused against, costed
+    once per request (D6, D7).
+
+    Three things come out of one costing: what each plate keeps after
+    ingredients (the figure beside the rate box, fils-precise, or nothing at
+    all when the dish is not costed), whether a till name maps to the dish,
+    and whether it is archived. The costing is `menu._menu_context`, the one
+    path in the product that prices a plate, so this screen's figure for a
+    dish is the Menu screen's own figure and can never be a second opinion.
+    """
+
+    def __init__(self, rows: list[asyncpg.Record], plates: dict, mapped: set[str]):
+        self.rows = rows
+        self.kept: dict[str, Decimal | None] = {
+            row["id"]: (None if row["id"] not in plates else plates[row["id"]].margin)
+            for row in rows
+        }
+        self.facts: dict[str, incentive.MenuFact] = {
+            row["id"]: incentive.MenuFact(
+                name=row["name"],
+                archived=row["archived_at"] is not None,
+                mapped=row["id"] in mapped,
+            )
+            for row in rows
+        }
+
+    def payload(self, currency: str) -> list[dict]:
+        """The picker: the live dishes grouped by the menu's own category,
+        `Other` last (D6). An archived dish is left out - it cannot be pushed,
+        so offering it would only be a refusal waiting to happen."""
+        return incentive.group_by_category(
+            [
+                incentive.menu_item_json(
+                    menu_item_id=row["id"],
+                    name=row["name"],
+                    category=row["category"],
+                    kept_per_plate=self.kept.get(row["id"]),
+                    mapped=self.facts[row["id"]].mapped,
+                    currency=currency,
+                )
+                for row in self.rows
+                if row["archived_at"] is None
+            ]
+        )
+
+
+async def _menu(db: Database, tenant_id: str) -> Menu:
+    rows, _, plates, _, _, _ = await _menu_context(db, tenant_id)
+    return Menu(rows, plates, await db.mapped_menu_item_ids(tenant_id=tenant_id))
+
+
 def _scheme_month(
-    row: asyncpg.Record, targets: list[asyncpg.Record], weeks: list[asyncpg.Record]
+    row: asyncpg.Record,
+    targets: list[asyncpg.Record],
+    weeks: list[asyncpg.Record],
+    items: list[asyncpg.Record],
+    item_targets: list[asyncpg.Record],
 ) -> incentive.SchemeMonth:
     """The rows as the pure module reads them. The weeks are read back from
     `push_weeks` rather than laid out again, so the screen shows the month the
-    database holds and a week always has the id a push list is set on."""
+    database holds and a week always has the id a push list is set on.
+
+    A push item's name, category, archived flag and till mapping are read
+    fresh with it and never stored on the row: a dish taken off the menu or
+    unmapped after its list was set becomes a named hole, which is what the
+    module turns into a sentence instead of a nought.
+    """
+    by_item: dict[str, dict[str, Decimal]] = {}
+    for target in item_targets:
+        by_item.setdefault(target["push_item_id"], {})[target["branch_id"]] = target[
+            "portion_target"
+        ]
+    by_week: dict[str, list[incentive.PushItem]] = {}
+    for item in items:
+        by_week.setdefault(item["push_week_id"], []).append(
+            incentive.PushItem(
+                push_item_id=item["id"],
+                menu_item_id=item["menu_item_id"],
+                name=item["name"],
+                category=item["category"],
+                rate_per_portion=item["rate_per_portion"],
+                archived=item["archived"],
+                mapped=item["mapped"],
+                targets=by_item.get(item["id"], {}),
+            )
+        )
     return incentive.SchemeMonth(
         scheme_month_id=row["id"],
         month=row["month"],
@@ -182,7 +287,7 @@ def _scheme_month(
             incentive.PushWeek(
                 push_week_id=week["id"],
                 window=incentive.Window(week["start_date"], week["end_date"]),
-                items=(),
+                items=tuple(by_week.get(week["id"], ())),
             )
             for week in weeks
         ),
@@ -200,6 +305,7 @@ async def _read(db: Database, tenant_id: str, month_key: str | None) -> dict:
     month = _month(month_key) if month_key is not None else incentive.month_start(today)
     months = await db.list_scheme_months(tenant_id=tenant_id)
     previous = await _previous_month_net_sales(db, tenant_id, month)
+    menu = await _menu(db, tenant_id)
 
     row = next((m for m in months if m["month"] == month), None)
     scheme_month = None
@@ -208,15 +314,16 @@ async def _read(db: Database, tenant_id: str, month_key: str | None) -> dict:
             row,
             await db.list_scheme_month_targets(row["id"], tenant_id=tenant_id),
             await db.list_push_weeks(row["id"], tenant_id=tenant_id),
+            await db.list_push_items(row["id"], tenant_id=tenant_id),
+            await db.list_push_item_targets(row["id"], tenant_id=tenant_id),
         )
         scheme_month = incentive.scheme_month_json(
             scheme,
             created_at=row["created_at"],
             today=today,
-            # The push lists and the statements fill in with the tickets that
-            # build them; the weeks are empty until then, so nothing here
-            # reads a menu item's kept figure or a branch's sales days.
-            kept={},
+            kept=menu.kept,
+            # The statements fill in with the ticket that builds them, so
+            # nothing here reads a branch's sales days for the month in view.
             statements=[],
             currency=currency,
         )
@@ -235,6 +342,7 @@ async def _read(db: Database, tenant_id: str, month_key: str | None) -> dict:
         ],
         "shares": _shares_payload(await db.get_role_shares(tenant_id=tenant_id)),
         "branches": _branches_payload(branches, previous, currency),
+        "menu": menu.payload(currency),
         "scheme_month": scheme_month,
     }
 
@@ -269,6 +377,32 @@ class SchemeMonthBody(BaseModel):
 
     month: str
     targets: list[BranchTargetBody] = []
+
+
+class PortionTargetBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    branch_id: str
+    # Optional for the same reason the month's targets are: an empty box is a
+    # sentence the pure module owns, naming the dish and the branch.
+    portion_target: str | None = None
+
+
+class PushItemBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    menu_item_id: str
+    rate_per_portion: str | None = None
+    targets: list[PortionTargetBody] = []
+
+
+class PushListBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    #: The whole week's list, every time: the write replaces what the week
+    #: held rather than merging into it, so what the owner sees on the screen
+    #: is what the week ends up with, with no third state in between.
+    items: list[PushItemBody] = []
 
 
 @router.get("/incentive")
@@ -376,3 +510,83 @@ async def create_scheme_month(body: SchemeMonthBody, request: Request, ctx: Cont
         # place that can decide, and the owner is told what it decided.
         raise HTTPException(status_code=422, detail=incentive.month_taken_sentence(month)) from None
     return await _read(db, ctx.tenant_id, incentive.month_key(month))
+
+
+@router.put("/incentive/weeks/{push_week_id}")
+async def set_push_list(
+    push_week_id: uuid.UUID, body: PushListBody, request: Request, ctx: Context
+) -> dict:
+    """The owner filled a push week's list: what the team is asked to push
+    that week, what a portion above target earns, and how many portions each
+    branch is held to (D6, D7).
+
+    The whole list arrives in one request and replaces the week's in one
+    transaction with one audit row, so a week is never half re-aimed. Three
+    things are refused before anything is written:
+
+    - a week already under way, in the pure module's own sentence naming it.
+      The day it is measured against is the chain's own latest local date, not
+      the server's, because staff push dishes on branch time (D5); and a week
+      that has *ended* is refused by the same rule, so a list is never
+      backdated onto a month the team has already been scored on.
+    - a dish with no till name mapped to it, or one archived off the menu,
+      named: either could only ever score zero, and a target that can only
+      score zero is a promise to the team that cannot be kept (D7).
+    - a rate or a branch target left blank, named: a missing target would be
+      scored as a target of zero and pay the team for every portion sold.
+
+    Returns the whole read for the week's month, so the screen renders what it
+    saved from one shape.
+    """
+    db: Database = request.app.state.db
+    week = await db.get_push_week(str(push_week_id), tenant_id=ctx.tenant_id)
+    if week is None:
+        raise HTTPException(status_code=404, detail="push week not found")
+
+    branches = await db.list_incentive_branches(tenant_id=ctx.tenant_id)
+    window = incentive.Window(week["start_date"], week["end_date"])
+    frozen = incentive.frozen_week_sentence(window, _today(branches))
+    if frozen is not None:
+        raise HTTPException(status_code=422, detail=frozen)
+
+    menu = await _menu(db, ctx.tenant_id)
+    typed = [
+        incentive.TypedPushItem(
+            menu_item_id=item.menu_item_id,
+            rate_per_portion=_typed(item.rate_per_portion, what="rate per portion", example="0.25"),
+            targets=[
+                incentive.TypedPortionTarget(
+                    branch_id=target.branch_id,
+                    portion_target=_typed(
+                        target.portion_target, what="portion target", example="250"
+                    ),
+                )
+                for target in item.targets
+            ],
+        )
+        for item in body.items
+    ]
+    problem = incentive.push_list_problem(
+        menu.facts, {row["id"]: row["name"] for row in branches}, typed
+    )
+    if problem is not None:
+        raise HTTPException(status_code=422, detail=problem)
+
+    await db.set_push_list(
+        str(push_week_id),
+        tenant_id=ctx.tenant_id,
+        items=[
+            {
+                "menu_item_id": item.menu_item_id,
+                "rate_per_portion": item.rate_per_portion,
+                "targets": [
+                    {"branch_id": target.branch_id, "portion_target": target.portion_target}
+                    for target in item.targets
+                ],
+            }
+            for item in typed
+        ],
+        actor=ctx.actor,
+    )
+    scheme = await db.get_scheme_month(week["scheme_month_id"], tenant_id=ctx.tenant_id)
+    return await _read(db, ctx.tenant_id, incentive.month_key(scheme["month"]))

@@ -307,6 +307,121 @@ def hole_sentence(name: str, *, archived: bool, mapped: bool) -> str | None:
     return None
 
 
+@dataclass(frozen=True)
+class MenuFact:
+    """The three things the push-list door needs to know about a menu item:
+    the name it is named by in a refusal, and whether it can be pushed at all
+    (D7). Read from the menu on every save, never stored on a push item - a
+    dish unmapped after a list was set becomes a hole on the next read, and a
+    hole is a named sentence rather than a zero the team did not earn."""
+
+    name: str
+    archived: bool
+    mapped: bool
+
+
+@dataclass(frozen=True)
+class TypedPortionTarget:
+    """What the owner typed into one branch's box for one push item, before
+    it is known to be a target: the box may be empty."""
+
+    branch_id: str
+    portion_target: Decimal | None
+
+
+@dataclass(frozen=True)
+class TypedPushItem:
+    """One row of a week's push list as the owner typed it. `PushItem` is the
+    same row once it is stored and scored on."""
+
+    menu_item_id: str
+    rate_per_portion: Decimal | None
+    targets: Sequence[TypedPortionTarget]
+
+
+def rate_problem(name: str, rate: Decimal | None) -> str | None:
+    """What is wrong with one push item's rate per portion, or None (D6).
+
+    Two decimals at most for `shares_problem`'s reason: a rate is stored to
+    the fil (`numeric(12,2)`), and a third decimal would be rounded away
+    somewhere below the door that should have said so in words.
+    """
+    if rate is None:
+        return f"{name} has no rate per portion: type what one portion above target earns"
+    if rate < 0:
+        return f"{name}: a rate per portion cannot be negative"
+    if rate.as_tuple().exponent < -2:
+        return f"{name}: a rate per portion is kept to the fil, two decimals at most, like 0.25"
+    return None
+
+
+def portion_target_problem(name: str, branch_name: str, target: Decimal | None) -> str | None:
+    """What is wrong with one branch's portion target for one push item, or
+    None (D6). Three decimals because that is what a portion is counted to
+    (`numeric(12,3)`), the till's own grain for a half portion."""
+    if target is None:
+        return f"{name} has no portion target for {branch_name}: every branch needs one"
+    if target < 0:
+        return f"{name}: a portion target cannot be negative"
+    if target.as_tuple().exponent < -3:
+        return f"{name}: a portion target is counted to three decimals at most, like 250"
+    return None
+
+
+def push_list_problem(
+    menu: Mapping[str, MenuFact],
+    branch_names: Mapping[str, str],
+    items: Sequence[TypedPushItem],
+) -> str | None:
+    """The refusal sentence for a whole week's push list, or None (D6, D7).
+
+    An empty list is not a refusal: a week the owner leaves off the scheme is
+    a decision, and the card still goes out with the month's net sales on it.
+    What is refused is a list that would pay the team on nothing - a dish no
+    till name maps to, or one archived off the menu, either of which could
+    only ever score zero - and a list with a hole in it: a rate left blank, or
+    a branch with no target, which `score_item` would otherwise read as a
+    target of zero and pay every portion sold against.
+
+    Each refusal names the dish, and a target names the branch whose box it
+    came from, so an owner looking at a grid of boxes is told which one.
+    """
+    seen: list[str] = []
+    for item in items:
+        fact = menu.get(item.menu_item_id)
+        if fact is None:
+            return "a dish was sent that is not on this menu"
+        if item.menu_item_id in seen:
+            return f"{fact.name} is on the list twice: one row per dish"
+        seen.append(item.menu_item_id)
+        problem = push_item_problem(fact.name, archived=fact.archived, mapped=fact.mapped)
+        if problem is not None:
+            return problem
+        problem = rate_problem(fact.name, item.rate_per_portion)
+        if problem is not None:
+            return problem
+        branches_seen: list[str] = []
+        for target in item.targets:
+            branch_name = branch_names.get(target.branch_id)
+            if branch_name is None:
+                return f"{fact.name} was given a target for a branch that is not in this chain"
+            if target.branch_id in branches_seen:
+                return f"{fact.name} was given two targets for {branch_name}; every branch gets one"
+            branches_seen.append(target.branch_id)
+            problem = portion_target_problem(fact.name, branch_name, target.portion_target)
+            if problem is not None:
+                return problem
+        missing = [
+            name for branch_id, name in branch_names.items() if branch_id not in branches_seen
+        ]
+        if missing:
+            return (
+                f"{fact.name} has no portion target for {_list_words(missing)}: "
+                "every branch of the chain needs one"
+            )
+    return None
+
+
 # --- the inputs, as the rows say them --------------------------------------------
 
 

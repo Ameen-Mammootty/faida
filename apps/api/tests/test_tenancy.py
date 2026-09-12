@@ -326,6 +326,22 @@ async def seed_tenant_a(db, fake_storage: FakeStorage) -> Rows:
             TENANT_A,
         )
     )
+    # A scheme month well in the future and one of its push weeks, for the
+    # push-list door (M13.4). Its month is not the one the matrix's create
+    # case uses, so the two do not collide over the one-month-per-tenant rule.
+    scheme_month_id = await db.create_scheme_month(
+        tenant_id=TENANT_A,
+        month=datetime.date(2027, 5, 1),
+        shares={
+            "manager_pct": Decimal("40"),
+            "supervisor_pct": Decimal("25"),
+            "sales_pct": Decimal("35"),
+        },
+        targets=[],
+        weeks=[(datetime.date(2027, 5, 3), datetime.date(2027, 5, 9))],
+        actor="console",
+    )
+    rows.ids["push_week"] = (await db.list_push_weeks(scheme_month_id, tenant_id=TENANT_A))[0]["id"]
     return rows
 
 
@@ -608,6 +624,14 @@ MATRIX: list[dict] = [
         },
         "expect": 201,
         "expect_b": 422,
+    },
+    # M13.4: the push list is the first incentive door with an id in its path,
+    # so tenant B is answered 404 - the API never confirms that A has a week.
+    {
+        "method": "PUT",
+        "path": "/api/incentive/weeks/{push_week_id}",
+        "url": lambda r: f"/api/incentive/weeks/{r['push_week']}",
+        "json": {"items": []},
     },
 ]
 

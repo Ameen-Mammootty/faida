@@ -2,15 +2,26 @@ import { describe, expect, it } from "vitest";
 
 import {
   MONTH_FROZEN_NOTE,
+  OFF_THE_MENU,
   SHARES_APPLIES_NOTE,
   canCreateMonth,
+  canSavePushList,
   canSaveShares,
   capWords,
   createStanding,
+  draftGroups,
+  guidanceWords,
+  menuIndex,
   monthOf,
   monthOptions,
   monthWords,
+  pickerGroups,
+  pickerLabel,
   plainPct,
+  pushDraft,
+  pushListBody,
+  pushRowFor,
+  pushStanding,
   schemeMonthBody,
   shareBody,
   shareDraft,
@@ -83,11 +94,15 @@ describe("the three boxes", () => {
 
 describe("the running total", () => {
   it("says the pool is whole when it is", () => {
-    expect(sumWords(draft("40", "25", "35"))).toBe("The three shares split the whole pool.");
+    expect(sumWords(draft("40", "25", "35"))).toBe(
+      "The three shares split the whole pool.",
+    );
   });
 
   it("says how much is left", () => {
-    expect(sumWords(draft("40", "25", "30"))).toBe("95% of the pool allocated, 5% left.");
+    expect(sumWords(draft("40", "25", "30"))).toBe(
+      "95% of the pool allocated, 5% left.",
+    );
   });
 
   it("says how much too much", () => {
@@ -99,7 +114,9 @@ describe("the running total", () => {
   it("adds fractional shares exactly, where floats would not", () => {
     // 10 + 58.01 + 31.99 is 99.99999999999999 as JavaScript numbers, which
     // read as a whole pool the owner could not save.
-    expect(sumWords(draft("10", "58.01", "31.99"))).toBe("The three shares split the whole pool.");
+    expect(sumWords(draft("10", "58.01", "31.99"))).toBe(
+      "The three shares split the whole pool.",
+    );
     expect(canSaveShares(draft("10", "58.01", "31.99"), SAVED)).toBe(true);
   });
 
@@ -113,11 +130,15 @@ describe("the running total", () => {
     expect(sumWords(draft("33.334", "33.333", "33.333"))).toBe(
       "Three percentages, adding to 100, split the pool.",
     );
-    expect(canSaveShares(draft("33.334", "33.333", "33.333"), SAVED)).toBe(false);
+    expect(canSaveShares(draft("33.334", "33.333", "33.333"), SAVED)).toBe(
+      false,
+    );
   });
 
   it("counts a fractional share to one decimal", () => {
-    expect(sumWords(draft("33.3", "33.3", "33.3"))).toBe("99.9% of the pool allocated, 0.1% left.");
+    expect(sumWords(draft("33.3", "33.3", "33.3"))).toBe(
+      "99.9% of the pool allocated, 0.1% left.",
+    );
   });
 
   it("asks for three percentages while a box is empty or half-typed", () => {
@@ -130,7 +151,11 @@ describe("the running total", () => {
   });
 
   it("never words a refusal - that sentence is the API's", () => {
-    for (const bad of [draft("40", "25", "30"), draft("-10", "60", "50"), draft("", "", "")]) {
+    for (const bad of [
+      draft("40", "25", "30"),
+      draft("-10", "60", "50"),
+      draft("", "", ""),
+    ]) {
       expect(sumWords(bad)).not.toContain("cannot");
       expect(sumWords(bad)).not.toContain("not 100%");
     }
@@ -173,7 +198,9 @@ describe("the block's words", () => {
   });
 
   it("asks for the shares first when there are none", () => {
-    expect(standing({ ...EMPTY, shares: null })).toContain("Set the three shares first");
+    expect(standing({ ...EMPTY, shares: null })).toContain(
+      "Set the three shares first",
+    );
   });
 
   it("points at the month to create once they are set", () => {
@@ -200,16 +227,27 @@ describe("the month picker", () => {
       "2026-10",
       "2026-09",
     ]);
-    expect(monthOptions(FULL).map((option) => option.created)).toEqual([false, false, true]);
+    expect(monthOptions(FULL).map((option) => option.created)).toEqual([
+      false,
+      false,
+      true,
+    ]);
   });
 
   it("keeps a month already created, however old", () => {
-    const old = { ...EMPTY, months: [{ id: "sm-1", month: "2025-03", words: "March 2025" }] };
-    expect(monthOptions(old).map((option) => option.month)).toContain("2025-03");
+    const old = {
+      ...EMPTY,
+      months: [{ id: "sm-1", month: "2025-03", words: "March 2025" }],
+    };
+    expect(monthOptions(old).map((option) => option.month)).toContain(
+      "2025-03",
+    );
   });
 
   it("keeps the month in view even when it is neither", () => {
-    expect(monthOptions({ ...EMPTY, month: "2027-04" }).map((o) => o.month)).toContain("2027-04");
+    expect(
+      monthOptions({ ...EMPTY, month: "2027-04" }).map((o) => o.month),
+    ).toContain("2027-04");
   });
 
   it("names a month the way the API names it", () => {
@@ -222,13 +260,19 @@ describe("the month picker", () => {
 describe("the create form", () => {
   it("opens with empty boxes, so last month is advice and never the baseline", () => {
     const drafts = targetDrafts(EMPTY.branches);
-    expect(Object.keys(drafts)).toEqual(EMPTY.branches.map((branch) => branch.id));
+    expect(Object.keys(drafts)).toEqual(
+      EMPTY.branches.map((branch) => branch.id),
+    );
     expect(Object.values(drafts)).toEqual(
       EMPTY.branches.map(() => ({ net: "", pct: "", cap: "" })),
     );
     // The advice is there to read, beside the box it never fills.
-    expect(EMPTY.branches[0].previous_month_words).toBe("AED 58,210 last month");
-    expect(EMPTY.branches[2].previous_month_words).toBe("no sales loaded last month");
+    expect(EMPTY.branches[0].previous_month_words).toBe(
+      "AED 58,210 last month",
+    );
+    expect(EMPTY.branches[2].previous_month_words).toBe(
+      "no sales loaded last month",
+    );
   });
 
   it("offers Create only once every branch has a target and a percentage", () => {
@@ -237,12 +281,18 @@ describe("the create form", () => {
     expect(canCreateMonth(drafts, branches)).toBe(false);
 
     const filled = Object.fromEntries(
-      branches.map((branch) => [branch.id, { net: "50000", pct: "10", cap: "" }]),
+      branches.map((branch) => [
+        branch.id,
+        { net: "50000", pct: "10", cap: "" },
+      ]),
     );
     expect(canCreateMonth(filled, branches)).toBe(true);
 
     // One branch left out is not a month.
-    const partial = { ...filled, [branches[1].id]: { net: "", pct: "10", cap: "" } };
+    const partial = {
+      ...filled,
+      [branches[1].id]: { net: "", pct: "10", cap: "" },
+    };
     expect(canCreateMonth(partial, branches)).toBe(false);
   });
 
@@ -264,14 +314,24 @@ describe("the create form", () => {
     expect(schemeMonthBody("2026-09", drafts, branches)).toEqual({
       month: "2026-09",
       targets: [
-        { branch_id: branches[0].id, net_sales_target: "60000", above_target_pct: "10", cap: null },
+        {
+          branch_id: branches[0].id,
+          net_sales_target: "60000",
+          above_target_pct: "10",
+          cap: null,
+        },
         {
           branch_id: branches[1].id,
           net_sales_target: "40000",
           above_target_pct: "10",
           cap: "1500",
         },
-        { branch_id: branches[2].id, net_sales_target: "30000", above_target_pct: "8", cap: null },
+        {
+          branch_id: branches[2].id,
+          net_sales_target: "30000",
+          above_target_pct: "8",
+          cap: null,
+        },
       ],
     });
   });
@@ -282,9 +342,14 @@ describe("the create form", () => {
       "for every branch",
     );
     const filled = Object.fromEntries(
-      branches.map((branch) => [branch.id, { net: "50000", pct: "10", cap: "" }]),
+      branches.map((branch) => [
+        branch.id,
+        { net: "50000", pct: "10", cap: "" },
+      ]),
     );
-    expect(createStanding(filled, branches)).toContain("frozen when you create it");
+    expect(createStanding(filled, branches)).toContain(
+      "frozen when you create it",
+    );
   });
 
   it("says so when the chain has no branches at all", () => {
@@ -322,7 +387,9 @@ describe("the weeks as tabs", () => {
     expect(tabs[0].frozen).toBe(true);
     expect(tabs[0].note).toBe("The week of 1-6 Sep has ended and is frozen.");
     expect(tabs[2].frozen).toBe(true);
-    expect(tabs[2].note).toBe("The week of 14-20 Sep has started and is frozen.");
+    expect(tabs[2].note).toBe(
+      "The week of 14-20 Sep has started and is frozen.",
+    );
     expect(tabs[3].frozen).toBe(false);
     expect(tabs[3].note).toBe("No push list yet.");
   });
@@ -344,20 +411,33 @@ describe("the weeks as tabs", () => {
       CREATED.scheme_month!.weeks.map((week) => ({
         ...week,
         frozen: week.start <= today,
-        frozen_words: week.start <= today ? `the week of ${week.words} is frozen` : null,
+        frozen_words:
+          week.start <= today ? `the week of ${week.words} is frozen` : null,
       })),
       today,
     );
 
   it("opens on the first week still to come when none is running", () => {
     const early = readOn("2026-08-30");
-    expect(early.map((tab) => tab.state)).toEqual(["coming", "coming", "coming", "coming", "coming"]);
+    expect(early.map((tab) => tab.state)).toEqual([
+      "coming",
+      "coming",
+      "coming",
+      "coming",
+      "coming",
+    ]);
     expect(weekInView(early)).toBe(early[0].id);
   });
 
   it("opens on the last week of a month that has ended", () => {
     const over = readOn("2026-10-05");
-    expect(over.map((tab) => tab.state)).toEqual(["ended", "ended", "ended", "ended", "ended"]);
+    expect(over.map((tab) => tab.state)).toEqual([
+      "ended",
+      "ended",
+      "ended",
+      "ended",
+      "ended",
+    ]);
     expect(weekInView(over)).toBe(over[4].id);
     expect(weekInView([])).toBeNull();
   });
@@ -380,11 +460,235 @@ describe("the month once it exists", () => {
   });
 
   it("carries the shares it was created with", () => {
-    expect(scheme.shares).toEqual(CREATED.shares && {
-      manager_pct: CREATED.shares.manager_pct,
-      supervisor_pct: CREATED.shares.supervisor_pct,
-      sales_pct: CREATED.shares.sales_pct,
-    });
+    expect(scheme.shares).toEqual(
+      CREATED.shares && {
+        manager_pct: CREATED.shares.manager_pct,
+        supervisor_pct: CREATED.shares.supervisor_pct,
+        sales_pct: CREATED.shares.sales_pct,
+      },
+    );
     expect(MONTH_FROZEN_NOTE).toContain("frozen");
   });
 });
+
+describe("the week's push list", () => {
+  const scheme = FULL.scheme_month!;
+  const index = menuIndex(FULL.menu);
+  const tabs = weekTabs(scheme.weeks, FULL.today);
+  // 21-27 Sep: the week still to come with two dishes on it, so a draft read
+  // off it is a filled list that can still be edited.
+  const coming = scheme.weeks[3];
+  const comingTab = tabs[3];
+  const emptyTab = tabs[4];
+
+  it("reads a stored list back into the boxes the way a person would have typed it", () => {
+    const rows = pushDraft(coming, FULL.branches);
+    expect(rows.map((row) => index[row.menu_item_id].item.name)).toEqual([
+      "Karak Tea (Flask 1 L)",
+      "Veg Biryani",
+    ]);
+    const flask = rows[0];
+    expect(flask.rate).toBe("1.5");
+    expect(flask.targets[FULL.branches[0].id]).toBe("240");
+    expect(flask.targets[FULL.branches[2].id]).toBe("60");
+    expect(pushDraft(null, FULL.branches)).toEqual([]);
+  });
+
+  it("saving a stored list back unchanged sends what the week already holds", () => {
+    const body = pushListBody(pushDraft(coming, FULL.branches), FULL.branches);
+    expect(body.items).toHaveLength(2);
+    expect(body.items[0].rate_per_portion).toBe("1.5");
+    expect(body.items[0].targets.map((target) => target.branch_id)).toEqual(
+      FULL.branches.map((branch) => branch.id),
+    );
+  });
+
+  it("groups the list the menu's own way, in the menu's own order", () => {
+    const groups = draftGroups(
+      pushDraft(coming, FULL.branches),
+      index,
+      FULL.menu,
+    );
+    expect(groups.map((group) => group.category)).toEqual(
+      coming.categories.map((category) => category.category),
+    );
+    expect(groups.map((group) => group.items.length)).toEqual(
+      coming.categories.map((category) => category.items.length),
+    );
+  });
+
+  it("puts a dish that has left the menu last, under a heading no menu has", () => {
+    const rows = [
+      ...pushDraft(coming, FULL.branches),
+      pushRowFor("menu-gone", FULL.branches),
+    ];
+    const groups = draftGroups(rows, index, FULL.menu);
+    expect(groups[groups.length - 1].category).toBe(OFF_THE_MENU);
+    expect(FULL.menu.map((group) => group.category)).not.toContain(
+      OFF_THE_MENU,
+    );
+  });
+
+  it("counts a category's dishes, and adds the API's guidance outside one to three", () => {
+    const guidance = FULL.menu[0].guidance;
+    expect(guidanceWords(1, guidance)).toBe("1 dish");
+    expect(guidanceWords(3, guidance)).toBe("3 dishes");
+    expect(guidanceWords(4, guidance)).toBe(`4 dishes - ${guidance}`);
+    expect(guidanceWords(0, guidance)).toBe(`0 dishes - ${guidance}`);
+    expect(guidance).toBe("one to three per category, as a guide");
+  });
+
+  it("offers every live dish the list does not already hold, with its own words", () => {
+    const rows = pushDraft(coming, FULL.branches);
+    const offered = pickerGroups(FULL.menu, rows).flatMap(
+      (group) => group.items,
+    );
+    const taken = new Set(rows.map((row) => row.menu_item_id));
+    expect(offered.some((item) => taken.has(item.id))).toBe(false);
+    const karak = FULL.menu
+      .flatMap((group) => group.items)
+      .find((item) => item.name === "Karak Tea (Cup)")!;
+    expect(pickerLabel(karak)).toBe(
+      "Karak Tea (Cup) - keeps AED 3.95 per plate",
+    );
+    const cake = FULL.menu
+      .flatMap((group) => group.items)
+      .find((item) => item.name === "Honey Cake")!;
+    expect(cake.mapped).toBe(false);
+    expect(pickerLabel(cake)).toBe("Honey Cake - no till name mapped");
+  });
+
+  it("offers Save only for a week still open with every rate and every branch typed", () => {
+    const rows = pushDraft(coming, FULL.branches);
+    expect(canSavePushList(rows, FULL.branches, index, comingTab)).toBe(true);
+    // A week under way is shown and never saved, however finished the form.
+    expect(canSavePushList(rows, FULL.branches, index, tabs[2])).toBe(false);
+    expect(canSavePushList(rows, FULL.branches, index, null)).toBe(false);
+    // An empty week is a decision, and saving it is how the owner makes it.
+    expect(canSavePushList([], FULL.branches, index, emptyTab)).toBe(true);
+  });
+
+  it("will not save a row with a rate or a branch's portions still empty", () => {
+    const [first, ...rest] = pushDraft(coming, FULL.branches);
+    expect(
+      canSavePushList(
+        [{ ...first, rate: "" }, ...rest],
+        FULL.branches,
+        index,
+        comingTab,
+      ),
+    ).toBe(false);
+    const blank = {
+      ...first,
+      targets: { ...first.targets, [FULL.branches[2].id]: "" },
+    };
+    expect(
+      canSavePushList([blank, ...rest], FULL.branches, index, comingTab),
+    ).toBe(false);
+    expect(canSavePushList(rest, [], index, comingTab)).toBe(false);
+  });
+
+  it("will not save a dish that can only ever score zero", () => {
+    const cake = FULL.menu
+      .flatMap((group) => group.items)
+      .find((item) => !item.mapped)!;
+    const rows = [
+      ...pushDraft(coming, FULL.branches),
+      {
+        ...pushRowFor(cake.id, FULL.branches),
+        rate: "1",
+        targets: filled(FULL, "10"),
+      },
+    ];
+    expect(canSavePushList(rows, FULL.branches, index, comingTab)).toBe(false);
+    expect(pushStanding(rows, FULL.branches, index, comingTab)).toContain(
+      "no till name mapped to it any more",
+    );
+  });
+
+  it("says what the week still needs, and what saving it commits to", () => {
+    expect(pushStanding([], FULL.branches, index, emptyTab)).toContain(
+      "Nothing on this week yet",
+    );
+    const [first, ...rest] = pushDraft(coming, FULL.branches);
+    expect(
+      pushStanding(
+        [{ ...first, rate: "" }, ...rest],
+        FULL.branches,
+        index,
+        comingTab,
+      ),
+    ).toBe("Type a rate per portion and a portion target for every branch.");
+    expect(
+      pushStanding(
+        pushDraft(coming, FULL.branches),
+        FULL.branches,
+        index,
+        comingTab,
+      ),
+    ).toContain("every portion above the branch's target");
+    expect(pushStanding([], FULL.branches, index, null)).toBe("");
+  });
+
+  it("a week under way says the API's own frozen sentence and nothing else", () => {
+    expect(
+      pushStanding(
+        pushDraft(scheme.weeks[2], FULL.branches),
+        FULL.branches,
+        index,
+        tabs[2],
+      ),
+    ).toBe(tabs[2].note);
+    expect(tabs[2].note).toBe(
+      "The week of 14-20 Sep has started and is frozen.",
+    );
+  });
+
+  it("a new row starts empty, with a box for every branch", () => {
+    const row = pushRowFor("menu-4", FULL.branches);
+    expect(row.rate).toBe("");
+    expect(Object.keys(row.targets)).toEqual(
+      FULL.branches.map((branch) => branch.id),
+    );
+    expect(Object.values(row.targets)).toEqual(["", "", ""]);
+  });
+
+  it("the menu index files an uncategorised dish where the API filed it", () => {
+    const cake = FULL.menu
+      .flatMap((group) => group.items)
+      .find((item) => !item.mapped)!;
+    expect(cake.category).toBeNull();
+    expect(index[cake.id].category).toBe("Other");
+    expect(index["no-such-dish"]).toBeUndefined();
+  });
+
+  it("sends the strings as typed, trimmed", () => {
+    const body = pushListBody(
+      [
+        {
+          menu_item_id: "menu-4",
+          rate: " 1.50 ",
+          targets: filled(FULL, " 40 "),
+        },
+      ],
+      FULL.branches,
+    );
+    expect(body).toEqual({
+      items: [
+        {
+          menu_item_id: "menu-4",
+          rate_per_portion: "1.50",
+          targets: FULL.branches.map((branch) => ({
+            branch_id: branch.id,
+            portion_target: "40",
+          })),
+        },
+      ],
+    });
+  });
+});
+
+/** A portion target typed into every branch's box. */
+function filled(read: IncentiveRead, value: string): Record<string, string> {
+  return Object.fromEntries(read.branches.map((branch) => [branch.id, value]));
+}
