@@ -1193,6 +1193,7 @@ The founder, 2026-09-12: "Currently, what faida is doing is giving visibility in
 The quote enters the plan under §2 rule 8 as the founder's own pilot observation, cited as such; the pilot owner's words are added to the Decision Log row when they come.
 The design was grilled to an empty frontier in one sitting (`/grill-with-docs`, 2026-09-12) and is recorded in `CONTEXT.md` (the vocabulary: scheme month, push week, push list, push item, target, pool, role share, bonus, statement, scoreboard) and `Docs/adr/0001` (the bonus is scored on portions and net sales, never on contribution).
 Nothing here is built; the decomposition (`Docs/M13_DECOMPOSITION.md`, work packages from WP-130, the contracts in §7.2) is the next session, reviewed by Codex against the file path before Wave 0, in a worktree lane like M10.
+The executable spec is GitHub issue #6 (`ready-for-agent`, 2026-09-12): the problem, fifty-four user stories, the rows, the doors, the read, the arithmetic, the scoreboard job, the four test seams; the issue is a ticket the decomposition reads, never a second plan.
 
 **The shape, as decided (D1 to D18):**
 - D1 - Built now as M13, ahead of M12 phase two, which is itself held behind the pilot owner acting on the printout (D22 of M12).
