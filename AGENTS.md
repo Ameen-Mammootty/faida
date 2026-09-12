@@ -149,3 +149,18 @@ the rounding rule applies to totals and aggregates.
 No jargon; colour never carries meaning alone.
 Purchases ÷ net sales is never labelled "food cost %", and branch contribution is never labelled net profit.
 The morning brief speaks the same way (M10): the materials figure is "materials share of costed sales" with the covered share beside it, the newest loaded day is named and aged in the first line, and "yesterday" is printed only on a morning when it is true.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in this repo's GitHub Issues, driven by the `gh` CLI. See `Docs/agents/issue-tracker.md`.
+`plan.md` stays the sequencing truth: an issue is a ticket the skills read and write, never a second plan.
+
+### Triage labels
+
+The five canonical labels, each string equal to its name. See `Docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` and `Docs/adr/` at the repo root, created lazily. See `Docs/agents/domain.md`.
