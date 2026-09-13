@@ -951,3 +951,44 @@ export function loadedThrough(statement: IncentiveStatement): string {
 
 export const STATEMENT_CAPTION =
   "What each branch has earned so far, read from its loaded days every time this screen opens.";
+
+// --- the per-branch pause (D18, issue #14) -----------------------------------
+
+export const PAUSE_LABEL = "Pause the morning card";
+export const RESUME_LABEL = "Send the morning card again";
+
+/** What the control says about a branch's scoreboard, and which way the
+ * switch faces. The card goes out at seven in the branch's own timezone,
+ * so the running sentence names that timezone; the paused one names the
+ * day the owner stopped it. The final card of an approved month is not
+ * stopped by the pause, and the sentence says so only when there is
+ * something for it to say - the API refuses nothing here, so the screen
+ * words nothing but the state. */
+export function pauseControl(branch: IncentiveBranch): {
+  paused: boolean;
+  words: string;
+  label: string;
+} {
+  if (branch.paused_at === null) {
+    return {
+      paused: false,
+      words: `Morning card at 07:00, ${branch.timezone}.`,
+      label: PAUSE_LABEL,
+    };
+  }
+  return {
+    paused: true,
+    words: `Morning card paused since ${formatDate(branch.paused_at)}.`,
+    label: RESUME_LABEL,
+  };
+}
+
+/** The branch a statement is about, for the control drawn on its card. */
+export function branchOf(
+  read: IncentiveRead,
+  statement: IncentiveStatement,
+): IncentiveBranch | null {
+  return (
+    read.branches.find((branch) => branch.id === statement.branch_id) ?? null
+  );
+}

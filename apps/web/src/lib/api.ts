@@ -74,6 +74,7 @@ import {
   mockApproveStatement,
   mockCreateSchemeMonth,
   mockGetIncentive,
+  mockSetBranchPause,
   mockSetPushList,
   mockSetRoleShares,
 } from "./mock/incentive";
@@ -732,6 +733,24 @@ export async function setPushList(
   return request<IncentiveRead>(
     `/api/incentive/weeks/${encodeURIComponent(weekId)}`,
     jsonInit("PUT", body),
+  );
+}
+
+/** The per-branch pause (D18): stop one branch's morning card, or start it
+ * again. Each is its own door with its own audit row; a branch already in
+ * the asked-for state is left as it is. Returns the month's whole read, the
+ * branch's pause on it. */
+export async function setBranchPause(
+  branchId: string,
+  paused: boolean,
+  month?: string,
+): Promise<IncentiveRead> {
+  if (MOCK) return mockSetBranchPause(branchId, paused, month);
+  const query =
+    month === undefined ? "" : `?month=${encodeURIComponent(month)}`;
+  return request<IncentiveRead>(
+    `/api/incentive/branches/${encodeURIComponent(branchId)}/${paused ? "pause" : "resume"}${query}`,
+    { method: "POST" },
   );
 }
 

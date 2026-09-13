@@ -28,8 +28,8 @@ from collections.abc import Sequence
 
 import httpx
 
-from . import brief, brief_card, dashboard, incentive_api, scoreboard
-from .confirm import handle_inbound_text
+from . import brief, brief_card, dashboard, incentive_api, scoreboard, scoreboard_card
+from .confirm import DEFAULT_TIMEZONE, handle_inbound_text
 from .contracts import (
     MEDIA_TYPES,
     WA_STATUS_IGNORED_BRIEF_RECIPIENT,
@@ -73,6 +73,13 @@ BRIEF_SEND_UNTIL_LOCAL = datetime.time(12, 0)
 #: is the difference between a cheap habit and a pointless one; a brief is due
 #: at a minute's resolution and nothing about a morning needs better.
 BRIEF_TICK_SECONDS = 60
+
+#: The scoreboard's own hour (M13 D13): 07:00 in the branch's own timezone,
+#: the same for every branch because the branch row carries no hour of its
+#: own - a manager's morning is a morning. The send-until hour is the brief's
+#: (`BRIEF_SEND_UNTIL_LOCAL`), shared by decision (issue #6's settings
+#: paragraph): a scoreboard at noon is as stale as a brief at noon.
+SCOREBOARD_SEND_AT_LOCAL = datetime.time(7, 0)
 
 #: How many price moves the spikes' read lists. The brief prints the three
 #: biggest *rises*, and the panel's list holds both directions ranked by the
@@ -549,10 +556,247 @@ async def tick_briefs(
     return enqueued
 
 
+async def send_scoreboard_card(
+    wa: WhatsAppClient,
+    storage: Storage,
+    card: scoreboard.Scoreboard,
+    *,
+    phone: str,
+    card_path: str,
+) -> str:
+    """The scoreboard through the shared door (M13, issue #14): drawn from the
+    same `Scoreboard` its two slots came from, stored, uploaded and sent by
+    `send_card`, so the picture and the text can never quote two days. The
+    morning's job and the founder's rehearsal both come through here."""
+    return await send_card(
+        wa,
+        storage,
+        scoreboard_card.render_card(card),
+        phone=phone,
+        card_path=card_path,
+        template=scoreboard.TEMPLATE_NAME,
+        language=scoreboard.TEMPLATE_LANGUAGE,
+        parameters=card.parameters,
+    )
+
+
+def _local_today(zone_name: str | None) -> datetime.date:
+    """The branch's own date now, for a card sent on a day the payload does
+    not name (the final card, whose `day` is the month). An unusable timezone
+    falls back to the product's default, as the screen's own `_local_date`
+    does, because the final card is about a closed month and a day either
+    side changes only the age on its first line."""
+    try:
+        zone = zoneinfo.ZoneInfo(zone_name or DEFAULT_TIMEZONE)
+    except (zoneinfo.ZoneInfoNotFoundError, ValueError):
+        zone = zoneinfo.ZoneInfo(DEFAULT_TIMEZONE)
+    return datetime.datetime.now(datetime.UTC).astimezone(zone).date()
+
+
+async def send_scoreboard(
+    db: Database, wa: WhatsAppClient, storage: Storage, payload: dict
+) -> None:
+    """One branch, one day, one card (M13 D13, D15; issue #14, and #15 for the
+    final variant).
+
+    The brief's job, branch for branch: the tenant comes from the payload and
+    the branch row is read scoped by it, so a job can never carry one chain's
+    figures to another chain's phone (C2); a branch that is not the tenant's,
+    or has no registered phone to send to, fails the job rather than
+    guessing. Everything is composed before anything is sent. Two guards stand
+    between a job and a duplicate card: the unique index the tick enqueues
+    through, and the outbound row this checks for, which is what makes a
+    payload run twice by hand harmless.
+
+    `variant` is `daily` or `final`. The daily card is for the day the tick
+    named, which is also the `today` the statement is aged against; a branch
+    paused between the tick and the send gets nothing and one log line, and a
+    month that went final in between - a daily card is not composed on a
+    closed month - is a skip and not a failure, because there is nothing to
+    send and retrying would not change that. The final card's `day` is the
+    scheme month's first day (its key against the index), the statement is
+    read for that month and aged against the branch's own date now, and a
+    paused branch still receives it: the month is closed and the money is
+    named (issue #15).
+
+    The picture goes through `send_scoreboard_card`: stored at
+    `scoreboard.card_path` first, uploaded, then sent as the header, so the
+    evidence of a morning exists before the message does and a retry that
+    meets its own stored card carries on (D15). The record write after the
+    send has the brief's one honest limit (C15.3): a record that raises after
+    Meta accepted the message costs a second card, never a lost one."""
+    tenant_id = job_tenant_id(JobKind.SEND_SCOREBOARD, payload)
+    branch_id = str(payload["branch_id"])
+    day = datetime.date.fromisoformat(str(payload["day"]))
+    variant = str(payload.get("variant") or scoreboard.DAILY)
+    if variant not in scoreboard.VARIANTS:
+        raise JobRefused(f"send_scoreboard job names variant {variant!r}: not one of the two")
+    branch = await db.get_incentive_branch(branch_id, tenant_id=tenant_id)
+    if branch is None:
+        raise JobRefused(
+            f"send_scoreboard job names branch {branch_id}, which is not tenant "
+            f"{tenant_id}'s (C2): the job fails rather than guessing a phone"
+        )
+    if variant == scoreboard.DAILY and branch["paused_at"] is not None:
+        # Paused between the tick and the send: the row is the per-branch
+        # switch, and it is read last, not first.
+        logger.info("scoreboard skipped: branch %s is paused", branch_id)
+        return
+    phone = branch["wa_phone_e164"]
+    if not phone:
+        raise JobRefused(
+            f"send_scoreboard job names branch {branch_id}, which has no registered "
+            "WhatsApp phone: nowhere to send the card"
+        )
+
+    if variant == scoreboard.DAILY:
+        today, month = day, None
+    else:
+        today, month = _local_today(branch["timezone"]), day
+    try:
+        card = await read_scoreboard(
+            db, tenant_id, branch_id, today=today, variant=variant, month=month
+        )
+    except ValueError as exc:
+        if variant != scoreboard.DAILY:
+            raise
+        # A daily card on a month that went final since the tick, or on a day
+        # no push week holds: nothing to send, and a retry would find the same.
+        logger.info("scoreboard skipped for branch %s on %s: %s", branch_id, day, exc)
+        return
+    if card is None:
+        logger.info(
+            "scoreboard skipped: branch %s of tenant %s has no statement for %s",
+            branch_id,
+            tenant_id,
+            day,
+        )
+        return
+    key = {"branch_id": branch_id, "day": day.isoformat(), "variant": variant}
+    if await db.outbound_scoreboard_exists(**key):
+        logger.info("scoreboard already sent to branch %s for %s (%s)", branch_id, day, variant)
+        return
+
+    card_path = scoreboard.card_path(tenant_id, day, branch_id, variant=variant)
+    message_id = await send_scoreboard_card(wa, storage, card, phone=phone, card_path=card_path)
+    await db.record_outbound_template(
+        message_id,
+        phone,
+        template=scoreboard.TEMPLATE_NAME,
+        language=scoreboard.TEMPLATE_LANGUAGE,
+        parameters=list(card.parameters),
+        tenant_id=tenant_id,
+        key=key,
+        rehearsal=False,
+        card_path=card_path,
+    )
+    logger.info(
+        "scoreboard (%s) sent to branch %s for %s as %s", variant, branch_id, day, message_id
+    )
+
+
+def _say_once(spoken: set | None, key: tuple, message: str, *args) -> None:
+    """One log line per key for as long as the process lives, and every time
+    when no set is kept (a test, or a caller that wants the noise)."""
+    if spoken is not None and key in spoken:
+        return
+    logger.info(message, *args)
+    if spoken is not None:
+        spoken.add(key)
+
+
+async def tick_scoreboards(
+    db: Database, now_utc: datetime.datetime, *, spoken: set | None = None
+) -> int:
+    """Look at the calendar once and enqueue the scoreboards whose morning has
+    come (M13 D13; issue #14). Returns how many jobs were enqueued.
+
+    `tick_briefs` for branches: every branch of every tenant carries its own
+    timezone, so its local date and time are computed here with `zoneinfo`,
+    and a chain across two timezones has two mornings. A branch is woken only
+    when a scheme month of its tenant covers its local date - the whole
+    month list is one read and the join is a dictionary, so the tick costs
+    two small queries a minute whatever the number of chains - and the job is
+    enqueued against 0023's unique index, which is what makes the tick
+    idempotent whether it runs once, twice or from two instances at once.
+
+    Nothing and one log line, once per branch per day, for a branch past the
+    shared cutoff (tomorrow's is next; never sent late), with no scheme month
+    for the month, paused (D18), or with no registered phone. A timezone
+    name that does not resolve is logged and skipped so one typo cannot
+    silence every other branch. The final card is never enqueued here: the
+    approval door enqueues it (issue #15).
+
+    `now_utc` is passed in rather than read here, so a test can put the clock
+    where it needs it; a naive value is taken as UTC."""
+    if now_utc.tzinfo is None:
+        now_utc = now_utc.replace(tzinfo=datetime.UTC)
+    months = {
+        (row["tenant_id"], row["month"]): row["id"] for row in await db.list_all_scheme_months()
+    }
+    enqueued = 0
+    for row in await db.list_scoreboard_branches():
+        name = row["timezone"]
+        try:
+            zone = zoneinfo.ZoneInfo(name)
+        except (zoneinfo.ZoneInfoNotFoundError, ValueError):
+            logger.warning("branch %s has an unusable timezone %r; skipped", row["id"], name)
+            continue
+        local = now_utc.astimezone(zone)
+        if local.time() < SCOREBOARD_SEND_AT_LOCAL:
+            continue
+        day = local.date()
+        key = ("scoreboard", row["id"], day)
+        if local.time() >= BRIEF_SEND_UNTIL_LOCAL:
+            _say_once(
+                spoken,
+                key,
+                "scoreboard skipped: %s local is past %s for branch %s; tomorrow's is next",
+                local.strftime("%H:%M"),
+                BRIEF_SEND_UNTIL_LOCAL.strftime("%H:%M"),
+                row["id"],
+            )
+            continue
+        scheme_month_id = months.get((row["tenant_id"], day.replace(day=1)))
+        if scheme_month_id is None:
+            _say_once(
+                spoken,
+                key,
+                "scoreboard skipped: branch %s has no scheme month for %s",
+                row["id"],
+                day,
+            )
+            continue
+        if row["paused_at"] is not None:
+            _say_once(spoken, key, "scoreboard skipped: branch %s is paused", row["id"])
+            continue
+        if not row["wa_phone_e164"]:
+            _say_once(
+                spoken, key, "scoreboard skipped: branch %s has no registered phone", row["id"]
+            )
+            continue
+        job_id = await db.enqueue_scoreboard_once(
+            {
+                "tenant_id": row["tenant_id"],
+                "branch_id": row["id"],
+                "day": day.isoformat(),
+                "variant": scoreboard.DAILY,
+                "scheme_month_id": scheme_month_id,
+            }
+        )
+        if job_id is not None:
+            enqueued += 1
+            logger.info(
+                "scoreboard queued for branch %s on %s (job %s)", row["id"], day.isoformat(), job_id
+            )
+    return enqueued
+
+
 HANDLERS = {
     JobKind.PROCESS_WA_MESSAGE: process_wa_message,
     JobKind.EXTRACT_DOCUMENT: extract_document,
     JobKind.SEND_BRIEF: send_brief,
+    JobKind.SEND_SCOREBOARD: send_scoreboard,
 }
 
 
@@ -591,6 +835,7 @@ async def worker_loop(
     poll_seconds: float,
     *,
     brief_enabled: bool = True,
+    incentive_enabled: bool = True,
 ) -> None:
     """The queue, and from M10 the calendar beside it.
 
@@ -603,7 +848,10 @@ async def worker_loop(
 
     `brief_enabled` is the kill switch (`BRIEF_ENABLED`, config.py). Its
     default is True so that every caller that predates it keeps working; the
-    empty recipient table is the safe state either way."""
+    empty recipient table is the safe state either way. `incentive_enabled`
+    (`INCENTIVE_ENABLED`, M13 D18) is the scoreboard's, on the same minute:
+    off, the scoreboard tick never runs and no branch's morning card is
+    enqueued; a tenant with no scheme month is the safe state either way."""
     logger.info("worker loop started")
     #: One log line per (recipient, local day) for a morning already past its
     #: cutoff, instead of one a minute for five hours. One small tuple per
@@ -611,14 +859,21 @@ async def worker_loop(
     spoken: set = set()
     last_tick: float | None = None
     while not stop.is_set():
-        if brief_enabled and (
+        if (brief_enabled or incentive_enabled) and (
             last_tick is None or time.monotonic() - last_tick >= BRIEF_TICK_SECONDS
         ):
             last_tick = time.monotonic()
-            try:
-                await tick_briefs(db, datetime.datetime.now(datetime.UTC), spoken=spoken)
-            except Exception:
-                logger.exception("brief tick failed; the queue carries on")
+            now = datetime.datetime.now(datetime.UTC)
+            if brief_enabled:
+                try:
+                    await tick_briefs(db, now, spoken=spoken)
+                except Exception:
+                    logger.exception("brief tick failed; the queue carries on")
+            if incentive_enabled:
+                try:
+                    await tick_scoreboards(db, now, spoken=spoken)
+                except Exception:
+                    logger.exception("scoreboard tick failed; the queue carries on")
         try:
             worked = await run_one_job(db, wa, storage, provider)
         except Exception:

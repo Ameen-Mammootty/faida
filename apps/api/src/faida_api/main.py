@@ -58,6 +58,7 @@ async def lifespan(app: FastAPI):
                 stop,
                 settings.worker_poll_seconds,
                 brief_enabled=settings.brief_enabled,
+                incentive_enabled=settings.incentive_enabled,
             )
         )
 

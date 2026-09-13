@@ -49,6 +49,11 @@ class Settings(BaseSettings):
     # on Railway, and no morning leaves. A paused recipient row is the same
     # switch for one phone.
     brief_enabled: bool = True
+    # The scoreboard's kill switch beside it (M13 D18, issue #14): one
+    # variable stops every branch's morning card without touching a row. The
+    # per-branch pause (`incentive_branches.paused_at`, the owner's own
+    # control on /incentive) is the same switch for one branch.
+    incentive_enabled: bool = True
 
 
 @lru_cache

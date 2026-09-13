@@ -814,3 +814,48 @@ async def approve_statement(
             ),
         ) from None
     return await _read(db, ctx.tenant_id, incentive.month_key(scheme.month))
+
+
+# --- the per-branch pause (D18, issue #14) ------------------------------------------
+
+
+async def _set_branch_pause(
+    request: Request, ctx: AuthContext, branch_id: uuid.UUID, month: str | None, *, paused: bool
+) -> dict:
+    """The one body of the two pause doors. A branch that is not this
+    tenant's is not found; a branch already in the asked-for state is left
+    as it is with no second audit row, because the control is a switch and
+    a double click is not two decisions. Returns the month's whole read, so
+    the screen redraws the control from the same shape it reads."""
+    db: Database = request.app.state.db
+    branch = await db.get_incentive_branch(str(branch_id), tenant_id=ctx.tenant_id)
+    if branch is None:
+        raise HTTPException(status_code=404, detail="branch not found")
+    if paused:
+        await db.pause_incentive_branch(str(branch_id), tenant_id=ctx.tenant_id, actor=ctx.actor)
+    else:
+        await db.resume_incentive_branch(str(branch_id), tenant_id=ctx.tenant_id, actor=ctx.actor)
+    return await _read(db, ctx.tenant_id, month)
+
+
+@router.post("/incentive/branches/{branch_id}/pause")
+async def pause_branch(
+    branch_id: uuid.UUID, request: Request, ctx: Context, month: str | None = None
+) -> dict:
+    """Stop this one branch's morning card (D18): `paused_at` on the branch's
+    incentive row and the audit row `incentive.branch_paused` in the same
+    transaction (C8). The tick then enqueues nothing for the branch, and a job
+    already queued finds the pause and sends nothing. The final card of an
+    approved month is not stopped by it: the month is closed and the money
+    named (issue #15)."""
+    return await _set_branch_pause(request, ctx, branch_id, month, paused=True)
+
+
+@router.post("/incentive/branches/{branch_id}/resume")
+async def resume_branch(
+    branch_id: uuid.UUID, request: Request, ctx: Context, month: str | None = None
+) -> dict:
+    """The way back: `paused_at` cleared and `incentive.branch_resumed`
+    written. The next morning's card is the next 07:00's, never a late one
+    for today."""
+    return await _set_branch_pause(request, ctx, branch_id, month, paused=False)

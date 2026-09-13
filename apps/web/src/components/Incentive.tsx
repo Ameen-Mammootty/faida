@@ -5,6 +5,7 @@ import {
   approveStatement,
   createSchemeMonth,
   getIncentive,
+  setBranchPause,
   setPushList,
   setRoleShares,
 } from "@/lib/api";
@@ -24,6 +25,7 @@ import {
   STATEMENT_CAPTION,
   WEEKS_CAPTION,
   approvalWords,
+  branchOf,
   canApprove,
   canSubmitApproval,
   canCreateMonth,
@@ -37,6 +39,7 @@ import {
   menuIndex,
   monthOptions,
   pickerGroups,
+  pauseControl,
   pickerLabel,
   pushDraft,
   pushListBody,
@@ -114,6 +117,9 @@ export default function Incentive() {
   // the moment the statement it was for is final.
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [approving, setApproving] = useState<string | null>(null);
+  // The branch whose pause is on its way (D18): one switch at a time, so a
+  // double click is one decision.
+  const [pausing, setPausing] = useState<string | null>(null);
   // Try again is a bump of this, so the one effect below is the only place
   // that reads - the shipped Dashboard's pattern, and what keeps the
   // cancelled guard on every read rather than on the first one.
@@ -311,6 +317,32 @@ export default function Incentive() {
       });
     } finally {
       setApproving(null);
+    }
+  }
+
+  async function togglePause(
+    branchId: string,
+    branchName: string,
+    paused: boolean,
+  ) {
+    setPausing(branchId);
+    setFeedback(null);
+    try {
+      const result = await setBranchPause(branchId, paused, month ?? undefined);
+      landed(result);
+      setFeedback({
+        kind: "done",
+        text: paused
+          ? `${branchName}'s morning card is paused.`
+          : `${branchName}'s morning card goes out again tomorrow.`,
+      });
+    } catch (error) {
+      setFeedback({
+        kind: "error",
+        text: error instanceof Error ? error.message : "That did not work.",
+      });
+    } finally {
+      setPausing(null);
     }
   }
 
@@ -836,6 +868,8 @@ export default function Incentive() {
                   const split = statementSplit(statement);
                   const approved = approvalWords(statement);
                   const reason = reasons[statement.branch_id] ?? "";
+                  const branch = branchOf(read, statement);
+                  const pause = branch === null ? null : pauseControl(branch);
                   return (
                     <section
                       key={statement.branch_id}
@@ -855,6 +889,33 @@ export default function Incentive() {
                       </div>
                       {approved === null ? null : (
                         <p className="text-xs text-stone">{approved}</p>
+                      )}
+
+                      {/* --- the pause (D18) -------------------------------
+                          The branch's morning card, and the one switch that
+                          stops it. Drawn on the statement because the card is
+                          the statement, on a phone. */}
+                      {pause === null ? null : (
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                          <p className="text-xs text-stone">{pause.words}</p>
+                          <button
+                            type="button"
+                            disabled={pausing !== null}
+                            aria-label={`${statement.branch_name}: ${pause.label}`}
+                            onClick={() =>
+                              togglePause(
+                                statement.branch_id,
+                                statement.branch_name,
+                                !pause.paused,
+                              )
+                            }
+                            className="min-h-9 rounded-sm border border-ink/20 bg-paper px-3 py-1 text-xs font-medium text-ink disabled:opacity-60"
+                          >
+                            {pausing === statement.branch_id
+                              ? "One moment"
+                              : pause.label}
+                          </button>
+                        </div>
                       )}
 
                       {/* The figures wrap rather than sit in a table: four

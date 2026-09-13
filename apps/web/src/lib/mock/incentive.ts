@@ -1,8 +1,9 @@
 /**
  * The staff incentive screen, offline (M13.2 to M13.6, issues #8 to #12,
  * against `GET /api/incentive?month=`, `PUT /api/incentive/shares`,
- * `POST /api/incentive/months`, `PUT /api/incentive/weeks/{id}` and
- * `POST /api/incentive/months/{id}/branches/{id}/approve`).
+ * `POST /api/incentive/months`, `PUT /api/incentive/weeks/{id}`,
+ * `POST /api/incentive/months/{id}/branches/{id}/approve` and
+ * `POST /api/incentive/branches/{id}/pause` or `/resume`).
  *
  * Every figure here is written out, never computed - the `mock/dashboard.ts`
  * rule. The literals in `./incentive/*.json` are produced by running the
@@ -121,6 +122,10 @@ const LISTS: Partial<Record<Scenario, Record<string, PushItem[]>>> = {};
 const APPROVED: Partial<Record<Scenario, Record<string, StatementApproval>>> =
   {};
 
+/** What the pause doors have moved this session: the pause, by branch id,
+ * per scenario - an ISO time for paused, null for running. */
+const PAUSED: Partial<Record<Scenario, Record<string, string | null>>> = {};
+
 /** The one word a final statement carries, as the module wrote it on the
  * `final` fixture's untouched branch - never typed here. */
 const FINAL_WORDS = (
@@ -153,9 +158,15 @@ function payloadFor(scenario: Scenario, month?: string): IncentiveResult {
     withLists(CREATED[scenario] ?? payload.scheme_month, payload, scenario),
     scenario,
   );
+  const paused = PAUSED[scenario] ?? {};
   const read: IncentiveResult = {
     ...payload,
     shares: saved ?? payload.shares,
+    branches: payload.branches.map((branch) =>
+      branch.id in paused
+        ? { ...branch, paused_at: paused[branch.id] ?? null }
+        : branch,
+    ),
     scheme_month: schemeMonth,
     months:
       CREATED[scenario] === undefined
@@ -418,4 +429,34 @@ export async function mockApproveStatement(
     },
   };
   return payloadFor(scenario, scheme.month);
+}
+
+export async function mockSetBranchPause(
+  branchId: string,
+  paused: boolean,
+  month?: string,
+): Promise<IncentiveRead> {
+  await new Promise((resolve) => setTimeout(resolve, LATENCY_MS));
+  const scenario = scenarioFromLocation();
+  if (scenario === "error") {
+    throw new ApiError(
+      503,
+      "The scoreboard could not be paused. Try again in a minute.",
+    );
+  }
+  const read = payloadFor(scenario);
+  const branch = read.branches.find((row) => row.id === branchId);
+  if (branch === undefined) throw new ApiError(404, "branch not found");
+  // A branch already in the asked-for state stays as it is: the door is a
+  // switch, and a second click is not a second decision.
+  const already = paused
+    ? branch.paused_at !== null
+    : branch.paused_at === null;
+  if (!already) {
+    PAUSED[scenario] = {
+      ...(PAUSED[scenario] ?? {}),
+      [branchId]: paused ? new Date().toISOString() : null,
+    };
+  }
+  return payloadFor(scenario, month);
 }

@@ -5,6 +5,7 @@ import {
   OFF_THE_MENU,
   SHARES_APPLIES_NOTE,
   approvalWords,
+  branchOf,
   canApprove,
   canSubmitApproval,
   canCreateMonth,
@@ -20,6 +21,7 @@ import {
   monthOptions,
   monthWords,
   pickerGroups,
+  pauseControl,
   pickerLabel,
   plainPct,
   pushDraft,
@@ -871,5 +873,31 @@ describe("approving a statement", () => {
     expect(statementFigures(finalQuoz).every((row) => row.now === null)).toBe(
       true,
     );
+  });
+});
+
+describe("the per-branch pause", () => {
+  const quoz = FULL.branches[0];
+  const deira = FULL.branches[2];
+
+  it("names the morning's hour and timezone on a running branch, and the day on a paused one", () => {
+    expect(quoz.paused_at).toBeNull();
+    expect(pauseControl(quoz)).toEqual({
+      paused: false,
+      words: "Morning card at 07:00, Asia/Dubai.",
+      label: "Pause the morning card",
+    });
+    expect(deira.paused_at).toBe("2026-09-11T06:02:00+00:00");
+    expect(pauseControl(deira)).toEqual({
+      paused: true,
+      words: "Morning card paused since 11 Sep 2026.",
+      label: "Send the morning card again",
+    });
+  });
+
+  it("finds the branch a statement is about, and none for a branch the read has lost", () => {
+    const statement = FULL.scheme_month!.statements[0];
+    expect(branchOf(FULL, statement)?.id).toBe(statement.branch_id);
+    expect(branchOf(FULL, { ...statement, branch_id: "br-99" })).toBeNull();
   });
 });

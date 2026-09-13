@@ -655,6 +655,18 @@ MATRIX: list[dict] = [
         "json": {"reason": "paid"},
         "expect": 422,
     },
+    # M13.8: the pause doors name the branch, so tenant B is answered 404 and
+    # A's branch is paused and resumed, one audit row each.
+    {
+        "method": "POST",
+        "path": "/api/incentive/branches/{branch_id}/pause",
+        "url": lambda r: f"/api/incentive/branches/{r['branch']}/pause",
+    },
+    {
+        "method": "POST",
+        "path": "/api/incentive/branches/{branch_id}/resume",
+        "url": lambda r: f"/api/incentive/branches/{r['branch']}/resume",
+    },
 ]
 
 

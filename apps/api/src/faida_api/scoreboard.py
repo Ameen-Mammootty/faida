@@ -52,6 +52,14 @@ DAILY = "daily"
 FINAL = "final"
 VARIANTS = (DAILY, FINAL)
 
+#: The Meta template the card is sent as (D15): a picture header and two
+#: text slots, one template for the daily card and the final one. The name
+#: is the founder's own submission (issue #16); until Meta approves it a
+#: send fails with Meta's 132001 and the job says so, which is the honest
+#: state (the brief's `TEMPLATE_NAME` is the precedent).
+TEMPLATE_NAME = "faida_scoreboard"
+TEMPLATE_LANGUAGE = "en"
+
 #: The template's two text slots (D15): the headline and the freshness line.
 PARAMETER_COUNT = 2
 PARAMETER_MAX_CHARS = 160
