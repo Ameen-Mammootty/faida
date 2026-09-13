@@ -17,7 +17,7 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
-from faida_api import incentive_api
+from faida_api import incentive, incentive_api
 from faida_api.incentive_api import router as incentive_router
 from faida_api.menu import router as menu_router
 from faida_api.sales import router as sales_router
@@ -26,7 +26,7 @@ from faida_api.storage import Storage
 from .conftest import AUTH, DEMO_TENANT_ID, TEST_ACTOR, FakeStorage, requires_db, wire_auth
 from .test_plates import _CountingPool, _karak, _menu_item
 from .test_sales_api import BRANCH, BRANCH_2, BRANCH_3, _branches
-from .test_sales_load import TENANT_B, _audit, _item_day, _line, _other_tenant
+from .test_sales_load import BRANCH_B, TENANT_B, _audit, _item_day, _line, _other_tenant
 
 pytestmark = requires_db
 
@@ -1181,3 +1181,212 @@ async def test_another_tenants_days_are_never_this_tenants_portions(api, db):
     quoz = _statement(read, BRANCH)
     assert quoz["figures"]["net_sales"] == "1142.00"
     assert quoz["status_words"] == "provisional, 3 of 31 days loaded"
+
+
+# --- the approval (M13.6, issue #12) ----------------------------------------------
+#
+# The only door to a final statement (D11, D12). What is proven here is the
+# door itself: it refuses a month with a day missing, a blank reason and a
+# second approval in the module's own words; it writes the approval and the
+# audit row together or not at all; and a day re-uploaded afterwards is
+# accepted by the sales-day door as before, with the approved figures standing
+# and the note beside them. The wording of the refusals and the arithmetic of
+# "the till now says otherwise" are proven over the pure module in
+# `test_incentive.py`.
+
+
+def _approve_url(read: dict, branch_id: str = BRANCH) -> str:
+    return f"/api/incentive/months/{read['scheme_month']['id']}/branches/{branch_id}/approve"
+
+
+async def _approve(client, read: dict, reason: str | None = "July paid on 2 August", **kw):
+    body = {} if reason is None else {"reason": reason}
+    return await client.post(_approve_url(read, **kw), json=body, headers=AUTH)
+
+
+async def _rest_of_july(client) -> None:
+    """The twenty-eight July days Al Quoz has not loaded yet, so the month is
+    complete for that branch and that branch alone."""
+    loaded = {date for date, _ in QUOZ_DAYS}
+    await _load(
+        client,
+        [
+            _day(f"2026-07-{day:02d}", [("KARAK", "100.00", "20")])
+            for day in range(1, 32)
+            if f"2026-07-{day:02d}" not in loaded
+        ],
+    )
+
+
+async def test_approving_a_complete_month_writes_the_approval_and_the_audit_row_together(api, db):
+    """The owner approved Al Quoz's July: the read now says final, the
+    approval names the actor and the reason, the split by role is on the
+    statement, and the audit row carries the figures as approved."""
+    async with api as client:
+        await _july_with_sales(client, db)
+        await _rest_of_july(client)
+        before = await _july(client)
+        assert _statement(before, BRANCH)["status_words"] == "provisional, 31 of 31 days loaded"
+
+        response = await _approve(client, before)
+        assert response.status_code == 200, response.text
+        read = response.json()
+
+    quoz = _statement(read, BRANCH)
+    assert quoz["status"] == "final"
+    assert quoz["status_words"] == "final"
+    assert quoz["approval"]["actor"] == TEST_ACTOR
+    assert quoz["approval"]["reason"] == "July paid on 2 August"
+    assert quoz["till_now_says_otherwise"] is False
+    assert quoz["recomputed"] is None
+    assert quoz["figures"] == _statement(before, BRANCH)["figures"]
+    split = quoz["figures"]["split"]
+    assert split["shares"] == {
+        "manager_pct": "40.00",
+        "supervisor_pct": "25.00",
+        "sales_pct": "35.00",
+    }
+    assert Decimal(split["manager"]) + Decimal(split["supervisor"]) + Decimal(
+        split["sales"]
+    ) == Decimal(quoz["figures"]["pool"])
+    # The other two branches are untouched: Karama is still one day in.
+    assert _statement(read, BRANCH_2)["status"] == "provisional"
+
+    rows = await _audit(db, "incentive.statement_approved")
+    assert len(rows) == 1
+    assert rows[0]["actor"] == TEST_ACTOR
+    assert rows[0]["subject_id"] == read["scheme_month"]["id"]
+    assert rows[0]["detail"]["branch_id"] == BRANCH
+    assert rows[0]["detail"]["reason"] == "July paid on 2 August"
+    assert rows[0]["detail"]["figures"] == quoz["figures"]
+    stored = await db.pool.fetch("select branch_id::text as branch_id from statement_approvals")
+    assert [row["branch_id"] for row in stored] == [BRANCH]
+
+
+async def test_a_failed_audit_row_leaves_no_approval(api, db, monkeypatch):
+    """One transaction: an approval with no note of who approved it is the
+    state the audit table exists to make unreachable."""
+    from faida_api import db as db_module
+
+    async def refuse(*args, **kwargs):
+        raise RuntimeError("audit table unavailable")
+
+    async with api as client:
+        await _july_with_sales(client, db)
+        await _rest_of_july(client)
+        read = await _july(client)
+        monkeypatch.setattr(db_module, "_insert_audit_event", refuse)
+        with pytest.raises(RuntimeError):
+            await _approve(client, read)
+        monkeypatch.undo()
+        after = await _july(client)
+
+    assert await db.pool.fetchval("select count(*) from statement_approvals") == 0
+    assert _statement(after, BRANCH)["status"] == "provisional"
+
+
+async def test_a_provisional_month_is_refused_with_the_day_count(api, db):
+    async with api as client:
+        await _july_with_sales(client, db)
+        read = await _july(client)
+        response = await _approve(client, read)
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"] == (
+        "the month is provisional, 3 of 31 days loaded: load every day before approving"
+    )
+    assert await db.pool.fetchval("select count(*) from statement_approvals") == 0
+    assert await _audit(db, "incentive.statement_approved") == []
+
+
+async def test_a_blank_reason_and_a_missing_one_are_both_refused(api, db):
+    async with api as client:
+        await _july_with_sales(client, db)
+        await _rest_of_july(client)
+        read = await _july(client)
+        blank = await _approve(client, read, reason="   ")
+        missing = await _approve(client, read, reason=None)
+    assert blank.status_code == 422, blank.text
+    assert blank.json()["detail"] == incentive.REASON_REQUIRED
+    assert missing.status_code == 422, missing.text
+    assert await db.pool.fetchval("select count(*) from statement_approvals") == 0
+
+
+async def test_a_second_approval_is_refused_naming_the_first(api, db):
+    async with api as client:
+        await _july_with_sales(client, db)
+        await _rest_of_july(client)
+        read = await _july(client)
+        first = await _approve(client, read)
+        assert first.status_code == 200, first.text
+        second = await _approve(client, read, reason="again, by mistake")
+    assert second.status_code == 422, second.text
+    assert second.json()["detail"] == (
+        f"this statement is already final: approved by {TEST_ACTOR} on "
+        f"{datetime.date.today().isoformat()}"
+    )
+    assert await db.pool.fetchval("select count(*) from statement_approvals") == 1
+    assert len(await _audit(db, "incentive.statement_approved")) == 1
+
+
+async def test_a_day_re_uploaded_after_approval_is_accepted_and_the_statement_says_so(api, db):
+    """D12: the till's truth outranks the bonus paid on it. The sales-day door
+    replaces the day exactly as before; the statement keeps the figures as
+    approved, says the till now says otherwise, and puts the recomputed
+    figures beside them."""
+    async with api as client:
+        await _july_with_sales(client, db)
+        await _rest_of_july(client)
+        read = await _july(client)
+        approved = (await _approve(client, read)).json()
+        paid = _statement(approved, BRANCH)["figures"]
+
+        # The 7th re-uploaded: 9 mandi, not 14 - under the target of 10 now.
+        result = await _load(client, [_day("2026-07-07", [("MANDI", "252.00", "9")])])
+        assert [day["outcome"] for day in result["days"]] == ["replaced"]
+        after = await _july(client)
+
+    quoz = _statement(after, BRANCH)
+    assert quoz["status"] == "final"
+    assert quoz["status_words"] == "final; the till now says otherwise"
+    assert quoz["till_now_says_otherwise"] is True
+    assert quoz["figures"] == paid
+    assert quoz["recomputed"]["net_sales"] == str(Decimal(paid["net_sales"]) - Decimal("140.00"))
+    assert quoz["recomputed"]["weeks"][1]["items"][0]["portions"] == "9.000"
+    assert Decimal(quoz["recomputed"]["pool"]) < Decimal(paid["pool"])
+    assert quoz["notes"][-1].startswith("the till now says otherwise")
+
+
+async def test_another_tenant_cannot_approve_the_month(api, db):
+    """A month that is not this tenant's is not found, never forbidden (M7),
+    and a branch of another chain is no statement of this month."""
+    await _other_tenant(db)
+    await db.pool.execute(
+        "insert into role_shares (tenant_id, manager_pct, supervisor_pct, sales_pct) "
+        "values ($1, 10, 10, 80)",
+        TENANT_B,
+    )
+    theirs = await db.create_scheme_month(
+        tenant_id=TENANT_B,
+        month=datetime.date(2027, 5, 1),
+        shares={
+            "manager_pct": Decimal("10"),
+            "supervisor_pct": Decimal("10"),
+            "sales_pct": Decimal("80"),
+        },
+        targets=[],
+        weeks=[(datetime.date(2027, 5, 3), datetime.date(2027, 5, 9))],
+        actor="user:b",
+    )
+    async with api as client:
+        await _july_with_sales(client, db)
+        await _rest_of_july(client)
+        read = await _july(client)
+        their_month = await client.post(
+            f"/api/incentive/months/{theirs}/branches/{BRANCH_B}/approve",
+            json={"reason": "x"},
+            headers=AUTH,
+        )
+        their_branch = await _approve(client, read, branch_id=BRANCH_B)
+    assert their_month.status_code == 404, their_month.text
+    assert their_branch.status_code == 404, their_branch.text
+    assert await db.pool.fetchval("select count(*) from statement_approvals") == 0

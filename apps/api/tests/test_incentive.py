@@ -534,6 +534,29 @@ def test_a_day_replaced_after_approval_keeps_the_approved_figures_and_says_the_t
     assert any(note.startswith("the till now says otherwise") for note in later.notes)
 
 
+def test_the_approval_door_refuses_in_the_modules_own_words_strongest_fact_first():
+    """The three refusals, worded once (D10, D11): a statement already final
+    stays final whatever else is typed; a month with a day missing is refused
+    with the count; a blank reason is refused. A complete month with a reason
+    passes."""
+    scheme = _scheme({})
+    partial = _statement(scheme, days=_loaded(A, range(1, 27)))
+    assert incentive.approval_problem(partial, "paid") == (
+        "the month is provisional, 26 of 30 days loaded: load every day before approving"
+    )
+    complete = _statement(scheme, days=_loaded(A, range(1, 31)))
+    assert incentive.approval_problem(complete, "   ") == incentive.REASON_REQUIRED
+    assert incentive.approval_problem(complete, "September paid on 2 October") is None
+    final = _statement(scheme, days=_loaded(A, range(1, 31)), approval=_approval(complete.figures))
+    assert incentive.approval_problem(final, "again") == (
+        "this statement is already final: approved by user:owner on 2026-10-02"
+    )
+    # A final statement is final even when the till now says otherwise.
+    later = _statement(scheme, days=_loaded(A, range(1, 27)), approval=_approval(complete.figures))
+    assert later.till_now_says_otherwise is True
+    assert incentive.approval_problem(later, "again").startswith("this statement is already final")
+
+
 # --- the wire ---------------------------------------------------------------------
 
 
@@ -751,6 +774,9 @@ def test_no_composed_sentence_says_profit_commission_verified_or_food_cost():
         incentive.shares_problem(Decimal("1"), Decimal("1"), Decimal("1")),
         incentive.targets_problem(Decimal("-1"), Decimal("1"), None),
         incentive.approvable(empty.figures),
+        incentive.approval_problem(empty, ""),
+        incentive.REASON_REQUIRED,
+        incentive.already_final_sentence(_approval(empty.figures)),
         incentive.kept_words(Decimal("1"), "AED"),
         incentive.previous_month_words(None, "AED"),
         incentive.PUSH_GUIDANCE_WORDS,

@@ -327,8 +327,10 @@ async def seed_tenant_a(db, fake_storage: FakeStorage) -> Rows:
         )
     )
     # A scheme month well in the future and one of its push weeks, for the
-    # push-list door (M13.4). Its month is not the one the matrix's create
-    # case uses, so the two do not collide over the one-month-per-tenant rule.
+    # push-list door (M13.4), with a target for A's branch so the approval
+    # door (M13.6) finds a statement to refuse. Its month is not the one the
+    # matrix's create case uses, so the two do not collide over the
+    # one-month-per-tenant rule.
     scheme_month_id = await db.create_scheme_month(
         tenant_id=TENANT_A,
         month=datetime.date(2027, 5, 1),
@@ -337,10 +339,18 @@ async def seed_tenant_a(db, fake_storage: FakeStorage) -> Rows:
             "supervisor_pct": Decimal("25"),
             "sales_pct": Decimal("35"),
         },
-        targets=[],
+        targets=[
+            {
+                "branch_id": BRANCH_A,
+                "net_sales_target": Decimal("50000"),
+                "above_target_pct": Decimal("10"),
+                "cap": None,
+            }
+        ],
         weeks=[(datetime.date(2027, 5, 3), datetime.date(2027, 5, 9))],
         actor="console",
     )
+    rows.ids["scheme_month"] = scheme_month_id
     rows.ids["push_week"] = (await db.list_push_weeks(scheme_month_id, tenant_id=TENANT_A))[0]["id"]
     return rows
 
@@ -632,6 +642,18 @@ MATRIX: list[dict] = [
         "path": "/api/incentive/weeks/{push_week_id}",
         "url": lambda r: f"/api/incentive/weeks/{r['push_week']}",
         "json": {"items": []},
+    },
+    # M13.6: the approval door names the month and the branch, so tenant B is
+    # answered 404; tenant A is refused in words because no day of the month
+    # is loaded, and the refusal carries no id.
+    {
+        "method": "POST",
+        "path": "/api/incentive/months/{scheme_month_id}/branches/{branch_id}/approve",
+        "url": lambda r: (
+            f"/api/incentive/months/{r['scheme_month']}/branches/{r['branch']}/approve"
+        ),
+        "json": {"reason": "paid"},
+        "expect": 422,
     },
 ]
 

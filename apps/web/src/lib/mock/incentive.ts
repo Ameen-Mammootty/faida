@@ -1,7 +1,8 @@
 /**
- * The staff incentive screen, offline (M13.2 to M13.5, issues #8 to #11,
+ * The staff incentive screen, offline (M13.2 to M13.6, issues #8 to #12,
  * against `GET /api/incentive?month=`, `PUT /api/incentive/shares`,
- * `POST /api/incentive/months` and `PUT /api/incentive/weeks/{id}`).
+ * `POST /api/incentive/months`, `PUT /api/incentive/weeks/{id}` and
+ * `POST /api/incentive/months/{id}/branches/{id}/approve`).
  *
  * Every figure here is written out, never computed - the `mock/dashboard.ts`
  * rule. The literals in `./incentive/*.json` are produced by running the
@@ -25,8 +26,8 @@
  *   noshares  nothing is set at all - the screen's first run
  *   error     the read fails
  *
- * The three doors move the scenario's own rows in module memory, so a save, a
- * create or a filled week holds across screens for the length of the session
+ * The four doors move the scenario's own rows in module memory, so a save, a
+ * create, a filled week or an approval holds across screens for the length of the session
  * and resets on reload - what a demo without the backend needs. None refuses
  * anything a product rule would refuse: the screen offers Save and Create only
  * for a form that is finished, and every refusal sentence lives in the Python
@@ -37,6 +38,11 @@
  * statement under it as the fixture wrote it. The real read derives both out
  * of one request and cannot disagree with itself (C16); offline, the list is
  * the thing being designed and the statement beside it is a still.
+ *
+ * The approval door moves a statement from provisional to final the way the
+ * API's does - the approval row laid on it, the figures untouched, because an
+ * approval snapshots what the read showed - with the one word "final" copied
+ * off the `final` fixture rather than typed here.
  *
  * The create and push-list doors are the two places this file substitutes
  * anything into a fixture: the targets, rates and portion targets the owner
@@ -57,9 +63,11 @@ import noshares from "./incentive/noshares.json";
 import { ApiError } from "../errors";
 import { groupLikeMenu, monthWords } from "../incentiveScreen";
 import type {
+  ApprovalInput,
   IncentiveMenuItem,
   IncentiveRead,
   IncentiveResult,
+  IncentiveStatement,
   PushItem,
   PushListInput,
   PushWeek,
@@ -67,6 +75,7 @@ import type {
   RoleSharesRow,
   SchemeMonth,
   SchemeMonthInput,
+  StatementApproval,
 } from "../types";
 
 export const SCENARIOS = [
@@ -107,6 +116,19 @@ const CREATED: Partial<Record<Scenario, SchemeMonth>> = {};
  * id, per scenario. */
 const LISTS: Partial<Record<Scenario, Record<string, PushItem[]>>> = {};
 
+/** What the approval door has moved this session: the approval, by branch
+ * id, per scenario. */
+const APPROVED: Partial<Record<Scenario, Record<string, StatementApproval>>> =
+  {};
+
+/** The one word a final statement carries, as the module wrote it on the
+ * `final` fixture's untouched branch - never typed here. */
+const FINAL_WORDS = (
+  final as unknown as IncentiveResult
+).scheme_month!.statements.find(
+  (statement) => !statement.till_now_says_otherwise,
+)!.status_words;
+
 function isScenario(value: string | null): value is Scenario {
   return value !== null && (SCENARIOS as readonly string[]).includes(value);
 }
@@ -127,9 +149,8 @@ function payloadFor(scenario: Scenario, month?: string): IncentiveResult {
   }
   const payload = DATA[scenario];
   const saved = SAVED[scenario];
-  const schemeMonth = withLists(
-    CREATED[scenario] ?? payload.scheme_month,
-    payload,
+  const schemeMonth = withApprovals(
+    withLists(CREATED[scenario] ?? payload.scheme_month, payload, scenario),
     scenario,
   );
   const read: IncentiveResult = {
@@ -246,6 +267,37 @@ function withLists(
   };
 }
 
+/** The month with whatever the approval door has moved this session laid
+ * over its statements. */
+function withApprovals(
+  scheme: SchemeMonth | null,
+  scenario: Scenario,
+): SchemeMonth | null {
+  const approvals = APPROVED[scenario];
+  if (scheme === null || approvals === undefined) return scheme;
+  return {
+    ...scheme,
+    statements: scheme.statements.map((statement) => {
+      const approval = approvals[statement.branch_id];
+      return approval === undefined ? statement : approved(statement, approval);
+    }),
+  };
+}
+
+function approved(
+  statement: IncentiveStatement,
+  approval: StatementApproval,
+): IncentiveStatement {
+  return {
+    ...statement,
+    status: "final",
+    status_words: FINAL_WORDS,
+    approval,
+    till_now_says_otherwise: false,
+    recomputed: null,
+  };
+}
+
 function filled(
   week: PushWeek,
   items: PushItem[],
@@ -332,4 +384,38 @@ export async function mockSetPushList(
     .sort((left, right) => left.name.localeCompare(right.name));
   LISTS[scenario] = { ...(LISTS[scenario] ?? {}), [weekId]: items };
   return payloadFor(scenario);
+}
+
+/**
+ * The approval door, offline: the statement goes final with the reason the
+ * owner typed and the figures it showed. Offers nothing the API would refuse
+ * because the screen draws the control only on a complete provisional month
+ * and only lights it with a reason typed.
+ */
+export async function mockApproveStatement(
+  schemeMonthId: string,
+  branchId: string,
+  body: ApprovalInput,
+): Promise<IncentiveRead> {
+  await new Promise((resolve) => setTimeout(resolve, LATENCY_MS));
+  const scenario = scenarioFromLocation();
+  if (scenario === "error") {
+    throw new ApiError(
+      503,
+      "The statement could not be approved. Try again in a minute.",
+    );
+  }
+  const scheme = payloadFor(scenario).scheme_month;
+  if (scheme === null || scheme.id !== schemeMonthId) {
+    throw new ApiError(404, "scheme month not found");
+  }
+  APPROVED[scenario] = {
+    ...(APPROVED[scenario] ?? {}),
+    [branchId]: {
+      approved_at: new Date().toISOString(),
+      actor: "user:mock",
+      reason: body.reason.trim(),
+    },
+  };
+  return payloadFor(scenario, scheme.month);
 }

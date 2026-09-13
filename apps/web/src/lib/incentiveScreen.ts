@@ -31,6 +31,7 @@ import type {
   RoleSharesRow,
   SchemeMonth,
   SchemeMonthInput,
+  StatementFigures,
 } from "./types";
 
 // --- the three fields -------------------------------------------------------
@@ -765,11 +766,27 @@ export function soFar(statement: IncentiveStatement, label: string): string {
 
 /** One line of the statement's figures: what it is called and what it says.
  * Both are strings by the time they are here - money is never a number on
- * these screens. */
+ * these screens. `now` is the same figure as the till reads it today, on an
+ * approved statement a day was replaced under (D12), and only where it
+ * differs from what was approved - the row is otherwise one figure. */
 export interface StatementFigure {
   key: string;
   label: string;
   value: string;
+  now: string | null;
+}
+
+/** The figures' values, keyed the way the rows are, so the approved column
+ * and the recomputed one are read with one rule. */
+function figureValues(figures: StatementFigures): Record<string, string> {
+  const values: Record<string, string> = {
+    net: figures.net_words,
+    items: exact(figures.items_earned),
+    above: exact(figures.net_earned),
+    pool: figures.pool_words,
+  };
+  if (figures.cap !== null) values.cap = exact(figures.cap);
+  return values;
 }
 
 /**
@@ -787,37 +804,83 @@ export function statementFigures(
   statement: IncentiveStatement,
 ): StatementFigure[] {
   const figures = statement.figures;
-  const rows: StatementFigure[] = [
-    {
-      key: "net",
-      label: soFar(statement, "Net sales"),
-      value: figures.net_words,
-    },
-    {
-      key: "items",
-      label: "Earned on the push lists",
-      value: exact(figures.items_earned),
-    },
+  const rows: { key: string; label: string }[] = [
+    { key: "net", label: soFar(statement, "Net sales") },
+    { key: "items", label: "Earned on the push lists" },
     {
       key: "above",
       label: `Earned on sales above target (${plainPct(figures.above_target_pct)}%)`,
-      value: exact(figures.net_earned),
     },
   ];
   if (figures.cap !== null) {
-    rows.push({
-      key: "cap",
-      label: figures.capped ? "Cap, reached" : "Cap",
-      value: exact(figures.cap),
-    });
+    rows.push({ key: "cap", label: figures.capped ? "Cap, reached" : "Cap" });
   }
-  rows.push({
-    key: "pool",
-    label: soFar(statement, "Pool"),
-    value: figures.pool_words,
-  });
-  return rows;
+  rows.push({ key: "pool", label: soFar(statement, "Pool") });
+  const values = figureValues(figures);
+  const now =
+    statement.recomputed === null ? {} : figureValues(statement.recomputed);
+  return rows.map(({ key, label }) => ({
+    key,
+    label,
+    value: values[key],
+    now: now[key] !== undefined && now[key] !== values[key] ? now[key] : null,
+  }));
 }
+
+/** One role's share of a final pool: the manager's, the supervisor's and
+ * the sales team's amounts each named (D2), exact to the fil, with the share
+ * that made it. Nothing on a provisional statement: a split of a pool that
+ * is still moving would be three figures somebody gets quoted. */
+export function statementSplit(
+  statement: IncentiveStatement,
+): StatementFigure[] {
+  const split = statement.figures.split;
+  if (statement.status !== "final" || split === null) return [];
+  const amount: Record<ShareRole, string> = {
+    manager: split.manager,
+    supervisor: split.supervisor,
+    sales: split.sales,
+  };
+  return SHARE_ROLES.map((role) => ({
+    key: role,
+    label: `${SHARE_LABEL[role]} (${plainPct(split.shares[FIELD[role]])}%)`,
+    value: exact(amount[role]),
+    now: null,
+  }));
+}
+
+/** Who closed the month and why, on a final statement: the day and the
+ * reason as typed. The actor on the row is the audit trail's user id, which
+ * is not a name the owner reads; the audit row keeps it. */
+export function approvalWords(statement: IncentiveStatement): string | null {
+  const approval = statement.approval;
+  if (approval === null) return null;
+  return `Approved ${formatDate(approval.approved_at)}: ${approval.reason}`;
+}
+
+/** The approval control is drawn only where the API would accept it: a
+ * provisional statement with every calendar day loaded (D10). The refusal
+ * for anything else is the API's own sentence, so the screen never words
+ * one; this only keeps a button off a month with a hole in it. */
+export function canApprove(statement: IncentiveStatement): boolean {
+  return (
+    statement.status === "provisional" &&
+    statement.figures.days_loaded === statement.figures.days_in_month
+  );
+}
+
+/** A reason is typed before the button lights: the door refuses a blank one
+ * and this saves the round trip. Whitespace is not a reason. */
+export function canSubmitApproval(reason: string): boolean {
+  return reason.trim().length > 0;
+}
+
+export const APPROVE_CAPTION =
+  "Every day of this month is loaded. Approving fixes these figures as what was paid; a day re-uploaded afterwards is shown beside them, never over them.";
+
+export const REASON_LABEL = "Why this month is being paid";
+
+export const APPROVE_LABEL = "Approve this statement";
 
 /** One dish on a scored week: what it sold against its target in the API's
  * words, and what the rate paid on it - or nothing at all, because a dish

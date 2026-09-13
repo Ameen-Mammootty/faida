@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import {
+  approveStatement,
   createSchemeMonth,
   getIncentive,
   setPushList,
@@ -9,16 +10,22 @@ import {
 } from "@/lib/api";
 import { groupedMoney } from "@/lib/format";
 import {
+  APPROVE_CAPTION,
+  APPROVE_LABEL,
   LIST_CAPTION,
   MONTH_CAPTION,
   MONTH_FROZEN_NOTE,
   OFF_THE_MENU,
+  REASON_LABEL,
   SHARES_APPLIES_NOTE,
   SHARES_CAPTION,
   SHARE_LABEL,
   SHARE_ROLES,
   STATEMENT_CAPTION,
   WEEKS_CAPTION,
+  approvalWords,
+  canApprove,
+  canSubmitApproval,
   canCreateMonth,
   canSavePushList,
   canSaveShares,
@@ -41,6 +48,7 @@ import {
   sharesUpdatedWords,
   standing,
   statementFigures,
+  statementSplit,
   statementWeeks,
   sumWords,
   targetDrafts,
@@ -100,6 +108,12 @@ export default function Incentive() {
   const [saving, setSaving] = useState(false);
   const [creating, setCreating] = useState(false);
   const [savingList, setSavingList] = useState(false);
+  // The reason typed under each branch's statement, by branch id, and the
+  // branch whose approval is on its way. Kept apart from the read so a
+  // half-typed reason survives a save elsewhere on the screen and is dropped
+  // the moment the statement it was for is final.
+  const [reasons, setReasons] = useState<Record<string, string>>({});
+  const [approving, setApproving] = useState<string | null>(null);
   // Try again is a bump of this, so the one effect below is the only place
   // that reads - the shipped Dashboard's pattern, and what keeps the
   // cancelled guard on every read rather than on the first one.
@@ -269,6 +283,34 @@ export default function Incentive() {
       });
     } finally {
       setSavingList(false);
+    }
+  }
+
+  async function approve(branchId: string, branchName: string) {
+    if (read?.scheme_month == null) return;
+    setApproving(branchId);
+    setFeedback(null);
+    try {
+      const result = await approveStatement(read.scheme_month.id, branchId, {
+        reason: reasons[branchId] ?? "",
+      });
+      landed(result);
+      setReasons((current) => {
+        const rest = { ...current };
+        delete rest[branchId];
+        return rest;
+      });
+      setFeedback({
+        kind: "done",
+        text: `${branchName}'s statement is final.`,
+      });
+    } catch (error) {
+      setFeedback({
+        kind: "error",
+        text: error instanceof Error ? error.message : "That did not work.",
+      });
+    } finally {
+      setApproving(null);
     }
   }
 
@@ -791,6 +833,9 @@ export default function Incentive() {
                     statementWeeks(scheme, statement).find(
                       (scored) => scored.key === openWeek,
                     ) ?? null;
+                  const split = statementSplit(statement);
+                  const approved = approvalWords(statement);
+                  const reason = reasons[statement.branch_id] ?? "";
                   return (
                     <section
                       key={statement.branch_id}
@@ -808,6 +853,9 @@ export default function Incentive() {
                           {loadedThrough(statement)}
                         </p>
                       </div>
+                      {approved === null ? null : (
+                        <p className="text-xs text-stone">{approved}</p>
+                      )}
 
                       {/* The figures wrap rather than sit in a table: four
                           short columns on a laptop, stacked on a phone, and
@@ -827,9 +875,35 @@ export default function Incentive() {
                             >
                               {figure.value}
                             </dd>
+                            {/* A day replaced after approval (D12): what
+                                the till reads now, beside what was paid and
+                                never over it. */}
+                            {figure.now === null ? null : (
+                              <dd className="text-xs text-stone">
+                                now {figure.now}
+                              </dd>
+                            )}
                           </div>
                         ))}
                       </dl>
+
+                      {split.length === 0 ? null : (
+                        <dl
+                          aria-label={`${statement.branch_name}, the pool split by role`}
+                          className="flex flex-wrap gap-x-8 gap-y-3 border-t border-ink/10 pt-3"
+                        >
+                          {split.map((figure) => (
+                            <div key={figure.key} className="space-y-0.5">
+                              <dt className="text-xs text-stone">
+                                {figure.label}
+                              </dt>
+                              <dd className="text-sm tabular-nums text-ink">
+                                {figure.value}
+                              </dd>
+                            </div>
+                          ))}
+                        </dl>
+                      )}
 
                       {week === null ? null : (
                         <table className="w-full text-sm">
@@ -884,6 +958,52 @@ export default function Incentive() {
                             <li key={note}>{note}</li>
                           ))}
                         </ul>
+                      )}
+
+                      {/* --- the approval (D10, D11) ---------------------
+                          Drawn only on a complete provisional month; the
+                          reason is the door's one required word, and every
+                          refusal is the API's own sentence in the banner. */}
+                      {!canApprove(statement) ? null : (
+                        <div className="space-y-2 border-t border-ink/10 pt-3">
+                          <p className="max-w-2xl text-xs text-stone">
+                            {APPROVE_CAPTION}
+                          </p>
+                          <label className="block max-w-xl space-y-1 text-sm text-ink">
+                            <span className="text-xs text-stone">
+                              {REASON_LABEL}
+                            </span>
+                            <input
+                              type="text"
+                              value={reason}
+                              onChange={(event) =>
+                                setReasons((current) => ({
+                                  ...current,
+                                  [statement.branch_id]: event.target.value,
+                                }))
+                              }
+                              placeholder="e.g. paid with the 5 September salaries"
+                              className="min-h-11 w-full rounded-sm border border-ink/20 bg-paper px-3 py-2 text-sm text-ink placeholder:text-stone/70"
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            disabled={
+                              !canSubmitApproval(reason) || approving !== null
+                            }
+                            onClick={() =>
+                              approve(
+                                statement.branch_id,
+                                statement.branch_name,
+                              )
+                            }
+                            className="min-h-11 rounded-sm bg-palm px-4 py-2 text-sm font-medium text-cream disabled:opacity-60"
+                          >
+                            {approving === statement.branch_id
+                              ? "Approving"
+                              : APPROVE_LABEL}
+                          </button>
+                        </div>
                       )}
                     </section>
                   );

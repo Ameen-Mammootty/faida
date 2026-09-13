@@ -1,5 +1,5 @@
 """The owner's incentive screen, served (M13, plan.md §8 D18; issues #8, #9,
-#10, #11).
+#10, #11, #12).
 
 One read serves the whole `/incentive` screen - `GET /api/incentive?month=` -
 the dashboard's rule (M9): every figure on the screen comes out of one
@@ -16,7 +16,9 @@ the month, and the shares snapshotted the day it was created (D3, D4, D5,
 issue #9); each week's push list with the menu beside it to build the next
 one from (D6, D7, issue #10); and each branch's statement for the month -
 what the push weeks scored, what the month sold, what the pool has earned so
-far, and how many of the month's days are loaded (D9, D10, D11, issue #11).
+far, and how many of the month's days are loaded (D9, D10, D11, issue #11);
+and the approval door, which is the only way a statement becomes final (D11,
+D12, issue #12).
 
 A statement is read and never stored, which is the whole of C16: the screen
 cannot disagree with the sales days because it *is* the sales days, re-added
@@ -34,7 +36,8 @@ construction, and neither can drift from the other.
 Every refusal about what a figure *is* - a share that does not add to a
 hundred, a negative target, a percentage over a hundred, a branch with no
 target, a month already created, a dish with no till name mapped to it, a
-week already under way - is the pure module's own sentence, so a refusal is
+week already under way, a month with a day missing, an approval with no
+reason, a statement already final - is the pure module's own sentence, so a refusal is
 worded once in the whole product. The two sentences worded here are the
 wire's own ("that is not a percentage", "that is not a month"), which is
 where `menu.py` and `sales.py` word theirs too.
@@ -309,9 +312,12 @@ async def _statements(
     scheme: incentive.SchemeMonth,
     branches: list[asyncpg.Record],
     currency: str,
-) -> list[dict]:
-    """Each branch's statement for the month in view, derived on this request
-    out of the branch's own loaded days and stored nowhere (D10, D11, C16).
+) -> dict[str, incentive.Statement]:
+    """Each branch's statement for the month in view, by branch id, derived
+    on this request out of the branch's own loaded days and stored nowhere
+    (D10, D11, C16). The read serialises these; the approval door reads the
+    one it is approving off the same composition, so what is approved is
+    byte for byte what the screen showed.
 
     Three reads whatever the chain's size, all three on the month's own
     window: the loaded days, for the net sales and for the count against the
@@ -369,21 +375,28 @@ async def _statements(
     for day in days:
         if day.business_date > newest.get(day.branch_id, datetime.date.min):
             newest[day.branch_id] = day.business_date
-    return [
-        incentive.statement_json(
-            incentive.compose_statement(
-                scheme,
-                branch["id"],
-                days=days,
-                items=items,
-                newest_loaded=newest.get(branch["id"]),
-                approval=approvals.get(branch["id"]),
-                currency=currency,
-            ),
-            branch_name=branch["name"],
+    return {
+        branch["id"]: incentive.compose_statement(
+            scheme,
+            branch["id"],
+            days=days,
+            items=items,
+            newest_loaded=newest.get(branch["id"]),
+            approval=approvals.get(branch["id"]),
+            currency=currency,
         )
         for branch in branches
         if branch["id"] in scheme.targets
+    }
+
+
+def _statements_payload(
+    statements: dict[str, incentive.Statement], branches: list[asyncpg.Record]
+) -> list[dict]:
+    return [
+        incentive.statement_json(statements[branch["id"]], branch_name=branch["name"])
+        for branch in branches
+        if branch["id"] in statements
     ]
 
 
@@ -415,7 +428,9 @@ async def _read(db: Database, tenant_id: str, month_key: str | None) -> dict:
             created_at=row["created_at"],
             today=today,
             kept=menu.kept,
-            statements=await _statements(db, tenant_id, scheme, branches, currency),
+            statements=_statements_payload(
+                await _statements(db, tenant_id, scheme, branches, currency), branches
+            ),
             currency=currency,
         )
 
@@ -485,6 +500,11 @@ class PushItemBody(BaseModel):
     menu_item_id: str
     rate_per_portion: str | None = None
     targets: list[PortionTargetBody] = []
+
+
+class ApprovalBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reason: str
 
 
 class PushListBody(BaseModel):
@@ -681,3 +701,82 @@ async def set_push_list(
     )
     scheme = await db.get_scheme_month(week["scheme_month_id"], tenant_id=ctx.tenant_id)
     return await _read(db, ctx.tenant_id, incentive.month_key(scheme["month"]))
+
+
+@router.post("/incentive/months/{scheme_month_id}/branches/{branch_id}/approve")
+async def approve_statement(
+    scheme_month_id: uuid.UUID,
+    branch_id: uuid.UUID,
+    body: ApprovalBody,
+    request: Request,
+    ctx: Context,
+) -> dict:
+    """The owner approved one branch's statement for the month: the only door
+    to a final statement (D11, D12).
+
+    The statement is composed exactly as the read composes it, and what is
+    approved is that composition's figures, stored as a snapshot beside the
+    actor, the reason and the time, with the audit row
+    `incentive.statement_approved` in the same transaction (C8) - so a
+    failure in either leaves neither. Three refusals, each the pure module's
+    own sentence: a statement already final (named by whom and when), a month
+    with a day not loaded for that branch (with the count), and a reason left
+    blank. Two approvals racing for the same statement are decided by the
+    database's unique row, and the loser is told the winner's sentence.
+
+    A sales day inside an approved month stays replaceable through the
+    sales-day door: the approved figures stand, and the read says the till
+    now says otherwise with the recomputed figures beside them. Faida moves
+    no money.
+
+    A month or a branch that is not this tenant's is not found, never
+    forbidden. Returns the whole read for the month, so the screen renders
+    the final statement from one shape.
+    """
+    db: Database = request.app.state.db
+    row = await db.get_scheme_month(str(scheme_month_id), tenant_id=ctx.tenant_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="scheme month not found")
+    branches = await db.list_incentive_branches(tenant_id=ctx.tenant_id)
+    scheme = _scheme_month(
+        row,
+        await db.list_scheme_month_targets(row["id"], tenant_id=ctx.tenant_id),
+        await db.list_push_weeks(row["id"], tenant_id=ctx.tenant_id),
+        await db.list_push_items(row["id"], tenant_id=ctx.tenant_id),
+        await db.list_push_item_targets(row["id"], tenant_id=ctx.tenant_id),
+    )
+    currency = await db.tenant_currency(ctx.tenant_id) or ""
+    statements = await _statements(db, ctx.tenant_id, scheme, branches, currency)
+    statement = statements.get(str(branch_id))
+    if statement is None:
+        raise HTTPException(status_code=404, detail="statement not found")
+
+    problem = incentive.approval_problem(statement, body.reason)
+    if problem is not None:
+        raise HTTPException(status_code=422, detail=problem)
+    try:
+        await db.approve_statement(
+            row["id"],
+            tenant_id=ctx.tenant_id,
+            branch_id=str(branch_id),
+            actor=ctx.actor,
+            reason=body.reason.strip(),
+            figures=incentive.figures_json(statement.figures),
+        )
+    except asyncpg.UniqueViolationError:
+        # Two approvals at once: the database decided, and the loser is told
+        # by whom and when the statement went final.
+        approvals = await db.list_statement_approvals(row["id"], tenant_id=ctx.tenant_id)
+        first = next(a for a in approvals if a["branch_id"] == str(branch_id))
+        raise HTTPException(
+            status_code=422,
+            detail=incentive.already_final_sentence(
+                incentive.Approval(
+                    approved_at=first["approved_at"],
+                    actor=first["actor"],
+                    reason=first["reason"],
+                    figures=first["figures"],
+                )
+            ),
+        ) from None
+    return await _read(db, ctx.tenant_id, incentive.month_key(scheme.month))

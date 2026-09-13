@@ -604,7 +604,8 @@ export interface RejectionResult {
  * The word on every screen is *margin*: labour, rent and waste are absent, so
  * it is never "profit", and it is never "food cost %" (plan.md section 3).
  */
-export type PlateQuality = "reliable_with_limitations" | "estimated" | "incomplete";
+export type PlateQuality =
+  "reliable_with_limitations" | "estimated" | "incomplete";
 
 /** The whole answer for one menu item. Numbers are null iff incomplete. */
 export interface Plate {
@@ -878,7 +879,8 @@ export interface SalesFileResult {
  * position, so a reordered export applies unchanged and a renamed column
  * stops the file (C11.1). `date` and `amount` are the only two a file cannot
  * be read without; no `item` column is the summary shape. */
-export type SalesColumn = "branch" | "date" | "item" | "code" | "qty" | "amount";
+export type SalesColumn =
+  "branch" | "date" | "item" | "code" | "qty" | "amount";
 
 export type SalesColumnMap = Partial<Record<SalesColumn, string>>;
 
@@ -1006,10 +1008,7 @@ export interface SalesDaysResult {
 /** PRD §24's words for a period figure. `verified` is absent on purpose:
  * nothing cross-checks a till's figures. Precedence worst first. */
 export type PeriodQuality =
-  | "reliable_with_limitations"
-  | "estimated"
-  | "incomplete"
-  | "unavailable";
+  "reliable_with_limitations" | "estimated" | "incomplete" | "unavailable";
 
 /** The period a read covers. `default` is true when the caller sent no
  * range and the API chose 28 days ending on the tenant's newest loaded day;
@@ -1691,7 +1690,17 @@ export type IncentiveRead = Pick<
 /** POST /api/incentive/months */
 export interface SchemeMonthInput {
   month: string;
-  targets: { branch_id: string; net_sales_target: string; above_target_pct: string; cap: string | null }[];
+  targets: {
+    branch_id: string;
+    net_sales_target: string;
+    above_target_pct: string;
+    cap: string | null;
+  }[];
+}
+
+/** POST /api/incentive/months/{scheme_month_id}/branches/{branch_id}/approve */
+export interface ApprovalInput {
+  reason: string;
 }
 
 /** PUT /api/incentive/weeks/{week_id} */

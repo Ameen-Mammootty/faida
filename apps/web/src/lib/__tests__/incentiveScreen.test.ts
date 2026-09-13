@@ -4,6 +4,9 @@ import {
   MONTH_FROZEN_NOTE,
   OFF_THE_MENU,
   SHARES_APPLIES_NOTE,
+  approvalWords,
+  canApprove,
+  canSubmitApproval,
   canCreateMonth,
   canSavePushList,
   canSaveShares,
@@ -30,6 +33,7 @@ import {
   soFar,
   standing,
   statementFigures,
+  statementSplit,
   statementWeeks,
   sumWords,
   targetDrafts,
@@ -37,8 +41,10 @@ import {
   weekInView,
   weekTabs,
 } from "../incentiveScreen";
+import complete from "../mock/incentive/complete.json";
 import created from "../mock/incentive/created.json";
 import empty from "../mock/incentive/empty.json";
+import final from "../mock/incentive/final.json";
 import full from "../mock/incentive/full.json";
 import type { IncentiveRead, RoleSharesRow } from "../types";
 
@@ -46,6 +52,8 @@ import type { IncentiveRead, RoleSharesRow } from "../types";
 // (`mock/incentive/generate.py`): September 2026 read on 16 Sep, with a full
 // month, a month just created, and no month at all.
 const FULL = full as unknown as IncentiveRead;
+const COMPLETE = complete as unknown as IncentiveRead;
+const FINAL = final as unknown as IncentiveRead;
 const CREATED = created as unknown as IncentiveRead;
 const EMPTY = empty as unknown as IncentiveRead;
 
@@ -803,5 +811,65 @@ describe("a branch's statement", () => {
 
   it("says which day the figures were read up to", () => {
     expect(loadedThrough(quoz)).toBe("Read up to 15 Sep 2026.");
+  });
+});
+
+// --- the approval (M13.6, issue #12) ----------------------------------------
+
+describe("approving a statement", () => {
+  const provisional = FULL.scheme_month!.statements[0];
+  const complete = COMPLETE.scheme_month!.statements[0];
+  const finalQuoz = FINAL.scheme_month!.statements[0];
+  const finalKarama = FINAL.scheme_month!.statements[1];
+
+  it("offers the control only on a provisional month with every day loaded", () => {
+    expect(provisional.status_words).toBe("provisional, 15 of 30 days loaded");
+    expect(canApprove(provisional)).toBe(false);
+    expect(complete.status_words).toBe("provisional, 31 of 31 days loaded");
+    expect(canApprove(complete)).toBe(true);
+    expect(canApprove(finalQuoz)).toBe(false);
+  });
+
+  it("lights the button only once a reason is typed", () => {
+    expect(canSubmitApproval("")).toBe(false);
+    expect(canSubmitApproval("   ")).toBe(false);
+    expect(canSubmitApproval("August paid with the 5 September salaries")).toBe(
+      true,
+    );
+  });
+
+  it("names the day and the reason on a final statement, and nothing before", () => {
+    expect(approvalWords(finalQuoz)).toBe(
+      "Approved 2 Sep 2026: August paid with the 5 September salaries",
+    );
+    expect(approvalWords(complete)).toBeNull();
+  });
+
+  it("splits a final pool by role, exact to the fil, and a provisional one not at all", () => {
+    expect(statementSplit(complete)).toEqual([]);
+    expect(
+      statementSplit(finalQuoz).map((row) => [row.label, row.value]),
+    ).toEqual([
+      ["Manager (50%)", "AED 455.50"],
+      ["Supervisor (20%)", "AED 182.20"],
+      ["Sales team (30%)", "AED 273.30"],
+    ]);
+    expect(statementFigures(finalQuoz).at(-1)!.label).toBe("Pool");
+  });
+
+  it("puts what the till reads now beside an approved figure it no longer matches", () => {
+    expect(finalKarama.till_now_says_otherwise).toBe(true);
+    const rows = statementFigures(finalKarama);
+    expect(rows.map((row) => [row.key, row.value, row.now])).toEqual([
+      ["net", "AED 42,780 of AED 38,000", null],
+      ["items", "AED 152.00", "AED 147.50"],
+      ["above", "AED 478.00", null],
+      ["cap", "AED 1,500.00", null],
+      ["pool", "AED 630", "AED 626"],
+    ]);
+    // A statement the till still agrees with carries no second figure.
+    expect(statementFigures(finalQuoz).every((row) => row.now === null)).toBe(
+      true,
+    );
   });
 });

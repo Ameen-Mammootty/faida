@@ -851,6 +851,31 @@ def approvable(figures: Figures) -> str | None:
     return None
 
 
+REASON_REQUIRED = "a reason is required to approve a statement: say why this month is being paid"
+
+
+def already_final_sentence(approval: Approval) -> str:
+    """A second approval is refused by naming the first (D11): a statement is
+    final once, and the owner who tries again is told by whom and when."""
+    when = approval.approved_at.date().isoformat()
+    return f"this statement is already final: approved by {approval.actor} on {when}"
+
+
+def approval_problem(statement: Statement, reason: str) -> str | None:
+    """Why the approval door refuses, or None: the one place its three
+    refusals are worded (D10, D11). The strongest fact first - a statement
+    already final stays final whatever else is typed - then the hole in the
+    month, then the missing reason."""
+    if statement.approval is not None:
+        return already_final_sentence(statement.approval)
+    problem = approvable(statement.figures)
+    if problem is not None:
+        return problem
+    if not reason.strip():
+        return REASON_REQUIRED
+    return None
+
+
 def week_in_view(scheme: SchemeMonth, day: datetime.date) -> PushWeek | None:
     """The push week that holds `day`, or None when the day is outside the
     month."""
