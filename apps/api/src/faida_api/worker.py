@@ -716,13 +716,14 @@ async def tick_scoreboards(
     and a chain across two timezones has two mornings. A branch is woken only
     when a scheme month of its tenant covers its local date - the whole
     month list is one read and the join is a dictionary, so the tick costs
-    two small queries a minute whatever the number of chains - and the job is
+    three small queries a minute whatever the number of chains - and the job is
     enqueued against 0023's unique index, which is what makes the tick
     idempotent whether it runs once, twice or from two instances at once.
 
     Nothing and one log line, once per branch per day, for a branch past the
     shared cutoff (tomorrow's is next; never sent late), with no scheme month
-    for the month, paused (D18), or with no registered phone. A timezone
+    for the month, whose statement for the month is final (the card went
+    with the approval, issue #15), paused (D18), or with no registered phone. A timezone
     name that does not resolve is logged and skipped so one typo cannot
     silence every other branch. The final card is never enqueued here: the
     approval door enqueues it (issue #15).
@@ -733,6 +734,9 @@ async def tick_scoreboards(
         now_utc = now_utc.replace(tzinfo=datetime.UTC)
     months = {
         (row["tenant_id"], row["month"]): row["id"] for row in await db.list_all_scheme_months()
+    }
+    final = {
+        (row["branch_id"], row["scheme_month_id"]) for row in await db.list_final_branch_months()
     }
     enqueued = 0
     for row in await db.list_scoreboard_branches():
@@ -765,6 +769,14 @@ async def tick_scoreboards(
                 "scoreboard skipped: branch %s has no scheme month for %s",
                 row["id"],
                 day,
+            )
+            continue
+        if (row["id"], scheme_month_id) in final:
+            _say_once(
+                spoken,
+                key,
+                "scoreboard skipped: branch %s's month is final; its card went with the approval",
+                row["id"],
             )
             continue
         if row["paused_at"] is not None:

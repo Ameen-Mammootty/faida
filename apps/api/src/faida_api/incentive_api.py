@@ -751,8 +751,9 @@ async def approve_statement(
     The statement is composed exactly as the read composes it, and what is
     approved is that composition's figures, stored as a snapshot beside the
     actor, the reason and the time, with the audit row
-    `incentive.statement_approved` in the same transaction (C8) - so a
-    failure in either leaves neither. Three refusals, each the pure module's
+    `incentive.statement_approved` and the `send_scoreboard` job that carries
+    the final card to the branch's phone (issue #15) in the same transaction
+    (C8) - so a failure in any of the three leaves none. Three refusals, each the pure module's
     own sentence: a statement already final (named by whom and when), a month
     with a day not loaded for that branch (with the count), and a reason left
     blank. Two approvals racing for the same statement are decided by the
@@ -793,6 +794,7 @@ async def approve_statement(
             row["id"],
             tenant_id=ctx.tenant_id,
             branch_id=str(branch_id),
+            month=scheme.month,
             actor=ctx.actor,
             reason=body.reason.strip(),
             figures=incentive.figures_json(statement.figures),

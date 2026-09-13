@@ -4374,16 +4374,26 @@ class Database:
         *,
         tenant_id: str,
         branch_id: str,
+        month: datetime.date,
         actor: str,
         reason: str,
         figures: dict,
     ) -> str:
         """The owner's approval of one branch's month: the row with the figures
-        as approved and the audit row `incentive.statement_approved`, one
-        transaction (D11, C8). Returns the approval id. A second approval
-        raises asyncpg's unique violation - a statement is final once. The
-        route has already refused a provisional month; this writes what it
-        was handed."""
+        as approved, the audit row `incentive.statement_approved`, and the
+        `send_scoreboard` job that carries the final card to the branch
+        (issue #15), one transaction (D11, D13, C8). Returns the approval id.
+
+        The job is enqueued here and not by the route after the commit, so
+        that a process that dies between the two cannot leave a final
+        statement whose card never goes - a second approval is refused, so
+        nothing would ever enqueue it again - and so that a rollback of the
+        audit row takes the job with it. Its key against 0023's index is the
+        month's first day with `variant: final`; a replayed approval never
+        reaches it, because the approval row's unique violation is raised
+        first. A second approval raises asyncpg's unique violation - a
+        statement is final once. The route has already refused a provisional
+        month; this writes what it was handed."""
         async with self.pool.acquire() as conn, conn.transaction():
             approval_id = str(
                 await conn.fetchval(
@@ -4409,6 +4419,16 @@ class Database:
                 subject_type="scheme_month",
                 subject_id=scheme_month_id,
                 detail={"branch_id": branch_id, "reason": reason, "figures": figures},
+            )
+            await self.enqueue_scoreboard_once(
+                {
+                    "tenant_id": tenant_id,
+                    "branch_id": branch_id,
+                    "day": month.replace(day=1).isoformat(),
+                    "variant": "final",
+                    "scheme_month_id": scheme_month_id,
+                },
+                conn=conn,
             )
         return approval_id
 
@@ -4532,6 +4552,16 @@ class Database:
             "order by tenant_id, month"
         )
 
+    async def list_final_branch_months(self) -> list[asyncpg.Record]:
+        """Every approved (branch, scheme month) pair across tenants, for the
+        tick: a branch whose month is final has had its card with the
+        approval (issue #15), and its remaining mornings are not enqueued
+        rather than enqueued to be skipped."""
+        return await self.pool.fetch(
+            "select branch_id::text as branch_id, scheme_month_id::text as scheme_month_id "
+            "from statement_approvals order by branch_id, scheme_month_id"
+        )
+
     async def outbound_scoreboard_exists(self, *, branch_id: str, day: str, variant: str) -> bool:
         """Whether this branch already has this card for this day (the
         `outbound_brief_exists` rule): the handler asks before it sends.
@@ -4605,14 +4635,18 @@ class Database:
             payload,
         )
 
-    async def enqueue_scoreboard_once(self, payload: dict[str, Any]) -> int | None:
+    async def enqueue_scoreboard_once(
+        self, payload: dict[str, Any], *, conn: asyncpg.Connection | None = None
+    ) -> int | None:
         """One scoreboard per branch, variant and day, ever (M13). Inserts
         against 0023's `jobs_send_scoreboard_uidx` and tolerates the conflict:
         the new job id, or None when a job for this (branch, variant, day)
         already exists in any status. The tick enqueues the daily card, the
         approval door the final one; neither knows about the other, and the
-        index is the guard."""
-        return await self.pool.fetchval(
+        index is the guard. `conn` is for a caller inside its own transaction
+        (the approval, issue #15), so the job commits with the row it
+        belongs to."""
+        return await (conn or self.pool).fetchval(
             """
             insert into jobs (kind, payload) values ($1, $2)
             on conflict (kind, (payload->>'branch_id'), (payload->>'variant'), (payload->>'day'))

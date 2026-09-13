@@ -538,18 +538,83 @@ async def test_a_daily_card_on_a_month_that_went_final_is_a_skip_and_not_a_failu
         assert approved.status_code == 200, approved.text
 
     with caplog.at_level(logging.INFO, logger="faida_api.worker"):
+        # The daily job is the older row and is claimed first; the final one
+        # the approval enqueued stays queued behind it.
         assert await run_one_job(db, app.state.wa, app.state.storage) is True
-    (job,) = await _jobs(db)
-    assert job["status"] == "done"
+    daily, final = await _jobs(db)
+    assert daily["payload"]["variant"] == scoreboard.DAILY
+    assert daily["status"] == "done"
+    assert final["payload"]["variant"] == scoreboard.FINAL
+    assert final["status"] == "queued"
     assert fake_meta.sent == []
     assert any("closed" in r.getMessage() for r in caplog.records)
 
 
-async def test_the_job_kind_serves_the_final_card_and_a_paused_branch_still_receives_it(rig, db):
-    """The same job with `variant: final` and the month's first day as its
-    key draws the final card; the pause does not stop it, because the month
-    is closed and the money named (issue #15's send, proven from the job's
-    side so the approval door has only to enqueue)."""
+async def test_approval_enqueues_one_final_job_and_a_second_approval_enqueues_nothing(rig, db):
+    """The owner approves Al Barsha's July through the door: exactly one
+    `send_scoreboard` job of the final kind for that branch and month, keyed
+    on the month's first day and carrying the tenant and the scheme month
+    (issue #15's first criterion). A second approval is refused, and the
+    queue is as it was; so is a job for the same key enqueued by hand, because
+    the index is the guard either way."""
+    _, client, _, _ = rig
+    async with client:
+        await _stage(client, db)
+        await _rest_of_july(client)
+        read = await _july(client)
+        approved = await _approve(client, read)
+        assert approved.status_code == 200, approved.text
+        (job,) = await _jobs(db)
+        assert job["status"] == "queued"
+        assert job["payload"] == {
+            "tenant_id": TENANT,
+            "branch_id": BRANCH,
+            "day": "2026-07-01",
+            "variant": scoreboard.FINAL,
+            "scheme_month_id": read["scheme_month"]["id"],
+        }
+
+        again = await _approve(client, read, reason="again, by mistake")
+        assert again.status_code == 422, again.text
+    assert len(await _jobs(db)) == 1
+    assert (
+        await db.enqueue_scoreboard_once(
+            {**job["payload"], "scheme_month_id": read["scheme_month"]["id"]}
+        )
+        is None
+    )
+    assert len(await _jobs(db)) == 1
+
+
+async def test_an_approval_that_fails_after_its_row_leaves_no_final_job(rig, db, monkeypatch):
+    """The approval row, its audit row and the final card's job are one
+    transaction: an audit table that refuses leaves none of the three, so a
+    card can never go out for a statement that is not final."""
+    from faida_api import db as db_module
+
+    async def refuse(*args, **kwargs):
+        raise RuntimeError("audit table unavailable")
+
+    _, client, _, _ = rig
+    async with client:
+        await _stage(client, db)
+        await _rest_of_july(client)
+        read = await _july(client)
+        monkeypatch.setattr(db_module, "_insert_audit_event", refuse)
+        with pytest.raises(RuntimeError):
+            await _approve(client, read)
+    assert await db.pool.fetchval("select count(*) from statement_approvals") == 0
+    assert await _jobs(db) == []
+
+
+async def test_the_approved_card_is_sent_final_and_a_paused_branch_still_receives_it(rig, db):
+    """The job the approval enqueued draws the final card - the month named
+    as closed, the split by role summing to the pool - stores it under the
+    `-final` suffix, sends it with the template and records one outbound row
+    on the day's key; the pause does not stop it, because the month is closed
+    and the money named (issue #15). The card is byte-identical to the one
+    the module draws for the same approved statement, so what the phone gets
+    is what the screen shows."""
     app, client, fake_meta, fake_storage = rig
     july = datetime.date(2026, 7, 1)
     async with client:
@@ -559,8 +624,7 @@ async def test_the_job_kind_serves_the_final_card_and_a_paused_branch_still_rece
         assert approved.status_code == 200, approved.text
     assert await db.pause_incentive_branch(BRANCH, tenant_id=TENANT, actor="console") is True
 
-    await _enqueue(db, day=july, variant=scoreboard.FINAL)
-    assert await run_one_job(db, app.state.wa, app.state.storage) is True
+    await drain_jobs(db, app, None)
 
     (sent,) = fake_meta.sent
     _, body = sent["template"]["components"]
@@ -568,9 +632,49 @@ async def test_the_job_kind_serves_the_final_card_and_a_paused_branch_still_rece
     (row,) = await _outbound(db)
     assert row["payload"]["variant"] == scoreboard.FINAL
     assert row["payload"]["day"] == "2026-07-01"
+    assert row["payload"]["branch_id"] == BRANCH
     assert list(fake_storage.objects) == [_card_path(BRANCH, july, variant="final")]
     (job,) = await _jobs(db)
     assert job["status"] == "done"
+
+    # The stored picture is the module's own drawing of the same approved
+    # statement (its words and the split are pinned in `test_scoreboard.py`).
+    card = await read_scoreboard(
+        db,
+        TENANT,
+        BRANCH,
+        today=worker._local_today("Asia/Dubai"),
+        variant=scoreboard.FINAL,
+        month=july,
+    )
+    assert card is not None
+    assert fake_storage.objects[_card_path(BRANCH, july, variant="final")] == (
+        scoreboard_card.render_card(card)
+    )
+
+
+async def test_the_tick_enqueues_no_morning_card_for_a_branch_whose_month_is_final(rig, db, caplog):
+    """Al Barsha's July is approved on the 20th: from then on the tick wakes
+    the other two branches and not Al Barsha, with one log line, so a closed
+    month costs no job a day to be skipped (issue #15's last criterion, from
+    the tick's side)."""
+    _, client, _, _ = rig
+    async with client:
+        await _stage(client, db)
+        await _rest_of_july(client)
+        approved = await _approve(client, await _july(client))
+        assert approved.status_code == 200, approved.text
+
+    later = datetime.date(2026, 7, 21)
+    with caplog.at_level(logging.INFO, logger="faida_api.worker"):
+        assert await tick_scoreboards(db, _utc(later, 4), spoken=set()) == 2
+    jobs = await _jobs(db)
+    daily = [j for j in jobs if j["payload"]["variant"] == scoreboard.DAILY]
+    assert sorted(j["payload"]["branch_id"] for j in daily) == sorted([BRANCH_2, BRANCH_3])
+    assert [j["payload"]["branch_id"] for j in jobs if j["payload"]["variant"] == "final"] == [
+        BRANCH
+    ]
+    assert any("is final" in r.getMessage() for r in caplog.records)
 
 
 async def test_mondays_card_carries_the_new_weeks_list(rig, db):
