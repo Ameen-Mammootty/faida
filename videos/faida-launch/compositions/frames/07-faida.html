@@ -1,0 +1,247 @@
+<template>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+  <style>
+    @font-face {
+      font-family: "Manrope";
+      src: url("assets/fonts/manrope-variable.woff2") format("woff2");
+      font-weight: 200 800;
+      font-style: normal;
+      font-display: block;
+    }
+    @font-face {
+      font-family: "Inter";
+      src: url("assets/fonts/inter-variable.woff2") format("woff2");
+      font-weight: 100 900;
+      font-style: normal;
+      font-display: block;
+    }
+
+    #root {
+      position: absolute;
+      inset: 0;
+      width: 1080px;
+      height: 1080px;
+      overflow: hidden;
+      font-family: "Manrope", sans-serif;
+      color: #172421;
+      -webkit-font-smoothing: antialiased;
+    }
+    .clip { position: absolute; inset: 0; }
+
+    .fr07-faida-ground { background: #FBF6EC; }
+
+    /* atmosphere — the closing frame's concentric rings (frame.md treatment 6) */
+    .fr07-faida-rings {
+      position: absolute;
+      left: 540px;
+      top: 335px;
+      width: 0;
+      height: 0;
+      opacity: 0;
+    }
+    .fr07-faida-ring {
+      position: absolute;
+      border: 1.5px solid rgba(21, 62, 53, 0.055);
+      border-radius: 50%;
+    }
+
+    /* ——— the lockup: mark + wordmark at the horizontal logo's own geometry ——— */
+    .fr07-faida-lockup {
+      position: absolute;
+      left: 260px;
+      top: 266px;
+      width: 560px;
+      height: 137px;
+    }
+    .fr07-faida-mark {
+      position: absolute;
+      left: -12.19px;
+      top: 0;
+      width: 169.9px;
+      height: 157.7px;
+      overflow: visible;
+    }
+    .fr07-faida-mark path {
+      stroke: #153E35;
+      stroke-width: 2.1;
+      stroke-linejoin: round;
+      stroke-linecap: round;
+    }
+    .fr07-faida-wordmask {
+      position: absolute;
+      left: 193px;
+      top: -10.2px;
+      width: 380px;
+      height: 166.5px;
+      overflow: hidden;
+      letter-spacing: -7.43px;
+      font: 600 166.5px/1 "Manrope", sans-serif;
+      color: #172421;
+      white-space: nowrap;
+    }
+    .fr07-faida-ltr { display: inline-block; }
+
+    /* ——— the two-line title ——— */
+    .fr07-faida-title {
+      position: absolute;
+      left: 0;
+      top: 480px;
+      width: 1080px;
+      text-align: center;
+      font: 700 54px/1.15 "Manrope", sans-serif;
+      letter-spacing: -0.02em;
+      color: #172421;
+    }
+    .fr07-faida-w { display: inline-block; }
+
+    /* ——— the pilot pill (the one solid element) ——— */
+    .fr07-faida-pillrow {
+      position: absolute;
+      left: 0;
+      top: 654px;
+      width: 1080px;
+      text-align: center;
+    }
+    .fr07-faida-pill {
+      display: inline-block;
+      background: #153E35;
+      color: #FBF6EC;
+      border-radius: 100px;
+      padding: 16px 36px;
+      font: 600 28px/1.2 "Manrope", sans-serif;
+      letter-spacing: 0.005em;
+    }
+
+    /* ——— the small closing line ——— */
+    .fr07-faida-sub {
+      position: absolute;
+      left: 0;
+      top: 752px;
+      width: 1080px;
+      text-align: center;
+      font: 400 22px/1.5 "Inter", sans-serif;
+      letter-spacing: 0.01em;
+      color: #52625D;
+    }
+  </style>
+
+  <div data-hf-id="hf-dy9z" id="root" data-composition-id="07-faida" data-width="1080" data-height="1080">
+
+    <!-- full-bleed cream ground + the closing atmosphere -->
+    <div data-hf-id="hf-0kh4" class="clip fr07-faida-ground" data-start="0" data-duration="3.422" data-track-index="0">
+      <div data-hf-id="hf-sq42" class="fr07-faida-rings" id="fr07-faida-rings">
+        <div data-hf-id="hf-6sh0" class="fr07-faida-ring" style="left:-230px;top:-230px;width:460px;height:460px"></div>
+        <div data-hf-id="hf-rbuy" class="fr07-faida-ring" style="left:-360px;top:-360px;width:720px;height:720px"></div>
+        <div data-hf-id="hf-bq88" class="fr07-faida-ring" style="left:-500px;top:-500px;width:1000px;height:1000px"></div>
+      </div>
+    </div>
+
+    <!-- content -->
+    <div data-hf-id="hf-4mjy" class="clip" data-start="0" data-duration="3.422" data-track-index="1">
+
+      <div data-hf-id="hf-wuke" class="fr07-faida-lockup" id="fr07-faida-lockup">
+        <svg data-hf-id="hf-ajfr" class="fr07-faida-mark" id="fr07-faida-mark" viewBox="0 0 112 104" xmlns="http://www.w3.org/2000/svg">
+          <path data-hf-id="hf-f7qe" fill="#153E35" d="M8 61c0-8 4-14 11-18l27-16v30L20 72c-6 4-12 0-12-7z" />
+          <path data-hf-id="hf-t4wy" fill="#E3A13B" d="M37 47c0-8 4-14 11-18l26-15v30L48 59c-6 4-11 0-11-7z" />
+          <path data-hf-id="hf-gav7" fill="#153E35" d="M66 32c0-8 4-14 11-18L104 0v70L78 85c-6 4-12 0-12-7z" />
+        </svg>
+        <div data-hf-id="hf-nx0m" class="fr07-faida-wordmask">
+          <span data-hf-id="hf-wvct" class="fr07-faida-ltr">f</span><span data-hf-id="hf-zni0" class="fr07-faida-ltr">a</span><span data-hf-id="hf-2ty8" class="fr07-faida-ltr">i</span><span data-hf-id="hf-xnyv" class="fr07-faida-ltr">d</span><span data-hf-id="hf-w39s" class="fr07-faida-ltr">a</span>
+        </div>
+      </div>
+
+      <div data-hf-id="hf-kfi8" class="fr07-faida-title">
+        <div data-hf-id="hf-yeow"><span data-hf-id="hf-uvvb" class="fr07-faida-w">Know</span> <span data-hf-id="hf-k0f3" class="fr07-faida-w">the</span> <span data-hf-id="hf-j54e" class="fr07-faida-w">profit</span> <span data-hf-id="hf-dcya" class="fr07-faida-w">margin</span></div>
+        <div data-hf-id="hf-y7yw"><span data-hf-id="hf-4uut" class="fr07-faida-w">on</span> <span data-hf-id="hf-1wm7" class="fr07-faida-w">every</span> <span data-hf-id="hf-nner" class="fr07-faida-w">item</span> <span data-hf-id="hf-63yn" class="fr07-faida-w">you</span> <span data-hf-id="hf-fv5m" class="fr07-faida-w">sell.</span></div>
+      </div>
+
+      <div data-hf-id="hf-5lxh" class="fr07-faida-pillrow">
+        <span data-hf-id="hf-p0ua" class="fr07-faida-pill" id="fr07-faida-pill">Private pilot · faida-web-nine.vercel.app</span>
+      </div>
+
+      <div data-hf-id="hf-rppo" class="fr07-faida-sub" id="fr07-faida-sub">Every item. Every branch. Real margins.</div>
+
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      var root = document.querySelector('[data-composition-id="07-faida"]');
+      var qa = function (sel) { return Array.prototype.slice.call(root.querySelectorAll(sel)); };
+
+      /* — setup: measure the mark's own geometry so the outline can draw (svg-path-draw) — */
+      var marks = qa('#fr07-faida-mark path');
+      marks.forEach(function (p) {
+        var len = 260;
+        try { var m = p.getTotalLength(); if (m && isFinite(m) && m > 1) len = m; } catch (e) {}
+        len = len * 1.05;                       // slight overestimate: too large is safe, too small clips
+        p.style.strokeDasharray = len;
+        p.style.strokeDashoffset = len;
+        p.style.fillOpacity = 0;
+        p.style.strokeOpacity = 1;
+      });
+
+      /* — the title's per-word cue grid, pre-computed once (dynamic-content-sequencing) — */
+      var TITLE_BASE = 0.92, STEP = 0.035, SEC_PER_CHAR = 0.008, WORD_DUR = 0.42;
+      var cursor = 0;
+      var WORD_CUES = qa('.fr07-faida-w').map(function (el) {
+        var start = cursor;
+        cursor += STEP + el.textContent.length * SEC_PER_CHAR;
+        return { el: el, at: TITLE_BASE + start };
+      });
+
+      window.__timelines = window.__timelines || {};
+      var tl = gsap.timeline({ paused: true });
+      window.__timelines["07-faida"] = tl;
+
+      /* ——— Scene 1 (0.0–0.9) · "Faida." — the mark draws itself, the wordmark rises in ——— */
+
+      // the outline self-draws tile by tile, each segment starting at ~75% of the last
+      var SEG = 0.26;
+      var segStarts = [0.00, 0.19, 0.38];
+      marks.forEach(function (p, i) {
+        tl.to(p, { strokeDashoffset: 0, duration: i === 2 ? SEG * 0.9 : SEG, ease: "power2.out" }, segStarts[i]);
+        // each fill arrives behind its own finished stroke; the guide stroke retires as it does
+        tl.to(p, { fillOpacity: 1, duration: 0.24, ease: "power1.out" }, segStarts[i] + SEG - 0.02);
+        tl.to(p, { strokeOpacity: 0, duration: 0.24, ease: "power1.out" }, segStarts[i] + SEG + 0.04);
+      });
+
+      // the closing rings settle in under the mark
+      tl.fromTo("#fr07-faida-rings", { opacity: 0 }, { opacity: 1, duration: 0.9, ease: "power3.out" }, 0.22);
+
+      // the wordmark rises in beside it, letter by letter, each cut to full opacity on arrival
+      qa('.fr07-faida-ltr').forEach(function (el, i) {
+        var at = 0.42 + i * 0.055;
+        tl.fromTo(el, { opacity: 0 }, { opacity: 1, duration: 0.001, ease: "none" }, at);
+        tl.fromTo(el, { yPercent: 72 }, { yPercent: 0, duration: 0.36, ease: "power3.out" }, at);
+      });
+
+      /* ——— Scene 2 (0.9–2.2) · "Know the margin on every item you sell." ——— */
+      WORD_CUES.forEach(function (cue) {
+        tl.fromTo(cue.el,
+          { opacity: 0, y: 20 },
+          { opacity: 1, y: 0, duration: WORD_DUR, ease: "power3.out" },
+          cue.at);
+      });
+
+      /* ——— Scene 3 (2.2–2.9) · the pilot pill settles, the small line follows ——— */
+      tl.fromTo("#fr07-faida-pill",
+        { opacity: 0, scale: 0.92, y: 10 },
+        { opacity: 1, scale: 1, y: 0, duration: 0.58, ease: "power3.out" },
+        2.20);
+      tl.fromTo("#fr07-faida-sub",
+        { opacity: 0, y: 10 },
+        { opacity: 1, y: 0, duration: 0.44, ease: "power3.out" },
+        2.52);
+
+      /* ——— Scene 4 (2.9–3.422) · the final hold: one quiet settle, no exit ——— */
+      tl.fromTo("#fr07-faida-lockup",
+        { scale: 1.006 },
+        { scale: 1, duration: 0.52, ease: "power3.out" },
+        2.90);
+
+      // pin the shot to its authored length
+      tl.set("#fr07-faida-sub", { opacity: 1 }, 3.422);
+    })();
+  </script>
+</template>

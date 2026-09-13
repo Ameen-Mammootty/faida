@@ -13,3 +13,15 @@ node_modules/
 eval/results/
 .gstack/
 .claude/worktrees/
+
+# HyperFrames video projects (videos/<project>): keep the brief, storyboard, script, frames,
+# fonts, audio and design spec; leave out captures, renders, snapshots and derived packets
+videos/*/renders/
+videos/*/capture/
+videos/*/capture-*/
+videos/*/snapshots/
+videos/*/.hyperframes/frame-packets/
+videos/*/assets/bgm/track.mp3
+videos/*/node_modules/
+videos/*/.thumbnails/
+videos/*/.waveform-cache/

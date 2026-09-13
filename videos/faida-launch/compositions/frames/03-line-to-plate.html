@@ -1,0 +1,363 @@
+<template>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+  <style>
+    @font-face {
+      font-family: "Manrope";
+      src: url("assets/fonts/manrope-variable.woff2") format("woff2");
+      font-weight: 200 800;
+      font-style: normal;
+      font-display: block;
+    }
+    @font-face {
+      font-family: "Inter";
+      src: url("assets/fonts/inter-variable.woff2") format("woff2");
+      font-weight: 100 900;
+      font-style: normal;
+      font-display: block;
+    }
+
+    #root {
+      position: absolute;
+      inset: 0;
+      width: 1080px;
+      height: 1080px;
+      overflow: hidden;
+      font-family: "Manrope", sans-serif;
+      color: #172421;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .clip { position: absolute; inset: 0; }
+
+    [class~="03-line-to-plate-bg"] { background: #FBF6EC; }
+
+    [class~="03-line-to-plate-stage"] { overflow: hidden; }
+
+    [class~="03-line-to-plate-world"] {
+      position: absolute;
+      inset: 0;
+      width: 1080px;
+      height: 1080px;
+      transform-origin: 50% 50%;
+      will-change: transform;
+    }
+
+    [class~="03-line-to-plate-label"] {
+      position: absolute;
+      font-family: "Manrope", sans-serif;
+      font-size: 22px;
+      font-weight: 600;
+      line-height: 1.2;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #153E35;
+    }
+
+    [class~="03-line-to-plate-card"] {
+      position: absolute;
+      background: #FFFFFF;
+      border: 1.5px solid rgba(21, 62, 53, 0.2);
+      border-radius: 14px;
+      box-shadow: none;
+    }
+
+    [class~="03-line-to-plate-crop"] {
+      position: relative;
+      width: 420px;
+      height: 105px;
+      flex: 0 0 auto;
+      overflow: hidden;
+      border-radius: 10px;
+      border: 1.5px solid rgba(21, 62, 53, 0.2);
+      background: #F2F2F2;
+    }
+    [class~="03-line-to-plate-crop"] img {
+      position: absolute;
+      left: -65.8px;
+      top: -474.9px;
+      width: 826.7px;
+      height: 1168.4px;
+      display: block;
+    }
+
+    [class~="03-line-to-plate-typed"] {
+      font-family: "Manrope", sans-serif;
+      font-size: 30px;
+      font-weight: 600;
+      line-height: 1.25;
+      color: #172421;
+    }
+    [class~="03-line-to-plate-typed-sub"] {
+      display: block;
+      margin-top: 6px;
+      font-family: "Inter", sans-serif;
+      font-size: 24px;
+      font-weight: 400;
+      color: #52625D;
+    }
+
+    [class~="03-line-to-plate-mark-wrap"] {
+      position: relative;
+      display: inline-block;
+    }
+    [class~="03-line-to-plate-mark-bar"] {
+      position: absolute;
+      inset: -2px -6px -1px -6px;
+      background: #E3A13B;
+      opacity: 0.32;
+      border-radius: 3px;
+      transform: scaleX(0);
+      transform-origin: left center;
+      z-index: 0;
+    }
+    [class~="03-line-to-plate-mark-text"] {
+      position: relative;
+      z-index: 1;
+    }
+
+    [class~="03-line-to-plate-mat-name"] {
+      font-family: "Manrope", sans-serif;
+      font-size: 40px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: #172421;
+    }
+    [class~="03-line-to-plate-mat-note"] {
+      font-family: "Inter", sans-serif;
+      font-size: 26px;
+      font-weight: 400;
+      color: #52625D;
+    }
+
+    [class~="03-line-to-plate-chip"] {
+      display: inline-block;
+      border-radius: 100px;
+      padding: 8px 20px;
+      font-family: "Manrope", sans-serif;
+      font-size: 22px;
+      font-weight: 600;
+      color: #1D6D50;
+      background: rgba(29, 109, 80, 0.12);
+      transform-origin: 50% 50%;
+      will-change: transform;
+    }
+
+    [class~="03-line-to-plate-recipe-title"] {
+      font-family: "Manrope", sans-serif;
+      font-size: 40px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: #172421;
+    }
+
+    [class~="03-line-to-plate-pills"] {
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+      margin-top: 24px;
+    }
+    [class~="03-line-to-plate-pill"] {
+      display: inline-block;
+      border-radius: 100px;
+      padding: 8px 20px;
+      font-family: "Manrope", sans-serif;
+      font-size: 24px;
+      font-weight: 500;
+      color: #153E35;
+      background: transparent;
+      border: 1.5px solid rgba(21, 62, 53, 0.3);
+      transform-origin: 50% 50%;
+      will-change: transform;
+    }
+    [class~="03-line-to-plate-pill-filled"] {
+      color: #FBF6EC;
+      background: #153E35;
+      border-color: #153E35;
+      font-weight: 600;
+    }
+
+    [class~="03-line-to-plate-foot"] {
+      font-family: "Inter", sans-serif;
+      font-size: 22px;
+      font-weight: 400;
+      color: #52625D;
+      margin-top: 24px;
+    }
+
+    [class~="03-line-to-plate-link"] {
+      position: absolute;
+      inset: 0;
+      width: 1080px;
+      height: 1080px;
+      pointer-events: none;
+    }
+    [class~="03-line-to-plate-link"] path {
+      fill: none;
+      stroke: #153E35;
+      stroke-width: 4;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+  </style>
+
+  <div data-hf-id="hf-k8at" id="root" data-composition-id="03-line-to-plate" data-width="1080" data-height="1080" data-duration="5.724">
+
+    <div data-hf-id="hf-xpfh" class="clip 03-line-to-plate-bg" data-start="0" data-duration="5.724" data-track-index="0"></div>
+
+    <div data-hf-id="hf-pnwf" class="clip 03-line-to-plate-stage" data-start="0" data-duration="5.724" data-track-index="1">
+      <div data-hf-id="hf-ndlr" class="03-line-to-plate-world" id="03-line-to-plate-world" data-layout-allow-overflow="">
+
+        <!-- Station 1 — the printed line -->
+        <div data-hf-id="hf-vpyn" class="03-line-to-plate-label" id="03-line-to-plate-label-1" style="left:60px;top:60px">Printed line</div>
+        <div data-hf-id="hf-1fak" class="03-line-to-plate-card" id="03-line-to-plate-card-1" style="left:60px;top:100px;width:960px;height:150px;padding:20px 28px;display:flex;align-items:center;gap:24px;box-sizing:border-box">
+          <div data-hf-id="hf-vope" class="03-line-to-plate-crop" id="03-line-to-plate-crop">
+            <img data-hf-id="hf-02u2" src="assets/invoice-gulf-foods-demo1.png" alt="">
+          </div>
+          <div data-hf-id="hf-p0qq" class="03-line-to-plate-typed" id="03-line-to-plate-typed">
+            <span data-hf-id="hf-7gqt">1 · </span><span data-hf-id="hf-074l" class="03-line-to-plate-mark-wrap"><span data-hf-id="hf-b3et" class="03-line-to-plate-mark-bar" id="03-line-to-plate-mark-bar"></span><span data-hf-id="hf-d10b" class="03-line-to-plate-mark-text">Milk Powder 2.5kg NIDO</span></span>
+            <span data-hf-id="hf-49aq" class="03-line-to-plate-typed-sub">12 sack · 54.50 · 654.00</span>
+          </div>
+        </div>
+
+        <!-- Station 2 — the raw material -->
+        <div data-hf-id="hf-2f14" class="03-line-to-plate-label" id="03-line-to-plate-label-2" style="left:60px;top:340px">Raw material</div>
+        <div data-hf-id="hf-tvjk" class="03-line-to-plate-card" id="03-line-to-plate-card-2" style="left:60px;top:380px;width:960px;height:130px;padding:20px 28px;display:flex;align-items:center;justify-content:space-between;box-sizing:border-box">
+          <div data-hf-id="hf-h1he" class="03-line-to-plate-mat-name" id="03-line-to-plate-mat-name">Milk Powder</div>
+          <div data-hf-id="hf-hshw" class="03-line-to-plate-mat-note" id="03-line-to-plate-mat-note">filed under · per kg</div>
+          <span data-hf-id="hf-n15d" class="03-line-to-plate-chip" id="03-line-to-plate-chip">mapped ✓</span>
+        </div>
+
+        <!-- Station 3 — the recipe -->
+        <div data-hf-id="hf-yy4h" class="03-line-to-plate-label" id="03-line-to-plate-label-3" style="left:60px;top:600px">Recipe</div>
+        <div data-hf-id="hf-4p13" class="03-line-to-plate-card" id="03-line-to-plate-card-3" style="left:60px;top:640px;width:960px;height:250px;padding:24px 28px;box-sizing:border-box">
+          <div data-hf-id="hf-iq97" class="03-line-to-plate-recipe-title" id="03-line-to-plate-recipe-title">Karak Tea (Flask 1 L)</div>
+          <div data-hf-id="hf-nud2" class="03-line-to-plate-pills" id="03-line-to-plate-pills">
+            <span data-hf-id="hf-ydlw" class="03-line-to-plate-pill 03-line-to-plate-pill-filled">Milk powder</span>
+            <span data-hf-id="hf-d51e" class="03-line-to-plate-pill">Karak tea dust</span>
+            <span data-hf-id="hf-ry50" class="03-line-to-plate-pill">Sugar</span>
+            <span data-hf-id="hf-82v4" class="03-line-to-plate-pill">Evaporated milk</span>
+            <span data-hf-id="hf-8ymp" class="03-line-to-plate-pill">Water</span>
+          </div>
+          <div data-hf-id="hf-4hcz" class="03-line-to-plate-foot" id="03-line-to-plate-foot">one plate = 1 L · yield and usable share applied</div>
+        </div>
+
+        <!-- Date Palm connectors, self-drawn -->
+        <svg data-hf-id="hf-zx9w" class="03-line-to-plate-link" viewBox="0 0 1080 1080" xmlns="http://www.w3.org/2000/svg">
+          <path data-hf-id="hf-dmy8" id="03-line-to-plate-wire-1" d="M 540 258 L 540 326" />
+          <path data-hf-id="hf-gaux" id="03-line-to-plate-tip-1" d="M 528 314 L 540 326 L 552 314" />
+          <path data-hf-id="hf-b066" id="03-line-to-plate-wire-2" d="M 540 518 L 540 586" />
+          <path data-hf-id="hf-vu7m" id="03-line-to-plate-tip-2" d="M 528 574 L 540 586 L 552 574" />
+        </svg>
+
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      var root = document.querySelector('[data-composition-id="03-line-to-plate"]');
+      var q = function (id) { return root.querySelector('[id="' + id + '"]'); };
+
+      var world = q("03-line-to-plate-world");
+
+      var tl = gsap.timeline({ paused: true });
+
+      /* ---- virtual camera: one .world wrapper, one writer (viewport-change) ---- */
+      var cam = { scale: 1.25, x: 0, y: 346 };
+      function applyCamera() {
+        world.style.transform = "translate(" + cam.x + "px, " + cam.y + "px) scale(" + cam.scale + ")";
+      }
+      applyCamera();
+
+      /* ---- self-drawing connectors: measured lengths ---- */
+      var wires = ["03-line-to-plate-wire-1", "03-line-to-plate-tip-1",
+                   "03-line-to-plate-wire-2", "03-line-to-plate-tip-2"];
+      wires.forEach(function (id) {
+        var p = q(id);
+        var len = 80;
+        if (p.getTotalLength) { len = p.getTotalLength() * 1.02; }
+        p.style.strokeDasharray = String(len);
+        p.style.strokeDashoffset = String(len);
+      });
+
+      /* ---- downstream stations: no empty white surface before their content ---- */
+      gsap.set([q("03-line-to-plate-label-2"), q("03-line-to-plate-card-2"),
+                q("03-line-to-plate-label-3"), q("03-line-to-plate-card-3")], { opacity: 0 });
+
+      /* ================= Scene 1 (0.0–1.4s) — "Every line" ================= */
+      tl.fromTo(q("03-line-to-plate-label-1"),
+        { opacity: 0, y: 10 },
+        { opacity: 1, y: 0, duration: 0.4, ease: "power3.out" }, 0);
+      tl.fromTo(q("03-line-to-plate-card-1"),
+        { opacity: 0, y: 18 },
+        { opacity: 1, y: 0, duration: 0.5, ease: "power3.out" }, 0);
+      tl.fromTo(q("03-line-to-plate-crop"),
+        { opacity: 0, scale: 0.94 },
+        { opacity: 1, scale: 1, duration: 0.55, ease: "power3.out" }, 0.05);
+      tl.fromTo(q("03-line-to-plate-typed"),
+        { opacity: 0, x: 16 },
+        { opacity: 1, x: 0, duration: 0.5, ease: "power3.out" }, 0.2);
+
+      /* gold marker sweep across the printed name, on the word "line" */
+      tl.fromTo(q("03-line-to-plate-mark-bar"),
+        { scaleX: 0 },
+        { scaleX: 1, duration: 0.5, ease: "power2.out" }, 0.5);
+
+      /* the connector begins to draw downward */
+      tl.to(q("03-line-to-plate-wire-1"), { strokeDashoffset: 0, duration: 0.6, ease: "power2.out" }, 0.85);
+      tl.to(q("03-line-to-plate-tip-1"), { strokeDashoffset: 0, duration: 0.3, ease: "power2.out" }, 1.3);
+
+      /* ============ Scene 2 (1.4–2.8s) — "becomes a raw material." ============ */
+      tl.to(cam, { scale: 1.1, y: 34.5, duration: 1.0, ease: "power2.inOut", onUpdate: applyCamera }, 1.4);
+      /* the surface arrives with its title, never as an empty box */
+      tl.fromTo([q("03-line-to-plate-label-2"), q("03-line-to-plate-card-2")],
+        { opacity: 0 },
+        { opacity: 1, duration: 0.45, ease: "power3.out" }, 2.05);
+
+      tl.fromTo(q("03-line-to-plate-mat-name"),
+        { opacity: 0, y: 14 },
+        { opacity: 1, y: 0, duration: 0.45, ease: "power3.out" }, 2.05);
+      tl.fromTo(q("03-line-to-plate-mat-note"),
+        { opacity: 0, y: 10 },
+        { opacity: 1, y: 0, duration: 0.45, ease: "power3.out" }, 2.2);
+      tl.fromTo(q("03-line-to-plate-chip"),
+        { opacity: 0, scale: 0 },
+        { opacity: 1, scale: 1, duration: 0.5, ease: "power3.out" }, 2.4);
+
+      /* the connector keeps drawing toward station 3 */
+      tl.to(q("03-line-to-plate-wire-2"), { strokeDashoffset: 0, duration: 0.6, ease: "power2.out" }, 2.15);
+      tl.to(q("03-line-to-plate-tip-2"), { strokeDashoffset: 0, duration: 0.3, ease: "power2.out" }, 2.6);
+
+      /* ======= Scene 3 (2.8–4.5s) — "Every material, part of a recipe." ======= */
+      tl.to(cam, { scale: 1, x: 0, y: 0, duration: 1.1, ease: "power3.inOut", onUpdate: applyCamera }, 2.8);
+      /* the recipe surface settles in with its label and title, as the camera lands */
+      tl.fromTo([q("03-line-to-plate-label-3"), q("03-line-to-plate-card-3")],
+        { opacity: 0 },
+        { opacity: 1, duration: 0.45, ease: "power3.out" }, 3.45);
+
+      tl.fromTo(q("03-line-to-plate-recipe-title"),
+        { opacity: 0, y: 14 },
+        { opacity: 1, y: 0, duration: 0.45, ease: "power3.out" }, 3.45);
+
+      var pills = root.querySelectorAll('[class~="03-line-to-plate-pill"]');
+      Array.prototype.forEach.call(pills, function (el, i) {
+        tl.fromTo(el,
+          { opacity: 0, scale: 0, y: 12 },
+          { opacity: 1, scale: 1, y: 0, duration: 0.5, ease: "power3.out" },
+          3.72 + i * 0.06);
+      });
+
+      tl.fromTo(q("03-line-to-plate-foot"),
+        { opacity: 0, y: 8 },
+        { opacity: 1, y: 0, duration: 0.4, ease: "power2.out" }, 4.32);
+
+      /* ============ Scene 4 (4.5–5.224s) — hold, camera static ============ */
+      var filled = root.querySelector('[class~="03-line-to-plate-pill-filled"]');
+      tl.to(filled, { scale: 1.035, duration: 0.28, ease: "power2.out" }, 4.72);
+      tl.to(filled, { scale: 1, duration: 0.34, ease: "power2.inOut" }, 5.0);
+
+      window.__timelines = window.__timelines || {};
+      window.__timelines["03-line-to-plate"] = tl;
+    })();
+  </script>
+</template>

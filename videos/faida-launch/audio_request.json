@@ -1,0 +1,63 @@
+{
+  "lines": [
+    {
+      "id": "01",
+      "sfx": [
+        "message-pop-soft ×5 (one per bubble",
+        "quiet)",
+        "keyboard-tick-soft"
+      ]
+    },
+    {
+      "id": "02",
+      "sfx": [
+        "send-whoosh-soft",
+        "typing-dots-soft",
+        "receive-pop",
+        "tick-soft"
+      ]
+    },
+    {
+      "id": "03",
+      "sfx": [
+        "pan-whoosh-soft ×2",
+        "tick-soft (on \"mapped ✓\")",
+        "pill-pops-soft"
+      ]
+    },
+    {
+      "id": "04",
+      "sfx": [
+        "riser-soft (into the count)",
+        "tick-low (as the figure lands)"
+      ]
+    },
+    {
+      "id": "05",
+      "sfx": [
+        "tick-soft ×7 (one per row",
+        "quiet cascade)",
+        "thump-low (the plum row)",
+        "chip-pop-soft"
+      ]
+    },
+    {
+      "id": "06",
+      "sfx": [
+        "notification-chime-soft",
+        "scroll-swish-soft",
+        "tick-soft"
+      ]
+    },
+    {
+      "id": "07",
+      "sfx": [
+        "brand-sting-soft",
+        "pill-pop-soft"
+      ]
+    }
+  ],
+  "bgm": {
+    "mode": "none"
+  }
+}

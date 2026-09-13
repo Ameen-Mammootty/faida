@@ -1,0 +1,174 @@
+<template>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+  <style>
+@font-face{font-family:"Manrope";src:url("assets/fonts/manrope-variable.woff2") format("woff2");font-weight:200 800;font-style:normal;font-display:block}
+@font-face{font-family:"Inter";src:url("assets/fonts/inter-variable.woff2") format("woff2");font-weight:100 900;font-style:normal;font-display:block}
+
+#root{position:absolute;inset:0;width:1080px;height:1080px;overflow:hidden;font-family:"Manrope",sans-serif;color:#172421;-webkit-font-smoothing:antialiased}
+.clip{position:absolute;inset:0}
+
+.f04wik-bg{background:#FBF6EC}
+
+.f04wik-eyebrow{position:absolute;left:60px;top:74px;z-index:2;font:600 22px/1.2 "Manrope",sans-serif;letter-spacing:.08em;text-transform:uppercase;color:#153E35}
+.f04wik-title{position:absolute;left:60px;top:110px;width:960px;z-index:2;font:700 56px/1.14 "Manrope",sans-serif;letter-spacing:-.02em;color:#172421;white-space:nowrap}
+.f04wik-word{display:inline-block;will-change:transform,opacity}
+
+.f04wik-grid{position:absolute;left:60px;top:232px;width:960px;z-index:2;display:grid;grid-template-columns:1fr 1fr;gap:24px}
+.f04wik-card{background:#fff;border:1.5px solid rgba(21,62,53,.2);border-radius:14px;box-sizing:border-box}
+.f04wik-topcard{padding:24px 28px}
+.f04wik-lab{font:500 24px/1.2 "Inter",sans-serif;color:#52625D}
+.f04wik-fig{font:700 64px/1.06 "Manrope",sans-serif;color:#172421;margin-top:8px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.f04wik-figwrap{display:inline-block;transform-origin:left bottom;will-change:transform,opacity}
+.f04wik-sub{font:400 20px/1.4 "Inter",sans-serif;color:#52625D;margin-top:8px}
+
+.f04wik-glow{position:absolute;left:-150px;top:382px;width:1380px;height:514px;z-index:1;opacity:0;pointer-events:none;transform-origin:center center;
+  background:radial-gradient(ellipse 46% 48% at 50% 54%, rgba(21,62,53,.60) 0%, rgba(21,62,53,.24) 44%, rgba(21,62,53,0) 74%)}
+
+.f04wik-keeps{position:absolute;left:60px;top:468px;width:960px;height:402px;z-index:2;padding:30px 40px 0}
+.f04wik-keeps-lab{font:500 28px/1.2 "Inter",sans-serif;color:#52625D}
+.f04wik-hero-row{display:flex;align-items:baseline;gap:26px;margin-top:10px}
+.f04wik-hero{display:inline-block;width:664px;font:800 124px/1 "Manrope",sans-serif;color:#153E35;font-variant-numeric:tabular-nums;letter-spacing:-.02em;white-space:nowrap;transform-origin:left bottom;will-change:transform,opacity}
+.f04wik-pct{display:inline-block;font:700 56px/1 "Manrope",sans-serif;color:#153E35;font-variant-numeric:tabular-nums;white-space:nowrap}
+.f04wik-track{margin-top:36px;height:16px;border-radius:6px;background:rgba(21,62,53,.12);position:relative;overflow:hidden}
+.f04wik-fill{position:absolute;left:0;top:0;width:100%;height:16px;border-radius:6px;background:#153E35;transform:scaleX(0);transform-origin:left center;will-change:transform}
+.f04wik-note{font:400 22px/1.4 "Inter",sans-serif;color:#52625D;margin-top:22px}
+</style>
+
+  <div data-hf-id="hf-7w8d" id="root" data-composition-id="04-what-it-keeps" data-width="1080" data-height="1080" data-duration="4.706">
+
+    <div data-hf-id="hf-yvlu" class="clip f04wik-bg" data-start="0" data-duration="4.706" data-track-index="0"></div>
+
+    <div data-hf-id="hf-vdmc" class="clip" data-start="0" data-duration="4.706" data-track-index="1">
+
+      <div data-hf-id="hf-5x9k" class="f04wik-glow" id="f04wik-glow"></div>
+
+      <div data-hf-id="hf-59k5" class="f04wik-eyebrow" id="f04wik-eyebrow">One item</div>
+      <div data-hf-id="hf-v2x6" class="f04wik-title" id="f04wik-title"><span data-hf-id="hf-do39" class="f04wik-word">Karak</span> <span data-hf-id="hf-i06d" class="f04wik-word">Tea</span> <span data-hf-id="hf-cy3i" class="f04wik-word">(Flask</span> <span data-hf-id="hf-53xr" class="f04wik-word">1&#160;L)</span></div>
+
+      <div data-hf-id="hf-w59m" class="f04wik-grid">
+        <div data-hf-id="hf-nb1p" class="f04wik-card f04wik-topcard">
+          <div data-hf-id="hf-6d3w" class="f04wik-lab f04wik-sells-lab">Sells at</div>
+          <div data-hf-id="hf-htu8" class="f04wik-fig f04wik-sells-fig">AED 35.00</div>
+          <div data-hf-id="hf-8xpb" class="f04wik-sub f04wik-sells-sub">AED 33.33 net of VAT</div>
+        </div>
+        <div data-hf-id="hf-3d5t" class="f04wik-card f04wik-topcard">
+          <div data-hf-id="hf-fmyf" class="f04wik-lab f04wik-costs-lab">Costs</div>
+          <div data-hf-id="hf-svqc" class="f04wik-fig"><span data-hf-id="hf-79na" class="f04wik-figwrap" id="f04wik-costs-wrap">AED <span data-hf-id="hf-wyzz" id="f04wik-costs-num">0.00</span></span></div>
+          <div data-hf-id="hf-4mvt" class="f04wik-sub f04wik-costs-sub">a portion, at today's prices</div>
+        </div>
+      </div>
+
+      <div data-hf-id="hf-cela" class="f04wik-card f04wik-keeps" id="f04wik-keeps">
+        <div data-hf-id="hf-2ksq" class="f04wik-keeps-lab" id="f04wik-keeps-lab" data-layout-allow-overlap="">Keeps</div>
+        <div data-hf-id="hf-du2d" class="f04wik-hero-row">
+          <span data-hf-id="hf-ns97" class="f04wik-hero" id="f04wik-hero">AED <span data-hf-id="hf-ncnl" id="f04wik-hero-num">0.00</span></span>
+          <span data-hf-id="hf-4cj2" class="f04wik-pct" id="f04wik-pct">0.0%</span>
+        </div>
+        <div data-hf-id="hf-kwu7" class="f04wik-track"><div data-hf-id="hf-c6n8" class="f04wik-fill" id="f04wik-fill"></div></div>
+        <div data-hf-id="hf-xboa" class="f04wik-note" id="f04wik-note">contribution before overheads (estimate) · costed at the prices in force on 31 Aug</div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      window.__timelines = window.__timelines || {};
+      var tl = gsap.timeline({ paused: true });
+      window.__timelines["04-what-it-keeps"] = tl;
+
+      var costsNum = document.getElementById("f04wik-costs-num");
+      var heroNum = document.getElementById("f04wik-hero-num");
+      var pctEl = document.getElementById("f04wik-pct");
+
+      /* ── Scene 1 (0.0–0.7) — "So every item" ─────────────────────────── */
+      tl.fromTo("#f04wik-eyebrow",
+        { opacity: 0, y: 14 },
+        { opacity: 1, y: 0, duration: 0.38, ease: "power3.out" }, 0);
+
+      tl.fromTo("#f04wik-title .f04wik-word",
+        { opacity: 0, y: 24 },
+        { opacity: 1, y: 0, duration: 0.52, ease: "power3.out", stagger: 0.055 }, 0.08);
+
+      /* the two upper card frames arrive empty */
+      tl.fromTo(".f04wik-topcard",
+        { opacity: 0, y: 20 },
+        { opacity: 1, y: 0, duration: 0.46, ease: "power3.out", stagger: 0.08 }, 0.40);
+
+      /* ── Scene 2 (0.7–1.9) — "shows what it costs," ──────────────────── */
+      tl.fromTo(".f04wik-sells-lab",
+        { opacity: 0, y: 10 },
+        { opacity: 1, y: 0, duration: 0.30, ease: "power3.out" }, 0.72);
+      tl.fromTo(".f04wik-sells-fig",
+        { opacity: 0, y: 12, scale: 0.90 },
+        { opacity: 1, y: 0, scale: 1, duration: 0.36, ease: "power3.out" }, 0.82);
+      tl.fromTo(".f04wik-sells-sub",
+        { opacity: 0, y: 8 },
+        { opacity: 1, y: 0, duration: 0.34, ease: "power3.out" }, 1.04);
+
+      tl.fromTo(".f04wik-costs-lab",
+        { opacity: 0, y: 10 },
+        { opacity: 1, y: 0, duration: 0.30, ease: "power3.out" }, 1.18);
+
+      /* count 0.00 → 6.20, two decimals, tabular-nums; scale shares the ease */
+      var costs = { v: 0 };
+      tl.to(costs, {
+        v: 6.2, duration: 0.50, ease: "power3.out",
+        onUpdate: function () { costsNum.textContent = costs.v.toFixed(2); }
+      }, 1.28);
+      tl.fromTo("#f04wik-costs-wrap",
+        { opacity: 0, scale: 0.62 },
+        { opacity: 1, scale: 1, duration: 0.50, ease: "power3.out" }, 1.28);
+
+      tl.fromTo(".f04wik-costs-sub",
+        { opacity: 0, y: 8 },
+        { opacity: 1, y: 0, duration: 0.34, ease: "power3.out" }, 1.58);
+
+      /* ── Scene 3 (1.9–3.4) — "and what it keeps." ────────────────────── */
+      tl.fromTo("#f04wik-keeps",
+        { borderColor: "rgba(21,62,53,0.2)" },
+        { borderColor: "rgba(21,62,53,1)", duration: 0.55, ease: "power3.out" }, 1.90);
+      tl.fromTo("#f04wik-keeps-lab",
+        { opacity: 0, y: 10 },
+        { opacity: 1, y: 0, duration: 0.32, ease: "power3.out" }, 1.92);
+
+      /* ambient bloom behind the card — peak 0.28, lands on the figure's settle */
+      tl.fromTo("#f04wik-glow",
+        { opacity: 0, scale: 0.88 },
+        { opacity: 0.28, scale: 1, duration: 0.98, ease: "power2.out" }, 2.02);
+
+      /* the hero counts up while its scale grows to the final size */
+      var hero = { v: 0 };
+      tl.to(hero, {
+        v: 27.13, duration: 0.98, ease: "power3.out",
+        onUpdate: function () { heroNum.textContent = hero.v.toFixed(2); }
+      }, 2.02);
+      tl.fromTo("#f04wik-hero",
+        { opacity: 0, scale: 0.52 },
+        { opacity: 1, scale: 1, duration: 0.98, ease: "power3.out" }, 2.02);
+
+      /* the bar fills to 81.4% on the SAME window and ease — one beat */
+      tl.fromTo("#f04wik-fill",
+        { scaleX: 0 },
+        { scaleX: 0.814, duration: 0.98, ease: "power3.out" }, 2.02);
+
+      var pct = { v: 0 };
+      tl.to(pct, {
+        v: 81.4, duration: 0.98, ease: "power3.out",
+        onUpdate: function () { pctEl.textContent = pct.v.toFixed(1) + "%"; }
+      }, 2.02);
+      tl.fromTo("#f04wik-pct",
+        { opacity: 0 },
+        { opacity: 1, duration: 0.34, ease: "power2.out" }, 2.06);
+
+      /* ── Scene 4 (3.4–4.206) — the note, then a held read ────────────── */
+      tl.fromTo("#f04wik-note",
+        { opacity: 0, y: 10 },
+        { opacity: 1, y: 0, duration: 0.46, ease: "power3.out" }, 3.40);
+
+      /* stillness to the end — no exit */
+      var hold = { t: 0 };
+      tl.to(hold, { t: 1, duration: 0.32, ease: "none" }, 3.886);
+    })();
+  </script>
+</template>

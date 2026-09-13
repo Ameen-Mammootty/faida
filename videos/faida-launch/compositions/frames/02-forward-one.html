@@ -1,0 +1,633 @@
+<template>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+  <style>
+    @font-face {
+      font-family: "Manrope";
+      src: url("assets/fonts/manrope-variable.woff2") format("woff2");
+      font-weight: 200 800;
+      font-style: normal;
+      font-display: block;
+    }
+    @font-face {
+      font-family: "Inter";
+      src: url("assets/fonts/inter-variable.woff2") format("woff2");
+      font-weight: 100 900;
+      font-style: normal;
+      font-display: block;
+    }
+
+    #root {
+      position: absolute;
+      inset: 0;
+      width: 1080px;
+      height: 1080px;
+      overflow: hidden;
+      font-family: "Manrope", "Inter", sans-serif;
+      color: #172421;
+      -webkit-font-smoothing: antialiased;
+    }
+    .clip {
+      position: absolute;
+      inset: 0;
+    }
+  </style>
+  <style>
+    /* ---- 02-forward-one ---------------------------------------------- */
+    .f02-forward-one-bg {
+      background: #fbf6ec;
+    }
+
+    /* chat chrome */
+    .f02-forward-one-chrome {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 1080px;
+      height: 96px;
+      background: #153e35;
+      color: #fbf6ec;
+      display: flex;
+      align-items: center;
+      padding: 0 40px;
+      gap: 20px;
+    }
+    .f02-forward-one-avatar {
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      background: #fbf6ec;
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+    }
+    .f02-forward-one-avatar img {
+      width: 34px;
+      height: 34px;
+      display: block;
+    }
+    .f02-forward-one-chrome-name {
+      font-family: "Manrope", sans-serif;
+      font-weight: 700;
+      font-size: 28px;
+      letter-spacing: -0.01em;
+      line-height: 1.15;
+    }
+    .f02-forward-one-chrome-sub {
+      font-family: "Inter", sans-serif;
+      font-weight: 400;
+      font-size: 20px;
+      line-height: 1.3;
+      opacity: 0.78;
+    }
+
+    /* outgoing message (the forwarded paper) */
+    .f02-forward-one-out {
+      position: absolute;
+      right: 60px;
+      top: 130px;
+      width: 420px;
+    }
+    .f02-forward-one-out-meta {
+      font-family: "Inter", sans-serif;
+      font-weight: 500;
+      font-size: 18px;
+      line-height: 1.3;
+      color: #52625d;
+      text-align: right;
+      margin-bottom: 6px;
+    }
+    .f02-forward-one-out-bubble {
+      background: #e7efea;
+      border: 1.5px solid rgba(21, 62, 53, 0.2);
+      border-radius: 14px;
+      padding: 12px;
+      transform-origin: 100% 100%;
+      will-change: transform, opacity;
+    }
+    .f02-forward-one-fwd-label {
+      font-family: "Inter", sans-serif;
+      font-weight: 500;
+      font-size: 18px;
+      line-height: 1.2;
+      color: #52625d;
+      margin-bottom: 8px;
+    }
+    .f02-forward-one-photo {
+      position: relative;
+      width: 396px;
+      height: 270px;
+      overflow: hidden;
+      border-radius: 10px;
+      background: #efe7d8;
+    }
+    .f02-forward-one-photo img {
+      position: absolute;
+      left: -18.4px;
+      top: -53.2px;
+      width: 431.6px;
+      height: auto;
+      display: block;
+    }
+    .f02-forward-one-receipt {
+      position: absolute;
+      right: 60px;
+      top: 502px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: "Inter", sans-serif;
+      font-weight: 400;
+      font-size: 17px;
+      line-height: 1;
+      color: #52625d;
+    }
+    .f02-forward-one-receipt svg {
+      display: block;
+    }
+
+    /* typing indicator */
+    .f02-forward-one-typing {
+      position: absolute;
+      left: 60px;
+      top: 532px;
+      width: 104px;
+      height: 56px;
+      background: #ffffff;
+      border: 1.5px solid rgba(21, 62, 53, 0.2);
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      transform-origin: 0% 50%;
+    }
+    .f02-forward-one-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #52625d;
+      opacity: 0.28;
+    }
+
+    /* reply */
+    .f02-forward-one-reply {
+      position: absolute;
+      left: 60px;
+      top: 500px;
+      width: 640px;
+    }
+    .f02-forward-one-reply-meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      height: 24px;
+      margin-bottom: 8px;
+      font-family: "Inter", sans-serif;
+      font-weight: 500;
+      font-size: 18px;
+      line-height: 1.3;
+      color: #52625d;
+    }
+    .f02-forward-one-reply-meta img {
+      width: 22px;
+      height: 22px;
+      display: block;
+    }
+    .f02-forward-one-card {
+      position: relative;
+      padding: 20px 24px;
+      transform-origin: 0% 0%;
+      will-change: transform, opacity;
+    }
+    /* The white surface is drawn behind the content in three crisp parts so
+       the sheet can grow with the reveals without ever stretching a border:
+       a fixed top cap, a body scaled on Y (only its side borders move, and a
+       side border's thickness is unaffected by a Y scale), and a bottom cap
+       that rides the body's edge on the same steps. */
+    .f02-forward-one-sheet-top,
+    .f02-forward-one-sheet-body,
+    .f02-forward-one-sheet-bottom {
+      position: absolute;
+      left: 0;
+      right: 0;
+      background: #ffffff;
+      z-index: 0;
+    }
+    .f02-forward-one-sheet-top {
+      top: 0;
+      height: 14px;
+      border: 1.5px solid rgba(21, 62, 53, 0.2);
+      border-bottom: none;
+      border-radius: 14px 14px 0 0;
+    }
+    .f02-forward-one-sheet-body {
+      top: 14px;
+      height: 314px;
+      border-left: 1.5px solid rgba(21, 62, 53, 0.2);
+      border-right: 1.5px solid rgba(21, 62, 53, 0.2);
+      transform-origin: 50% 0%;
+      will-change: transform;
+    }
+    .f02-forward-one-sheet-bottom {
+      top: 328px;
+      height: 14px;
+      border: 1.5px solid rgba(21, 62, 53, 0.2);
+      border-top: none;
+      border-radius: 0 0 14px 14px;
+      will-change: transform;
+    }
+    .f02-forward-one-card-content {
+      position: relative;
+      z-index: 1;
+    }
+    .f02-forward-one-quote {
+      border-left: 4px solid #e3a13b;
+      background: #f8eed9;
+      border-radius: 6px;
+      padding: 6px 12px;
+      font-family: "Inter", sans-serif;
+      font-weight: 400;
+      font-size: 18px;
+      line-height: 1.4;
+      color: #52625d;
+      margin-bottom: 14px;
+    }
+    .f02-forward-one-checked {
+      font-family: "Manrope", sans-serif;
+      font-weight: 700;
+      font-size: 32px;
+      line-height: 1.2;
+      letter-spacing: -0.02em;
+      color: #153e35;
+    }
+    .f02-forward-one-supplier {
+      font-family: "Manrope", sans-serif;
+      font-weight: 600;
+      font-size: 28px;
+      line-height: 1.2;
+      letter-spacing: -0.02em;
+      color: #172421;
+      margin-top: 6px;
+    }
+    .f02-forward-one-invmeta {
+      font-family: "Inter", sans-serif;
+      font-weight: 400;
+      font-size: 24px;
+      line-height: 1.2;
+      color: #52625d;
+      margin-top: 4px;
+      font-variant-numeric: tabular-nums;
+    }
+    .f02-forward-one-lines {
+      margin-top: 14px;
+    }
+    .f02-forward-one-line {
+      position: relative;
+      display: block;
+      font-family: "Inter", sans-serif;
+      font-weight: 400;
+      font-size: 24px;
+      line-height: 1.5;
+      color: #172421;
+      font-variant-numeric: tabular-nums;
+      width: fit-content;
+    }
+    .f02-forward-one-line-text {
+      position: relative;
+      z-index: 1;
+    }
+    .f02-forward-one-mark {
+      position: absolute;
+      left: -6px;
+      right: -6px;
+      bottom: 4px;
+      height: 13px;
+      background: #e3a13b;
+      opacity: 0.3;
+      border-radius: 3px;
+      transform: scaleX(0);
+      transform-origin: 0% 50%;
+      z-index: 0;
+    }
+    .f02-forward-one-total {
+      display: flex;
+      align-items: baseline;
+      gap: 14px;
+      margin-top: 16px;
+      font-family: "Manrope", sans-serif;
+    }
+    .f02-forward-one-total-label {
+      font-weight: 500;
+      font-size: 24px;
+      line-height: 1.2;
+      color: #52625d;
+    }
+    .f02-forward-one-total-value {
+      display: inline-block;
+      font-weight: 700;
+      font-size: 34px;
+      line-height: 1.1;
+      letter-spacing: -0.02em;
+      color: #172421;
+      font-variant-numeric: tabular-nums;
+      font-feature-settings: "tnum" 1;
+      transform-origin: 0% 60%;
+      white-space: nowrap;
+    }
+    .f02-forward-one-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 100px;
+      padding: 5px 14px;
+      background: rgba(29, 109, 80, 0.1);
+      color: #1d6d50;
+      font-family: "Manrope", sans-serif;
+      font-weight: 600;
+      font-size: 20px;
+      line-height: 1.2;
+      transform-origin: 50% 50%;
+    }
+  </style>
+
+  <div data-hf-id="hf-n45o" id="root" data-composition-id="02-forward-one" data-width="1080" data-height="1080" data-duration="5.202">
+    <div data-hf-id="hf-qeu8" class="clip f02-forward-one-bg" data-start="0" data-duration="5.202" data-track-index="0"></div>
+
+    <div data-hf-id="hf-1yf4" class="clip" data-start="0" data-duration="5.202" data-track-index="1">
+      <!-- chat chrome — present at t=0 -->
+      <div data-hf-id="hf-g0pq" class="f02-forward-one-chrome">
+        <div data-hf-id="hf-6uj7" class="f02-forward-one-avatar"><img data-hf-id="hf-auep" src="assets/faida-mark.svg" alt=""></div>
+        <div data-hf-id="hf-yeow">
+          <div data-hf-id="hf-e1ht" class="f02-forward-one-chrome-name">Faida</div>
+          <div data-hf-id="hf-qe12" class="f02-forward-one-chrome-sub">business account</div>
+        </div>
+      </div>
+
+      <!-- Scene 1 — the forwarded paper -->
+      <div data-hf-id="hf-qzws" class="f02-forward-one-out">
+        <div data-hf-id="hf-g4fp" class="f02-forward-one-out-meta" id="f02-forward-one-out-meta">You · 09:42</div>
+        <div data-hf-id="hf-ksk6" class="f02-forward-one-out-bubble" id="f02-forward-one-out-bubble">
+          <div data-hf-id="hf-2ogg" class="f02-forward-one-fwd-label">↪ Forwarded</div>
+          <div data-hf-id="hf-y8x9" class="f02-forward-one-photo" data-layout-allow-overflow="">
+            <img data-hf-id="hf-02u2" src="assets/invoice-gulf-foods-demo1.png" alt="">
+          </div>
+        </div>
+      </div>
+      <div data-hf-id="hf-gr3i" class="f02-forward-one-receipt" id="f02-forward-one-receipt">
+        <span data-hf-id="hf-0d32">09:42</span>
+        <svg data-hf-id="hf-z9yt" width="30" height="14" viewBox="0 0 30 14" fill="none" aria-hidden="true">
+          <path data-hf-id="hf-kssj" d="M1 8.2 L5.4 12.6 L14.6 2" stroke="#52625D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+          <path data-hf-id="hf-yi62" d="M9.4 8.2 L13.8 12.6 L23 2" stroke="#52625D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </div>
+
+      <!-- Scene 2 — typing, then the reply -->
+      <div data-hf-id="hf-9w3u" class="f02-forward-one-typing" id="f02-forward-one-typing">
+        <span data-hf-id="hf-afnu" class="f02-forward-one-dot" id="f02-forward-one-dot-0"></span>
+        <span data-hf-id="hf-edrv" class="f02-forward-one-dot" id="f02-forward-one-dot-1"></span>
+        <span data-hf-id="hf-5pw0" class="f02-forward-one-dot" id="f02-forward-one-dot-2"></span>
+      </div>
+
+      <div data-hf-id="hf-vatg" class="f02-forward-one-reply">
+        <div data-hf-id="hf-3aaq" class="f02-forward-one-reply-meta" id="f02-forward-one-reply-meta">
+          <img data-hf-id="hf-jj39" src="assets/faida-mark.svg" alt="">
+          <span data-hf-id="hf-ae5c">Faida · 09:42</span>
+        </div>
+        <div data-hf-id="hf-3tnm" class="f02-forward-one-card" id="f02-forward-one-card">
+          <div data-hf-id="hf-z38v" class="f02-forward-one-sheet-top"></div>
+          <div data-hf-id="hf-w7b6" class="f02-forward-one-sheet-body" id="f02-forward-one-sheet-body"></div>
+          <div data-hf-id="hf-6h32" class="f02-forward-one-sheet-bottom" id="f02-forward-one-sheet-bottom"></div>
+          <div data-hf-id="hf-wpne" class="f02-forward-one-card-content">
+          <div data-hf-id="hf-7w9b" class="f02-forward-one-quote" id="f02-forward-one-quote">↩ IMG_2048.jpg · quoted reply</div>
+          <div data-hf-id="hf-9tys" class="f02-forward-one-checked" id="f02-forward-one-checked">✓ Checked</div>
+
+          <!-- Scene 3 — supplier, meta, the two lines -->
+          <div data-hf-id="hf-wxvt" class="f02-forward-one-supplier" id="f02-forward-one-supplier">Gulf Foods Trading L.L.C.</div>
+          <div data-hf-id="hf-yua0" class="f02-forward-one-invmeta" id="f02-forward-one-invmeta">GFT-2026-0834 · 20 Aug · Al Qusais</div>
+          <div data-hf-id="hf-vky1" class="f02-forward-one-lines">
+            <div data-hf-id="hf-nhkg" class="f02-forward-one-line" id="f02-forward-one-line-1">
+              <span data-hf-id="hf-tcnt" class="f02-forward-one-mark" id="f02-forward-one-mark-1"></span>
+              <span data-hf-id="hf-dj0h" class="f02-forward-one-line-text">1 · Milk Powder 2.5kg NIDO · 12 × 54.50</span>
+            </div>
+            <div data-hf-id="hf-yd23" class="f02-forward-one-line" id="f02-forward-one-line-2">
+              <span data-hf-id="hf-xaru" class="f02-forward-one-mark" id="f02-forward-one-mark-2"></span>
+              <span data-hf-id="hf-o334" class="f02-forward-one-line-text">2 · Karak Tea Dust · 3 × 18.75</span>
+            </div>
+          </div>
+
+          <!-- Scene 4 — the total and the chip -->
+          <div data-hf-id="hf-zlcy" class="f02-forward-one-total" id="f02-forward-one-total">
+            <span data-hf-id="hf-e9d2" class="f02-forward-one-total-label">Total</span>
+            <span data-hf-id="hf-fc0f" class="f02-forward-one-total-value" id="f02-forward-one-total-value">AED 0.00</span>
+            <span data-hf-id="hf-683c" class="f02-forward-one-chip" id="f02-forward-one-chip">✓ sums agree</span>
+          </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      "use strict";
+
+      var tl = gsap.timeline({ paused: true });
+
+      /* ---------------- Scene 1 (0.0–0.9) — the forward arrives -------- */
+      // chat-message entry: grows from the corner nearest its sender,
+      // riding up from the bottom-right, smooth long-tail settle.
+      tl.fromTo(
+        "#f02-forward-one-out-meta",
+        { opacity: 0, y: 10 },
+        { opacity: 1, y: 0, duration: 0.36, ease: "power3.out" },
+        0.06,
+      );
+      tl.fromTo(
+        "#f02-forward-one-out-bubble",
+        { scale: 0.75, autoAlpha: 0.6, y: 120 },
+        { scale: 1, autoAlpha: 1, y: 0, duration: 0.62, ease: "power3.out" },
+        0.08,
+      );
+      tl.fromTo(
+        "#f02-forward-one-receipt",
+        { opacity: 0, y: 6 },
+        { opacity: 1, y: 0, duration: 0.34, ease: "power2.out" },
+        0.7,
+      );
+
+      /* ---------------- Scene 2 (0.9–1.9) — typing, then the reply ----- */
+      tl.fromTo(
+        "#f02-forward-one-typing",
+        { scale: 0.72, opacity: 0 },
+        { scale: 1, opacity: 1, duration: 0.28, ease: "power3.out" },
+        0.9,
+      );
+
+      // three dots stepping their opacity on one shared finite phase
+      var DOT_STEP = 0.1;
+      var DOT_FROM = 1.0;
+      var DOT_STEPS = 6;
+      for (var s = 0; s < DOT_STEPS; s += 1) {
+        for (var d = 0; d < 3; d += 1) {
+          tl.set(
+            "#f02-forward-one-dot-" + d,
+            { opacity: s % 3 === d ? 1 : 0.28 },
+            DOT_FROM + s * DOT_STEP,
+          );
+        }
+      }
+      tl.set(["#f02-forward-one-dot-0", "#f02-forward-one-dot-1", "#f02-forward-one-dot-2"], { opacity: 0.28 }, 1.6);
+
+      // the indicator is replaced by the reply
+      tl.to("#f02-forward-one-typing", { scale: 0.8, opacity: 0, duration: 0.16, ease: "power2.in" }, 1.6);
+
+      tl.fromTo(
+        "#f02-forward-one-reply-meta",
+        { opacity: 0, y: 8 },
+        { opacity: 1, y: 0, duration: 0.32, ease: "power3.out" },
+        1.68,
+      );
+      tl.fromTo(
+        "#f02-forward-one-card",
+        { scale: 0.78, autoAlpha: 0.6, y: 26 },
+        { scale: 1, autoAlpha: 1, y: 0, duration: 0.52, ease: "power3.out" },
+        1.72,
+      );
+      tl.fromTo(
+        "#f02-forward-one-quote",
+        { opacity: 0, x: -10 },
+        { opacity: 1, x: 0, duration: 0.34, ease: "power3.out" },
+        1.86,
+      );
+      tl.fromTo(
+        "#f02-forward-one-checked",
+        { scale: 0.72, opacity: 0 },
+        { scale: 1, opacity: 1, duration: 0.42, ease: "power3.out" },
+        1.94,
+      );
+
+      /* ---- the white surface grows with what has landed on it ---------
+         Authored card height is 342px: a 14px top cap, a 314px body scaled
+         on Y from its top edge, and a 14px bottom cap translated onto the
+         body's edge. Heights below are the card's height once each reveal
+         has landed; nothing tweens height and the content is never scaled. */
+      var SHEET_BODY = 314;
+      var SHEET_CAPS = 28;
+      var CARD_H = 342;
+      function bodyScale(cardHeight) {
+        return (cardHeight - SHEET_CAPS) / SHEET_BODY;
+      }
+      // quote + Checked · + supplier · + meta · + line 1 · + line 2 · + total
+      var GROWTH = [
+        { h: 129.6, at: 1.72, dur: 0 },
+        { h: 169.2, at: 2.12, dur: 0.4 },
+        { h: 202.0, at: 2.38, dur: 0.36 },
+        { h: 252.0, at: 2.66, dur: 0.4 },
+        { h: 288.0, at: 2.98, dur: 0.4 },
+        { h: CARD_H, at: 3.46, dur: 0.44 },
+      ];
+      GROWTH.slice(1).forEach(function (step, i) {
+        var from = GROWTH[i].h;
+        tl.fromTo(
+          "#f02-forward-one-sheet-body",
+          { scaleY: bodyScale(from) },
+          {
+            scaleY: bodyScale(step.h),
+            duration: step.dur,
+            ease: "power3.out",
+            immediateRender: i === 0,
+          },
+          step.at,
+        );
+        tl.fromTo(
+          "#f02-forward-one-sheet-bottom",
+          { y: from - CARD_H },
+          {
+            y: step.h - CARD_H,
+            duration: step.dur,
+            ease: "power3.out",
+            immediateRender: i === 0,
+          },
+          step.at,
+        );
+      });
+
+      /* ---------------- Scene 3 (1.9–3.6) — read line by line ---------- */
+      // content sequenced one beat apart; each line lands, then a gold
+      // marker sweep underlines it left → right.
+      var SEQUENCE = [
+        { el: "#f02-forward-one-supplier", at: 2.16 },
+        { el: "#f02-forward-one-invmeta", at: 2.42 },
+        { el: "#f02-forward-one-line-1", at: 2.7 },
+        { el: "#f02-forward-one-line-2", at: 3.02 },
+      ];
+      SEQUENCE.forEach(function (item) {
+        tl.fromTo(
+          item.el,
+          { opacity: 0, y: 14 },
+          { opacity: 1, y: 0, duration: 0.42, ease: "power3.out" },
+          item.at,
+        );
+      });
+
+      tl.fromTo(
+        "#f02-forward-one-mark-1",
+        { scaleX: 0 },
+        { scaleX: 1, duration: 0.44, ease: "power2.out" },
+        2.94,
+      );
+      tl.fromTo(
+        "#f02-forward-one-mark-2",
+        { scaleX: 0 },
+        { scaleX: 1, duration: 0.44, ease: "power2.out" },
+        3.26,
+      );
+
+      /* ---------------- Scene 4 (3.6–4.7) — the total, then the chip --- */
+      tl.fromTo(
+        "#f02-forward-one-total",
+        { opacity: 0, y: 12 },
+        { opacity: 1, y: 0, duration: 0.34, ease: "power3.out" },
+        3.5,
+      );
+
+      // eased count 0.00 → 745.76, stepped once per rendered frame so every
+      // seek shows the same value, then one restrained landing pulse.
+      var COUNT_START = 3.6;
+      var COUNT_DUR = 0.62;
+      var FPS = 30;
+      var LAST = Math.max(1, Math.round(COUNT_DUR * FPS));
+      var countEase = gsap.parseEase("sine.inOut");
+      var END_VALUE = 745.76;
+      for (var f = 0; f <= LAST; f += 1) {
+        var eased = countEase(f / LAST);
+        tl.set(
+          "#f02-forward-one-total-value",
+          { textContent: "AED " + (END_VALUE * eased).toFixed(2) },
+          COUNT_START + COUNT_DUR * (f / LAST),
+        );
+      }
+      var PULSE = 0.165;
+      tl.to(
+        "#f02-forward-one-total-value",
+        { scale: 1.06, duration: PULSE, ease: "power3.out" },
+        COUNT_START + COUNT_DUR,
+      );
+      tl.to(
+        "#f02-forward-one-total-value",
+        { scale: 1, duration: PULSE, ease: "power2.out" },
+        COUNT_START + COUNT_DUR + PULSE,
+      );
+
+      tl.fromTo(
+        "#f02-forward-one-chip",
+        { scale: 0, opacity: 0 },
+        { scale: 1, opacity: 1, duration: 0.42, ease: "power3.out" },
+        4.24,
+      );
+
+      window.__timelines = window.__timelines || {};
+      window.__timelines["02-forward-one"] = tl;
+    })();
+  </script>
+</template>

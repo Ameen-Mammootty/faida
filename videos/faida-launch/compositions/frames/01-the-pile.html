@@ -1,0 +1,388 @@
+<template>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+  <style>
+    @font-face {
+      font-family: "Manrope";
+      src: url("assets/fonts/manrope-variable.woff2") format("woff2");
+      font-weight: 200 800;
+      font-style: normal;
+      font-display: block;
+    }
+    @font-face {
+      font-family: "Inter";
+      src: url("assets/fonts/inter-variable.woff2") format("woff2");
+      font-weight: 100 900;
+      font-style: normal;
+      font-display: block;
+    }
+    #root {
+      position: absolute;
+      inset: 0;
+      width: 1080px;
+      height: 1080px;
+      overflow: hidden;
+      font-family: "Manrope", "Inter", sans-serif;
+      color: #172421;
+      -webkit-font-smoothing: antialiased;
+    }
+    .clip {
+      position: absolute;
+      inset: 0;
+    }
+    [class~="01-the-pile-bg"] {
+      background: #fbf6ec;
+    }
+    /* faint chat field wash so the cream reads as a surface, not a void */
+    [class~="01-the-pile-field"] {
+      position: absolute;
+      left: 0;
+      top: 96px;
+      width: 1080px;
+      height: 984px;
+      background: radial-gradient(
+        120% 90% at 50% 0%,
+        rgba(21, 62, 53, 0.05) 0%,
+        rgba(21, 62, 53, 0) 62%
+      );
+    }
+    [class~="01-the-pile-header"] {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 1080px;
+      height: 96px;
+      background: #153e35;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      padding: 0 40px;
+      gap: 20px;
+    }
+    [class~="01-the-pile-avatar"] {
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.16);
+      border: 1.5px solid rgba(255, 255, 255, 0.4);
+      display: grid;
+      place-items: center;
+      font: 700 22px/1 "Manrope", sans-serif;
+      letter-spacing: 0.02em;
+      color: #ffffff;
+      flex: none;
+    }
+    [class~="01-the-pile-htitle"] {
+      font: 700 28px/1.15 "Manrope", sans-serif;
+      letter-spacing: -0.01em;
+    }
+    [class~="01-the-pile-hsub"] {
+      font: 400 20px/1.3 "Inter", sans-serif;
+      opacity: 0.72;
+      margin-top: 2px;
+    }
+    [class~="01-the-pile-wrap"] {
+      position: absolute;
+      will-change: transform;
+    }
+    [class~="01-the-pile-bub"] {
+      position: absolute;
+      inset: 0;
+      background: #ffffff;
+      border: 1.5px solid rgba(21, 62, 53, 0.2);
+      border-radius: 14px;
+      padding: 8px 8px 26px 8px;
+      transform-origin: 0% 100%;
+      will-change: transform, opacity;
+    }
+    [class~="01-the-pile-shot"] {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: 50% 12%;
+      border-radius: 8px;
+      background: #eee7d8;
+    }
+    [class~="01-the-pile-stamp"] {
+      position: absolute;
+      right: 16px;
+      bottom: 5px;
+      font: 500 15px/1 "Inter", sans-serif;
+      color: #52625D;
+      letter-spacing: 0.01em;
+    }
+    [class~="01-the-pile-veil"] {
+      position: absolute;
+      inset: 8px 8px 26px 8px;
+      border-radius: 8px;
+      background: rgba(251, 246, 236, 0.28);
+    }
+    [class~="01-the-pile-chip"] {
+      position: absolute;
+      right: 60px;
+      top: 600px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-radius: 100px;
+      padding: 12px 24px;
+      background: #f8eed9;
+      border: 1.5px solid rgba(227, 161, 59, 0.45);
+      font: 600 24px/1 "Manrope", sans-serif;
+      color: #153e35;
+      transform-origin: 100% 50%;
+      will-change: transform, opacity;
+    }
+    [class~="01-the-pile-dot"] {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #e3a13b;
+      flex: none;
+    }
+    [class~="01-the-pile-bar"] {
+      position: absolute;
+      left: 40px;
+      top: 820px;
+      width: 1000px;
+      height: 70px;
+      background: #ffffff;
+      border: 1.5px solid rgba(21, 62, 53, 0.2);
+      border-radius: 100px;
+      display: flex;
+      align-items: center;
+      padding: 0 32px;
+    }
+    [class~="01-the-pile-typewrap"] {
+      display: inline-flex;
+      align-items: center;
+      min-width: 700px;
+      white-space: pre;
+      font: 400 28px/1 "Inter", sans-serif;
+      color: #172421;
+    }
+    [class~="01-the-pile-type"] {
+      white-space: pre;
+    }
+    [class~="01-the-pile-caret"] {
+      display: inline-block;
+      width: 3px;
+      height: 34px;
+      margin-left: 4px;
+      background: #172421;
+    }
+    [class~="01-the-pile-send"] {
+      position: absolute;
+      right: 8px;
+      top: 8px;
+      width: 54px;
+      height: 54px;
+      border-radius: 50%;
+      background: #153e35;
+      display: grid;
+      place-items: center;
+    }
+    [class~="01-the-pile-plane"] {
+      width: 0;
+      height: 0;
+      margin-left: 4px;
+      border-left: 18px solid #fbf6ec;
+      border-top: 10px solid transparent;
+      border-bottom: 10px solid transparent;
+    }
+  </style>
+  <div data-hf-id="hf-23y7" id="root" data-composition-id="01-the-pile" data-width="1080" data-height="1080" data-duration="5.363">
+
+    <!-- track 0 — the cream ground -->
+    <div data-hf-id="hf-38en" class="clip 01-the-pile-bg" data-start="0" data-duration="5.363" data-track-index="0"></div>
+
+    <!-- track 1 — the chat chrome (present from t=0) -->
+    <div data-hf-id="hf-acgm" class="clip" data-start="0" data-duration="5.363" data-track-index="1">
+      <div data-hf-id="hf-4pin" class="01-the-pile-field"></div>
+      <div data-hf-id="hf-j546" class="01-the-pile-header">
+        <div data-hf-id="hf-9y56" class="01-the-pile-avatar">SQ</div>
+        <div data-hf-id="hf-yeow">
+          <div data-hf-id="hf-i2i0" class="01-the-pile-htitle">Suppliers · Al Qusais</div>
+          <div data-hf-id="hf-h3ut" class="01-the-pile-hsub">Gulf Foods, Al Madina, Koukh Al Shay…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- track 2 — the pile of photo bubbles -->
+    <div data-hf-id="hf-6ecl" class="clip" data-start="0" data-duration="5.363" data-track-index="2">
+
+      <div data-hf-id="hf-nt74" class="01-the-pile-wrap" style="left:60px;top:130px;width:300px;height:400px;transform:rotate(-4deg)">
+        <div data-hf-id="hf-x47w" class="01-the-pile-bub" id="01-the-pile-b1">
+          <img data-hf-id="hf-sumu" class="01-the-pile-shot" src="assets/invoice-kas-1.png" alt="">
+          <div data-hf-id="hf-gnz5" class="01-the-pile-veil"></div>
+          <div data-hf-id="hf-45pc" class="01-the-pile-stamp" data-layout-allow-occlusion="">09:14</div>
+        </div>
+      </div>
+
+      <div data-hf-id="hf-21cp" class="01-the-pile-wrap" style="left:400px;top:160px;width:300px;height:400px;transform:rotate(3deg)">
+        <div data-hf-id="hf-5s3r" class="01-the-pile-bub" id="01-the-pile-b2">
+          <img data-hf-id="hf-wa5h" class="01-the-pile-shot" src="assets/invoice-kas-2.png" alt="">
+          <div data-hf-id="hf-yaut" class="01-the-pile-veil"></div>
+          <div data-hf-id="hf-3pht" class="01-the-pile-stamp" data-layout-allow-occlusion="">09:31</div>
+        </div>
+      </div>
+
+      <div data-hf-id="hf-ynye" class="01-the-pile-wrap" style="left:720px;top:120px;width:300px;height:400px;transform:rotate(-2deg)">
+        <div data-hf-id="hf-5zkx" class="01-the-pile-bub" id="01-the-pile-b3" style="border-color:rgba(21,62,53,.32)">
+          <img data-hf-id="hf-89gs" class="01-the-pile-shot" src="assets/invoice-gulf-foods-demo1.png" alt="">
+          <div data-hf-id="hf-lzyh" class="01-the-pile-stamp" data-layout-allow-occlusion="">10:02</div>
+        </div>
+      </div>
+
+      <div data-hf-id="hf-yve6" class="01-the-pile-wrap" style="left:200px;top:430px;width:300px;height:380px;transform:rotate(5deg)">
+        <div data-hf-id="hf-ahvl" class="01-the-pile-bub" id="01-the-pile-b4">
+          <img data-hf-id="hf-nmka" class="01-the-pile-shot" src="assets/invoice-kas-1.png" alt="">
+          <div data-hf-id="hf-zhrw" class="01-the-pile-veil"></div>
+          <div data-hf-id="hf-vntn" class="01-the-pile-stamp" data-layout-allow-occlusion="">11:47</div>
+        </div>
+      </div>
+
+      <div data-hf-id="hf-ndt3" class="01-the-pile-wrap" style="left:560px;top:450px;width:300px;height:380px;transform:rotate(-6deg)">
+        <div data-hf-id="hf-9q7s" class="01-the-pile-bub" id="01-the-pile-b5">
+          <img data-hf-id="hf-gmnt" class="01-the-pile-shot" src="assets/invoice-kas-2.png" alt="">
+          <div data-hf-id="hf-z3gv" class="01-the-pile-veil"></div>
+          <div data-hf-id="hf-bhay" class="01-the-pile-stamp" data-layout-allow-occlusion="">12:05</div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- track 3 — the density chip -->
+    <div data-hf-id="hf-5mos" class="clip" data-start="0" data-duration="5.363" data-track-index="3">
+      <div data-hf-id="hf-nars" class="01-the-pile-chip" id="01-the-pile-chip">
+        <span data-hf-id="hf-auw9" class="01-the-pile-dot"></span>14 photos this week
+      </div>
+    </div>
+
+    <!-- track 4 — the input bar and its typed question -->
+    <div data-hf-id="hf-t46b" class="clip" data-start="0" data-duration="5.363" data-track-index="4">
+      <div data-hf-id="hf-0xrw" class="01-the-pile-bar">
+        <div data-hf-id="hf-g99t" class="01-the-pile-typewrap">
+          <span data-hf-id="hf-mnt7" class="01-the-pile-type" id="01-the-pile-type"></span><span data-hf-id="hf-tryr" class="01-the-pile-caret" id="01-the-pile-caret"></span>
+        </div>
+        <div data-hf-id="hf-fi5j" class="01-the-pile-send"><span data-hf-id="hf-n7k2" class="01-the-pile-plane"></span></div>
+      </div>
+    </div>
+
+  </div>
+  <script>
+    (function () {
+      "use strict";
+
+      var DURATION = 4.963;
+      var INK = "#172421";
+      var DEEP = "#153E35";
+
+      var tl = gsap.timeline({ paused: true });
+
+      var byId = function (id) { return document.getElementById(id); };
+
+      /* ---- Scenes 1–2: the pile accumulates.
+         The measured chat-message entry (scale 0.75, alpha 0.6 → 1, growing from the
+         sender's corner) held on the smooth-settle register of spring-pop-entrance. */
+      var ARRIVALS = [
+        { el: "01-the-pile-b1", at: 0.10 },
+        { el: "01-the-pile-b2", at: 0.76 },
+        { el: "01-the-pile-b3", at: 1.13 },
+        { el: "01-the-pile-b4", at: 1.50 },
+        { el: "01-the-pile-b5", at: 1.87 }
+      ];
+
+      ARRIVALS.forEach(function (a) {
+        tl.fromTo(
+          byId(a.el),
+          { scale: 0.75, opacity: 0.6, y: 18 },
+          { scale: 1, opacity: 1, y: 0, duration: 0.30, ease: "power3.out" },
+          a.at
+        );
+      });
+
+      /* the density marker pops as the pile finishes building */
+      tl.fromTo(
+        byId("01-the-pile-chip"),
+        { scale: 0, opacity: 0 },
+        { scale: 1, opacity: 1, duration: 0.42, ease: "power3.out" },
+        2.24
+      );
+
+      /* ---- Scene 3: the question types itself into the input bar.
+         discrete-text-sequence states + a context-sensitive caret. */
+      var SEQUENCE = [
+        { t: 0.00, text: "", segment: "main", color: INK },
+        { t: 3.00, text: "", segment: "main", color: INK },
+        { t: 3.07, text: "s", segment: "main", color: INK },
+        { t: 3.13, text: "so", segment: "main", color: INK },
+        { t: 3.20, text: "so ", segment: "main", color: INK },
+        { t: 3.28, text: "so w", segment: "main", color: INK },
+        { t: 3.34, text: "so wh", segment: "main", color: INK },
+        { t: 3.40, text: "so wha", segment: "main", color: INK },
+        { t: 3.46, text: "so what", segment: "main", color: INK },
+        { t: 3.55, text: "so what ", segment: "main", color: INK },
+        { t: 3.62, text: "so what d", segment: "main", color: INK },
+        { t: 3.68, text: "so what do", segment: "main", color: INK },
+        { t: 3.74, text: "so what doe", segment: "main", color: INK },
+        { t: 3.80, text: "so what does", segment: "main", color: INK },
+        { t: 3.90, text: "so what does ", segment: "main", color: INK },
+        { t: 3.97, text: "so what does a", segment: "main", color: INK },
+        { t: 4.06, text: "so what does a ", segment: "main", color: INK },
+        { t: 4.13, text: "so what does a k", segment: "dish", color: DEEP },
+        { t: 4.19, text: "so what does a ka", segment: "dish", color: DEEP },
+        { t: 4.25, text: "so what does a kar", segment: "dish", color: DEEP },
+        { t: 4.31, text: "so what does a kara", segment: "dish", color: DEEP },
+        { t: 4.37, text: "so what does a karal", segment: "dish", color: DEEP },
+        { t: 4.46, text: "so what does a kara", segment: "dish", color: DEEP },
+        { t: 4.52, text: "so what does a karak", segment: "dish", color: DEEP },
+        { t: 4.59, text: "so what does a karak ", segment: "main", color: INK },
+        { t: 4.66, text: "so what does a karak earn?", segment: "main", color: INK }
+      ];
+
+      /* baked once — every state whose text differs from its predecessor is a keystroke */
+      var CHANGE_TIMES = SEQUENCE.filter(function (e, i) {
+        return i > 0 && e.text !== SEQUENCE[i - 1].text;
+      }).map(function (e) { return e.t; });
+
+      var TYPING_GRACE = 0.16;
+      var BLINK_CYCLES = 7; /* whole number over the fixed duration — period ≈ 0.71s */
+
+      function entryAt(time) {
+        for (var i = SEQUENCE.length - 1; i >= 0; i--) {
+          if (time >= SEQUENCE[i].t) return SEQUENCE[i];
+        }
+        return SEQUENCE[0];
+      }
+
+      var textEl = byId("01-the-pile-type");
+      var caretEl = byId("01-the-pile-caret");
+
+      var driver = { t: 0, p: 0 };
+      tl.to(
+        driver,
+        {
+          t: DURATION,
+          p: Math.PI * 2 * BLINK_CYCLES,
+          duration: DURATION,
+          ease: "none",
+          onUpdate: function () {
+            var entry = entryAt(driver.t);
+            textEl.textContent = entry.text;
+            caretEl.style.background = entry.color;
+            var typing = CHANGE_TIMES.some(function (t) {
+              return t <= driver.t && driver.t - t < TYPING_GRACE;
+            });
+            caretEl.style.opacity = typing ? "1" : (Math.sin(driver.p) > 0 ? "1" : "0");
+          }
+        },
+        0
+      );
+
+      tl.seek(0);
+      window.__timelines = window.__timelines || {};
+      window.__timelines["01-the-pile"] = tl;
+    })();
+  </script>
+</template>
