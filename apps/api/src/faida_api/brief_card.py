@@ -91,6 +91,7 @@ from .card import (
     Sheet,
     Text,
     fit,
+    header,
     render,
     shorten,
     text_height,
@@ -213,25 +214,19 @@ FOOTER_MAX_LINES = 3
 
 def _header(sheet: Sheet, brief: Brief) -> int:
     """The wordmark and the day, on one line with a Karak Gold rule under
-    them. The day is the read's own sentence and can run long on a stale
-    morning, so it wraps to a second line rather than being cut."""
-    scale = sheet.scale
-    brand_size = scale.px(BRAND_SIZE)
-    day_size = scale.px(DAY_SIZE)
-    day_line = scale.px(DAY_LINE)
-    brand_w = text_width("Faida", BRAND, brand_size)
-    brand_h = text_height(BRAND, brand_size)
-    day_w = CONTENT_W - brand_w - scale.px(40)
-    days = wrap(brief.day, REGULAR, day_size, day_w, DAY_MAX_LINES)
-    block_h = max(brand_h, len(days) * day_line)
-    top = scale.px(HEADER_TOP)
-    sheet.text(MARGIN, top + block_h - brand_h, "Faida", BRAND, brand_size, DATE_PALM)
-    day_top = top + block_h - len(days) * day_line
-    for index, line in enumerate(days):
-        sheet.right(CANVAS_W - MARGIN, day_top + index * day_line, line, REGULAR, day_size, SLATE)
-    rule_y = top + block_h + scale.px(RULE_GAP)
-    sheet.add(Rule(MARGIN, rule_y, CONTENT_W, scale.px(RULE_H), KARAK_GOLD))
-    return rule_y + scale.px(RULE_H)
+    them (`card.header`). The day is the read's own sentence and can run long
+    on a stale morning, so it wraps to a second line rather than being cut."""
+    return header(
+        sheet,
+        brief.day,
+        top=HEADER_TOP,
+        brand_size=BRAND_SIZE,
+        text_size=DAY_SIZE,
+        text_line=DAY_LINE,
+        max_lines=DAY_MAX_LINES,
+        rule_gap=RULE_GAP,
+        rule_h=RULE_H,
+    )
 
 
 def _tiles(sheet: Sheet, kpis: tuple[Kpi, ...], top: int) -> int:

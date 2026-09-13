@@ -390,6 +390,40 @@ async def _statements(
     }
 
 
+async def read_branch_statement(
+    db: Database, tenant_id: str, branch_id: str, *, month: datetime.date, currency: str
+) -> tuple[incentive.Statement, str] | None:
+    """One branch's statement for one scheme month and the branch's name,
+    through the same reads the screen makes (`_scheme_month`, `_statements`),
+    so the scoreboard on the phone is the statement on the screen (C16).
+    None when the branch is not this tenant's, when no scheme month covers
+    `month`, or when the month set no target for the branch - the three
+    cases in which there is no statement to draw and the morning sends
+    nothing (issue #14)."""
+    branches = await db.list_incentive_branches(tenant_id=tenant_id)
+    branch = next((row for row in branches if row["id"] == branch_id), None)
+    if branch is None:
+        return None
+    first = incentive.month_start(month)
+    row = next(
+        (m for m in await db.list_scheme_months(tenant_id=tenant_id) if m["month"] == first), None
+    )
+    if row is None:
+        return None
+    scheme = _scheme_month(
+        row,
+        await db.list_scheme_month_targets(row["id"], tenant_id=tenant_id),
+        await db.list_push_weeks(row["id"], tenant_id=tenant_id),
+        await db.list_push_items(row["id"], tenant_id=tenant_id),
+        await db.list_push_item_targets(row["id"], tenant_id=tenant_id),
+    )
+    statements = await _statements(db, tenant_id, scheme, [branch], currency)
+    statement = statements.get(branch_id)
+    if statement is None:
+        return None
+    return statement, branch["name"]
+
+
 def _statements_payload(
     statements: dict[str, incentive.Statement], branches: list[asyncpg.Record]
 ) -> list[dict]:

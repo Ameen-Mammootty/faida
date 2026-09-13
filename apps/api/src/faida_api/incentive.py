@@ -74,6 +74,12 @@ PUSH_GUIDANCE_WORDS = "one to three per category, as a guide"
 PROVISIONAL = "provisional"
 FINAL = "final"
 TILL_NOW_SAYS_OTHERWISE = "the till now says otherwise"
+#: The note beside an approved statement whose figures the till has since
+#: moved (D12): worded once, for the screen and the final card alike.
+TILL_NOTE = (
+    f"{TILL_NOW_SAYS_OTHERWISE}: a sales day was replaced after approval; the approved "
+    "figures stand and the recomputed ones are beside them"
+)
 
 #: What a push week the owner left empty says (D4, D5).
 NO_PUSH_LIST = "no push list"
@@ -760,26 +766,47 @@ def compute_figures(
     )
 
 
+def empty_week_note(window: Window) -> str:
+    """What the statement says of a week the owner left empty (D4, D5)."""
+    return f"{week_words(window)}: {NO_PUSH_LIST}"
+
+
+def no_qty_note(item: ItemScore) -> str | None:
+    """The till lines for a push item that carried no quantity and so are
+    not in its portions, or None when every line carried one: a hole in the
+    count named beside the count, never rounded away."""
+    if not item.no_qty_lines:
+        return None
+    lines = "line" if item.no_qty_lines == 1 else "lines"
+    return (
+        f"{item.no_qty_lines} till {lines} for {item.name} carried no quantity and are not counted"
+    )
+
+
+def cap_note(figures: Figures, currency: str) -> str | None:
+    """The cap, where it bound (D8): what the month earned before it, so a
+    capped pool never reads as all there was."""
+    if not (figures.capped and figures.cap is not None):
+        return None
+    return (
+        f"capped at {_money_words(figures.cap, currency)}; "
+        f"{_money_words(figures.pool_before_cap, currency)} earned before the cap"
+    )
+
+
 def _notes(figures: Figures, currency: str) -> tuple[str, ...]:
     notes: list[str] = []
     for week in figures.weeks:
         if week.empty:
-            notes.append(f"{week_words(week.window)}: {NO_PUSH_LIST}")
+            notes.append(empty_week_note(week.window))
             continue
         for item in week.items:
             if item.hole is not None:
                 notes.append(f"{week_words(week.window)}: {item.hole}")
-            elif item.no_qty_lines:
-                lines = "line" if item.no_qty_lines == 1 else "lines"
-                notes.append(
-                    f"{week_words(week.window)}: {item.no_qty_lines} till {lines} for "
-                    f"{item.name} carried no quantity and are not counted"
-                )
-    if figures.capped and figures.cap is not None:
-        notes.append(
-            f"capped at {_money_words(figures.cap, currency)}; "
-            f"{_money_words(figures.pool_before_cap, currency)} earned before the cap"
-        )
+            elif (note := no_qty_note(item)) is not None:
+                notes.append(f"{week_words(week.window)}: {note}")
+    if (note := cap_note(figures, currency)) is not None:
+        notes.append(note)
     return tuple(notes)
 
 
@@ -820,10 +847,7 @@ def compose_statement(
     differs = figures_json(live) != approval.figures
     notes = list(_notes(approved, currency))
     if differs:
-        notes.append(
-            f"{TILL_NOW_SAYS_OTHERWISE}: a sales day was replaced after approval; the approved "
-            f"figures stand and the recomputed ones are beside them"
-        )
+        notes.append(TILL_NOTE)
     return Statement(
         branch_id=branch_id,
         month=month_start(scheme.month),

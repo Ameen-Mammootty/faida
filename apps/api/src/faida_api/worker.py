@@ -28,7 +28,7 @@ from collections.abc import Sequence
 
 import httpx
 
-from . import brief, brief_card, dashboard
+from . import brief, brief_card, dashboard, incentive_api, scoreboard
 from .confirm import handle_inbound_text
 from .contracts import (
     MEDIA_TYPES,
@@ -318,6 +318,38 @@ async def _store_card(storage: Storage, card_path: str, png: bytes) -> None:
         if not already_there:
             raise
         logger.info("card already stored at %s; the retry carries on", card_path)
+
+
+async def read_scoreboard(
+    db: Database,
+    tenant_id: str,
+    branch_id: str,
+    *,
+    today: datetime.date,
+    variant: str = scoreboard.DAILY,
+    month: datetime.date | None = None,
+) -> scoreboard.Scoreboard | None:
+    """One branch's scoreboard for one day: the statement through the same
+    reads as the owner's screen (`incentive_api.read_branch_statement`) and
+    the composer over it (M13 D13, issue #13). The one place the read is
+    made, so the morning's job, the final card the approval enqueues and the
+    founder's print command draw the same card for the same day.
+
+    `today` is the branch's own local date; `month` is the scheme month to
+    read, the month of `today` unless the caller names one - the final card
+    is drawn for the month that was approved, whatever day it is sent on.
+    None when there is nothing to draw: the branch is not this tenant's, no
+    scheme month covers the month, or the month set no target for it."""
+    currency = await db.tenant_currency(tenant_id) or DEFAULT_CURRENCY
+    found = await incentive_api.read_branch_statement(
+        db, tenant_id, branch_id, month=month or today, currency=currency
+    )
+    if found is None:
+        return None
+    statement, branch_name = found
+    return scoreboard.compose(
+        statement, branch_name=branch_name, today=today, variant=variant, currency=currency
+    )
 
 
 async def send_card(

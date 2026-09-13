@@ -280,6 +280,42 @@ class Sheet:
         self.text(right - text_width(text, name, size), y, text, name, size, colour)
 
 
+def header(
+    sheet: Sheet,
+    text: str,
+    *,
+    top: int,
+    brand_size: int,
+    text_size: int,
+    text_line: int,
+    max_lines: int,
+    rule_gap: int,
+    rule_h: int,
+) -> int:
+    """The wordmark and one line of words on its right, with a Karak Gold
+    rule under them: how every card opens. The words are the card's own
+    sentence about its day - the brief's freshness, the scoreboard's - and
+    can run long on a stale morning, so they wrap to `max_lines` rather than
+    being cut. The measures are the card's, passed in at its scale; returns
+    the y the rule ends at."""
+    scale = sheet.scale
+    brand_px = scale.px(brand_size)
+    size = scale.px(text_size)
+    line = scale.px(text_line)
+    brand_w = text_width("Faida", BRAND, brand_px)
+    brand_h = text_height(BRAND, brand_px)
+    lines = wrap(text, REGULAR, size, CONTENT_W - brand_w - scale.px(40), max_lines)
+    block_h = max(brand_h, len(lines) * line)
+    y = scale.px(top)
+    sheet.text(MARGIN, y + block_h - brand_h, "Faida", BRAND, brand_px, DATE_PALM)
+    text_top = y + block_h - len(lines) * line
+    for index, run in enumerate(lines):
+        sheet.right(CANVAS_W - MARGIN, text_top + index * line, run, REGULAR, size, SLATE)
+    rule_y = y + block_h + scale.px(rule_gap)
+    sheet.add(Rule(MARGIN, rule_y, CONTENT_W, scale.px(rule_h), KARAK_GOLD))
+    return rule_y + scale.px(rule_h)
+
+
 #: A card's plan at one scale and one extra gap: the sheet and the y its last
 #: line ends at (the bottom margin included). Nothing is anchored to the
 #: bottom - the fit is decided by the scale, and the slack shared out by `fit`.
