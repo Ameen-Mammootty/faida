@@ -1154,6 +1154,21 @@ founder's eye this entry wanted is owed on the result: the chrome is unchanged i
 measured breakpoints moved.
 
 
+### A correction door for a scheme month's targets before the month begins
+
+**What:** One door that changes a created month's net sales target, percentage or cap for a
+branch, with a reason and an `incentive.targets_corrected` audit row, refused from the month's
+first day on; and a delete of a month that has not begun, with its audit row kept.
+
+**Why:** The month is frozen when created (M13 D4), so nobody can say the rules changed after it
+began. Today that freeze also covers a typo made a week before the month starts: the way out is a
+new month once the wrong one is removed by hand (`Docs/DEMO_RUNBOOK.md` §K names it). The spec
+(#6) left the reasoned door before the first day as a proposal for the founder rather than a
+build.
+
+**Depends on:** M13 shipped. Trigger: the pilot's owner mistyping a target once, or asking to
+change one before the month starts.
+
 ### A roster and per-person scores
 
 **What:** Names and roles per branch, so the statement names each person and divides a role's
