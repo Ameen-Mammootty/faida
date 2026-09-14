@@ -1,1 +1,0 @@
-/Users/mohammedameen/Documents/GitHub/faida/.claude/skills/gstack/plan-devex-review/SKILL.md

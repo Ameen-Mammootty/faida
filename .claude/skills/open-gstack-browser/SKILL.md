@@ -1,1 +1,0 @@
-/Users/mohammedameen/Documents/GitHub/faida/.claude/skills/gstack/open-gstack-browser/SKILL.md

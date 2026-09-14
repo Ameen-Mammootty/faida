@@ -1,1 +1,0 @@
-/Users/mohammedameen/Documents/GitHub/faida/.claude/skills/gstack/browse/PLAN-snapshot-dropdown-interactive.md
