@@ -1297,29 +1297,26 @@ and a reply in the shape of the pending-papers disambiguation when the name fits
 **Priority:** P3
 **Depends on:** WP-87, and a customer quote before it enters plan.md (§2: new scope needs a named ask).
 
-### A typed invoice holds no duplicate and persists no tax treatment
+### A typed invoice holds no duplicate
 
-**What:** Run the WP-44 duplicate check on a typed invoice and hold a copy the way a photo is held;
-persist `tax_treatment` and `vat_rate` from the filing step's validation on the typed door, the
-way the photo path and the correction door do.
+**What:** Run the WP-44 duplicate check on a typed invoice and hold a copy the way a photo is held.
 
 **Why:** Found on 2026-09-14 when the filing chain became one module (`extraction/filing.py`) and
-the three copies were laid side by side. `api.create_manual_invoice` never ran `find_duplicate`,
-and it passes `insert_draft_invoice` no tax treatment, so `record_confirmed_prices` reads None on
-confirm and records the typed paper's prices gross where a photographed paper's are recorded net of
-VAT - the mixed-basis case C4 exists to prevent, on the one door that is meant to be the photo's
-exact fallback. Both are product changes, so the refactor preserved them rather than fixing them.
+the three copies were laid side by side: `api.create_manual_invoice` never ran `find_duplicate`,
+so a typed copy of a paper already photographed is recorded twice. The other half of the same
+finding - the typed door persisted no tax treatment, so `record_confirmed_prices` recorded a
+typed VAT-inclusive paper gross under a net baseline - was fixed the same day (`api.py` passes
+`tax_treatment` and `vat_rate` from the filing step's validation;
+`test_manual_vat_inclusive_invoice_records_prices_net_of_vat`).
 
-**Context:** The typed door is `api.py`'s `create_manual_invoice`; the two values are
-`filed.validation.document.tax_treatment` and `.vat_rate`, already computed and dropped. The
-duplicate hold needs the headers read (`db.list_invoice_headers_for_tenant`) and the hold's
-reply shape, which a typed invoice has no phone to send to - the screen's duplicate note is the
-place. `test_api.py` covers the typed door with eight cases to extend.
+**Context:** The typed door is `api.py`'s `create_manual_invoice`. The duplicate hold needs the
+headers read (`db.list_invoice_headers_for_tenant`) and a place for the hold's note, which a typed
+invoice has no phone to send to - the screen's duplicate note is the place. `test_api.py` covers
+the typed door with nine cases to extend.
 
 **Effort:** S
 **Priority:** P2
-**Depends on:** Nothing. Trigger: the first typed invoice confirmed on a VAT-inclusive supplier, or
-the first typed copy of a paper already photographed.
+**Depends on:** Nothing. Trigger: the first typed copy of a paper already photographed.
 
 ### The web mock's copy of the validator and the fold rule
 

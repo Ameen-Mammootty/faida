@@ -1071,6 +1071,31 @@ async def test_manual_entry_snaps_to_supplier_memory(api, db):
 
 
 @requires_db
+async def test_manual_vat_inclusive_invoice_records_prices_net_of_vat(api, db):
+    # C4 net-canonical price memory on the typed door: the treatment C4
+    # derives from the typed totals has to travel with the insert, exactly as
+    # it does for a photo and for a chat reconstruction, or confirm reads None
+    # and records the gross price under a net baseline - the mixed-basis
+    # history PRICE_ALERT_MIN_PCT (5%) at UAE VAT (5%) cannot survive. Found
+    # 2026-09-14 when the filing chain became one module (TODOS.md).
+    app, client, *_ = api
+    body = manual_body(subtotal="676.43", tax="33.82", total="710.25")
+    resp = await client.post("/api/invoices/manual", headers=AUTH, json=body)
+    assert resp.status_code == 201
+    invoice_id = resp.json()["id"]
+    assert resp.json()["confidence"]["document"]["status"] == "green"
+
+    invoice = await db.pool.fetchrow("select * from invoices where id = $1", uuid.UUID(invoice_id))
+    assert invoice["tax_treatment"] == "inclusive"
+    assert invoice["vat_rate"] == Decimal("0.0500")
+
+    resp = await client.post(f"/api/invoices/{invoice_id}/confirm", headers=AUTH)
+    assert resp.status_code == 200
+    prices = await db.pool.fetch("select price from supplier_item_prices order by price")
+    assert [row["price"] for row in prices] == [Decimal("17.857"), Decimal("51.905")]
+
+
+@requires_db
 async def test_manual_entry_with_a_lookalike_supplier_name_attaches_no_supplier(api, db):
     # The word check guards the typed path exactly as the photographed one
     # (2026-09-05): "Gulf Foods ABC Trading LLC" is a different company from the
