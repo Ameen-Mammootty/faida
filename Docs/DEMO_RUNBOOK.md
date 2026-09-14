@@ -833,7 +833,7 @@ The door is `PUT /api/incentive/weeks/{push_week_id}`, which replaces the week's
 Nothing to do: the worker's tick, once a minute before a job is claimed and on the same pass as the brief's, wakes every branch whose chain has a scheme month covering the branch's own local date, from 07:00 local (`SCOREBOARD_SEND_AT_LOCAL`) and never past noon (`BRIEF_SEND_UNTIL_LOCAL`, shared with the brief).
 One `send_scoreboard` job per branch per local day, whatever the number of ticks or instances (`jobs_send_scoreboard_uidx`).
 The job reads the branch's statement through the screen's own read, draws the card, stores it at `{tenant_id}/scoreboards/{day}/{branch_id}.png` before anything leaves the building, uploads it, sends the template, and records one outbound `wa_messages` row on which Meta's receipts land exactly as the brief's do.
-Monday's card carries the new week's list; a week the owner left empty says "no push list" and still carries the net sales figure; a dish whose till name has gone since is named with no bar under it, never scored as nought; the pool is marked "so far" and moves down when a refund lands or a day is replaced.
+Each item carries its portions against target with what a portion above target earns under it, to the fil, so the floor can count the next plate; Monday's card carries the new week's list; a week the owner left empty says "no push list" and still carries the net sales figure; a dish whose till name has gone since is named with no bar under it, never scored as nought; the pool is marked "so far" and moves down when a refund lands or a day is replaced.
 The card draws ten items and says how many more; the footer reads "Scored on what the till prints: portions and net sales."
 The manager forwards it to the staff group.
 

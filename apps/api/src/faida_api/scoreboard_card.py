@@ -189,14 +189,16 @@ def _title(sheet: Sheet, card: Scoreboard, top: int) -> int:
 
 
 def _row_note_lines(sheet: Sheet, item: ItemLine, inner: int) -> list[str]:
-    """The sentence under a row: a hole's, or the no-quantity note, wrapped
-    and never cut short of two lines - it is the sentence that says why the
-    count is not what it looks like."""
+    """The lines under a row: what a portion above target earns where the
+    card carries it (the daily card, story 45), then a hole's sentence or
+    the no-quantity note, wrapped and never cut short of two lines - it is
+    the sentence that says why the count is not what it looks like."""
     scale = sheet.scale
+    lines = [item.rate] if item.rate is not None else []
     text = item.hole if item.hole is not None else item.note
     if text is None:
-        return []
-    return wrap(text, REGULAR, scale.px(ROW_NOTE_SIZE), inner, ROW_NOTE_MAX_LINES)
+        return lines
+    return lines + wrap(text, REGULAR, scale.px(ROW_NOTE_SIZE), inner, ROW_NOTE_MAX_LINES)
 
 
 def _row_height(sheet: Sheet, item: ItemLine, inner: int, *, bars: bool) -> int:

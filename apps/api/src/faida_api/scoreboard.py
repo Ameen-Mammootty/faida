@@ -94,6 +94,9 @@ class ItemLine:
     reached: bool
     hole: str | None
     note: str | None
+    #: What one portion above target earns (story 45), on the daily card
+    #: alone: the final card lists what was scored, not what was offered.
+    rate: str | None
 
 
 @dataclass(frozen=True)
@@ -140,7 +143,7 @@ def _share(item: ItemScore) -> Decimal | None:
     return max(Decimal(0), min(Decimal(1), item.portions / item.portion_target))
 
 
-def _item_line(item: ItemScore) -> ItemLine:
+def _item_line(item: ItemScore, *, rate: str | None) -> ItemLine:
     return ItemLine(
         name=item.name,
         words=item.words,
@@ -148,13 +151,24 @@ def _item_line(item: ItemScore) -> ItemLine:
         reached=item.portions is not None and item.portions >= item.portion_target,
         hole=item.hole,
         note=incentive.no_qty_note(item),
+        rate=rate,
     )
 
 
-def _week_block(week: WeekScore) -> WeekBlock:
+def _week_block(week: WeekScore, *, currency: str | None) -> WeekBlock:
+    """One week's rows; with a currency, each row carries what a portion
+    above target earns (the daily card), without one it does not (the final)."""
     return WeekBlock(
         title=incentive.week_words(week.window),
-        items=tuple(_item_line(item) for item in week.items),
+        items=tuple(
+            _item_line(
+                item,
+                rate=None
+                if currency is None
+                else incentive.rate_words(item.rate_per_portion, currency),
+            )
+            for item in week.items
+        ),
         empty_words=incentive.empty_week_note(week.window) if week.empty else None,
     )
 
@@ -231,7 +245,7 @@ def compose(
             raise ValueError(f"no push week of {month_words} holds {today.isoformat()}")
         headline = f"{short} scoreboard, {_weekday_date(today)}"
         list_title = f"This week's push list, {incentive.week_words(week.window)}"
-        weeks = (_week_block(week),)
+        weeks = (_week_block(week, currency=currency),)
         lines = (
             FigureLine(f"Net sales, {statement.month.strftime('%B')} so far", figures.net_words),
             FigureLine(f"{incentive.BONUS.capitalize()} pool so far", figures.pool_words),
@@ -239,7 +253,7 @@ def compose(
     else:
         headline = f"{short}: {month_words} {incentive.BONUS}, final"
         list_title = "The month's push lists"
-        weeks = tuple(_week_block(week) for week in figures.weeks)
+        weeks = tuple(_week_block(week, currency=None) for week in figures.weeks)
         lines = (
             FigureLine(f"Net sales, {month_words}", figures.net_words),
             FigureLine(f"{incentive.BONUS.capitalize()} pool", figures.pool_words),
@@ -276,7 +290,7 @@ def sentences(card: Scoreboard) -> list[str]:
             out.append(week.empty_words)
         for item in week.items:
             out += [item.name, item.words]
-            out += [text for text in (item.hole, item.note) if text is not None]
+            out += [text for text in (item.rate, item.hole, item.note) if text is not None]
     for line in card.figures:
         out += [line.label, line.words]
     out += [*card.notes, card.footer, *card.parameters]
@@ -294,6 +308,8 @@ def render(card: Scoreboard) -> str:
             lines.append(f"  {week.empty_words}")
         for item in week.items:
             lines.append(f"  {item.name}: {item.words}")
+            if item.rate is not None:
+                lines.append(f"    {item.rate}")
             if item.note is not None:
                 lines.append(f"    {item.note}")
     lines.append("")

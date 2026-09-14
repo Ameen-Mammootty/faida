@@ -17,7 +17,6 @@ import json
 import re
 from copy import deepcopy
 from decimal import Decimal
-from pathlib import Path
 
 import pytest
 from PIL import Image
@@ -350,5 +349,7 @@ def test_the_fixtures_this_file_reads_are_the_mocks_own():
     """The cards here are composed from the mock's fixtures, which are the
     shipped module's own arithmetic; a fixture that stopped carrying a
     provisional September and a final August would silence half this file."""
-    assert (MOCK / "full.json").exists() and (MOCK / "final.json").exists()
-    assert Path(__file__).with_name("test_scoreboard.py").exists()
+    provisional = json.loads((MOCK / "full.json").read_text())
+    final = json.loads((MOCK / "final.json").read_text())
+    assert any(s["status"] == "provisional" for s in provisional["scheme_month"]["statements"])
+    assert any(s["status"] == "final" for s in final["scheme_month"]["statements"])

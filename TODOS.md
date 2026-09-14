@@ -1169,6 +1169,21 @@ build.
 **Depends on:** M13 shipped. Trigger: the pilot's owner mistyping a target once, or asking to
 change one before the month starts.
 
+### Three tidies from the M13 code review (2026-09-14)
+
+**What:** (1) `worker.py` imports `incentive_api`, a router module, for `read_branch_statement` and
+its two helpers; M10's precedent is the worker importing a read module (`dashboard`), so the reads
+want a home of their own. (2) `brief_cli.py` and `scoreboard_cli.py` carry the same harness -
+settings, connect, the send-only clients, the close ladder, the `--send`/`--to` checks - which the
+M13.1 prefactor stopped short of sharing. (3) `worker._say_once` serves the scoreboard tick while
+`tick_briefs` keeps its hand-rolled once-a-day logging.
+
+**Why not now:** each is a judgement call from the standards axis, none changes what a person
+sees, and the lane is about to merge; a tidy across the worker and both CLIs is its own small
+commit with the full suite behind it.
+
+**Depends on:** the M13 merge. Trigger: the next change that touches any of the three.
+
 ### A roster and per-person scores
 
 **What:** Names and roles per branch, so the statement names each person and divides a role's

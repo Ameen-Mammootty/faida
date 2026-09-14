@@ -64,10 +64,16 @@ The founder chose approach B, the whole loop, so the wedge question is answered 
 ## Approaches Considered
 
 ### Approach A: the branch gain, printed first
-One read in the ratio's shape (per branch: contribution this period against a baseline, the dishes that moved it, the costed share, the quality word), printed weekly to the owner beside the M12 usage report; the owner sets the share and pays by hand. Effort S. Risk low. Reuses `contribution.py`, the dashboard read, `usage_report.py`'s shape. Recommended as phase one, with B as phase two once an owner had paid from the number twice (the M12 D22 gate). **Not chosen.**
+One read in the ratio's shape (per branch: contribution this period against a baseline, the dishes that moved it, the costed share, the quality word), printed weekly to the owner beside the M12 usage report; the owner sets the share and pays by hand.
+Effort S.
+Risk low.
+Reuses `contribution.py`, the dashboard read, `usage_report.py`'s shape.
+Recommended as phase one, with B as phase two once an owner had paid from the number twice (the M12 D22 gate). **Not chosen.**
 
 ### Approach B: the incentive module (chosen)
-An `incentive_plans` table (branch, the period rule - configurable per plan, a fortnight for the pilot - the baseline rule, share, cap, the crew phone, who set it and when), an `incentives.py` read computed on every request and stored nowhere, a `/incentives` screen with the branch league of gains and each branch's push list, a morning WhatsApp template to the crew phone (the three dishes to push, the branch's standing), and an owner "settle" door writing one `incentive.settled` audit row with the amount and the reason. Effort L (human ~4 weeks / CC ~1 day across lanes). Risk medium.
+An `incentive_plans` table (branch, the period rule - configurable per plan, a fortnight for the pilot - the baseline rule, share, cap, the crew phone, who set it and when), an `incentives.py` read computed on every request and stored nowhere, a `/incentives` screen with the branch league of gains and each branch's push list, a morning WhatsApp template to the crew phone (the three dishes to push, the branch's standing), and an owner "settle" door writing one `incentive.settled` audit row with the amount and the reason.
+Effort L (human ~4 weeks / CC ~1 day across lanes).
+Risk medium.
 
 Built in three vertical slices, each with its own gate, in the shape M12 took (arithmetic first, the panel on evidence):
 - **Slice 1, the number and the settle door.** Open questions 1 and 2 (the baseline, the share and the cap) are decided before the migration is written, in the decomposition's §5, so the schema encodes decisions and not guesses; `incentive_plans` (0023), the `incentives.py` read, the plan set from the screen with its audit row, the settle door with its `incentive.settled` audit row, the gain printed by `usage_report.py`'s sibling command for the pilot's owner, and that printout carries the period's price moves beside the gain (the disclosure premise 3 depends on, so it exists before the first settle and not only on the slice 3 screen). Gate: the pilot owner settles one period from the printed number and pays the crew outside Faida.
@@ -76,7 +82,9 @@ Built in three vertical slices, each with its own gate, in the shape M12 took (a
 A settle is unique per (branch, period): the door refuses a second settle of a settled period and shows the prior settlement's amount, actor and time instead, the way one extract job per document is enforced by an index and never by discipline.
 
 ### Approach C: the push list, no money
-The morning push list and a weekly standing to the crew phone, no commission computed, the owner attaches any prize outside Faida. Effort S. Tests adoption only, never the win-win claim. **Not chosen**; folded into B as the staff-facing surface.
+The morning push list and a weekly standing to the crew phone, no commission computed, the owner attaches any prize outside Faida.
+Effort S.
+Tests adoption only, never the win-win claim. **Not chosen**; folded into B as the staff-facing surface.
 
 ## Recommended Approach
 

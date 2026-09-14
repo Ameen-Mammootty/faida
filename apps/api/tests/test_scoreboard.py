@@ -74,6 +74,24 @@ def test_the_daily_card_carries_this_weeks_list_in_the_statements_words():
     assert card.weeks[0].empty_words is None
 
 
+def test_the_daily_card_says_what_a_portion_above_target_earns_and_the_final_does_not():
+    """Story 45: the floor counts the next plate against the rate, in the
+    till's own units and to the fil; the final card lists what was scored."""
+    statement, _ = _statement("full", AL_QUOZ)
+    card = _daily()
+    week = _week(statement, TODAY)
+
+    assert [item.rate for item in card.weeks[0].items] == [
+        f"AED {item.rate_per_portion:.2f} a portion above target" for item in week.items
+    ]
+    assert card.weeks[0].items[0].rate in scoreboard.sentences(card)
+    printed = scoreboard.render(card)
+    assert f"  Karak Tea (Cup): 340 of 1,000 portions\n    {card.weeks[0].items[0].rate}" in printed
+
+    final = _final()
+    assert all(item.rate is None for week in final.weeks for item in week.items)
+
+
 def test_the_figures_are_the_statements_net_words_and_pool_words_marked_so_far():
     statement, _ = _statement("full", AL_QUOZ)
     card = _daily()

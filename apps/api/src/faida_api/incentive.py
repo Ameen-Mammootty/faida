@@ -612,6 +612,13 @@ def kept_words(margin: Decimal | None, currency: str) -> str:
     return f"keeps {_price_words(margin, currency)} per plate"
 
 
+def rate_words(rate: Decimal, currency: str) -> str:
+    """What one portion above target earns, in the till's own units and to
+    the fil (story 45 of the spec, D3): the line the floor counts the next
+    plate against, worded here once for the card and the screen."""
+    return f"{_price_words(rate, currency)} a portion above target"
+
+
 def previous_month_words(net_sales: Decimal | None, currency: str) -> str:
     """Last month's net sales beside the target box, as advice and never as
     the baseline (D3)."""
