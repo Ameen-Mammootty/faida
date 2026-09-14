@@ -1,0 +1,401 @@
+<template>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+  <style>
+    @font-face {
+      font-family: "Manrope";
+      src: url("assets/fonts/manrope-variable.woff2") format("woff2");
+      font-weight: 200 800;
+      font-style: normal;
+      font-display: block;
+    }
+    @font-face {
+      font-family: "Inter";
+      src: url("assets/fonts/inter-variable.woff2") format("woff2");
+      font-weight: 100 900;
+      font-style: normal;
+      font-display: block;
+    }
+
+    #root {
+      position: absolute;
+      inset: 0;
+      width: 1080px;
+      height: 1080px;
+      overflow: hidden;
+      font-family: "Manrope", sans-serif;
+      color: #172421;
+    }
+    #root *,
+    #root *::before,
+    #root *::after {
+      box-sizing: border-box;
+    }
+    .clip {
+      position: absolute;
+      inset: 0;
+    }
+
+    /* authored ids are prefixed f06-every-morning-; selectors use the
+       attribute form because a CSS identifier may not begin with a digit */
+    [id="f06-every-morning-ground"] {
+      background: #FBF6EC;
+    }
+
+    /* ---------- the phone, a rigid prop ---------- */
+    [id="f06-every-morning-phone"] {
+      position: absolute;
+      left: 60px;
+      top: 70px;
+      width: 440px;
+      height: 826px;
+      border-radius: 44px;
+      background: #172421;
+      padding: 14px;
+      will-change: transform;
+    }
+    [id="f06-every-morning-screen"] {
+      position: relative;
+      width: 412px;
+      height: 798px;
+      border-radius: 32px;
+      background: #F2ECDE;
+      overflow: hidden;
+    }
+    [id="f06-every-morning-header"] {
+      height: 80px;
+      background: #153E35;
+      color: #FBF6EC;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 20px;
+    }
+    [id="f06-every-morning-avatar"] {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: #FBF6EC;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+    }
+    [id="f06-every-morning-avatar"] img {
+      width: 30px;
+      height: 30px;
+      display: block;
+    }
+    [id="f06-every-morning-sender"] {
+      font-family: "Manrope", sans-serif;
+      font-weight: 700;
+      font-size: 25px;
+      letter-spacing: -0.01em;
+    }
+    [id="f06-every-morning-clock"] {
+      margin-left: auto;
+      font-family: "Inter", sans-serif;
+      font-weight: 400;
+      font-size: 20px;
+      opacity: 0.82;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* the real brief card, arriving as a message and scrolled inside the screen */
+    [id="f06-every-morning-window"] {
+      position: absolute;
+      left: 16px;
+      top: 96px;
+      width: 380px;
+      height: 300px;
+      border-radius: 14px;
+      border: 1.5px solid rgba(21, 62, 53, 0.2);
+      background: #FFFFFF;
+      overflow: hidden;
+      transform-origin: left bottom;
+      will-change: transform;
+    }
+    [id="f06-every-morning-scroller"] {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 380px;
+      will-change: transform;
+    }
+    [id="f06-every-morning-scroller"] img {
+      display: block;
+      width: 380px;
+      height: 475px;
+    }
+
+    [id="f06-every-morning-bubble"] {
+      position: absolute;
+      left: 16px;
+      top: 412px;
+      width: 380px;
+      background: #FFFFFF;
+      border: 1.5px solid rgba(21, 62, 53, 0.2);
+      border-radius: 14px;
+      padding: 14px 16px;
+      font-family: "Inter", sans-serif;
+      font-weight: 400;
+      font-size: 19px;
+      line-height: 1.42;
+      color: #172421;
+      transform-origin: left bottom;
+      will-change: transform;
+    }
+    [id="f06-every-morning-bubble-line2"] {
+      display: block;
+      margin-top: 4px;
+    }
+    [id="f06-every-morning-mark"] {
+      position: relative;
+      display: inline-block;
+    }
+    [id="f06-every-morning-mark-bar"] {
+      position: absolute;
+      inset: -3px -7px;
+      background: #E3A13B;
+      opacity: 0.42;
+      border-radius: 3px;
+      transform-origin: left center;
+      z-index: 0;
+    }
+    [id="f06-every-morning-mark-text"] {
+      position: relative;
+      z-index: 1;
+      font-weight: 500;
+    }
+
+    /* ---------- the copy column ---------- */
+    [id="f06-every-morning-copy"] {
+      position: absolute;
+      left: 560px;
+      top: 130px;
+      width: 460px;
+    }
+    [id="f06-every-morning-eyebrow"] {
+      font-family: "Manrope", sans-serif;
+      font-weight: 600;
+      font-size: 24px;
+      line-height: 1.2;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #153E35;
+    }
+    [id="f06-every-morning-time"] {
+      display: block;
+      margin-top: 10px;
+      min-width: 420px;
+      height: 148px;
+      font-family: "Manrope", sans-serif;
+      font-weight: 750;
+      font-size: 148px;
+      line-height: 1;
+      letter-spacing: -0.02em;
+      color: #153E35;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    [id="f06-every-morning-desc"] {
+      margin-top: 26px;
+      font-family: "Inter", sans-serif;
+      font-weight: 400;
+      font-size: 30px;
+      line-height: 1.45;
+      color: #52625D;
+    }
+    [id="f06-every-morning-trace"] {
+      margin-top: 40px;
+      background: #FFFFFF;
+      border: 1.5px solid rgba(21, 62, 53, 0.2);
+      border-left: 6px solid #E3A13B;
+      border-radius: 14px;
+      padding: 22px 26px;
+      will-change: transform;
+    }
+    [id="f06-every-morning-trace-title"] {
+      font-family: "Manrope", sans-serif;
+      font-weight: 600;
+      font-size: 28px;
+      line-height: 1.25;
+      color: #172421;
+    }
+    [id="f06-every-morning-trace-sub"] {
+      margin-top: 8px;
+      font-family: "Inter", sans-serif;
+      font-weight: 400;
+      font-size: 22px;
+      line-height: 1.4;
+      color: #52625D;
+    }
+  </style>
+
+  <div data-hf-id="hf-6biw" id="root" data-composition-id="06-every-morning" data-width="1080" data-height="1080" data-duration="4.784">
+    <div data-hf-id="hf-q5he" class="clip" id="f06-every-morning-ground" data-start="0" data-duration="4.784" data-track-index="0"></div>
+
+    <div data-hf-id="hf-omtk" class="clip" id="f06-every-morning-stage" data-start="0" data-duration="4.784" data-track-index="1">
+
+      <div data-hf-id="hf-nmbp" id="f06-every-morning-phone">
+        <div data-hf-id="hf-jh57" id="f06-every-morning-screen">
+
+          <div data-hf-id="hf-e4eg" id="f06-every-morning-header">
+            <div data-hf-id="hf-ub1g" id="f06-every-morning-avatar"><img data-hf-id="hf-auep" src="assets/faida-mark.svg" alt=""></div>
+            <div data-hf-id="hf-qu43" id="f06-every-morning-sender">Faida</div>
+            <div data-hf-id="hf-w82s" id="f06-every-morning-clock">07:00</div>
+          </div>
+
+          <div data-hf-id="hf-w9qf" id="f06-every-morning-window">
+            <div data-hf-id="hf-dcl0" id="f06-every-morning-scroller" data-layout-allow-overflow="">
+              <img data-hf-id="hf-6yys" src="assets/daily-brief-card.png" alt="">
+            </div>
+          </div>
+
+          <div data-hf-id="hf-dcuu" id="f06-every-morning-bubble">
+            Milk Powder up AED 3.40 per kg since 21 Aug
+            <span data-hf-id="hf-udqd" id="f06-every-morning-bubble-line2">
+              <span data-hf-id="hf-nvgv" id="f06-every-morning-mark">
+                <span data-hf-id="hf-e94v" id="f06-every-morning-mark-bar"></span>
+                <span data-hf-id="hf-8y8s" id="f06-every-morning-mark-text">AED 109 at stake</span>
+              </span>
+            </span>
+          </div>
+
+        </div>
+      </div>
+
+      <div data-hf-id="hf-6tlo" id="f06-every-morning-copy">
+        <div data-hf-id="hf-r7b7" id="f06-every-morning-eyebrow" data-layout-allow-overlap="">Every morning</div>
+        <span data-hf-id="hf-nc87" id="f06-every-morning-time"></span>
+        <div data-hf-id="hf-r6xv" id="f06-every-morning-desc">Sales, kept, materials, branches, the dish to push and the price that moved.</div>
+        <div data-hf-id="hf-v1re" id="f06-every-morning-trace">
+          <div data-hf-id="hf-gqh4" id="f06-every-morning-trace-title">Every number → its invoice</div>
+          <div data-hf-id="hf-k5x4" id="f06-every-morning-trace-sub">tap a figure, see the paper it came from</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      var DUR = 4.284;
+      var tl = gsap.timeline({ paused: true });
+
+      var phone = document.getElementById("f06-every-morning-phone");
+      var win = document.getElementById("f06-every-morning-window");
+      var scroller = document.getElementById("f06-every-morning-scroller");
+      var bubble = document.getElementById("f06-every-morning-bubble");
+      var markBar = document.getElementById("f06-every-morning-mark-bar");
+      var eyebrow = document.getElementById("f06-every-morning-eyebrow");
+      var timeEl = document.getElementById("f06-every-morning-time");
+      var desc = document.getElementById("f06-every-morning-desc");
+      var trace = document.getElementById("f06-every-morning-trace");
+
+      /* ---- Scene 1 (0.0-0.8): the phone slides in from the left edge and settles ---- */
+      tl.fromTo(phone, { x: -620 }, { x: 0, duration: 0.78, ease: "power3.out" }, 0);
+      tl.fromTo(phone, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.22, ease: "power2.out" }, 0);
+
+      /* the label fades up beside it */
+      tl.fromTo(
+        eyebrow,
+        { y: 16, autoAlpha: 0 },
+        { y: 0, autoAlpha: 1, duration: 0.42, ease: "power3.out" },
+        0.16
+      );
+
+      /* "07:00" hard-cuts in on the word "morning" - discrete text sequence */
+      var SEQUENCE = [
+        { t: 0.0, text: "" },
+        { t: 0.46, text: "07:00" }
+      ];
+      function textAt(time) {
+        for (var i = SEQUENCE.length - 1; i >= 0; i--) {
+          if (time >= SEQUENCE[i].t) return SEQUENCE[i].text;
+        }
+        return "";
+      }
+      var driver = { t: 0 };
+      tl.to(
+        driver,
+        {
+          t: DUR,
+          duration: DUR,
+          ease: "none",
+          onUpdate: function () {
+            timeEl.textContent = textAt(driver.t);
+          }
+        },
+        0
+      );
+
+      /* ---- Scene 2 (0.8-2.3): the card arrives as a message, then the screen scrolls ---- */
+      tl.set(win, { autoAlpha: 0 }, 0);
+      tl.fromTo(
+        win,
+        { scale: 0.75, autoAlpha: 0.6 },
+        { scale: 1, autoAlpha: 1, duration: 0.32, ease: "power2.out", immediateRender: false },
+        0.86
+      );
+
+      /* the card scrolls upward inside the clipped window: 175 of its 475px height */
+      tl.fromTo(
+        scroller,
+        { y: 0 },
+        { y: -175, duration: 0.86, ease: "power3.out", immediateRender: false },
+        1.34
+      );
+
+      /* the description line lands as the brief's contents come into view */
+      tl.fromTo(
+        desc,
+        { y: 20, autoAlpha: 0 },
+        { y: 0, autoAlpha: 1, duration: 0.5, ease: "power3.out" },
+        1.52
+      );
+
+      /* ---- Scene 3 (2.3-3.6): the spike bubble pops in, the gold marker sweeps ---- */
+      tl.set(bubble, { autoAlpha: 0 }, 0);
+      tl.fromTo(
+        bubble,
+        { scale: 0, autoAlpha: 0 },
+        { scale: 1, autoAlpha: 1, duration: 0.48, ease: "power3.out", immediateRender: false },
+        2.34
+      );
+      tl.fromTo(
+        markBar,
+        { scaleX: 0, skewX: -2 },
+        { scaleX: 1, skewX: -2, duration: 0.44, ease: "power2.out", immediateRender: false },
+        2.86
+      );
+
+      /* the traceability card rises on "invoice" */
+      tl.set(trace, { autoAlpha: 0 }, 0);
+      tl.fromTo(
+        trace,
+        { y: 32, scale: 0.96, autoAlpha: 0 },
+        { y: 0, scale: 1, autoAlpha: 1, duration: 0.58, ease: "power3.out", immediateRender: false },
+        2.98
+      );
+
+      /* ---- Scene 4 (3.6-4.284): hold, one low-amplitude settle on the held phone ---- */
+      var jitter = { p: 0 };
+      tl.to(
+        jitter,
+        {
+          p: Math.PI * 2,
+          duration: 0.68,
+          ease: "none",
+          onUpdate: function () {
+            gsap.set(phone, { y: Math.sin(jitter.p) * 2 });
+          }
+        },
+        3.6
+      );
+
+      tl.set({}, {}, DUR);
+
+      window.__timelines = window.__timelines || {};
+      window.__timelines["06-every-morning"] = tl;
+    })();
+  </script>
+</template>

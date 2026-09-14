@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "preferences": {
+    "destination": {
+      "value": "linkedin-feed",
+      "confirmed_in": [
+        "faida-launch"
+      ],
+      "updated_at": "2026-09-13T03:26:26.549Z"
+    },
+    "aspect": {
+      "value": "1080x1080",
+      "confirmed_in": [
+        "faida-launch"
+      ],
+      "updated_at": "2026-09-13T03:26:32.589Z"
+    },
+    "language": {
+      "value": "en",
+      "confirmed_in": [
+        "faida-launch"
+      ],
+      "updated_at": "2026-09-13T03:26:32.619Z"
+    },
+    "flow": {
+      "value": "automation",
+      "confirmed_in": [
+        "faida-launch"
+      ],
+      "updated_at": "2026-09-13T03:26:32.651Z"
+    },
+    "storyboard": {
+      "value": "yes",
+      "confirmed_in": [
+        "faida-launch"
+      ],
+      "updated_at": "2026-09-13T03:26:32.683Z"
+    },
+    "style_preset.product-launch-video": {
+      "value": "blue-professional",
+      "confirmed_in": [
+        "faida-launch"
+      ],
+      "updated_at": "2026-09-13T03:30:19.309Z"
+    }
+  },
+  "sightings": {}
+}

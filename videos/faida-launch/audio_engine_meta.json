@@ -1,0 +1,712 @@
+{
+  "tts_provider": "heygen",
+  "voice_id": "05f19352e8f74b0392a8f411eba40de1",
+  "bgm": {
+    "path": "assets/bgm/track.mp3",
+    "volume": 0.12,
+    "query": "calm confident underscore, warm acoustic pulse, no drums until the reveal, minimal",
+    "mode": "retrieve",
+    "duration_s": 56
+  },
+  "bgm_pending": false,
+  "bgm_provider": "heygen",
+  "bgm_pid": null,
+  "bgm_log": null,
+  "bgm_mode": "retrieve",
+  "bgm_target_duration_s": null,
+  "bgm_seed_duration_s": null,
+  "bgm_loop_count": null,
+  "voices": [
+    {
+      "id": "01",
+      "path": "assets/voice/01.wav",
+      "duration_s": 4.963,
+      "words": [
+        {
+          "id": "w0",
+          "text": "Supplier",
+          "start": 0.239,
+          "end": 0.719
+        },
+        {
+          "id": "w1",
+          "text": "invoices",
+          "start": 0.819,
+          "end": 1.459
+        },
+        {
+          "id": "w2",
+          "text": "already",
+          "start": 1.539,
+          "end": 1.959
+        },
+        {
+          "id": "w3",
+          "text": "land",
+          "start": 2.019,
+          "end": 2.279
+        },
+        {
+          "id": "w4",
+          "text": "in",
+          "start": 2.319,
+          "end": 2.46
+        },
+        {
+          "id": "w5",
+          "text": "WhatsApp.",
+          "start": 2.5,
+          "end": 3.019
+        },
+        {
+          "id": "w6",
+          "text": "Your",
+          "start": 3.519,
+          "end": 3.679
+        },
+        {
+          "id": "w7",
+          "text": "margins",
+          "start": 3.72,
+          "end": 4.119
+        },
+        {
+          "id": "w8",
+          "text": "never",
+          "start": 4.219,
+          "end": 4.42
+        },
+        {
+          "id": "w9",
+          "text": "do.",
+          "start": 4.48,
+          "end": 4.739
+        }
+      ]
+    },
+    {
+      "id": "02",
+      "path": "assets/voice/02.wav",
+      "duration_s": 4.702,
+      "words": [
+        {
+          "id": "w0",
+          "text": "Forward",
+          "start": 0.179,
+          "end": 0.68
+        },
+        {
+          "id": "w1",
+          "text": "one",
+          "start": 0.74,
+          "end": 0.979
+        },
+        {
+          "id": "w2",
+          "text": "to",
+          "start": 1,
+          "end": 1.039
+        },
+        {
+          "id": "w3",
+          "text": "Faida.",
+          "start": 1.179,
+          "end": 1.559
+        },
+        {
+          "id": "w4",
+          "text": "It",
+          "start": 2.2,
+          "end": 2.299
+        },
+        {
+          "id": "w5",
+          "text": "reads",
+          "start": 2.339,
+          "end": 2.619
+        },
+        {
+          "id": "w6",
+          "text": "every",
+          "start": 2.7,
+          "end": 2.939
+        },
+        {
+          "id": "w7",
+          "text": "line",
+          "start": 2.98,
+          "end": 3.24
+        },
+        {
+          "id": "w8",
+          "text": "and",
+          "start": 3.319,
+          "end": 3.439
+        },
+        {
+          "id": "w9",
+          "text": "checks",
+          "start": 3.48,
+          "end": 3.74
+        },
+        {
+          "id": "w10",
+          "text": "the",
+          "start": 3.779,
+          "end": 3.839
+        },
+        {
+          "id": "w11",
+          "text": "sums.",
+          "start": 3.939,
+          "end": 4.38
+        }
+      ]
+    },
+    {
+      "id": "03",
+      "path": "assets/voice/03.wav",
+      "duration_s": 5.224,
+      "words": [
+        {
+          "id": "w0",
+          "text": "Every",
+          "start": 0.259,
+          "end": 0.599
+        },
+        {
+          "id": "w1",
+          "text": "line",
+          "start": 0.639,
+          "end": 0.899
+        },
+        {
+          "id": "w2",
+          "text": "becomes",
+          "start": 0.939,
+          "end": 1.299
+        },
+        {
+          "id": "w3",
+          "text": "a",
+          "start": 1.36,
+          "end": 1.439
+        },
+        {
+          "id": "w4",
+          "text": "raw",
+          "start": 1.5,
+          "end": 1.659
+        },
+        {
+          "id": "w5",
+          "text": "material.",
+          "start": 1.74,
+          "end": 2.339
+        },
+        {
+          "id": "w6",
+          "text": "Every",
+          "start": 2.819,
+          "end": 3.099
+        },
+        {
+          "id": "w7",
+          "text": "material,",
+          "start": 3.139,
+          "end": 3.759
+        },
+        {
+          "id": "w8",
+          "text": "part",
+          "start": 4,
+          "end": 4.179
+        },
+        {
+          "id": "w9",
+          "text": "of",
+          "start": 4.199,
+          "end": 4.299
+        },
+        {
+          "id": "w10",
+          "text": "a",
+          "start": 4.319,
+          "end": 4.38
+        },
+        {
+          "id": "w11",
+          "text": "recipe.",
+          "start": 4.42,
+          "end": 4.9
+        }
+      ]
+    },
+    {
+      "id": "04",
+      "path": "assets/voice/04.wav",
+      "duration_s": 4.206,
+      "words": [
+        {
+          "id": "w0",
+          "text": "So",
+          "start": 0.179,
+          "end": 0.439
+        },
+        {
+          "id": "w1",
+          "text": "every",
+          "start": 0.519,
+          "end": 0.759
+        },
+        {
+          "id": "w2",
+          "text": "item",
+          "start": 0.899,
+          "end": 1.22
+        },
+        {
+          "id": "w3",
+          "text": "shows",
+          "start": 1.259,
+          "end": 1.599
+        },
+        {
+          "id": "w4",
+          "text": "what",
+          "start": 1.599,
+          "end": 1.719
+        },
+        {
+          "id": "w5",
+          "text": "it",
+          "start": 1.719,
+          "end": 1.839
+        },
+        {
+          "id": "w6",
+          "text": "costs,",
+          "start": 1.879,
+          "end": 2.44
+        },
+        {
+          "id": "w7",
+          "text": "and",
+          "start": 2.98,
+          "end": 3.139
+        },
+        {
+          "id": "w8",
+          "text": "what",
+          "start": 3.159,
+          "end": 3.279
+        },
+        {
+          "id": "w9",
+          "text": "it",
+          "start": 3.299,
+          "end": 3.439
+        },
+        {
+          "id": "w10",
+          "text": "keeps.",
+          "start": 3.48,
+          "end": 3.899
+        }
+      ]
+    },
+    {
+      "id": "05",
+      "path": "assets/voice/05.wav",
+      "duration_s": 4.754,
+      "words": [
+        {
+          "id": "w0",
+          "text": "Push",
+          "start": 0.099,
+          "end": 0.299
+        },
+        {
+          "id": "w1",
+          "text": "what",
+          "start": 0.359,
+          "end": 0.5
+        },
+        {
+          "id": "w2",
+          "text": "earns.",
+          "start": 0.579,
+          "end": 1
+        },
+        {
+          "id": "w3",
+          "text": "Fix",
+          "start": 1.539,
+          "end": 1.759
+        },
+        {
+          "id": "w4",
+          "text": "what",
+          "start": 1.839,
+          "end": 1.999
+        },
+        {
+          "id": "w5",
+          "text": "quietly",
+          "start": 2.039,
+          "end": 2.419
+        },
+        {
+          "id": "w6",
+          "text": "loses.",
+          "start": 2.519,
+          "end": 3
+        },
+        {
+          "id": "w7",
+          "text": "Branch",
+          "start": 3.399,
+          "end": 3.72
+        },
+        {
+          "id": "w8",
+          "text": "by",
+          "start": 3.819,
+          "end": 3.959
+        },
+        {
+          "id": "w9",
+          "text": "branch.",
+          "start": 4,
+          "end": 4.46
+        }
+      ]
+    },
+    {
+      "id": "06",
+      "path": "assets/voice/06.wav",
+      "duration_s": 4.284,
+      "words": [
+        {
+          "id": "w0",
+          "text": "Every",
+          "start": 0.219,
+          "end": 0.459
+        },
+        {
+          "id": "w1",
+          "text": "morning",
+          "start": 0.5,
+          "end": 0.799
+        },
+        {
+          "id": "w2",
+          "text": "on",
+          "start": 0.839,
+          "end": 0.919
+        },
+        {
+          "id": "w3",
+          "text": "your",
+          "start": 0.959,
+          "end": 1.099
+        },
+        {
+          "id": "w4",
+          "text": "phone,",
+          "start": 1.12,
+          "end": 1.399
+        },
+        {
+          "id": "w5",
+          "text": "every",
+          "start": 1.779,
+          "end": 2.179
+        },
+        {
+          "id": "w6",
+          "text": "number",
+          "start": 2.18,
+          "end": 2.539
+        },
+        {
+          "id": "w7",
+          "text": "traceable",
+          "start": 2.539,
+          "end": 3.059
+        },
+        {
+          "id": "w8",
+          "text": "to",
+          "start": 3.059,
+          "end": 3.159
+        },
+        {
+          "id": "w9",
+          "text": "its",
+          "start": 3.179,
+          "end": 3.379
+        },
+        {
+          "id": "w10",
+          "text": "invoice.",
+          "start": 3.399,
+          "end": 3.939
+        }
+      ]
+    },
+    {
+      "id": "07",
+      "path": "assets/voice/07.wav",
+      "duration_s": 3.422,
+      "words": [
+        {
+          "id": "w0",
+          "text": "Faida.",
+          "start": 0.179,
+          "end": 0.579
+        },
+        {
+          "id": "w1",
+          "text": "Know",
+          "start": 1.199,
+          "end": 1.36
+        },
+        {
+          "id": "w2",
+          "text": "the",
+          "start": 1.399,
+          "end": 1.439
+        },
+        {
+          "id": "w3",
+          "text": "margin",
+          "start": 1.539,
+          "end": 1.86
+        },
+        {
+          "id": "w4",
+          "text": "on",
+          "start": 1.919,
+          "end": 1.979
+        },
+        {
+          "id": "w5",
+          "text": "every",
+          "start": 2.159,
+          "end": 2.339
+        },
+        {
+          "id": "w6",
+          "text": "item",
+          "start": 2.46,
+          "end": 2.7
+        },
+        {
+          "id": "w7",
+          "text": "you",
+          "start": 2.74,
+          "end": 2.859
+        },
+        {
+          "id": "w8",
+          "text": "sell.",
+          "start": 2.899,
+          "end": 3.159
+        }
+      ]
+    }
+  ],
+  "sfx": [
+    {
+      "id": "01",
+      "name": "message-pop-soft ×5 (one per bubble",
+      "file": "assets/sfx/message-pop-soft-5-one-per-bubble.mp3",
+      "source": "heygen",
+      "offset_s": 0,
+      "duration_s": 1.515,
+      "volume": 0.35
+    },
+    {
+      "id": "01",
+      "name": "quiet)",
+      "file": "assets/sfx/quiet.mp3",
+      "source": "heygen",
+      "offset_s": 0,
+      "duration_s": 9.286,
+      "volume": 0.35
+    },
+    {
+      "id": "01",
+      "name": "keyboard-tick-soft",
+      "file": "assets/sfx/keyboard-tick-soft.mp3",
+      "source": "heygen",
+      "offset_s": 0,
+      "duration_s": 39.631,
+      "volume": 0.35
+    },
+    {
+      "id": "02",
+      "name": "send-whoosh-soft",
+      "file": "assets/sfx/send-whoosh-soft.mp3",
+      "source": "heygen",
+      "offset_s": 0,
+      "duration_s": 1.58,
+      "volume": 0.35
+    },
+    {
+      "id": "02",
+      "name": "typing-dots-soft",
+      "file": "assets/sfx/typing-dots-soft.mp3",
+      "source": "heygen",
+      "offset_s": 0,
+      "duration_s": 2.326,
+      "volume": 0.35
+    },
+    {
+      "id": "02",
+      "name": "receive-pop",
+      "file": "assets/sfx/receive-pop.mp3",
+      "source": "heygen",
+      "offset_s": 0,
+      "duration_s": 0.576,
+      "volume": 0.35
+    },
+    {
+      "id": "02",
+      "name": "tick-soft",
+      "file": "assets/sfx/tick-soft.mp3",
+      "source": "heygen",
+      "offset_s": 0,
+      "duration_s": 7.778,
+      "volume": 0.35
+    },
+    {
+      "id": "03",
+      "name": "pan-whoosh-soft ×2",
+      "file": "assets/sfx/pan-whoosh-soft-2.mp3",
+      "source": "heygen",
+      "offset_s": 0,
+      "duration_s": 0.288,
+      "volume": 0.35
+    },
+    {
+      "id": "03",
+      "name": "tick-soft (on \"mapped ✓\")",
+      "file": "assets/sfx/tick-soft-on-mapped.mp3",
+      "source": "heygen",
+      "offset_s": 0,
+      "duration_s": 0.264,
+      "volume": 0.35
+    },
+    {
+      "id": "03",
+      "name": "pill-pops-soft",
+      "file": "assets/sfx/pill-pops-soft.mp3",
+      "source": "heygen",
+      "offset_s": 0,
+      "duration_s": 1.308,
+      "volume": 0.35
+    },
+    {
+      "id": "04",
+      "name": "riser-soft (into the count)",
+      "file": "assets/sfx/riser-soft-into-the-count.mp3",
+      "source": "heygen",
+      "offset_s": 0,
+      "duration_s": 4.97,
+      "volume": 0.35
+    },
+    {
+      "id": "04",
+      "name": "tick-low (as the figure lands)",
+      "file": "assets/sfx/tick-low-as-the-figure-lands.mp3",
+      "source": "heygen",
+      "offset_s": 0,
+      "duration_s": 2.961,
+      "volume": 0.35
+    },
+    {
+      "id": "05",
+      "name": "tick-soft ×7 (one per row",
+      "file": "assets/sfx/tick-soft-7-one-per-row.mp3",
+      "source": "heygen",
+      "offset_s": 0,
+      "duration_s": 0.144,
+      "volume": 0.35
+    },
+    {
+      "id": "05",
+      "name": "quiet cascade)",
+      "file": "assets/sfx/quiet-cascade.mp3",
+      "source": "heygen",
+      "offset_s": 0,
+      "duration_s": 9.286,
+      "volume": 0.35
+    },
+    {
+      "id": "05",
+      "name": "thump-low (the plum row)",
+      "file": "assets/sfx/thump-low-the-plum-row.mp3",
+      "source": "heygen",
+      "offset_s": 0,
+      "duration_s": 0.792,
+      "volume": 0.35
+    },
+    {
+      "id": "05",
+      "name": "chip-pop-soft",
+      "file": "assets/sfx/chip-pop-soft.mp3",
+      "source": "heygen",
+      "offset_s": 0,
+      "duration_s": 0.312,
+      "volume": 0.35
+    },
+    {
+      "id": "06",
+      "name": "notification-chime-soft",
+      "file": "assets/sfx/notification-chime-soft.mp3",
+      "source": "heygen",
+      "offset_s": 0,
+      "duration_s": 0.72,
+      "volume": 0.35
+    },
+    {
+      "id": "06",
+      "name": "scroll-swish-soft",
+      "file": "assets/sfx/scroll-swish-soft.mp3",
+      "source": "heygen",
+      "offset_s": 0,
+      "duration_s": 0.408,
+      "volume": 0.35
+    },
+    {
+      "id": "06",
+      "name": "tick-soft",
+      "file": "assets/sfx/tick-soft.mp3",
+      "source": "heygen",
+      "offset_s": 0,
+      "duration_s": 7.778,
+      "volume": 0.35
+    },
+    {
+      "id": "07",
+      "name": "brand-sting-soft",
+      "file": "assets/sfx/brand-sting-soft.mp3",
+      "source": "heygen",
+      "offset_s": 0,
+      "duration_s": 7.315,
+      "volume": 0.35
+    },
+    {
+      "id": "07",
+      "name": "pill-pop-soft",
+      "file": "assets/sfx/pill-pop-soft.mp3",
+      "source": "heygen",
+      "offset_s": 0,
+      "duration_s": 1.308,
+      "volume": 0.35
+    }
+  ],
+  "total_duration_s": 31.555
+}

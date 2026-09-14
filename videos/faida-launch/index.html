@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1080, height=1080">
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js" integrity="sha384-sG0Hv1tP1lZCk9KQmrIbY/XNwi+OY84GQqhMscbnsoBFqAz8KNCil1kvfL3Hbbk2" crossorigin="anonymous"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 1080px;
+        height: 1080px;
+        overflow: hidden;
+        background: #000;
+      }
+      #root {
+        position: relative;
+        width: 1080px;
+        height: 1080px;
+        overflow: hidden;
+        background: #FBF6EC;
+      }
+      .scene {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <div data-hf-id="hf-vm04" id="root" data-composition-id="main" data-start="0" data-duration="31.555" data-width="1080" data-height="1080">
+      <div data-hf-id="hf-kliy" id="el-01-the-pile" class="scene" data-composition-id="01-the-pile" data-composition-src="compositions/frames/01-the-pile.html" data-start="0" data-duration="5.363" data-track-index="0"></div>
+      <audio data-hf-id="hf-oyv4" id="el-01-the-pile-voice" src="assets/voice/01.wav" data-start="0" data-duration="4.963" data-track-index="10" data-volume="1"></audio>
+
+      <div data-hf-id="hf-b524" id="el-02-forward-one" class="scene" data-composition-id="02-forward-one" data-composition-src="compositions/frames/02-forward-one.html" data-start="4.963" data-duration="5.202" data-track-index="1"></div>
+      <audio data-hf-id="hf-vsvp" id="el-02-forward-one-voice" src="assets/voice/02.wav" data-start="4.963" data-duration="4.702" data-track-index="10" data-volume="1"></audio>
+
+      <div data-hf-id="hf-gwva" id="el-03-line-to-plate" class="scene" data-composition-id="03-line-to-plate" data-composition-src="compositions/frames/03-line-to-plate.html" data-start="9.665" data-duration="5.724" data-track-index="0"></div>
+      <audio data-hf-id="hf-9i42" id="el-03-line-to-plate-voice" src="assets/voice/03.wav" data-start="9.665" data-duration="5.224" data-track-index="10" data-volume="1"></audio>
+
+      <div data-hf-id="hf-4svd" id="el-04-what-it-keeps" class="scene" data-composition-id="04-what-it-keeps" data-composition-src="compositions/frames/04-what-it-keeps.html" data-start="14.889" data-duration="4.706" data-track-index="1"></div>
+      <audio data-hf-id="hf-yv77" id="el-04-what-it-keeps-voice" src="assets/voice/04.wav" data-start="14.889" data-duration="4.206" data-track-index="10" data-volume="1"></audio>
+
+      <div data-hf-id="hf-z4kc" id="el-05-push-and-fix" class="scene" data-composition-id="05-push-and-fix" data-composition-src="compositions/frames/05-push-and-fix.html" data-start="19.095" data-duration="5.154" data-track-index="0"></div>
+      <audio data-hf-id="hf-8zw2" id="el-05-push-and-fix-voice" src="assets/voice/05.wav" data-start="19.095" data-duration="4.754" data-track-index="10" data-volume="1"></audio>
+
+      <div data-hf-id="hf-asy7" id="el-06-every-morning" class="scene" data-composition-id="06-every-morning" data-composition-src="compositions/frames/06-every-morning.html" data-start="23.848999999999997" data-duration="4.784" data-track-index="1"></div>
+      <audio data-hf-id="hf-ko21" id="el-06-every-morning-voice" src="assets/voice/06.wav" data-start="23.848999999999997" data-duration="4.284" data-track-index="10" data-volume="1"></audio>
+
+      <div data-hf-id="hf-xmvu" id="el-07-faida" class="scene" data-composition-id="07-faida" data-composition-src="compositions/frames/07-faida.html" data-start="28.132999999999996" data-duration="3.422" data-track-index="0"></div>
+      <audio data-hf-id="hf-botl" id="el-07-faida-voice" src="assets/voice/07.wav" data-start="28.132999999999996" data-duration="3.422" data-track-index="10" data-volume="1"></audio>
+
+      <!-- BGM -->
+      <audio data-hf-id="hf-i3qg" id="el-bgm" src="assets/bgm/track-cut.mp3" data-start="0" data-duration="31.555" data-track-index="11" data-volume="0.12"></audio>
+
+      <!-- captions -->
+      <div data-hf-id="hf-3i8g" id="el-captions" class="scene" data-composition-id="captions" data-composition-src="compositions/captions.html" data-start="0" data-duration="31.555" data-track-index="2"></div>
+
+      <!-- SFX -->
+      <audio data-hf-id="hf-fcvf" id="el-sfx-0" src="assets/sfx/message-pop-soft-5-one-per-bubble.mp3" data-start="0" data-duration="1.515" data-track-index="20" data-volume="0.35"></audio>
+      <audio data-hf-id="hf-nv8n" id="el-sfx-1" src="assets/sfx/send-whoosh-soft.mp3" data-start="4.963" data-duration="1.58" data-track-index="21" data-volume="0.35"></audio>
+      <audio data-hf-id="hf-hubm" id="el-sfx-2" src="assets/sfx/receive-pop.mp3" data-start="4.963" data-duration="0.576" data-track-index="22" data-volume="0.35"></audio>
+      <audio data-hf-id="hf-jazx" id="el-sfx-3" src="assets/sfx/pan-whoosh-soft-2.mp3" data-start="9.665" data-duration="0.288" data-track-index="23" data-volume="0.35"></audio>
+      <audio data-hf-id="hf-9rej" id="el-sfx-4" src="assets/sfx/tick-soft-on-mapped.mp3" data-start="9.665" data-duration="0.264" data-track-index="24" data-volume="0.35"></audio>
+      <audio data-hf-id="hf-zbds" id="el-sfx-5" src="assets/sfx/tick-soft-7-one-per-row.mp3" data-start="19.095" data-duration="0.144" data-track-index="25" data-volume="0.35"></audio>
+      <audio data-hf-id="hf-j3ve" id="el-sfx-6" src="assets/sfx/thump-low-the-plum-row.mp3" data-start="19.095" data-duration="0.792" data-track-index="26" data-volume="0.35"></audio>
+      <audio data-hf-id="hf-the7" id="el-sfx-7" src="assets/sfx/notification-chime-soft.mp3" data-start="23.849" data-duration="0.72" data-track-index="27" data-volume="0.35"></audio>
+      <audio data-hf-id="hf-jr22" id="el-sfx-8" src="assets/sfx/scroll-swish-soft.mp3" data-start="23.849" data-duration="0.408" data-track-index="28" data-volume="0.35"></audio>
+      <audio data-hf-id="hf-hbrk" id="el-sfx-9" src="assets/sfx/pill-pop-soft.mp3" data-start="28.133" data-duration="1.308" data-track-index="29" data-volume="0.35"></audio>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      window.__timelines["main"] = gsap.timeline({ paused: true });
+      // ── frame transitions (injected by transitions.mjs) ──
+      (function () { var tl = window.__timelines["main"];
+        tl.to("#el-01-the-pile", { scale: 2.5, opacity: 0, filter: "blur(8px)", duration: 0.4, ease: "power3.in" }, 4.963);
+        tl.fromTo("#el-02-forward-one", { scale: 0.5, opacity: 0, filter: "blur(8px)" }, { scale: 1, opacity: 1, filter: "blur(0px)", duration: 0.4, ease: "power3.out" }, 4.963);
+        tl.to("#el-02-forward-one", { opacity: 0, duration: 0.5, ease: "power2.inOut" }, 9.665);
+        tl.fromTo("#el-03-line-to-plate", { opacity: 0 }, { opacity: 1, duration: 0.5, ease: "power2.inOut" }, 9.665);
+        tl.to("#el-03-line-to-plate", { opacity: 0, duration: 0.5, ease: "power2.inOut" }, 14.889);
+        tl.fromTo("#el-04-what-it-keeps", { opacity: 0 }, { opacity: 1, duration: 0.5, ease: "power2.inOut" }, 14.889);
+        tl.to("#el-04-what-it-keeps", { x: -1080, duration: 0.5, ease: "power3.inOut" }, 19.095);
+        tl.fromTo("#el-05-push-and-fix", { x: 1080, opacity: 1 }, { x: 0, duration: 0.5, ease: "power3.inOut" }, 19.095);
+        tl.to("#el-05-push-and-fix", { scale: 2.5, opacity: 0, filter: "blur(8px)", duration: 0.4, ease: "power3.in" }, 23.849);
+        tl.fromTo("#el-06-every-morning", { scale: 0.5, opacity: 0, filter: "blur(8px)" }, { scale: 1, opacity: 1, filter: "blur(0px)", duration: 0.4, ease: "power3.out" }, 23.849);
+        tl.to("#el-06-every-morning", { opacity: 0, duration: 0.5, ease: "power2.inOut" }, 28.133);
+        tl.fromTo("#el-07-faida", { opacity: 0 }, { opacity: 1, duration: 0.5, ease: "power2.inOut" }, 28.133);
+        tl.to({}, { duration: 31.555 }, 0); // full-span anchor — main.duration() == composition total (Studio master duration)
+      })();
+    </script>
+  </body>
+</html>

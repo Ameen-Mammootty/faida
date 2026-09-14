@@ -1,0 +1,205 @@
+<template>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+  <style>
+@font-face{font-family:"Manrope";src:url("assets/fonts/manrope-variable.woff2") format("woff2");font-weight:200 800;font-style:normal;font-display:block}
+@font-face{font-family:"Inter";src:url("assets/fonts/inter-variable.woff2") format("woff2");font-weight:100 900;font-style:normal;font-display:block}
+
+#root{position:absolute;inset:0;width:1080px;height:1080px;overflow:hidden;font-family:"Manrope","Inter",sans-serif;color:#172421;-webkit-font-smoothing:antialiased}
+.clip{position:absolute;inset:0}
+
+[data-05-push-and-fix="bg"]{background:#FBF6EC}
+
+[data-05-push-and-fix="label"]{position:absolute;left:60px;top:58px;font-family:"Manrope",sans-serif;font-weight:600;font-size:23px;line-height:1.2;letter-spacing:.09em;text-transform:uppercase;color:#153E35;opacity:0}
+[data-05-push-and-fix="rule"]{position:absolute;left:60px;top:92px;width:60px;height:4px;border-radius:2px;background:#153E35;transform-origin:left center;transform:scaleX(0)}
+
+[data-05-push-and-fix="chips"]{position:absolute;right:60px;top:48px;display:flex;gap:10px;opacity:0}
+[data-05-push-and-fix="branch"]{display:inline-block;border-radius:100px;padding:8px 18px;font-family:"Manrope",sans-serif;font-weight:600;font-size:20px;line-height:1.15;background:#EDF1EE;color:#4A6A60;border:1.5px solid rgba(21,62,53,.14)}
+[data-05-push-and-fix="branch"][data-on="1"]{background:#153E35;color:#FBF6EC;border-color:#153E35}
+
+[data-05-push-and-fix="list"]{position:absolute;left:60px;top:118px;width:960px;padding:8px 28px;box-sizing:border-box;background:#fff;border:1.5px solid rgba(21,62,53,.2);border-radius:14px;opacity:0}
+
+[data-05-push-and-fix="row"]{display:grid;grid-template-columns:330px 1fr 122px 92px;align-items:center;gap:20px;height:78px;border-bottom:1px solid rgba(21,62,53,.10);opacity:0}
+[data-05-push-and-fix="name"]{font-family:"Manrope",sans-serif;font-weight:600;font-size:28px;line-height:1.15;letter-spacing:-.01em;color:#172421;white-space:nowrap}
+[data-05-push-and-fix="track"]{position:relative;height:14px;border-radius:6px;background:rgba(21,62,53,.10);overflow:hidden}
+[data-05-push-and-fix="fill"]{position:absolute;left:0;top:0;width:100%;height:14px;border-radius:6px;transform:scaleX(0);transform-origin:left center;will-change:transform}
+[data-05-push-and-fix="pct"]{font-family:"Manrope",sans-serif;font-weight:700;font-size:30px;line-height:1;text-align:right;font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1;transform-origin:100% 50%}
+[data-05-push-and-fix="chipcell"]{display:flex;justify-content:flex-end}
+[data-05-push-and-fix="chip"]{display:inline-block;border-radius:100px;padding:6px 16px;font-family:"Manrope",sans-serif;font-weight:600;font-size:20px;line-height:1.2;opacity:0;transform-origin:50% 50%}
+[data-05-push-and-fix="chip"][data-kind="push"]{background:#E4EFE9;color:#1D6D50}
+[data-05-push-and-fix="chip"][data-kind="fix"]{background:#F8EED9;color:#8A5A12}
+
+[data-05-push-and-fix="quote"]{position:absolute;left:60px;top:700px;width:960px;box-sizing:border-box;padding:26px 32px 24px 30px;background:#fff;border:1.5px solid rgba(21,62,53,.2);border-left:6px solid #E3A13B;border-radius:14px;opacity:0}
+[data-05-push-and-fix="quoteline"]{font-family:"Inter",sans-serif;font-weight:500;font-size:30px;line-height:1.35;letter-spacing:-.005em;color:#172421;font-variant-numeric:tabular-nums}
+[data-05-push-and-fix="quotemeta"]{margin-top:10px;font-family:"Inter",sans-serif;font-weight:400;font-size:21px;line-height:1.3;color:#52625D}
+[data-05-push-and-fix="quoteinner"]{opacity:0}
+  </style>
+
+  <div data-hf-id="hf-j7cn" id="root" data-composition-id="05-push-and-fix" data-width="1080" data-height="1080" data-duration="5.154">
+
+    <div data-hf-id="hf-153w" class="clip" data-05-push-and-fix="bg" data-start="0" data-duration="5.154" data-track-index="0"></div>
+
+    <div data-hf-id="hf-r9tm" class="clip" data-start="0" data-duration="5.154" data-track-index="1">
+
+      <div data-hf-id="hf-pb2h" data-05-push-and-fix="label">What each item keeps</div>
+      <div data-hf-id="hf-rsmb" data-05-push-and-fix="rule"></div>
+
+      <div data-hf-id="hf-jc3q" data-05-push-and-fix="chips">
+        <span data-hf-id="hf-foua" data-05-push-and-fix="branch" data-on="1">Al Quoz</span>
+        <span data-hf-id="hf-sljk" data-05-push-and-fix="branch" data-on="0">Karama</span>
+        <span data-hf-id="hf-e4h2" data-05-push-and-fix="branch" data-on="0">Deira</span>
+      </div>
+
+      <div data-hf-id="hf-8339" data-05-push-and-fix="list">
+      <div data-hf-id="hf-k05d" data-05-push-and-fix="row">
+        <div data-hf-id="hf-v8tp" data-05-push-and-fix="name">Sulaimani</div>
+        <div data-hf-id="hf-87oq" data-05-push-and-fix="track"><div data-hf-id="hf-za4l" data-05-push-and-fix="fill" style="background:#153E35"></div></div>
+        <div data-hf-id="hf-3rwq" data-05-push-and-fix="pct" style="color:#172421">0.0%</div>
+        <div data-hf-id="hf-lvkn" data-05-push-and-fix="chipcell"><span data-hf-id="hf-f1sg" data-05-push-and-fix="chip" data-kind="push">Push</span></div>
+      </div>
+      <div data-hf-id="hf-ll91" data-05-push-and-fix="row">
+        <div data-hf-id="hf-21g3" data-05-push-and-fix="name">Karak Tea (Cup)</div>
+        <div data-hf-id="hf-3bu6" data-05-push-and-fix="track"><div data-hf-id="hf-8ztl" data-05-push-and-fix="fill" style="background:#153E35"></div></div>
+        <div data-hf-id="hf-wz4e" data-05-push-and-fix="pct" style="color:#172421">0.0%</div>
+        <div data-hf-id="hf-99nb" data-05-push-and-fix="chipcell"><span data-hf-id="hf-ypig" data-05-push-and-fix="chip" data-kind="push">Push</span></div>
+      </div>
+      <div data-hf-id="hf-ms64" data-05-push-and-fix="row">
+        <div data-hf-id="hf-07hz" data-05-push-and-fix="name">Karak Tea (Flask 1 L)</div>
+        <div data-hf-id="hf-3q57" data-05-push-and-fix="track"><div data-hf-id="hf-a6qo" data-05-push-and-fix="fill" style="background:#153E35"></div></div>
+        <div data-hf-id="hf-xdff" data-05-push-and-fix="pct" style="color:#172421">0.0%</div>
+        <div data-hf-id="hf-8vca" data-05-push-and-fix="chipcell"><span data-hf-id="hf-xild" data-05-push-and-fix="chip" data-kind="push">Push</span></div>
+      </div>
+      <div data-hf-id="hf-mdv3" data-05-push-and-fix="row">
+        <div data-hf-id="hf-a8hh" data-05-push-and-fix="name">Butter Chicken</div>
+        <div data-hf-id="hf-44g8" data-05-push-and-fix="track"><div data-hf-id="hf-9sfn" data-05-push-and-fix="fill" style="background:#153E35"></div></div>
+        <div data-hf-id="hf-xrqg" data-05-push-and-fix="pct" style="color:#172421">0.0%</div>
+        <div data-hf-id="hf-8h19" data-05-push-and-fix="chipcell"></div>
+      </div>
+      <div data-hf-id="hf-nks6" data-05-push-and-fix="row">
+        <div data-hf-id="hf-pw28" data-05-push-and-fix="name">Egg Paratha</div>
+        <div data-hf-id="hf-1cb1" data-05-push-and-fix="track"><div data-hf-id="hf-7swi" data-05-push-and-fix="fill" style="background:#153E35"></div></div>
+        <div data-hf-id="hf-uzl9" data-05-push-and-fix="pct" style="color:#172421">0.0%</div>
+        <div data-hf-id="hf-b96g" data-05-push-and-fix="chipcell"><span data-hf-id="hf-2ov0" data-05-push-and-fix="chip" data-kind="fix">Fix</span></div>
+      </div>
+      <div data-hf-id="hf-n6h5" data-05-push-and-fix="row">
+        <div data-hf-id="hf-h3t5" data-05-push-and-fix="name">Chicken 65 Dry</div>
+        <div data-hf-id="hf-1qm2" data-05-push-and-fix="track"><div data-hf-id="hf-7elh" data-05-push-and-fix="fill" style="background:#153E35"></div></div>
+        <div data-hf-id="hf-vdwa" data-05-push-and-fix="pct" style="color:#172421">0.0%</div>
+        <div data-hf-id="hf-auvf" data-05-push-and-fix="chipcell"><span data-hf-id="hf-khuc" data-05-push-and-fix="chip" data-kind="fix">Fix</span></div>
+      </div>
+      <div data-hf-id="hf-b21i" data-05-push-and-fix="row" style="border-bottom:none;">
+        <div data-hf-id="hf-nfad" data-05-push-and-fix="name">Mint Lemonade</div>
+        <div data-hf-id="hf-24x3" data-05-push-and-fix="track"><div data-hf-id="hf-bte8" data-05-push-and-fix="fill" style="background:#65415F"></div></div>
+        <div data-hf-id="hf-c0hk" data-05-push-and-fix="pct" style="color:#65415F">0.0%</div>
+        <div data-hf-id="hf-agke" data-05-push-and-fix="chipcell"><span data-hf-id="hf-jax9" data-05-push-and-fix="chip" data-kind="fix">Fix</span></div>
+      </div>
+      </div>
+
+      <div data-hf-id="hf-94nf" data-05-push-and-fix="quote">
+        <div data-hf-id="hf-kbdd" data-05-push-and-fix="quoteinner">
+          <div data-hf-id="hf-j1mu" data-05-push-and-fix="quoteline">Chicken 65 Dry sold AED 3,774 and kept 38.1%; the menu keeps 67.4%.</div>
+          <div data-hf-id="hf-mj05" data-05-push-and-fix="quotemeta">the dashboard's own sentence · estimated</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      var A = "data-05-push-and-fix";
+      var root = document.querySelector('[data-composition-id="05-push-and-fix"]');
+      if (!root) return;
+      var q = function (sel) { return Array.prototype.slice.call(root.querySelectorAll(sel)); };
+
+      var label   = root.querySelector("[" + A + '="label"]');
+      var rule    = root.querySelector("[" + A + '="rule"]');
+      var chips   = root.querySelector("[" + A + '="chips"]');
+      var list    = root.querySelector("[" + A + '="list"]');
+      var quote   = root.querySelector("[" + A + '="quote"]');
+      var qinner  = root.querySelector("[" + A + '="quoteinner"]');
+      var rowEls  = q("[" + A + '="row"]');
+      var fillEls = q("[" + A + '="fill"]');
+      var pctEls  = q("[" + A + '="pct"]');
+      var branchEls = q("[" + A + '="branch"]');
+      var pushChips = q('[' + A + '="chip"][data-kind="push"]');
+      var fixChips  = q('[' + A + '="chip"][data-kind="fix"]');
+
+      var VALUES = [92.3, 82.9, 81.4, 64.2, 51.0, 38.1, -5.3];
+      var SCALEX = [0.923, 0.829, 0.814, 0.642, 0.51, 0.381, 0.055];
+
+      window.__timelines = window.__timelines || {};
+      var tl = gsap.timeline({ paused: true });
+      window.__timelines["05-push-and-fix"] = tl;
+
+      /* ---- Scene 1 (0.0-0.6): the band and the empty card are there from the first frame ---- */
+      tl.fromTo(label, { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.28, ease: "power3.out" }, 0);
+      tl.fromTo(rule,  { scaleX: 0 },         { scaleX: 1, duration: 0.42, ease: "power3.out" }, 0.06);
+      tl.fromTo(chips, { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.30, ease: "power3.out" }, 0.05);
+      tl.fromTo(list,  { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.40, ease: "power3.out" }, 0.04);
+
+      /* ---- Scenes 2 + 3: the seven rows assemble in one staggered cascade ---- */
+      var ROW_AT = [0.60, 0.72, 0.84, 1.95, 2.07, 2.19, 2.31];
+
+      rowEls.forEach(function (row, i) {
+        var at = ROW_AT[i];
+        tl.fromTo(row,
+          { opacity: 0, y: 20, scale: 0.985 },
+          { opacity: 1, y: 0, scale: 1, duration: 0.46, ease: "power3.out" }, at);
+
+        /* bar fills to its value, scaleX from the left */
+        tl.fromTo(fillEls[i], { scaleX: 0 },
+          { scaleX: SCALEX[i], duration: 0.62, ease: "power3.out" }, at + 0.16);
+
+        /* the figure counts, growing in place on the same beat (no overshoot) */
+        var el = pctEls[i];
+        var target = VALUES[i];
+        var state = { v: 0 };
+        tl.to(state, {
+          v: target, duration: 0.62, ease: "power3.out",
+          onUpdate: function () { el.textContent = state.v.toFixed(1) + "%"; }
+        }, at + 0.16);
+        tl.fromTo(el, { scale: 0.62 }, { scale: 1, duration: 0.62, ease: "power3.out" }, at + 0.16);
+      });
+
+      /* "Push" chips land after the first three bars have settled */
+      pushChips.forEach(function (c, i) {
+        tl.fromTo(c, { opacity: 0, scale: 0.5 },
+          { opacity: 1, scale: 1, duration: 0.34, ease: "power3.out" }, 1.56 + i * 0.08);
+      });
+
+      /* "Fix" chips land on "loses" */
+      fixChips.forEach(function (c, i) {
+        tl.fromTo(c, { opacity: 0, scale: 0.5 },
+          { opacity: 1, scale: 1, duration: 0.34, ease: "power3.out" }, 2.86 + i * 0.09);
+      });
+
+      /* ---- Scene 4 (3.2-4.754): branch by branch ---- */
+      /* the filled chip cycles in place, once, landing on Deira (discrete state replacement) */
+      var CYCLE = [
+        { t: 0.00, i: 0 },
+        { t: 0.22, i: 1 },
+        { t: 0.44, i: 2 }
+      ];
+      function branchAt(time) {
+        for (var k = CYCLE.length - 1; k >= 0; k--) { if (time >= CYCLE[k].t) return CYCLE[k].i; }
+        return 0;
+      }
+      var driver = { t: 0 };
+      tl.to(driver, {
+        t: 1.554, duration: 1.554, ease: "none",
+        onUpdate: function () {
+          var on = branchAt(driver.t);
+          for (var k = 0; k < branchEls.length; k++) {
+            branchEls[k].setAttribute("data-on", k === on ? "1" : "0");
+          }
+        }
+      }, 3.20);
+
+      /* the quote card slides up beneath the list, its sentence arriving as one block */
+      tl.fromTo(quote, { opacity: 0, y: 30 },
+        { opacity: 1, y: 0, duration: 0.62, ease: "power3.out" }, 3.56);
+      tl.fromTo(qinner, { opacity: 0, y: 8 },
+        { opacity: 1, y: 0, duration: 0.50, ease: "power3.out" }, 3.78);
+    })();
+  </script>
+</template>
