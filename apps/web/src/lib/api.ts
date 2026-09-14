@@ -71,6 +71,14 @@ import {
 } from "./mock/sales";
 import { mockGetDashboard } from "./mock/dashboard";
 import {
+  mockApproveStatement,
+  mockCreateSchemeMonth,
+  mockGetIncentive,
+  mockSetBranchPause,
+  mockSetPushList,
+  mockSetRoleShares,
+} from "./mock/incentive";
+import {
   mockApproveInvoice,
   mockConfirmInvoice,
   mockDismissInvoice,
@@ -88,6 +96,7 @@ import type {
   BranchAlias,
   Correction,
   DashboardResult,
+  IncentiveRead,
   Ingredient,
   IngredientCreateInput,
   IngredientMappingInput,
@@ -105,6 +114,10 @@ import type {
   PriceHistory,
   PriceMove,
   RejectionResult,
+  ApprovalInput,
+  PushListInput,
+  RoleShares,
+  SchemeMonthInput,
   SalesBranchesResult,
   SalesCoverageResult,
   SalesDay,
@@ -135,7 +148,9 @@ const SESSION_ENDED = "Your session has ended. Sign in again to continue.";
  */
 function sendToLogin(): void {
   if (typeof window === "undefined") return;
-  window.location.assign(loginPath(`${window.location.pathname}${window.location.search}`));
+  window.location.assign(
+    loginPath(`${window.location.pathname}${window.location.search}`),
+  );
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -156,7 +171,10 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   try {
     response = await fetch(`${API_BASE}${path}`, { ...init, headers });
   } catch {
-    throw new ApiError(0, "Couldn't reach the Faida API. Check that it is running.");
+    throw new ApiError(
+      0,
+      "Couldn't reach the Faida API. Check that it is running.",
+    );
   }
   if (response.status === 401) {
     sendToLogin();
@@ -183,14 +201,18 @@ function jsonInit(method: string, body: unknown): RequestInit {
   };
 }
 
-export async function listInvoices(filters: InvoiceFilters = {}): Promise<InvoiceListRow[]> {
+export async function listInvoices(
+  filters: InvoiceFilters = {},
+): Promise<InvoiceListRow[]> {
   if (MOCK) return mockListInvoices(filters);
   const params = new URLSearchParams();
   if (filters.status) params.set("status", filters.status);
   if (filters.branch_id) params.set("branch_id", filters.branch_id);
   if (filters.supplier_id) params.set("supplier_id", filters.supplier_id);
   const query = params.size > 0 ? `?${params.toString()}` : "";
-  const body = await request<{ invoices: InvoiceListRow[] }>(`/api/invoices${query}`);
+  const body = await request<{ invoices: InvoiceListRow[] }>(
+    `/api/invoices${query}`,
+  );
   return body.invoices;
 }
 
@@ -213,9 +235,12 @@ export async function patchInvoiceFields(
 
 export async function confirmInvoice(id: string): Promise<InvoiceDetail> {
   if (MOCK) return mockConfirmInvoice(id);
-  return request<InvoiceDetail>(`/api/invoices/${encodeURIComponent(id)}/confirm`, {
-    method: "POST",
-  });
+  return request<InvoiceDetail>(
+    `/api/invoices/${encodeURIComponent(id)}/confirm`,
+    {
+      method: "POST",
+    },
+  );
 }
 
 /**
@@ -225,7 +250,10 @@ export async function confirmInvoice(id: string): Promise<InvoiceDetail> {
  * saying why); the screen never sends a blank one. Resolves to the updated
  * detail, exactly like confirm - the same write, a different audit row.
  */
-export async function approveInvoice(id: string, reason: string): Promise<InvoiceDetail> {
+export async function approveInvoice(
+  id: string,
+  reason: string,
+): Promise<InvoiceDetail> {
   if (MOCK) return mockApproveInvoice(id, reason);
   return request<InvoiceDetail>(
     `/api/invoices/${encodeURIComponent(id)}/approve`,
@@ -238,12 +266,18 @@ export async function approveInvoice(id: string, reason: string): Promise<Invoic
  * the copy points at. Resolves to the updated detail, like confirm. */
 export async function dismissInvoice(id: string): Promise<InvoiceDetail> {
   if (MOCK) return mockDismissInvoice(id);
-  return request<InvoiceDetail>(`/api/invoices/${encodeURIComponent(id)}/dismiss`, {
-    method: "POST",
-  });
+  return request<InvoiceDetail>(
+    `/api/invoices/${encodeURIComponent(id)}/dismiss`,
+    {
+      method: "POST",
+    },
+  );
 }
 
-export async function uploadDocument(file: File, branchId?: string): Promise<UploadResult> {
+export async function uploadDocument(
+  file: File,
+  branchId?: string,
+): Promise<UploadResult> {
   if (MOCK) return mockUploadDocument(file, branchId);
   const body = new FormData();
   body.append("file", file);
@@ -256,7 +290,9 @@ export async function uploadDocument(file: File, branchId?: string): Promise<Upl
  * Resolves to the created invoice's full detail - green/amber already derived
  * by the same deterministic checks extraction uses.
  */
-export async function createManualInvoice(body: ManualInvoiceInput): Promise<InvoiceDetail> {
+export async function createManualInvoice(
+  body: ManualInvoiceInput,
+): Promise<InvoiceDetail> {
   if (MOCK) return mockCreateManualInvoice(body);
   return request<InvoiceDetail>("/api/invoices/manual", jsonInit("POST", body));
 }
@@ -271,9 +307,13 @@ export async function getSuppliers(): Promise<Supplier[]> {
   return body.suppliers;
 }
 
-export async function getSupplierItemPrices(supplierItemId: string): Promise<PriceHistory> {
+export async function getSupplierItemPrices(
+  supplierItemId: string,
+): Promise<PriceHistory> {
   if (MOCK) return mockGetSupplierItemPrices(supplierItemId);
-  return request<PriceHistory>(`/api/supplier-items/${encodeURIComponent(supplierItemId)}/prices`);
+  return request<PriceHistory>(
+    `/api/supplier-items/${encodeURIComponent(supplierItemId)}/prices`,
+  );
 }
 
 /**
@@ -306,12 +346,19 @@ export async function createIngredient(
   body: IngredientCreateInput,
 ): Promise<IngredientProposal> {
   if (MOCK) return mockCreateIngredient(body);
-  return request<IngredientProposal>("/api/ingredients", jsonInit("POST", body));
+  return request<IngredientProposal>(
+    "/api/ingredients",
+    jsonInit("POST", body),
+  );
 }
 
-export async function listUnmappedSupplierItems(): Promise<UnmappedSupplierItem[]> {
+export async function listUnmappedSupplierItems(): Promise<
+  UnmappedSupplierItem[]
+> {
   if (MOCK) return mockListUnmappedSupplierItems();
-  const body = await request<{ items: UnmappedSupplierItem[] }>("/api/supplier-items/unmapped");
+  const body = await request<{ items: UnmappedSupplierItem[] }>(
+    "/api/supplier-items/unmapped",
+  );
   return body.items;
 }
 
@@ -328,11 +375,16 @@ export async function mapSupplierItem(
 }
 
 /** The reverse gear: an approval gate with no undo is not one. */
-export async function unmapSupplierItem(itemId: string): Promise<MappingResult> {
+export async function unmapSupplierItem(
+  itemId: string,
+): Promise<MappingResult> {
   if (MOCK) return mockUnmapSupplierItem(itemId);
-  return request<MappingResult>(`/api/supplier-items/${encodeURIComponent(itemId)}/ingredient`, {
-    method: "DELETE",
-  });
+  return request<MappingResult>(
+    `/api/supplier-items/${encodeURIComponent(itemId)}/ingredient`,
+    {
+      method: "DELETE",
+    },
+  );
 }
 
 export async function rejectIngredient(
@@ -389,7 +441,9 @@ export async function setPackSizeOverride(
 
 export async function listMenuItems(): Promise<MenuItemSummary[]> {
   if (MOCK) return mockListMenuItems();
-  const body = await request<{ menu_items: MenuItemSummary[] }>("/api/menu-items");
+  const body = await request<{ menu_items: MenuItemSummary[] }>(
+    "/api/menu-items",
+  );
   return body.menu_items;
 }
 
@@ -424,23 +478,34 @@ export async function listPriceMoves(): Promise<PriceMove[]> {
  * Archiving is always a person's click. A CSV missing half the menu must not
  * vaporize it, so the loader names what is absent and archives nothing.
  */
-export async function loadMenuItem(body: MenuItemLoadInput): Promise<MenuLoadResult> {
+export async function loadMenuItem(
+  body: MenuItemLoadInput,
+): Promise<MenuLoadResult> {
   if (MOCK) return mockLoadMenuItem(body);
-  return request<MenuLoadResult>("/api/menu-items/load", jsonInit("POST", body));
+  return request<MenuLoadResult>(
+    "/api/menu-items/load",
+    jsonInit("POST", body),
+  );
 }
 
 export async function archiveMenuItem(id: string): Promise<MenuItemDetail> {
   if (MOCK) return mockArchiveMenuItem(id);
-  return request<MenuItemDetail>(`/api/menu-items/${encodeURIComponent(id)}/archive`, {
-    method: "POST",
-  });
+  return request<MenuItemDetail>(
+    `/api/menu-items/${encodeURIComponent(id)}/archive`,
+    {
+      method: "POST",
+    },
+  );
 }
 
 export async function unarchiveMenuItem(id: string): Promise<MenuItemDetail> {
   if (MOCK) return mockUnarchiveMenuItem(id);
-  return request<MenuItemDetail>(`/api/menu-items/${encodeURIComponent(id)}/unarchive`, {
-    method: "POST",
-  });
+  return request<MenuItemDetail>(
+    `/api/menu-items/${encodeURIComponent(id)}/unarchive`,
+    {
+      method: "POST",
+    },
+  );
 }
 
 /**
@@ -469,7 +534,10 @@ export async function getBranches(): Promise<Branch[]> {
 
 /** 409 when the alias already names another branch - surfaced as the
  * door's sentence, like every refusal. */
-export async function addBranchAlias(branchId: string, alias: string): Promise<BranchAlias> {
+export async function addBranchAlias(
+  branchId: string,
+  alias: string,
+): Promise<BranchAlias> {
   if (MOCK) return mockAddBranchAlias(branchId, alias);
   const body = await request<{ alias: BranchAlias }>(
     `/api/branches/${encodeURIComponent(branchId)}/aliases`,
@@ -483,7 +551,10 @@ export async function addBranchAlias(branchId: string, alias: string): Promise<B
  * stay where they landed, and 404 is the answer outside the tenant or under
  * another branch. The screen's re-teach is this and then `addBranchAlias`,
  * in that order, never a second write door. */
-export async function removeBranchAlias(branchId: string, aliasId: string): Promise<BranchAlias> {
+export async function removeBranchAlias(
+  branchId: string,
+  aliasId: string,
+): Promise<BranchAlias> {
   if (MOCK) return mockRemoveBranchAlias(branchId, aliasId);
   const body = await request<{ alias: BranchAlias }>(
     `/api/branches/${encodeURIComponent(branchId)}/aliases/${encodeURIComponent(aliasId)}`,
@@ -505,20 +576,32 @@ export async function getSalesLayouts(): Promise<SalesLayout[]> {
   return body.layouts;
 }
 
-export async function saveSalesLayout(input: SalesLayoutInput): Promise<SalesLayout> {
+export async function saveSalesLayout(
+  input: SalesLayoutInput,
+): Promise<SalesLayout> {
   if (MOCK) return mockSaveSalesLayout(input);
-  const body = await request<{ layout: SalesLayout }>("/api/sales/layouts", jsonInit("POST", input));
+  const body = await request<{ layout: SalesLayout }>(
+    "/api/sales/layouts",
+    jsonInit("POST", input),
+  );
   return body.layout;
 }
 
-export async function getSalesDays(from: string, to: string): Promise<SalesDay[]> {
+export async function getSalesDays(
+  from: string,
+  to: string,
+): Promise<SalesDay[]> {
   if (MOCK) return mockGetSalesDays(from, to);
   const params = new URLSearchParams({ from, to });
-  const body = await request<{ days: SalesDay[] }>(`/api/sales/days?${params.toString()}`);
+  const body = await request<{ days: SalesDay[] }>(
+    `/api/sales/days?${params.toString()}`,
+  );
   return body.days;
 }
 
-export async function postSalesDays(input: SalesDaysInput): Promise<SalesDaysResult> {
+export async function postSalesDays(
+  input: SalesDaysInput,
+): Promise<SalesDaysResult> {
   if (MOCK) return mockPostSalesDays(input);
   return request<SalesDaysResult>("/api/sales/days", jsonInit("POST", input));
 }
@@ -562,17 +645,30 @@ export async function getDashboard(
   return request<DashboardResult>(`/api/dashboard${query}`);
 }
 
-export async function getSalesBranches(from?: string, to?: string): Promise<SalesBranchesResult> {
+export async function getSalesBranches(
+  from?: string,
+  to?: string,
+): Promise<SalesBranchesResult> {
   if (MOCK) return mockGetSalesBranches(from, to);
-  return request<SalesBranchesResult>(`/api/sales/branches${rangeQuery(from, to)}`);
+  return request<SalesBranchesResult>(
+    `/api/sales/branches${rangeQuery(from, to)}`,
+  );
 }
 
-export async function getSalesCoverage(from?: string, to?: string): Promise<SalesCoverageResult> {
+export async function getSalesCoverage(
+  from?: string,
+  to?: string,
+): Promise<SalesCoverageResult> {
   if (MOCK) return mockGetSalesCoverage(from, to);
-  return request<SalesCoverageResult>(`/api/sales/coverage${rangeQuery(from, to)}`);
+  return request<SalesCoverageResult>(
+    `/api/sales/coverage${rangeQuery(from, to)}`,
+  );
 }
 
-export async function mapTillItem(tillItemId: string, menuItemId: string): Promise<TillItem> {
+export async function mapTillItem(
+  tillItemId: string,
+  menuItemId: string,
+): Promise<TillItem> {
   if (MOCK) return mockMapTillItem(tillItemId, menuItemId);
   const body = await request<{ till_item: TillItem }>(
     `/api/till-items/${encodeURIComponent(tillItemId)}/menu-item`,
@@ -597,4 +693,77 @@ export async function excludeTillItem(tillItemId: string): Promise<TillItem> {
     { method: "POST" },
   );
   return body.till_item;
+}
+
+// --- the staff incentive (M13) ----------------------------------------------
+//
+// One read serves the whole screen, the dashboard's rule: every figure on
+// /incentive comes out of one request, so nothing on it can disagree with
+// anything else on it. Every door returns that same read, so a save and a
+// create refresh the screen from one shape rather than patching it in place.
+// `IncentiveRead` is what the API serves today and grows a block per ticket.
+
+export async function getIncentive(month?: string): Promise<IncentiveRead> {
+  if (MOCK) return mockGetIncentive(month);
+  const query =
+    month === undefined ? "" : `?month=${encodeURIComponent(month)}`;
+  return request<IncentiveRead>(`/api/incentive${query}`);
+}
+
+export async function setRoleShares(body: RoleShares): Promise<IncentiveRead> {
+  if (MOCK) return mockSetRoleShares(body);
+  return request<IncentiveRead>("/api/incentive/shares", jsonInit("PUT", body));
+}
+
+export async function createSchemeMonth(
+  body: SchemeMonthInput,
+): Promise<IncentiveRead> {
+  if (MOCK) return mockCreateSchemeMonth(body);
+  return request<IncentiveRead>(
+    "/api/incentive/months",
+    jsonInit("POST", body),
+  );
+}
+
+export async function setPushList(
+  weekId: string,
+  body: PushListInput,
+): Promise<IncentiveRead> {
+  if (MOCK) return mockSetPushList(weekId, body);
+  return request<IncentiveRead>(
+    `/api/incentive/weeks/${encodeURIComponent(weekId)}`,
+    jsonInit("PUT", body),
+  );
+}
+
+/** The per-branch pause (D18): stop one branch's morning card, or start it
+ * again. Each is its own door with its own audit row; a branch already in
+ * the asked-for state is left as it is. Returns the month's whole read, the
+ * branch's pause on it. */
+export async function setBranchPause(
+  branchId: string,
+  paused: boolean,
+  month?: string,
+): Promise<IncentiveRead> {
+  if (MOCK) return mockSetBranchPause(branchId, paused, month);
+  const query =
+    month === undefined ? "" : `?month=${encodeURIComponent(month)}`;
+  return request<IncentiveRead>(
+    `/api/incentive/branches/${encodeURIComponent(branchId)}/${paused ? "pause" : "resume"}${query}`,
+    { method: "POST" },
+  );
+}
+
+/** The only door to a final statement (D11): the approval, with its reason.
+ * Returns the month's whole read, the final statement on it. */
+export async function approveStatement(
+  schemeMonthId: string,
+  branchId: string,
+  body: ApprovalInput,
+): Promise<IncentiveRead> {
+  if (MOCK) return mockApproveStatement(schemeMonthId, branchId, body);
+  return request<IncentiveRead>(
+    `/api/incentive/months/${encodeURIComponent(schemeMonthId)}/branches/${encodeURIComponent(branchId)}/approve`,
+    jsonInit("POST", body),
+  );
 }

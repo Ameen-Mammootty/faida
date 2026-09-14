@@ -30,9 +30,11 @@ import SessionMenu from "./SessionMenu";
  * slot that CSS moves - the phone's second row, the header row from 640 px,
  * and the sidebar foot from 1280 px - so a page load reads the session once.
  */
-type Screen = "dashboard" | "invoices" | "materials" | "menu" | "sales";
+type Screen = "dashboard" | "incentive" | "invoices" | "materials" | "menu" | "sales";
 
-/** The sidebar's five words, in the three groups confirmed by D5. */
+/** The sidebar's six words, in the three groups confirmed by D5. The incentive
+ * joined Operations in M13 (issue #8), under Sales: it is read against the
+ * till's own days and acted on month by month. */
 const GROUPS: { caption: string; entries: { screen: Screen; href: string; label: string }[] }[] = [
   {
     caption: "Overview",
@@ -43,6 +45,7 @@ const GROUPS: { caption: string; entries: { screen: Screen; href: string; label:
     entries: [
       { screen: "invoices", href: "/invoices", label: "Invoices" },
       { screen: "sales", href: "/sales", label: "Sales" },
+      { screen: "incentive", href: "/incentive", label: "Incentive" },
     ],
   },
   {
@@ -155,15 +158,24 @@ export default function AppShell({
       <header className="relative border-b border-ink/10 xl:border-b-0">
         {/* The phone row's hairline, drawn across the full width as the shipped
             second row drew it, so the session slot can sit over the row. */}
-        <span aria-hidden="true" className="absolute inset-x-0 top-14 h-px bg-ink/5 sm:hidden" />
+        <span aria-hidden="true" className="absolute inset-x-0 top-14 h-px bg-ink/5 md:hidden" />
         <div className="mx-auto flex w-full max-w-6xl items-start px-4 sm:px-6 xl:contents">
-          {/* `flex-auto` and no wrapping from 640 px: the words then sit on
-              their intrinsic width, so when the row is 2 px tight at 768 px the
+          {/* `flex-auto` and no wrapping once the row is one row: the words
+              then sit on their intrinsic width, so when the row is tight the
               squeeze lands on the address beside Sign out, exactly where the
-              shipped single row put it. Wrapping is the phone's second row. */}
+              shipped single row put it. Wrapping is the narrow second row.
+
+              The one row starts at 768 px and not 640 px, and the address
+              comes back at 1024 px and not 768 px. It was 640 and 768, measured
+              in WP-93 with four words in the bar; the sixth (Incentive, M13.2)
+              needs about 28 px more than 640 px has and about 35 px more than
+              768 px has, and the row was scrolling sideways on every screen in
+              the app across 640-667 px and 768-801 px. Each breakpoint is one
+              step wider, so the bar is a single row only where a single row
+              fits. */}
           <nav
             aria-label="Faida"
-            className="flex flex-auto flex-wrap items-center sm:flex-nowrap xl:hidden"
+            className="flex flex-auto flex-wrap items-center md:flex-nowrap xl:hidden"
           >
             <Link
               href="/dashboard"
@@ -176,7 +188,7 @@ export default function AppShell({
                 faida
               </span>
               <span
-                className={`hidden text-xs font-medium sm:inline ${
+                className={`hidden text-xs font-medium md:inline ${
                   current === "dashboard" ? "text-palm" : "text-stone"
                 }`}
               >
@@ -189,7 +201,7 @@ export default function AppShell({
                 // wordmark. The chip is one short phrase or it is nothing - and
                 // below sm it lives on the second row: with four nav items
                 // (Sales joined in M8) the top row had 8 px less than it needed.
-                <span className="hidden rounded-sm bg-mist px-2 py-0.5 text-xs font-medium whitespace-nowrap text-stone sm:inline-block">
+                <span className="hidden rounded-sm bg-mist px-2 py-0.5 text-xs font-medium whitespace-nowrap text-stone md:inline-block">
                   Sample data
                 </span>
               ) : null}
@@ -221,13 +233,22 @@ export default function AppShell({
               >
                 Sales
               </Link>
-              <span aria-hidden="true" className="hidden h-4 w-px bg-ink/10 sm:block" />
+              <Link
+                href="/incentive"
+                aria-current={current === "incentive" ? "page" : undefined}
+                className={linkClasses("incentive")}
+              >
+                Incentive
+              </Link>
+              {/* The rule between the words and the session, drawn only where
+                  the session is beside them. */}
+              <span aria-hidden="true" className="hidden h-4 w-px bg-ink/10 md:block" />
             </div>
             {/* Below sm the header row is full with the nav alone (measured at
                 390 px: Sign out beside Menu pushed the row 64 px past the edge),
                 so who is signed in and the way out get a quiet row of their own.
                 The 1 px is the hairline above it. */}
-            <div className="mt-px flex h-9 w-full items-center gap-3 sm:hidden">
+            <div className="mt-px flex h-9 w-full items-center gap-3 md:hidden">
               <Link
                 href="/dashboard"
                 aria-current={current === "dashboard" ? "page" : undefined}
@@ -247,10 +268,21 @@ export default function AppShell({
             </div>
           </nav>
           {/* The one session slot. On a phone it is lifted out of the flow so
-              the four words keep the whole of the top row; from 640 px it is
-              back in the row where it has always been; from 1280 px it is
-              fixed into the sidebar's foot band. One node, one session read. */}
-          <div className="absolute top-[57px] right-4 flex h-9 max-w-[55%] items-center sm:static sm:ml-4 sm:h-14 sm:max-w-none xl:fixed xl:top-auto xl:right-auto xl:bottom-13 xl:left-0 xl:z-20 xl:ml-0 xl:h-11 xl:w-58 xl:px-5">
+              the words keep the whole of the top row; from 640 px it is back in
+              the row where it has always been; from 1280 px it is fixed into
+              the sidebar's foot band. One node, one session read.
+
+              Below 640 px it is pinned to the *bottom* of the header rather
+              than to an offset measured from its top. It was `top-[57px]`,
+              one pixel under a header row of `h-14` - which held while the
+              words were one line, and stopped holding the moment there were
+              six of them (M13.2): the words wrapped, the quiet second row
+              moved down, and the address and Sign out stayed where the
+              measurement had put them, printed over "Sales" and "Incentive" on
+              every screen in the app. The second row is the last thing in the
+              header and is `h-9`, so `bottom-0 h-9` is that row whatever the
+              rows above it do. */}
+          <div className="absolute right-4 bottom-0 flex h-9 max-w-[55%] items-center md:static md:ml-4 md:h-14 md:max-w-none xl:fixed xl:right-auto xl:bottom-13 xl:left-0 xl:z-20 xl:ml-0 xl:h-11 xl:w-58 xl:px-5">
             <SessionMenu />
           </div>
         </div>

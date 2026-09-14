@@ -784,3 +784,179 @@ Two of its deletes are wider than the loop reset's, though: it clears **every** 
 Nothing there stops a morning; it loses the practice database's record of one. And `demo_seed.sql` must never run on the real stage anyway (§C).
 
 Storage is untouched by both: the cards stay under `{tenant_id}/briefs/...` the way the invoice originals stay under `{tenant_id}/documents/...`, immutable and unreferenced by any reset.
+
+## K. The staff incentive (added 2026-09-13, M13)
+
+The incentive is one scheme month at a time for the chain: a net sales target per branch, a percentage of net sales above it and an optional cap, then a push list per week - the dishes to push, a rate per portion above a per-branch target - and, every morning at 07:00 in the branch's own timezone, one scoreboard card to the branch's registered WhatsApp phone, the same phone that forwards its invoices.
+At month end the owner approves each branch's statement with a reason, and the final card goes to the branch from inside that approval.
+Every figure on the screen and on the card is read out of the loaded sales days on that request and stored nowhere; the only rows are what the owner typed and what the owner approved.
+Faida never moves money, and nothing staff-facing says profit, profit share or commission: the word is bonus.
+
+This section walks a person from an empty month to a delivered final card, in the order the month happens.
+The screen is `/incentive`, sixth in the shell; the doors under it are listed with each step so the read-back can name them.
+
+### The incentive's preconditions
+
+Run this list beside §A's and §J's.
+
+- [ ] **Migration 0023 is applied.** `Docs/apply_m13_migration.sql` is that file inside one transaction with its pre-flight and verify queries; it adds eight tables and one index and touches nothing that exists, so the order against the deploy does not matter the way 0020's did, but it must be in before the first scheme month is created.
+- [ ] **The template reads `APPROVED` in WhatsApp Manager, under the account the sending number belongs to.** Its name is one constant, `scoreboard.TEMPLATE_NAME`, language English (`en`), an image header and two body variables - the headline ("Deira scoreboard, Tue 15 Sep") and the freshness line ("Sales loaded to Mon 14 Sep, yesterday."), each at most 160 characters. One template serves the daily card and the final card. **Until the founder's submission (issue #16) is approved, the constant is the placeholder `faida_scoreboard`, and a real send answers Meta's 132001 in `jobs.last_error`; rename the constant in that one place when the approved name is known.**
+- [ ] **`INCENTIVE_ENABLED` is unset or `true` on Railway.** It sits beside `BRIEF_ENABLED` and stops every scoreboard for every tenant at once; unset means true, because a chain with no scheme month is already the safe state. The tick lives inside the worker's loop, so `WORKER_ENABLED=false` silences it too.
+- [ ] **Every branch that should get a card has a phone and a timezone** (`branches.wa_phone_e164`, `branches.timezone`). A branch with no phone gets nothing and one log line a day; a timezone name that does not resolve is logged and skipped without silencing the other branches.
+- [ ] **The branch phones are registered on the test number**, §A's own line: an unregistered number is refused, template or not.
+- [ ] **The till file is being loaded every day.** The card is only as fresh as the newest loaded day, and its first line says so ("Sales loaded to Fri 11 Sep, 4 days ago."); a missed load is visible on the phone, never hidden.
+
+### 1. The role shares, once
+
+On `/incentive`, the three percentages - manager, supervisor, sales team - that split every branch's pool.
+They must add to a hundred; Save is offered only then, and the refusal is worded once in the product.
+A change applies from the next scheme month: a month snapshots the shares in force on the day it is created and keeps them.
+The door is `PUT /api/incentive/shares`, one row per tenant, one `incentive.role_shares_set` audit row.
+
+### 2. The scheme month
+
+Pick the calendar month, type each branch's net sales target, its percentage of net sales above target and, if wanted, a cap; last month's net sales sit beside each box as advice and never as the baseline, so the boxes open empty.
+Create lays out the push weeks Monday to Sunday clipped to the month, snapshots the shares, and freezes the lot: there is no edit door for a target in this phase, so a target typed wrong is a month created wrong (see the failure list below).
+A month may be created after it has begun; the weeks already under way are frozen and say so, and net sales are still scored for the whole calendar month.
+The door is `POST /api/incentive/months`, one transaction, one `incentive.scheme_month_created` audit row; a second month for the same calendar month is refused by name.
+
+### 3. The push lists
+
+Each week is a tab.
+Fill a week with one to three dishes per category as guidance, a rate per portion beside what the plate keeps (fils-precise, or "unknown" for a dish not yet costed), and a portion target per branch.
+A dish with no till name mapped to it is refused by name - it could only ever score zero - so map it on `/sales` first.
+A week whose Monday has come is frozen; any week not yet started may be re-aimed on any day, so this week's supplier price move changes next week's list.
+The door is `PUT /api/incentive/weeks/{push_week_id}`, which replaces the week's list in one transaction with one `incentive.push_list_set` audit row.
+
+### 4. The morning
+
+Nothing to do: the worker's tick, once a minute before a job is claimed and on the same pass as the brief's, wakes every branch whose chain has a scheme month covering the branch's own local date, from 07:00 local (`SCOREBOARD_SEND_AT_LOCAL`) and never past noon (`BRIEF_SEND_UNTIL_LOCAL`, shared with the brief).
+One `send_scoreboard` job per branch per local day, whatever the number of ticks or instances (`jobs_send_scoreboard_uidx`).
+The job reads the branch's statement through the screen's own read, draws the card, stores it at `{tenant_id}/scoreboards/{day}/{branch_id}.png` before anything leaves the building, uploads it, sends the template, and records one outbound `wa_messages` row on which Meta's receipts land exactly as the brief's do.
+Each item carries its portions against target with what a portion above target earns under it, to the fil, so the floor can count the next plate; Monday's card carries the new week's list; a week the owner left empty says "no push list" and still carries the net sales figure; a dish whose till name has gone since is named with no bar under it, never scored as nought; the pool is marked "so far" and moves down when a refund lands or a day is replaced.
+The card draws ten items and says how many more; the footer reads "Scored on what the till prints: portions and net sales."
+The manager forwards it to the staff group.
+
+### 5. Approving the month
+
+Once every day of the month is loaded for a branch, its statement card on `/incentive` reads "provisional, 31 of 31 days loaded" and offers Approve with a reason box; the button lights only once a reason is typed.
+Approving writes the approval row with the figures as approved, the `incentive.statement_approved` audit row and the final card's job in one transaction, so a process that dies between an approval and its card cannot leave a final statement whose card never went; from then on the statement reads "final" with the split by role ("Manager share, 50%" and the two others, to the fil) and "Approved 2 Sep 2026: <reason>" under the branch's name.
+The final card goes on the next worker pass, a pause notwithstanding, stored under the `-final` suffix and keyed on the month's first day, so there is exactly one final card per branch and month; it lists every week's items up to eighteen rows.
+The door is `POST /api/incentive/months/{scheme_month_id}/branches/{branch_id}/approve`; it refuses a month with a day not loaded (with the count), a blank reason and a second approval (naming by whom and when).
+From the approval on, the tick skips that branch's remaining mornings with one log line.
+A sales day inside the approved month may still be replaced through the sales-day door: the statement keeps the approved figures, says "final; the till now says otherwise", and prints what the till reads now under each figure that moved.
+Faida has recorded a fact with an actor, a time and a reason; the owner pays by their own means.
+
+### The rehearsal: one real card, at any hour
+
+Run from `apps/api` with the live `.env`.
+
+```bash
+cd apps/api
+python -m faida_api.scoreboard_cli --tenant <tenant id> --branch <branch id>                       # print today's card lines and the two slots
+python -m faida_api.scoreboard_cli --tenant <tenant id> --branch <branch id> --day 2026-09-15      # the same for a named day
+python -m faida_api.scoreboard_cli --tenant <tenant id> --branch <branch id> --card out.png        # write the picture to a file
+python -m faida_api.scoreboard_cli --tenant <tenant id> --branch <branch id> --final --month 2026-08   # the final card of an approved month
+python -m faida_api.scoreboard_cli --tenant <tenant id> --branch <branch id> --send --to 9715XXXXXXXX  # send it now, once, as a rehearsal
+```
+
+Without `--send` it reads and writes nothing, so it is safe against the live database at any hour, and `--card` is where Meta's sample picture for the template submission comes from.
+With `--send` it takes the same three steps a morning takes, through the same functions (`worker.send_scoreboard_card`) - store the card, upload it, send the template - so a rehearsal proves the real path.
+The row is recorded with `rehearsal: true` and the card stored as `{tenant_id}/scoreboards/{day}/rehearsal-{branch_id}-{phone}.png`, both outside the day's own key, so a rehearsal at four in the afternoon does not silence the next morning's card.
+Until the template is approved, `--send` answers 132001 in Meta's own words and sends nothing.
+
+### The read-back after a morning
+
+```sql
+-- 1. The day's jobs: one per branch, done, one attempt, no error; a final card carries variant 'final'
+--    and the month's first day as its day.
+select id, status, attempts, run_after, last_error,
+       payload->>'branch_id' as branch, payload->>'variant' as variant
+  from jobs
+ where kind = 'send_scoreboard'
+   and payload->>'day' = '2026-09-15'            -- the branch's local date
+ order by id;
+
+-- 2. What went out, and how far Meta's receipt got.
+select created_at, to_phone, status,
+       payload->>'template'  as template,
+       payload->>'variant'   as variant,
+       payload->>'card_path' as card_path,
+       payload->>'rehearsal' as rehearsal,
+       payload->'error'      as error
+  from wa_messages
+ where direction = 'out' and msg_type = 'template'
+   and payload->>'template' = 'faida_scoreboard'   -- the approved name once renamed
+ order by created_at desc
+ limit 10;
+
+-- 3. Which branches are paused, and by whom.
+select b.name, b.timezone, b.wa_phone_e164, p.paused_at, a.actor, a.created_at
+  from branches b
+  left join incentive_branches p on p.branch_id = b.id
+  left join lateral (
+    select actor, created_at from audit_events
+     where subject_type = 'branch' and subject_id = b.id
+       and action in ('incentive.branch_paused', 'incentive.branch_resumed')
+     order by created_at desc limit 1) a on true
+ order by b.name;
+
+-- 4. The approvals of a month: actor, reason, time, and the figures as approved.
+select s.month, b.name, a.approved_at, a.actor, a.reason, a.figures->>'pool' as pool_approved
+  from statement_approvals a
+  join scheme_months s on s.id = a.scheme_month_id
+  join branches b on b.id = a.branch_id
+ order by s.month desc, b.name;
+```
+
+What good looks like: one job `done` per branch on one attempt with `last_error` null, one outbound row per branch reading `delivered` or `read` with a `card_path` and `rehearsal` false, and no `paused_at` on a branch that should be getting cards.
+`card_path` is the picture the phone actually showed, stored immutably beside the briefs and the invoice originals, so a morning can be opened again months later.
+
+### When the card does not arrive
+
+In §D's shape: what the phone shows, then where to look.
+The template, token and Meta-down cases are §J's, word for word, with `send_scoreboard` in place of `send_brief`; the ones that are the incentive's own follow.
+
+**No card, and the Railway log says the branch has no scheme month.**
+`scoreboard skipped: branch <id> has no scheme month for 2026-09-15`, once per branch per day.
+No month covers today for that chain: create it on `/incentive`, and tomorrow's card goes; a month created before noon local sends today's on the next tick.
+
+**No card, and the log says the branch is paused.**
+The owner paused it from the branch's statement card on `/incentive` ("Morning card paused since 11 Sep 2026."); Resume on the same card starts it again.
+The doors are `POST /api/incentive/branches/{branch_id}/pause` and `/resume`, an audit row each and no second row for a second click; query 3 above says who and when.
+A pause stops the daily card and never the final one, because the month is closed and the money named.
+
+**No card, and the log says the month is final.**
+`scoreboard skipped: branch <id>'s month is final; its card went with the approval`.
+That is the design: after approval the daily card stops and the final card has gone; query 2 shows it with `variant` final.
+
+**The card arrived and says the sales are days old.**
+The first line names the newest loaded day and its age.
+The card is right; the load is late.
+Load the till file on `/sales/load` and tomorrow's card says "yesterday".
+
+**A dish on the card has a sentence and no bar.**
+Its till name was unmapped after the list was set, or the dish was archived off the menu.
+The card names the hole rather than scoring it as nought; map the till name again on `/sales`, and the next card counts it.
+A week under way cannot be re-aimed, by design.
+
+**A target was typed wrong.**
+There is no edit door for a created month's targets in this phase (D4, frozen when created).
+If the month has not begun, the way out is a new month once this one is removed by hand from the tables with its audit trail kept; if it has begun, the statement is scored as typed, and the owner corrects it in the reason they approve with.
+A reasoned correction door, allowed only before the month's first day, is recorded in `TODOS.md`.
+
+**Approve is refused with "the month is provisional, 26 of 31 days loaded".**
+Five days of that branch are not loaded; the approval door never pro-rates.
+Load them and approve.
+
+**Stopping it.**
+`INCENTIVE_ENABLED=false` on Railway stops every scoreboard for every tenant in one variable, the final card included.
+The pause control on a branch's statement card stops one branch's mornings and keeps its month.
+Neither needs a code change, and neither loses a fact.
+
+### What the resets do to the incentive
+
+Neither reset names any of 0023's eight tables, and neither touches storage.
+The loop reset (`supabase/demo_reset_loop.sql`) is scoped to the props' invoices, so scheme months, push lists, approvals and the stored cards all survive a rehearsal reset.
+`supabase/demo_seed.sql` (the practice stage only) clears every `audit_events` row for the demo chain and every `wa_messages` row to or from a demo-branch phone, which takes the incentive's audit rows and the sent cards' outbound rows on the practice database with it; the rows the incentive is scored from stay.
+It must never run on the real stage anyway (§C).

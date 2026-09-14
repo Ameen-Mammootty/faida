@@ -604,7 +604,8 @@ export interface RejectionResult {
  * The word on every screen is *margin*: labour, rent and waste are absent, so
  * it is never "profit", and it is never "food cost %" (plan.md section 3).
  */
-export type PlateQuality = "reliable_with_limitations" | "estimated" | "incomplete";
+export type PlateQuality =
+  "reliable_with_limitations" | "estimated" | "incomplete";
 
 /** The whole answer for one menu item. Numbers are null iff incomplete. */
 export interface Plate {
@@ -878,7 +879,8 @@ export interface SalesFileResult {
  * position, so a reordered export applies unchanged and a renamed column
  * stops the file (C11.1). `date` and `amount` are the only two a file cannot
  * be read without; no `item` column is the summary shape. */
-export type SalesColumn = "branch" | "date" | "item" | "code" | "qty" | "amount";
+export type SalesColumn =
+  "branch" | "date" | "item" | "code" | "qty" | "amount";
 
 export type SalesColumnMap = Partial<Record<SalesColumn, string>>;
 
@@ -1006,10 +1008,7 @@ export interface SalesDaysResult {
 /** PRD §24's words for a period figure. `verified` is absent on purpose:
  * nothing cross-checks a till's figures. Precedence worst first. */
 export type PeriodQuality =
-  | "reliable_with_limitations"
-  | "estimated"
-  | "incomplete"
-  | "unavailable";
+  "reliable_with_limitations" | "estimated" | "incomplete" | "unavailable";
 
 /** The period a read covers. `default` is true when the caller sent no
  * range and the API chose 28 days ending on the tenant's newest loaded day;
@@ -1467,4 +1466,248 @@ export interface DashboardResult {
   price_moves: DashboardPriceMoves;
   unmapped: DashboardUnmapped;
   menu: DashboardMenu;
+}
+
+// --- the staff incentive (M13) ------------------------------------------------------
+//
+// The wire of `GET /api/incentive?month=` and its doors, field for field as
+// `faida_api/incentive.py` serialises them: every money value and every
+// percentage a string, dates ISO, the month as "YYYY-MM". The scores are
+// derived on every read and stored nowhere; only what the owner typed and
+// what the owner approved are rows.
+
+/** The three role shares as percentages summing to 100 (D2). */
+export interface RoleShares {
+  manager_pct: string;
+  supervisor_pct: string;
+  sales_pct: string;
+}
+
+export interface RoleSharesRow extends RoleShares {
+  updated_at: string;
+}
+
+export interface IncentiveMonthOption {
+  id: string;
+  /** "2026-09" */
+  month: string;
+  /** "September 2026" */
+  words: string;
+}
+
+export interface IncentiveBranch {
+  id: string;
+  name: string;
+  timezone: string;
+  paused_at: string | null;
+  /** The branch's net sales in the calendar month before the one in view,
+   * beside the target box as advice and never as the baseline (D3). */
+  previous_month_net_sales: string | null;
+  previous_month_words: string;
+}
+
+/** A live menu item as the push-list picker offers it (D6, D7). */
+export interface IncentiveMenuItem {
+  id: string;
+  name: string;
+  category: string | null;
+  /** What the plate keeps after ingredients, fils-precise; null when the
+   * dish is not costed. */
+  kept_per_plate: string | null;
+  kept_words: string;
+  /** Whether at least one till name maps to it; an unmapped item is refused
+   * as a push item because it could only ever score zero. */
+  mapped: boolean;
+}
+
+export interface IncentiveCategory<Item> {
+  category: string;
+  guidance: string;
+  items: Item[];
+}
+
+export interface IncentiveBranchTarget {
+  branch_id: string;
+  net_sales_target: string;
+  above_target_pct: string;
+  cap: string | null;
+}
+
+export interface PushItemTarget {
+  branch_id: string;
+  portion_target: string;
+}
+
+export interface PushItem {
+  id: string;
+  menu_item_id: string;
+  name: string;
+  category: string | null;
+  rate_per_portion: string;
+  kept_per_plate: string | null;
+  kept_words: string;
+  /** Why the item can no longer be counted, or null. */
+  hole: string | null;
+  targets: PushItemTarget[];
+}
+
+export interface PushWeek {
+  id: string;
+  start: string;
+  end: string;
+  /** "7-13 Sep" */
+  words: string;
+  frozen: boolean;
+  frozen_words: string | null;
+  items: PushItem[];
+  categories: IncentiveCategory<PushItem>[];
+}
+
+export interface StatementItem {
+  push_item_id: string;
+  menu_item_id: string;
+  name: string;
+  category: string | null;
+  rate_per_portion: string;
+  portion_target: string;
+  /** null is a hole, never a nought. */
+  portions: string | null;
+  portions_above: string;
+  earned: string;
+  hole: string | null;
+  no_qty_lines: number;
+  /** "142 of 200 portions", or the hole's sentence. */
+  words: string;
+}
+
+export interface StatementWeek {
+  push_week_id: string;
+  start: string;
+  end: string;
+  words: string;
+  items: StatementItem[];
+  earned: string;
+  empty: boolean;
+}
+
+export interface StatementSplit {
+  shares: RoleShares;
+  manager: string;
+  supervisor: string;
+  sales: string;
+}
+
+export interface StatementFigures {
+  days_loaded: number;
+  days_in_month: number;
+  net_sales: string;
+  net_sales_target: string;
+  net_above: string;
+  above_target_pct: string;
+  net_earned: string;
+  weeks: StatementWeek[];
+  items_earned: string;
+  pool_before_cap: string;
+  cap: string | null;
+  capped: boolean;
+  /** null when no day of the month is loaded for the branch. */
+  pool: string | null;
+  pool_rounded: string | null;
+  split: StatementSplit | null;
+  net_words: string;
+  pool_words: string;
+}
+
+export interface StatementApproval {
+  approved_at: string;
+  actor: string;
+  reason: string;
+}
+
+export type StatementStatus = "provisional" | "final";
+
+export interface IncentiveStatement {
+  branch_id: string;
+  branch_name: string;
+  month: string;
+  newest_loaded: string | null;
+  status: StatementStatus;
+  /** "provisional, 26 of 30 days loaded" / "final" / "final; the till now says otherwise" */
+  status_words: string;
+  /** The approved figures once approved, the live ones until then. */
+  figures: StatementFigures;
+  approval: StatementApproval | null;
+  till_now_says_otherwise: boolean;
+  /** The live figures beside an approved statement they no longer match. */
+  recomputed: StatementFigures | null;
+  notes: string[];
+}
+
+export interface SchemeMonth {
+  id: string;
+  month: string;
+  words: string;
+  created_at: string;
+  shares: RoleShares;
+  targets: IncentiveBranchTarget[];
+  weeks: PushWeek[];
+  /** One per branch, in `branches` order. */
+  statements: IncentiveStatement[];
+}
+
+/** GET /api/incentive?month=YYYY-MM */
+export interface IncentiveResult {
+  month: string;
+  month_words: string;
+  /** The latest local date across the tenant's branches: the day the
+   * freeze rule uses. */
+  today: string;
+  months: IncentiveMonthOption[];
+  shares: RoleSharesRow | null;
+  branches: IncentiveBranch[];
+  menu: IncentiveCategory<IncentiveMenuItem>[];
+  scheme_month: SchemeMonth | null;
+}
+
+/**
+ * What `GET /api/incentive` serves today. The read grows one block per M13
+ * ticket and this type grows with it, so the screen can never read a field
+ * the API has not started sending: the per-branch `statements` inside
+ * `scheme_month` arrive with the ticket that builds them.
+ */
+export type IncentiveRead = Pick<
+  IncentiveResult,
+  | "month"
+  | "month_words"
+  | "today"
+  | "months"
+  | "shares"
+  | "branches"
+  | "menu"
+  | "scheme_month"
+>;
+
+/** POST /api/incentive/months */
+export interface SchemeMonthInput {
+  month: string;
+  targets: {
+    branch_id: string;
+    net_sales_target: string;
+    above_target_pct: string;
+    cap: string | null;
+  }[];
+}
+
+/** POST /api/incentive/months/{scheme_month_id}/branches/{branch_id}/approve */
+export interface ApprovalInput {
+  reason: string;
+}
+
+/** PUT /api/incentive/weeks/{week_id} */
+export interface PushListInput {
+  items: {
+    menu_item_id: string;
+    rate_per_portion: string;
+    targets: { branch_id: string; portion_target: string }[];
+  }[];
 }

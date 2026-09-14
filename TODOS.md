@@ -1111,6 +1111,137 @@ button is static; the manager's brief and a per-tenant custom domain both need t
 
 **Depends on:** M10 live. Trigger: the manager's brief, or a custom domain that changes per tenant.
 
+## Staff incentive (deferred by the M13 grilling, 2026-09-12)
+
+### ~~The top bar scrolls sideways in two narrow bands~~ done 2026-09-12
+
+**What:** Between 640 and about 668 px, and again between 768 and about 803 px, the console's top
+bar is wider than the window, so every screen scrolls sideways by 27 to 35 px.
+The fix is one line in `AppShell.tsx`: the session slot (`absolute top-[57px] right-4 ...
+sm:static sm:max-w-none`) holds the signed-in address and Sign out as `whitespace-nowrap` flex
+items, so its min-content width cannot shrink into the room the row actually has.
+
+**Why not now:** It is not M13's, and it is not new - found on the way while proving the sixth
+nav word (M13.2, 2026-09-12) with a DOM probe against a dev server, and measured on the shipped
+`/sales` at exactly the same widths (667 px at a 640 px window, 803 px at 768 px).
+Adding "Incentive" moved it by 1 px at 640 px and not at all at 768 px, because the squeeze
+already lands on the address rather than on the words.
+Both bands are narrow and neither is a phone (390 px is clean, and so is every width from 1024 px
+up); the lower band needs mock mode's "Sample data" chip, so a signed-in owner does not see it.
+Changing shipped chrome that every one of the six screens draws wants the founder's eye on the
+result, not a drive-by inside a migrations ticket.
+
+**How to see it:** `npx next dev -p 3311`, then at a 768 px window read
+`document.documentElement.scrollWidth` - 803, not 768. Headless screenshots do not show it
+(they clip rather than scroll), which is why the probe reads the DOM.
+
+**Depends on:** nothing. Trigger: the M13 records ticket (issue #17), or any owner on a laptop
+at a window that narrow.
+
+**Done 2026-09-12, in M13.3, and it was worse than this entry knew.** A width sweep from 360 to
+1300 px found a third fault the DOM probe had not been pointed at: below 640 px the session slot
+was pinned at `top-[57px]`, one pixel under a header row of `h-14`, and once there were six words
+the words wrapped to a second line and the row under them moved down - leaving the address and
+Sign out printed over "Sales" and "Incentive" on every screen in the app at 390 px.
+The fix is not the shrink this entry proposed. The slot is pinned to the bottom of the header
+(`bottom-0 h-9`), which is the quiet second row whatever the rows above it do; and the two
+breakpoints where the bar becomes one row each move out one step - the row from 768 px rather
+than 640 px (`sm:` to `md:` on the nav's nowrap, the chip, the quiet row, the divider and the
+slot), and the signed-in address back from 1024 px rather than 768 px (`SessionMenu`'s
+`sm:hidden md:inline` to `md:hidden lg:inline`), so the bar is a single row only where a single
+row fits. The same sweep now reports no overflow at any width from 360 to 1300 px, and the
+founder's eye this entry wanted is owed on the result: the chrome is unchanged in kind, but two
+measured breakpoints moved.
+
+
+### A correction door for a scheme month's targets before the month begins
+
+**What:** One door that changes a created month's net sales target, percentage or cap for a
+branch, with a reason and an `incentive.targets_corrected` audit row, refused from the month's
+first day on; and a delete of a month that has not begun, with its audit row kept.
+
+**Why:** The month is frozen when created (M13 D4), so nobody can say the rules changed after it
+began. Today that freeze also covers a typo made a week before the month starts: the way out is a
+new month once the wrong one is removed by hand (`Docs/DEMO_RUNBOOK.md` §K names it). The spec
+(#6) left the reasoned door before the first day as a proposal for the founder rather than a
+build.
+
+**Depends on:** M13 shipped. Trigger: the pilot's owner mistyping a target once, or asking to
+change one before the month starts.
+
+### Three tidies from the M13 code review (2026-09-14)
+
+**What:** (1) `worker.py` imports `incentive_api`, a router module, for `read_branch_statement` and
+its two helpers; M10's precedent is the worker importing a read module (`dashboard`), so the reads
+want a home of their own. (2) `brief_cli.py` and `scoreboard_cli.py` carry the same harness -
+settings, connect, the send-only clients, the close ladder, the `--send`/`--to` checks - which the
+M13.1 prefactor stopped short of sharing. (3) `worker._say_once` serves the scoreboard tick while
+`tick_briefs` keeps its hand-rolled once-a-day logging.
+
+**Why not now:** each is a judgement call from the standards axis, none changes what a person
+sees, and the lane is about to merge; a tidy across the worker and both CLIs is its own small
+commit with the full suite behind it.
+
+**Depends on:** the M13 merge. Trigger: the next change that touches any of the three.
+
+### A roster and per-person scores
+
+**What:** Names and roles per branch, so the statement names each person and divides a role's
+share equally, with a rule for someone who joins or leaves mid-month; and, where the till export
+carries a cashier or server column, portions scored per person through the loader's column map.
+
+**Why:** The till carries no people today, and a roster would be Faida's first record of people,
+with joiners, leavers and pro-rata to argue over, before the pilot has shown that a named line
+motivates more than a team figure. The pool split by role shares is honest about what the data
+supports (M13 D2).
+
+**Depends on:** M13 shipped. Trigger: the pilot's till export carrying a cashier column, or the
+owner asking for names on the statement.
+
+### A per-branch push list
+
+**What:** A branch's own push list overriding the chain's for a push week.
+
+**Why:** The chain sells one menu and the owner's attention is the scarce input; one list with
+per-branch targets covers the pilot (M13 D6).
+
+**Depends on:** M13 shipped. Trigger: an owner asking to push different items at different
+branches, in their own words.
+
+### A WhatsApp door for the till export
+
+**What:** The branch manager forwards the till's own CSV export to the branch's WhatsApp number;
+the loader applies the saved layout and the branch alias, and the day lands as `loaded`,
+`unchanged` or `replaced` with the same audit row as the console upload. A file no saved layout
+matches is answered with one reply naming the console.
+
+**Why:** The daily scoreboard is only as fresh as the newest loaded day, and today the load is a
+person in the console. The daily habit is the real dependency; this door is what makes the habit
+cheap. PRD §4.3 promised "forward invoices and sales via WhatsApp" (M13 D16).
+
+**Depends on:** M13's scoreboard live. Trigger: the pilot's manager missing the daily load twice
+in a week, or asking for it.
+
+### The scoreboard card in a second language
+
+**What:** A per-branch card language (Malayalam, Hindi, Arabic), the card's fixed words
+translated once, the figures and item names untouched.
+
+**Why:** The manager reads English and forwards; the first request names which language (M13
+D17).
+
+**Depends on:** M13 shipped. Trigger: a manager asking, by language.
+
+### A cross-sell KPI
+
+**What:** An attach rate (a drink with every plate) as a target kind.
+
+**Why:** The till carries daily item totals, not receipts, so an attach rate cannot be computed;
+"sell more drinks" is a push item today (M13 D3).
+
+**Depends on:** Receipt-level till data through a POS connector. Trigger: a till export that
+carries a receipt id per line.
+
 ## Extraction & matching
 
 ### A handwritten margin note gets folded into an item name and splits the catalog

@@ -20,6 +20,7 @@ const GATED = [
   "/menu/mi-0001",
   "/sales",
   "/sales/load",
+  "/incentive",
 ];
 
 const OPEN = [
@@ -40,6 +41,7 @@ const OPEN = [
   "/invoicesx",
   "/materialsheet",
   "/salesman",
+  "/incentives",
 ];
 
 describe("isGatedPath", () => {

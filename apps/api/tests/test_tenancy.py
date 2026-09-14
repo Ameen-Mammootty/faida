@@ -28,6 +28,7 @@ from faida_api.api import router as api_router
 from faida_api.auth import AuthContext, require_context
 from faida_api.contracts import InvoiceStatus
 from faida_api.dashboard import router as dashboard_router
+from faida_api.incentive_api import router as incentive_router
 from faida_api.main import app as production_app
 from faida_api.menu import router as menu_router
 from faida_api.sales import router as sales_router
@@ -79,6 +80,14 @@ TENANT_TABLES = (
     "sales_lines",
     "branch_aliases",
     "brief_recipients",
+    "role_shares",
+    "scheme_months",
+    "scheme_month_targets",
+    "push_weeks",
+    "push_items",
+    "push_item_targets",
+    "statement_approvals",
+    "incentive_branches",
 )
 
 
@@ -156,6 +165,7 @@ async def rig(settings, db):
     app.include_router(menu_router)
     app.include_router(sales_router)
     app.include_router(dashboard_router)
+    app.include_router(incentive_router)
     app.include_router(waitlist_router)
     app.state.settings = settings
     wire_auth(app)
@@ -316,6 +326,32 @@ async def seed_tenant_a(db, fake_storage: FakeStorage) -> Rows:
             TENANT_A,
         )
     )
+    # A scheme month well in the future and one of its push weeks, for the
+    # push-list door (M13.4), with a target for A's branch so the approval
+    # door (M13.6) finds a statement to refuse. Its month is not the one the
+    # matrix's create case uses, so the two do not collide over the
+    # one-month-per-tenant rule.
+    scheme_month_id = await db.create_scheme_month(
+        tenant_id=TENANT_A,
+        month=datetime.date(2027, 5, 1),
+        shares={
+            "manager_pct": Decimal("40"),
+            "supervisor_pct": Decimal("25"),
+            "sales_pct": Decimal("35"),
+        },
+        targets=[
+            {
+                "branch_id": BRANCH_A,
+                "net_sales_target": Decimal("50000"),
+                "above_target_pct": Decimal("10"),
+                "cap": None,
+            }
+        ],
+        weeks=[(datetime.date(2027, 5, 3), datetime.date(2027, 5, 9))],
+        actor="console",
+    )
+    rows.ids["scheme_month"] = scheme_month_id
+    rows.ids["push_week"] = (await db.list_push_weeks(scheme_month_id, tenant_id=TENANT_A))[0]["id"]
     return rows
 
 
@@ -567,6 +603,69 @@ MATRIX: list[dict] = [
         "method": "POST",
         "path": "/api/till-items/{till_item_id}/exclude",
         "url": lambda r: f"/api/till-items/{r['till_item']}/exclude",
+    },
+    # The incentive (M13.2): a tenant reads its own shares and nobody else's.
+    # There is no id in either path, so tenant B is answered - with its own
+    # empty read, and with a write that lands in B.
+    {"method": "GET", "path": "/api/incentive", "url": lambda r: "/api/incentive"},
+    {
+        "method": "PUT",
+        "path": "/api/incentive/shares",
+        "url": lambda r: "/api/incentive/shares",
+        "json": {"manager_pct": "40", "supervisor_pct": "25", "sales_pct": "35"},
+    },
+    # M13.3: the create door names the branches it is typed for, so tenant B
+    # sending it is sending A's branch ids - refused in words, with no month
+    # created in either chain, and no id of A's echoed back to B.
+    {
+        "method": "POST",
+        "path": "/api/incentive/months",
+        "url": lambda r: "/api/incentive/months",
+        "json": lambda r: {
+            "month": "2026-07",
+            "targets": [
+                {
+                    "branch_id": r["branch"],
+                    "net_sales_target": "50000",
+                    "above_target_pct": "10",
+                    "cap": None,
+                }
+            ],
+        },
+        "expect": 201,
+        "expect_b": 422,
+    },
+    # M13.4: the push list is the first incentive door with an id in its path,
+    # so tenant B is answered 404 - the API never confirms that A has a week.
+    {
+        "method": "PUT",
+        "path": "/api/incentive/weeks/{push_week_id}",
+        "url": lambda r: f"/api/incentive/weeks/{r['push_week']}",
+        "json": {"items": []},
+    },
+    # M13.6: the approval door names the month and the branch, so tenant B is
+    # answered 404; tenant A is refused in words because no day of the month
+    # is loaded, and the refusal carries no id.
+    {
+        "method": "POST",
+        "path": "/api/incentive/months/{scheme_month_id}/branches/{branch_id}/approve",
+        "url": lambda r: (
+            f"/api/incentive/months/{r['scheme_month']}/branches/{r['branch']}/approve"
+        ),
+        "json": {"reason": "paid"},
+        "expect": 422,
+    },
+    # M13.8: the pause doors name the branch, so tenant B is answered 404 and
+    # A's branch is paused and resumed, one audit row each.
+    {
+        "method": "POST",
+        "path": "/api/incentive/branches/{branch_id}/pause",
+        "url": lambda r: f"/api/incentive/branches/{r['branch']}/pause",
+    },
+    {
+        "method": "POST",
+        "path": "/api/incentive/branches/{branch_id}/resume",
+        "url": lambda r: f"/api/incentive/branches/{r['branch']}/resume",
     },
 ]
 

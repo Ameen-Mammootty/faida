@@ -453,20 +453,27 @@ class Database:
         language: str,
         parameters: list[str],
         tenant_id: str,
-        recipient_id: str,
-        brief_date: str | datetime.date,
+        key: dict[str, Any] | None = None,
+        recipient_id: Any = None,
+        brief_date: Any = None,
         rehearsal: bool,
         card_path: str | None = None,
     ) -> None:
-        """The record of a brief that left the building (M10 WP-102, C15.4).
+        """The record of a template that left the building (M10 WP-102,
+        C15.4; shared with the scoreboard from M13 WP-130).
 
         One outbound row per send, carrying what was sent (the template, its
-        language and the five values as the phone showed them), the picture
-        beside it (`card_path`, the immutable copy in storage), and the key
-        the morning is - tenant, recipient and the recipient's own local date
-        - so "did the owner get Tuesday's brief?" is one row, not a
-        reconstruction. `rehearsal` marks a send the founder asked for from
-        the CLI at some other hour, which is outside the day's key.
+        language and the values as the phone showed them), the picture beside
+        it (`card_path`, the immutable copy in storage), the tenant, and the
+        `key` the send is - for a brief the recipient and the recipient's own
+        local date, for a scoreboard the branch, the local day and the
+        variant - so "did the owner get Tuesday's brief?" is one row, not a
+        reconstruction. The key's fields land flat on the payload, which is
+        what `outbound_brief_exists` and its scoreboard twin query; the
+        brief's two, `recipient_id` and `brief_date`, may also be passed by
+        name, as its callers always did. `rehearsal` marks a send the founder
+        asked for from the CLI at some other hour, which is outside the day's
+        key.
 
         There is no audit row: a scheduled send is not a human decision (C8).
 
@@ -481,14 +488,18 @@ class Database:
         jsonb, and a `uuid` or a `date` object handed to the encoder would
         raise *here* - after Meta has already accepted the message, which is
         the one failure that costs a second brief (C15.3's named limit)."""
+        fields = dict(key or {})
+        if recipient_id is not None:
+            fields["recipient_id"] = recipient_id
+        if brief_date is not None:
+            fields["brief_date"] = brief_date
         payload = {
             "template": template,
             "language": language,
             "parameters": list(parameters),
             "card_path": card_path,
             "tenant_id": str(tenant_id),
-            "recipient_id": str(recipient_id),
-            "brief_date": str(brief_date),
+            **{field: str(value) for field, value in fields.items()},
             "rehearsal": rehearsal,
             "error": None,
         }
@@ -3991,6 +4002,587 @@ class Database:
             str(brief_date),
         )
 
+    # -- The staff incentive (M13): what the owner typed and approved ---------
+    #
+    # Only the shares, the month, its targets, the push lists and the
+    # approvals are rows (C16); the scores are derived on every read by
+    # `incentive.py`. Every write here is one transaction with its audit row,
+    # every read takes its tenant, and a parent's children are read in a fixed
+    # number of queries whatever the month's size (the bounded-queries rule).
+
+    async def get_role_shares(self, *, tenant_id: str) -> asyncpg.Record | None:
+        return await self.pool.fetchrow(
+            "select manager_pct, supervisor_pct, sales_pct, updated_at "
+            "from role_shares where tenant_id = $1",
+            tenant_id,
+        )
+
+    async def set_role_shares(
+        self,
+        *,
+        tenant_id: str,
+        manager_pct: Decimal,
+        supervisor_pct: Decimal,
+        sales_pct: Decimal,
+        actor: str,
+    ) -> asyncpg.Record:
+        """The three percentages, upserted with one audit row (D2). No scheme
+        month is touched: a month snapshots the shares when it is created, so
+        a change applies from the next month and a running month keeps the
+        shares it started with. The 0023 check refuses a sum other than 100
+        whatever the route missed."""
+        async with self.pool.acquire() as conn, conn.transaction():
+            row = await conn.fetchrow(
+                """
+                insert into role_shares (tenant_id, manager_pct, supervisor_pct, sales_pct)
+                values ($1, $2, $3, $4)
+                on conflict (tenant_id) do update set
+                    manager_pct = excluded.manager_pct,
+                    supervisor_pct = excluded.supervisor_pct,
+                    sales_pct = excluded.sales_pct,
+                    updated_at = now()
+                returning manager_pct, supervisor_pct, sales_pct, updated_at
+                """,
+                tenant_id,
+                manager_pct,
+                supervisor_pct,
+                sales_pct,
+            )
+            await _insert_audit_event(
+                conn,
+                tenant_id=tenant_id,
+                actor=actor,
+                action="incentive.role_shares_set",
+                subject_type="role_shares",
+                subject_id=tenant_id,
+                detail={
+                    "manager_pct": str(manager_pct),
+                    "supervisor_pct": str(supervisor_pct),
+                    "sales_pct": str(sales_pct),
+                },
+            )
+        return row
+
+    async def create_scheme_month(
+        self,
+        *,
+        tenant_id: str,
+        month: datetime.date,
+        shares: dict,
+        targets: list[dict],
+        weeks: list[tuple[datetime.date, datetime.date]],
+        actor: str,
+    ) -> str:
+        """The month, its per-branch targets, its push weeks and the shares
+        snapshot, in one transaction with one audit row (D4, D5). Returns the
+        new scheme month id. A month that already exists for the tenant raises
+        asyncpg's unique violation; the route says so in words.
+
+        `shares` is {manager_pct, supervisor_pct, sales_pct}; each target is
+        {branch_id, net_sales_target, above_target_pct, cap}; each week is its
+        (start, end). Frozen from here: nothing edits the targets after."""
+        async with self.pool.acquire() as conn, conn.transaction():
+            scheme_month_id = str(
+                await conn.fetchval(
+                    """
+                    insert into scheme_months
+                        (tenant_id, month, manager_pct, supervisor_pct, sales_pct)
+                    values ($1, $2, $3, $4, $5)
+                    returning id
+                    """,
+                    tenant_id,
+                    month,
+                    shares["manager_pct"],
+                    shares["supervisor_pct"],
+                    shares["sales_pct"],
+                )
+            )
+            await conn.executemany(
+                """
+                insert into scheme_month_targets
+                    (tenant_id, scheme_month_id, branch_id, net_sales_target,
+                     above_target_pct, cap)
+                values ($1, $2, $3, $4, $5, $6)
+                """,
+                [
+                    (
+                        tenant_id,
+                        scheme_month_id,
+                        target["branch_id"],
+                        target["net_sales_target"],
+                        target["above_target_pct"],
+                        target["cap"],
+                    )
+                    for target in targets
+                ],
+            )
+            await conn.executemany(
+                """
+                insert into push_weeks (tenant_id, scheme_month_id, start_date, end_date)
+                values ($1, $2, $3, $4)
+                """,
+                [(tenant_id, scheme_month_id, start, end) for start, end in weeks],
+            )
+            await _insert_audit_event(
+                conn,
+                tenant_id=tenant_id,
+                actor=actor,
+                action="incentive.scheme_month_created",
+                subject_type="scheme_month",
+                subject_id=scheme_month_id,
+                detail={
+                    "month": month.isoformat(),
+                    "shares": {name: str(value) for name, value in shares.items()},
+                    "targets": [
+                        {
+                            "branch_id": target["branch_id"],
+                            "net_sales_target": str(target["net_sales_target"]),
+                            "above_target_pct": str(target["above_target_pct"]),
+                            "cap": None if target["cap"] is None else str(target["cap"]),
+                        }
+                        for target in targets
+                    ],
+                    "weeks": [
+                        {"start": start.isoformat(), "end": end.isoformat()} for start, end in weeks
+                    ],
+                },
+            )
+        return scheme_month_id
+
+    _SCHEME_MONTH_SELECT = """
+        select id::text as id, tenant_id::text as tenant_id, month,
+               manager_pct, supervisor_pct, sales_pct, created_at
+        from scheme_months
+    """
+
+    async def list_scheme_months(self, *, tenant_id: str) -> list[asyncpg.Record]:
+        """Every scheme month of the tenant, newest first: the picker."""
+        return await self.pool.fetch(
+            self._SCHEME_MONTH_SELECT + " where tenant_id = $1 order by month desc", tenant_id
+        )
+
+    async def get_scheme_month(
+        self, scheme_month_id: str, *, tenant_id: str
+    ) -> asyncpg.Record | None:
+        return await self.pool.fetchrow(
+            self._SCHEME_MONTH_SELECT + " where id = $1 and tenant_id = $2",
+            scheme_month_id,
+            tenant_id,
+        )
+
+    async def scheme_month_for(
+        self, month: datetime.date, *, tenant_id: str
+    ) -> asyncpg.Record | None:
+        """The tenant's scheme month for a calendar month, or None."""
+        return await self.pool.fetchrow(
+            self._SCHEME_MONTH_SELECT + " where tenant_id = $1 and month = $2",
+            tenant_id,
+            month.replace(day=1),
+        )
+
+    async def list_scheme_month_targets(
+        self, scheme_month_id: str, *, tenant_id: str
+    ) -> list[asyncpg.Record]:
+        return await self.pool.fetch(
+            """
+            select id::text as id, branch_id::text as branch_id, net_sales_target,
+                   above_target_pct, cap
+            from scheme_month_targets
+            where scheme_month_id = $1 and tenant_id = $2
+            order by branch_id
+            """,
+            scheme_month_id,
+            tenant_id,
+        )
+
+    async def list_push_weeks(
+        self, scheme_month_id: str, *, tenant_id: str
+    ) -> list[asyncpg.Record]:
+        """The month's weeks in date order, one query."""
+        return await self.pool.fetch(
+            """
+            select id::text as id, start_date, end_date
+            from push_weeks
+            where scheme_month_id = $1 and tenant_id = $2
+            order by start_date
+            """,
+            scheme_month_id,
+            tenant_id,
+        )
+
+    async def mapped_menu_item_ids(self, *, tenant_id: str) -> set[str]:
+        """Every menu item at least one till name maps to (M13 D7): what the
+        push-list picker offers and what the push-list door refuses an item
+        for, in one query whatever the menu's length.
+
+        Read on every save and never written onto a push item: a dish whose
+        till name is unmapped after its list was set becomes a named hole on
+        the next read (`incentive.hole_sentence`), which is the opposite of
+        the silent zero that would read as a team that sold none.
+        """
+        rows = await self.pool.fetch(
+            """
+            select distinct menu_item_id::text as menu_item_id
+            from till_items
+            where tenant_id = $1 and menu_item_id is not null
+            """,
+            tenant_id,
+        )
+        return {row["menu_item_id"] for row in rows}
+
+    async def list_push_items(
+        self, scheme_month_id: str, *, tenant_id: str
+    ) -> list[asyncpg.Record]:
+        """Every push item of the month with its menu item's name, category
+        and archived flag, and whether any till item maps to it - one query
+        whatever the month's size. The mapping is read here and never stored
+        on the item (D7): a name unmapped after the list was set turns the
+        item into a hole on the next read."""
+        return await self.pool.fetch(
+            """
+            select i.id::text as id, i.push_week_id::text as push_week_id,
+                   i.menu_item_id::text as menu_item_id, i.rate_per_portion,
+                   m.name, m.category, m.archived_at is not null as archived,
+                   exists (select 1 from till_items t
+                           where t.tenant_id = i.tenant_id and t.menu_item_id = i.menu_item_id)
+                     as mapped
+            from push_items i
+            join push_weeks w on w.id = i.push_week_id and w.tenant_id = i.tenant_id
+            join menu_items m on m.id = i.menu_item_id and m.tenant_id = i.tenant_id
+            where w.scheme_month_id = $1 and i.tenant_id = $2
+            order by w.start_date, m.name, i.id
+            """,
+            scheme_month_id,
+            tenant_id,
+        )
+
+    async def list_push_item_targets(
+        self, scheme_month_id: str, *, tenant_id: str
+    ) -> list[asyncpg.Record]:
+        return await self.pool.fetch(
+            """
+            select t.push_item_id::text as push_item_id, t.branch_id::text as branch_id,
+                   t.portion_target
+            from push_item_targets t
+            join push_items i on i.id = t.push_item_id and i.tenant_id = t.tenant_id
+            join push_weeks w on w.id = i.push_week_id and w.tenant_id = i.tenant_id
+            where w.scheme_month_id = $1 and t.tenant_id = $2
+            order by t.push_item_id, t.branch_id
+            """,
+            scheme_month_id,
+            tenant_id,
+        )
+
+    async def get_push_week(self, push_week_id: str, *, tenant_id: str) -> asyncpg.Record | None:
+        return await self.pool.fetchrow(
+            """
+            select id::text as id, scheme_month_id::text as scheme_month_id, start_date, end_date
+            from push_weeks where id = $1 and tenant_id = $2
+            """,
+            push_week_id,
+            tenant_id,
+        )
+
+    async def set_push_list(
+        self, push_week_id: str, *, tenant_id: str, items: list[dict], actor: str
+    ) -> None:
+        """Replace the week's list in one transaction with one audit row (D5,
+        D6). Each item is {menu_item_id, rate_per_portion, targets: [{branch_id,
+        portion_target}]}. The week row is locked first so two saves on one
+        week serialise; the old items go with their targets (cascade), and the
+        0023 composite keys refuse another tenant's menu item or branch
+        whatever the route missed. The freeze and the mapping rule are the
+        route's, read against the branches' local date and the till."""
+        async with self.pool.acquire() as conn, conn.transaction():
+            week = await conn.fetchrow(
+                "select id from push_weeks where id = $1 and tenant_id = $2 for update",
+                push_week_id,
+                tenant_id,
+            )
+            if week is None:
+                raise LookupError(f"push week {push_week_id} is not in tenant {tenant_id}")
+            await conn.execute(
+                "delete from push_items where push_week_id = $1 and tenant_id = $2",
+                push_week_id,
+                tenant_id,
+            )
+            for item in items:
+                push_item_id = await conn.fetchval(
+                    """
+                    insert into push_items (tenant_id, push_week_id, menu_item_id, rate_per_portion)
+                    values ($1, $2, $3, $4)
+                    returning id
+                    """,
+                    tenant_id,
+                    push_week_id,
+                    item["menu_item_id"],
+                    item["rate_per_portion"],
+                )
+                await conn.executemany(
+                    """
+                    insert into push_item_targets
+                        (tenant_id, push_item_id, branch_id, portion_target)
+                    values ($1, $2, $3, $4)
+                    """,
+                    [
+                        (tenant_id, push_item_id, target["branch_id"], target["portion_target"])
+                        for target in item["targets"]
+                    ],
+                )
+            await _insert_audit_event(
+                conn,
+                tenant_id=tenant_id,
+                actor=actor,
+                action="incentive.push_list_set",
+                subject_type="push_week",
+                subject_id=push_week_id,
+                detail={
+                    "items": [
+                        {
+                            "menu_item_id": item["menu_item_id"],
+                            "rate_per_portion": str(item["rate_per_portion"]),
+                            "targets": [
+                                {
+                                    "branch_id": target["branch_id"],
+                                    "portion_target": str(target["portion_target"]),
+                                }
+                                for target in item["targets"]
+                            ],
+                        }
+                        for item in items
+                    ]
+                },
+            )
+
+    async def list_statement_approvals(
+        self, scheme_month_id: str, *, tenant_id: str
+    ) -> list[asyncpg.Record]:
+        return await self.pool.fetch(
+            """
+            select id::text as id, branch_id::text as branch_id, approved_at, actor, reason, figures
+            from statement_approvals
+            where scheme_month_id = $1 and tenant_id = $2
+            order by branch_id
+            """,
+            scheme_month_id,
+            tenant_id,
+        )
+
+    async def approve_statement(
+        self,
+        scheme_month_id: str,
+        *,
+        tenant_id: str,
+        branch_id: str,
+        month: datetime.date,
+        actor: str,
+        reason: str,
+        figures: dict,
+    ) -> str:
+        """The owner's approval of one branch's month: the row with the figures
+        as approved, the audit row `incentive.statement_approved`, and the
+        `send_scoreboard` job that carries the final card to the branch
+        (issue #15), one transaction (D11, D13, C8). Returns the approval id.
+
+        The job is enqueued here and not by the route after the commit, so
+        that a process that dies between the two cannot leave a final
+        statement whose card never goes - a second approval is refused, so
+        nothing would ever enqueue it again - and so that a rollback of the
+        audit row takes the job with it. Its key against 0023's index is the
+        month's first day with `variant: final`; a replayed approval never
+        reaches it, because the approval row's unique violation is raised
+        first. A second approval raises asyncpg's unique violation - a
+        statement is final once. The route has already refused a provisional
+        month; this writes what it was handed."""
+        async with self.pool.acquire() as conn, conn.transaction():
+            approval_id = str(
+                await conn.fetchval(
+                    """
+                    insert into statement_approvals
+                        (tenant_id, scheme_month_id, branch_id, actor, reason, figures)
+                    values ($1, $2, $3, $4, $5, $6)
+                    returning id
+                    """,
+                    tenant_id,
+                    scheme_month_id,
+                    branch_id,
+                    actor,
+                    reason,
+                    figures,
+                )
+            )
+            await _insert_audit_event(
+                conn,
+                tenant_id=tenant_id,
+                actor=actor,
+                action="incentive.statement_approved",
+                subject_type="scheme_month",
+                subject_id=scheme_month_id,
+                detail={"branch_id": branch_id, "reason": reason, "figures": figures},
+            )
+            await self.enqueue_scoreboard_once(
+                {
+                    "tenant_id": tenant_id,
+                    "branch_id": branch_id,
+                    "day": month.replace(day=1).isoformat(),
+                    "variant": "final",
+                    "scheme_month_id": scheme_month_id,
+                },
+                conn=conn,
+            )
+        return approval_id
+
+    async def list_incentive_branches(self, *, tenant_id: str) -> list[asyncpg.Record]:
+        """Every branch of the chain with its incentive pause, in one query:
+        the branch block of the incentive read, which needs the name to word a
+        refusal by branch, the timezone to know what day it is, and the pause
+        to draw the control (D18). A branch never paused has a null
+        `paused_at` like one resumed."""
+        return await self.pool.fetch(
+            """
+            select b.id::text as id, b.name, b.timezone, p.paused_at
+            from branches b
+            left join incentive_branches p on p.branch_id = b.id and p.tenant_id = b.tenant_id
+            where b.tenant_id = $1
+            order by b.name, b.id
+            """,
+            tenant_id,
+        )
+
+    async def get_incentive_branch(
+        self, branch_id: str, *, tenant_id: str
+    ) -> asyncpg.Record | None:
+        """The branch with its pause, or None outside the tenant. A branch
+        never paused has a null `paused_at` like one resumed."""
+        return await self.pool.fetchrow(
+            """
+            select b.id::text as id, b.name, b.timezone, b.wa_phone_e164, p.paused_at
+            from branches b
+            left join incentive_branches p on p.branch_id = b.id and p.tenant_id = b.tenant_id
+            where b.id = $1 and b.tenant_id = $2
+            """,
+            branch_id,
+            tenant_id,
+        )
+
+    async def pause_incentive_branch(self, branch_id: str, *, tenant_id: str, actor: str) -> bool:
+        """Stop this one branch's scoreboard (D18). False when it was already
+        paused or is not the tenant's - no second audit row for a no-op."""
+        async with self.pool.acquire() as conn, conn.transaction():
+            row = await conn.fetchval(
+                """
+                insert into incentive_branches (tenant_id, branch_id, paused_at)
+                select $1, $2, now() from branches where id = $2 and tenant_id = $1
+                on conflict (tenant_id, branch_id) do update set paused_at = now()
+                    where incentive_branches.paused_at is null
+                returning branch_id
+                """,
+                tenant_id,
+                branch_id,
+            )
+            if row is None:
+                return False
+            await _insert_audit_event(
+                conn,
+                tenant_id=tenant_id,
+                actor=actor,
+                action="incentive.branch_paused",
+                subject_type="branch",
+                subject_id=branch_id,
+            )
+        return True
+
+    async def resume_incentive_branch(self, branch_id: str, *, tenant_id: str, actor: str) -> bool:
+        """The way back. False when it was not paused."""
+        async with self.pool.acquire() as conn, conn.transaction():
+            row = await conn.fetchval(
+                """
+                update incentive_branches set paused_at = null
+                where branch_id = $1 and tenant_id = $2 and paused_at is not null
+                returning branch_id
+                """,
+                branch_id,
+                tenant_id,
+            )
+            if row is None:
+                return False
+            await _insert_audit_event(
+                conn,
+                tenant_id=tenant_id,
+                actor=actor,
+                action="incentive.branch_resumed",
+                subject_type="branch",
+                subject_id=branch_id,
+            )
+        return True
+
+    async def list_till_item_mappings(self, *, tenant_id: str) -> list[asyncpg.Record]:
+        """Every till item that maps to a menu item: which dishes the till can
+        count (D7)."""
+        return await self.pool.fetch(
+            """
+            select id::text as till_item_id, menu_item_id::text as menu_item_id
+            from till_items where tenant_id = $1 and menu_item_id is not null
+            order by menu_item_id, id
+            """,
+            tenant_id,
+        )
+
+    async def list_scoreboard_branches(self) -> list[asyncpg.Record]:
+        """Every tenant's branches with their pause, for the worker's tick -
+        tenant-free for the reason `list_active_brief_recipients` is: the
+        clock asks "whose morning has come" of the whole database once a
+        minute. Each row carries its tenant, which is what the job it
+        enqueues is scoped by (C2). Ordered so two ticks see the same rows in
+        the same order."""
+        return await self.pool.fetch(
+            """
+            select b.id::text as id, b.tenant_id::text as tenant_id, b.name, b.timezone,
+                   b.wa_phone_e164, p.paused_at
+            from branches b
+            left join incentive_branches p on p.branch_id = b.id and p.tenant_id = b.tenant_id
+            order by b.created_at, b.id
+            """
+        )
+
+    async def list_all_scheme_months(self) -> list[asyncpg.Record]:
+        """Every tenant's scheme months, for the tick's one join in Python."""
+        return await self.pool.fetch(
+            "select id::text as id, tenant_id::text as tenant_id, month from scheme_months "
+            "order by tenant_id, month"
+        )
+
+    async def list_final_branch_months(self) -> list[asyncpg.Record]:
+        """Every approved (branch, scheme month) pair across tenants, for the
+        tick: a branch whose month is final has had its card with the
+        approval (issue #15), and its remaining mornings are not enqueued
+        rather than enqueued to be skipped."""
+        return await self.pool.fetch(
+            "select branch_id::text as branch_id, scheme_month_id::text as scheme_month_id "
+            "from statement_approvals order by branch_id, scheme_month_id"
+        )
+
+    async def outbound_scoreboard_exists(self, *, branch_id: str, day: str, variant: str) -> bool:
+        """Whether this branch already has this card for this day (the
+        `outbound_brief_exists` rule): the handler asks before it sends.
+        Rehearsals are excluded for the same reason."""
+        return await self.pool.fetchval(
+            """
+            select exists (
+                select 1 from wa_messages
+                where direction = 'out'
+                  and msg_type = 'template'
+                  and payload->>'branch_id' = $1
+                  and payload->>'day' = $2
+                  and payload->>'variant' = $3
+                  and payload->>'rehearsal' = 'false'
+            )
+            """,
+            str(branch_id),
+            str(day),
+            str(variant),
+        )
+
     # -- Jobs ----------------------------------------------------------------
 
     async def enqueue(self, kind: str, payload: dict[str, Any]) -> int:
@@ -4040,6 +4632,29 @@ class Database:
             returning id
             """,
             JobKind.SEND_BRIEF,
+            payload,
+        )
+
+    async def enqueue_scoreboard_once(
+        self, payload: dict[str, Any], *, conn: asyncpg.Connection | None = None
+    ) -> int | None:
+        """One scoreboard per branch, variant and day, ever (M13). Inserts
+        against 0023's `jobs_send_scoreboard_uidx` and tolerates the conflict:
+        the new job id, or None when a job for this (branch, variant, day)
+        already exists in any status. The tick enqueues the daily card, the
+        approval door the final one; neither knows about the other, and the
+        index is the guard. `conn` is for a caller inside its own transaction
+        (the approval, issue #15), so the job commits with the row it
+        belongs to."""
+        return await (conn or self.pool).fetchval(
+            """
+            insert into jobs (kind, payload) values ($1, $2)
+            on conflict (kind, (payload->>'branch_id'), (payload->>'variant'), (payload->>'day'))
+            where kind = 'send_scoreboard'
+            do nothing
+            returning id
+            """,
+            JobKind.SEND_SCOREBOARD,
             payload,
         )
 

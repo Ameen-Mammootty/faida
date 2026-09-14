@@ -11,6 +11,7 @@ from .config import get_settings
 from .dashboard import router as dashboard_router
 from .db import Database
 from .extraction.pipeline import build_provider
+from .incentive_api import router as incentive_router
 from .menu import router as menu_router
 from .sales import router as sales_router
 from .storage import Storage
@@ -57,6 +58,7 @@ async def lifespan(app: FastAPI):
                 stop,
                 settings.worker_poll_seconds,
                 brief_enabled=settings.brief_enabled,
+                incentive_enabled=settings.incentive_enabled,
             )
         )
 
@@ -85,6 +87,7 @@ app.include_router(api_router)
 app.include_router(menu_router)
 app.include_router(sales_router)
 app.include_router(dashboard_router)
+app.include_router(incentive_router)
 app.include_router(waitlist_router)
 
 
