@@ -986,6 +986,14 @@ async def create_manual_invoice(body: ManualInvoice, request: Request, ctx: Cont
         tax=invoice.tax,
         total=invoice.total,
         payment_kind=invoice.payment_kind,
+        # Derived by C4 from the typed arithmetic, exactly as the pipeline
+        # derives them from a photo's. They have to travel with the insert:
+        # the confirm path reads `invoices.tax_treatment` to record price
+        # memory net of VAT, and until 2026-09-14 the typed door passed
+        # neither, so a typed VAT-inclusive paper was recorded gross under a
+        # net baseline - the mixed-basis history C4 exists to prevent.
+        tax_treatment=filed.validation.document.tax_treatment,
+        vat_rate=filed.validation.document.vat_rate,
         status=status,
         confidence=filed.confidence,
         # C8: no model ran, so every value here was typed by a person - or
