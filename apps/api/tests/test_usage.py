@@ -58,7 +58,7 @@ MATERIALS = {
     GLOVES: usage.Material(GLOVES, "Nitrile Gloves", "pc"),
 }
 
-#: The prices in force on the period's last day, as `_menu_context` holds
+#: The prices in force on the period's last day, as `costed_menu` holds
 #: them: the newest costed line among each material's packs.
 PRICES = {
     SUGAR: usage.MaterialPrice(SUGAR, D("0.00230000"), "g", DELIVERY, "reliable_with_limitations"),

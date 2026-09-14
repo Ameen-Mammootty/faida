@@ -21,11 +21,16 @@ sentences that are about the whole screen (the answer, the freshness line),
 and serialises - money as strings, percentages to a tenth as strings, dates
 ISO (C4, C11).
 
-A fixed number of queries whatever the menu's length or the branch count
-(D10, D16): `test_dashboard.py` enumerates the reads and derives the maximum
-from the list. The menu is costed twice - at the prices in force on the
-period's last day, and today's - from one set of recipe and item rows, so a
-row can carry today's cost beside its own when they differ (C12.4a, D20).
+The inputs are the period read (`period_read.read_period`, 2026-09-14):
+one period, one set of clipped windows, one costed menu and the item sales,
+the same value `/sales/branches` and the usage printout start from. This
+module adds three reads of its own - today's prices, the price-move pairs
+and the papers waiting - and a fixed number in all whatever the menu's
+length or the branch count (D10, D16): `test_dashboard.py` derives the
+maximum from `period_read.READS` plus those three. The menu is costed twice
+- at the prices in force on the period's last day, and today's - from one
+set of recipe and item rows, so a row can carry today's cost beside its own
+when they differ (C12.4a, D20).
 
 The read itself is `read_dashboard`, and the route a thin wrapper that reads
 today's date and turns two exceptions into their status codes (M10 WP-101,
@@ -44,20 +49,20 @@ no query and no arithmetic. The screen ignores them.
 """
 
 import datetime
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Sequence
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Annotated, NamedTuple
 
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
-from . import contribution, plates, ratio, signals
+from . import contribution, ratio, signals
 from .api import _dec, _iso
 from .auth import AuthContext, require_context
 from .db import Database
-from .menu import PriceMove, _menu_context, _plates_for, _pricing, price_moves
+from .menu import PriceMove, plates_for, price_moves, pricing
+from .period_read import read_period
 from .quality import Quality, worst
-from .sales import _invoice_input, _sales_day_input
 from .signals import _short_branch
 
 # Declared twice like the other routers: at the router, so no route here can
@@ -101,121 +106,6 @@ _NUMBER_WORDS = {
     9: "nine",
     10: "ten",
 }
-
-
-# --- adapters: rows into the pure modules' inputs ------------------------------
-
-
-def _item_sales(row: asyncpg.Record) -> contribution.ItemSales:
-    return contribution.ItemSales(
-        branch_id=row["branch_id"],
-        business_date=row["business_date"],
-        till_item_id=row["till_item_id"],
-        name=row["name"],
-        code=row["code"],
-        menu_item_id=row["menu_item_id"],
-        excluded=row["excluded_at"] is not None,
-        qty_sold=row["qty_sold"],
-        qty_refunded=row["qty_refunded"],
-        positive_value=row["positive_value"],
-        refund_value=row["refund_value"],
-        no_qty_lines=row["no_qty_lines"],
-    )
-
-
-def _menu_items(
-    rows: Sequence[asyncpg.Record],
-    components_by_item: Mapping[str, Sequence[asyncpg.Record]],
-    plate_by_item: Mapping[str, plates.Plate],
-    prices: Mapping[str, asyncpg.Record],
-    vat_rate: Decimal | None,
-) -> dict[str, contribution.MenuItem]:
-    """The menu as `contribution` reads it: each item's as-of plate, its
-    current recipe version, and every component with the invoice line behind
-    the price that costed it (C12.4a). The batch cost is the same
-    multiplication `plates.cost_component` makes - the quantity in base units,
-    divided by the conversion yield when the line has one (M12 WP-119, D13),
-    times the price per base unit - and None when there is no price or the
-    unit does not convert, so a hole is a hole here too.
-
-    The share rides along on the component too, so the dish's contribution and
-    M12's usage figure divide by the same number this cost did."""
-    menu: dict[str, contribution.MenuItem] = {}
-    for row in rows:
-        components: list[contribution.RecipeComponent] = []
-        for component in components_by_item.get(row["id"], []):
-            price = prices.get(component["ingredient_id"])
-            batch_cost = invoice_id = position = purchased_on = None
-            if price is not None:
-                converted = plates.to_base_qty(component["qty"], component["unit"])
-                if converted is not None and converted[1] == price["cost_base_unit"]:
-                    bought = plates.bought_base_qty(converted[0], component["usable_share"])
-                    batch_cost = bought * price["cost_per_base_unit"]
-                invoice_id = price["invoice_id"]
-                position = price["position"]
-                purchased_on = price["purchased_on"]
-            components.append(
-                contribution.RecipeComponent(
-                    ingredient_id=component["ingredient_id"],
-                    ingredient_name=component["ingredient_name"],
-                    qty=component["qty"],
-                    unit=component["unit"],
-                    batch_cost=batch_cost,
-                    invoice_id=invoice_id,
-                    line_position=position,
-                    purchased_on=purchased_on,
-                    usable_share=component["usable_share"],
-                )
-            )
-        archived_at = row["archived_at"]
-        menu[row["id"]] = contribution.MenuItem(
-            menu_item_id=row["id"],
-            name=row["name"],
-            plate=plate_by_item[row["id"]],
-            selling_price=row["selling_price"],
-            yield_portions=row["yield_portions"] or Decimal(1),
-            vat_rate=vat_rate,
-            category=row["category"],
-            recipe_version=row["version"],
-            components=tuple(components),
-            archived=archived_at is not None,
-            archived_on=None if archived_at is None else archived_at.date(),
-            recipe_created_on=(
-                None if row["recipe_created_at"] is None else row["recipe_created_at"].date()
-            ),
-        )
-    return menu
-
-
-def _branch_ratio_rows(
-    branches: Sequence[asyncpg.Record],
-    *,
-    days: Sequence,
-    invoices: Sequence,
-    period: ratio.Period,
-    currency: str,
-    newest_by_branch: Mapping[str, datetime.date],
-) -> dict[str, ratio.BranchRow]:
-    """Every branch's ratio row for the period, each clipped to that branch's
-    own loaded range - `ratio.period_row` called once per branch and nowhere
-    else (C11, C12.9).
-
-    Lifted out of the handler so M12's printout (`usage_report.py`, WP-120)
-    builds the same windows from the same rows: a window built two ways is a
-    figure that can disagree with the screen above it.
-    """
-    return {
-        branch["id"]: ratio.period_row(
-            branch_id=branch["id"],
-            branch_name=branch["name"],
-            days=days,
-            invoices=invoices,
-            period=period,
-            tenant_currency=currency,
-            latest_sales_day=newest_by_branch.get(branch["id"]),
-        )
-        for branch in branches
-    }
 
 
 # --- the sentences that are about the whole screen ------------------------------
@@ -567,59 +457,28 @@ async def read_dashboard(
     beside the contribution figures, C6 extended by two fields for the daily
     brief's materials line.
     """
-    # The reads, in the enumerated order `test_dashboard.py` counts.
-    newest_by_branch = await db.newest_sales_dates(tenant_id=tenant_id)
-    newest = max(newest_by_branch.values()) if newest_by_branch else None
-    months = await db.sales_months(tenant_id=tenant_id)
-    period, default = ratio.resolve_period(newest, date_from, date_to, today=today)
-    currency = await db.tenant_currency(tenant_id) or ""
-    branches = await db.list_branches(tenant_id=tenant_id)
-    names = {branch["id"]: branch["name"] for branch in branches}
+    # The period read first (`period_read.READS`), then this screen's own
+    # three: today's prices, the price-move pairs and the papers waiting.
+    read = await read_period(db, tenant_id, today=today, date_from=date_from, date_to=date_to)
+    period, newest, currency = read.period, read.newest, read.currency
+    branches, names, days, sales = read.branches, read.names, read.days, read.sales
+    ratio_rows, unassigned, ratio_total = read.ratio_rows, read.unassigned, read.ratio_total
+    menu = read.items
     scope = signals.CHAIN
     if branch_id is not None:
         if branch_id not in names:
             raise BranchNotFound(branch_id)
         scope = signals.Scope(branch_id, names[branch_id])
 
-    days = [
-        _sales_day_input(row)
-        for row in await db.list_sales_days(
-            tenant_id=tenant_id, date_from=period.start, date_to=period.end
-        )
-    ]
-    invoices = [
-        _invoice_input(row)
-        for row in await db.list_period_invoices(
-            tenant_id=tenant_id, date_from=period.start, date_to=period.end
-        )
-    ]
-    ratio_rows = _branch_ratio_rows(
-        branches,
-        days=days,
-        invoices=invoices,
-        period=period,
-        currency=currency,
-        newest_by_branch=newest_by_branch,
+    # The menu a second time from the same rows: today's plates (D20).
+    menu_rows, components_by_item = read.menu.rows, read.menu.components_by_item
+    prices_today, stale_today, _ = await pricing(db, tenant_id)
+    plates_today = plates_for(
+        menu_rows, components_by_item, prices_today, stale_today, read.menu.vat_rate
     )
-    unassigned = ratio.unassigned_group(invoices, period, currency)
-    ratio_total = ratio.chain_total(list(ratio_rows.values()), unassigned)
 
-    # The menu twice from one set of rows: the period's plates and today's.
-    menu_rows, components_by_item, plate_by_item, vat_rate, prices, _stale = await _menu_context(
-        db, tenant_id, as_of=period.end
-    )
-    prices_today, stale_today, _ = await _pricing(db, tenant_id)
-    plates_today = _plates_for(menu_rows, components_by_item, prices_today, stale_today, vat_rate)
-    menu = _menu_items(menu_rows, components_by_item, plate_by_item, prices, vat_rate)
-
-    sales = [
-        _item_sales(row)
-        for row in await db.list_period_item_sales(
-            tenant_id=tenant_id, date_from=period.start, date_to=period.end
-        )
-    ]
     pairs = _group_pairs(await db.list_price_move_pairs(tenant_id=tenant_id, as_of=period.end))
-    moves = price_moves(pairs, menu_rows, components_by_item, plate_by_item)
+    moves = price_moves(pairs, menu_rows, components_by_item, read.menu.plate_by_item)
     papers = await db.list_invoices(tenant_id=tenant_id, branch_id=branch_id)
 
     # Contribution: every branch's rows, the chain's, the figures, the order.
@@ -716,10 +575,10 @@ async def read_dashboard(
             "from": _iso(period.start),
             "to": _iso(period.end),
             "days": period.days,
-            "default": default,
+            "default": read.default,
             "sales_through": _iso(newest),
             "sales_age_days": age,
-            "months": [month.strftime("%Y-%m") for month in months],
+            "months": [month.strftime("%Y-%m") for month in read.months],
             "costed_at": _iso(period.end),
         },
         "answer": {

@@ -18,3 +18,8 @@ The one of four words every derived figure carries, in PRD §24's vocabulary: re
 A figure is never greener than its worst input (C9), so the word of a derived figure is the worst of its inputs' words, in that precedence, worst first; a total over rows reads unavailable only when every row is and incomplete when any row is a hole among others.
 Owned once, in `quality.py`: the words, their order and their English; which of the four a layer may produce is that layer's rule.
 _Avoid_: Verified (nothing corroborates a pack size or cross-checks a till), complete (coverage is *costed*), confidence (that is the extraction's own derived number, not this word), label or badge as the noun
+
+**Period read**:
+Everything a period screen starts from, read once for one tenant and one period: the period the rule resolved, the branches, each branch's clipped window, the papers no branch claimed, the chain total, the menu costed at the prices in force on the period's last day, and the period's item sales.
+Every figure on the dashboard, the sales screen and the usage printout is derived from one of these and never from a second reading of the same tables, so two screens over one period cannot disagree on a window or a plate.
+_Avoid_: Context, bundle, snapshot (nothing is stored), preamble

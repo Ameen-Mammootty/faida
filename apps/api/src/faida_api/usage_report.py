@@ -14,11 +14,11 @@ reads the dashboard already makes plus the one M12 adds, and writes nothing.
 
 **Three layers, so phase two reuses the first two unchanged:**
 
-    usage_inputs(db, ...)   the reads, and the rows adapted into `usage.py`'s
-                            inputs. WP-121 calls the same adaptation from
-                            `dashboard.py` over the rows that read already
-                            holds - which is why every helper it needs is
-                            imported from `dashboard.py` rather than copied.
+    usage_inputs(db, ...)   the period read (`period_read.read_period`, the
+                            same value the dashboard starts from) plus the
+                            one read M12 adds, adapted into `usage.py`'s
+                            inputs. WP-121 calls the same adaptation over
+                            the read the dashboard already holds.
     usage_blocks(inputs)    pure: `usage.py`'s functions, once, into §3.1's
                             block. `usage_payload(blocks)` serialises it in
                             the API's conventions, ready for the wire.
@@ -44,12 +44,10 @@ from . import contribution, ratio, usage
 from .api import _dec, _iso
 from .config import get_settings
 from .contribution import _price_words
-from .dashboard import _branch_ratio_rows, _item_sales, _menu_items
 from .db import Database
-from .menu import _menu_context
+from .period_read import read_period
 from .quality import word
 from .ratio import _plural, window_words
-from .sales import _invoice_input, _sales_day_input
 
 #: The width of a section rule. Wide enough for the figures line and narrow
 #: enough to paste into a WhatsApp message on a phone.
@@ -157,7 +155,7 @@ def _materials(
 
 def _material_prices(prices: Mapping[str, asyncpg.Record]) -> dict[str, usage.MaterialPrice]:
     """Each material's price in force on the period's last day, as
-    `_menu_context` read it (C14.7): the newest costed line among its packs,
+    `costed_menu` read it (C14.7): the newest costed line among its packs,
     with the day it was bought and the quality its cost basis recorded, so a
     money figure valued at an estimated price says so."""
     out: dict[str, usage.MaterialPrice] = {}
@@ -200,53 +198,27 @@ async def usage_inputs(
     date_to: datetime.date,
     branch_id: str | None = None,
 ) -> UsageInputs:
-    """The reads, then the adaptation. The reads are the dashboard's own -
-    the same branches, the same clipped windows, the same menu costed as of
-    the period's end, the same raw item sales - plus the one query M12 adds,
+    """The reads, then the adaptation. The reads are the period read's
+    (`period_read.read_period`) - the same branches, the same clipped
+    windows, the same menu costed as of the period's end, the same raw item
+    sales the dashboard starts from - plus the one query M12 adds,
     `db.list_period_material_purchases` (§3.2).
 
     Every window, every portion and every price therefore comes from the
     function that already owns it, so this printout and the dashboard above it
-    cannot disagree about a figure they both show.
+    cannot disagree about a figure they both show. The dates arrive already
+    passed through the period rule by the command, so the door's own pass is
+    the same answer; `today` matters only to a default period, which this
+    printout never asks for.
     """
-    period = ratio.Period(date_from, date_to)
-    newest_by_branch = await db.newest_sales_dates(tenant_id=tenant_id)
-    currency = await db.tenant_currency(tenant_id) or ""
-    branches = await db.list_branches(tenant_id=tenant_id)
-    names = {branch["id"]: branch["name"] for branch in branches}
-
-    days = [
-        _sales_day_input(row)
-        for row in await db.list_sales_days(
-            tenant_id=tenant_id, date_from=period.start, date_to=period.end
-        )
-    ]
-    invoices = [
-        _invoice_input(row)
-        for row in await db.list_period_invoices(
-            tenant_id=tenant_id, date_from=period.start, date_to=period.end
-        )
-    ]
-    rows = _branch_ratio_rows(
-        branches,
-        days=days,
-        invoices=invoices,
-        period=period,
-        currency=currency,
-        newest_by_branch=newest_by_branch,
+    read = await read_period(db, tenant_id, today=date_to, date_from=date_from, date_to=date_to)
+    period, names = read.period, read.names
+    components_by_item, prices, stale = (
+        read.menu.components_by_item,
+        read.menu.prices,
+        read.menu.stale,
     )
-
-    menu_rows, components_by_item, plate_by_item, vat_rate, prices, stale = await _menu_context(
-        db, tenant_id, as_of=period.end
-    )
-    menu = _menu_items(menu_rows, components_by_item, plate_by_item, prices, vat_rate)
-
-    sales = [
-        _item_sales(row)
-        for row in await db.list_period_item_sales(
-            tenant_id=tenant_id, date_from=period.start, date_to=period.end
-        )
-    ]
+    sales = read.sales
     lines = [
         _purchase_line(row)
         for row in await db.list_period_material_purchases(
@@ -259,14 +231,16 @@ async def usage_inputs(
         period=period,
         branch_id=branch_id,
         branch_names=names,
-        currency=currency,
+        currency=read.currency,
         item_rows=tuple(
-            contribution.item_rows(sales, menu, costed_at=period.end, currency=currency)
+            contribution.item_rows(
+                list(sales), read.items, costed_at=period.end, currency=read.currency
+            )
         ),
-        sales=tuple(sales),
-        menu=menu,
+        sales=sales,
+        menu=read.items,
         lines=tuple(lines),
-        windows=tuple(_branch_window(rows[branch["id"]]) for branch in branches),
+        windows=tuple(_branch_window(read.ratio_rows[branch["id"]]) for branch in read.branches),
         materials=_materials(components_by_item, prices),
         prices=_material_prices(prices),
         stale_ingredient_ids=frozenset(stale),

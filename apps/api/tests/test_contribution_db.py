@@ -25,7 +25,7 @@ from fastapi import FastAPI
 
 from faida_api import contribution, ratio
 from faida_api.api import router as api_router
-from faida_api.menu import _menu_context, _pricing
+from faida_api.menu import costed_menu, pricing
 from faida_api.menu import router as menu_router
 from faida_api.sales import router as sales_router
 from faida_api.storage import Storage
@@ -534,9 +534,9 @@ async def test_a_blocked_purchase_after_the_period_does_not_mark_the_plate_stale
     }
     assert bounded == {}
 
-    _, _, plate_by_item, _, _, _ = await _menu_context(db, TENANT)
+    _, _, plate_by_item, _, _, _ = await costed_menu(db, TENANT)
     assert plate_by_item[scenario["item_id"]].quality.value == "estimated"
-    _, _, as_of_plates, _, _, _ = await _menu_context(db, TENANT, as_of=AS_OF)
+    _, _, as_of_plates, _, _, _ = await costed_menu(db, TENANT, as_of=AS_OF)
     assert as_of_plates[scenario["item_id"]].quality.value == "reliable_with_limitations"
     assert as_of_plates[scenario["item_id"]].cost_per_portion == Decimal("0.752")
 
@@ -604,7 +604,7 @@ async def test_omitting_as_of_and_passing_none_return_the_same_rows(api, db):
         assert omitted, f"{read.__name__} returned nothing to compare"
         assert [dict(row) for row in omitted] == [dict(row) for row in explicit]
 
-    assert await _pricing(db, TENANT) == await _pricing(db, TENANT, as_of=None)
+    assert await pricing(db, TENANT) == await pricing(db, TENANT, as_of=None)
 
     menu = await api.get("/api/menu-items", headers=AUTH)
     moves = await api.get("/api/price-moves", headers=AUTH)

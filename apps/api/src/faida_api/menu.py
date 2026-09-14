@@ -45,7 +45,7 @@ import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Annotated
+from typing import Annotated, NamedTuple
 
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -293,7 +293,7 @@ async def _validated_components(
 # menu table - no cache, no recompute job, nothing to invalidate.
 
 
-async def _pricing(
+async def pricing(
     db: Database, tenant_id: str, *, as_of: datetime.date | None = None
 ) -> tuple[dict[str, asyncpg.Record], dict[str, asyncpg.Record], Decimal | None]:
     """The three facts every plate reads, fetched once per request whatever
@@ -359,14 +359,14 @@ def _cost_component(
     )
 
 
-def _plates_for(
+def plates_for(
     rows: Sequence,
     components_by_item: Mapping[str, Sequence],
     prices: dict[str, asyncpg.Record],
     stale: dict[str, asyncpg.Record],
     vat_rate: Decimal | None,
 ) -> dict[str, plates.Plate]:
-    """Every item's plate from one set of prices - the loop `_menu_context`
+    """Every item's plate from one set of prices - the loop `costed_menu`
     runs, on its own so the dashboard can cost the same menu twice (as of the
     period's end and today, M9 D20) with one set of recipe and item rows."""
     plate_by_item: dict[str, plates.Plate] = {}
@@ -387,40 +387,50 @@ def _plates_for(
     return plate_by_item
 
 
-async def _menu_context(
+class CostedMenu(NamedTuple):
+    """The whole menu, costed, as one named value: every item row, each
+    item's current components, each item's plate answer, the VAT rate inside
+    the menu's prices, the price row each material was costed from, and the
+    materials whose newest purchase could not be costed. A tuple, so a caller
+    that wants two of the six can still unpack it positionally, and a named
+    one, so `read.plate_by_item` says what it is (2026-09-14)."""
+
+    rows: list[asyncpg.Record]
+    components_by_item: dict[str, list[asyncpg.Record]]
+    plate_by_item: dict[str, plates.Plate]
+    vat_rate: Decimal | None
+    prices: dict[str, asyncpg.Record]
+    stale: dict[str, asyncpg.Record]
+
+
+async def costed_menu(
     db: Database, tenant_id: str, *, as_of: datetime.date | None = None
-) -> tuple[
-    list[asyncpg.Record],
-    dict[str, list[asyncpg.Record]],
-    dict[str, plates.Plate],
-    Decimal | None,
-    dict[str, asyncpg.Record],
-    dict[str, asyncpg.Record],
-]:
+) -> CostedMenu:
     """The whole menu, costed, from a fixed number of queries (D10): every
     item row, each item's current components, each item's plate answer, the
     VAT rate, and the price row each material was costed from. Both menu
     reads - the list and the money moment - derive from this same bundle, so
-    they can never disagree on what a plate earns.
+    they can never disagree on what a plate earns; the dashboard, the sales
+    screen and the usage printout read it through `period_read.read_period`.
 
-    `as_of` is passed straight to `_pricing` (M9 C12.4). The **recipe** is
+    `as_of` is passed straight to `pricing` (M9 C12.4). The **recipe** is
     always the current version even then, by decision: recipes are loaded at
     onboarding after the sales they cost, so an as-of recipe read would mark
     every onboarding month incomplete. A period row says *recipe version N*
-    so a reader can see which one costed it. The prices are returned too (the
-    fifth value, WP-90's hand-off to WP-92) so a contribution row can name the
-    invoice line behind each component's price with no further read. The
-    stale map is the sixth (M12 D17): the materials whose newest purchase
-    could not be costed, so a money figure valued at a price the stale flag
-    qualifies can say so instead of reading reliable."""
-    prices, stale, vat_rate = await _pricing(db, tenant_id, as_of=as_of)
+    so a reader can see which one costed it. `prices` is there (WP-90's
+    hand-off to WP-92) so a contribution row can name the invoice line behind
+    each component's price with no further read, and `stale` (M12 D17) names
+    the materials whose newest purchase could not be costed, so a money
+    figure valued at a price the stale flag qualifies can say so instead of
+    reading reliable."""
+    prices, stale, vat_rate = await pricing(db, tenant_id, as_of=as_of)
     components_by_item: dict[str, list[asyncpg.Record]] = {}
     for row in await db.list_current_recipe_components(tenant_id=tenant_id):
         components_by_item.setdefault(row["menu_item_id"], []).append(row)
 
     rows = await db.list_menu_items(tenant_id=tenant_id)
-    plate_by_item = _plates_for(rows, components_by_item, prices, stale, vat_rate)
-    return rows, components_by_item, plate_by_item, vat_rate, prices, stale
+    plate_by_item = plates_for(rows, components_by_item, prices, stale, vat_rate)
+    return CostedMenu(rows, components_by_item, plate_by_item, vat_rate, prices, stale)
 
 
 def _plate_payload(result: plates.Plate) -> dict:
@@ -490,7 +500,7 @@ async def _menu_item_detail(db: Database, menu_item_id: str, tenant_id: str) -> 
     components = (
         [] if recipe is None else await db.get_recipe_components(recipe["id"], tenant_id=tenant_id)
     )
-    prices, stale, vat_rate = await _pricing(db, tenant_id)
+    prices, stale, vat_rate = await pricing(db, tenant_id)
 
     if recipe is None:
         result = plates.no_recipe_plate()
@@ -568,7 +578,8 @@ async def list_menu_items(request: Request, ctx: Context) -> dict:
     tenant currency - joined in Python, nothing stored, nothing to
     invalidate."""
     db: Database = request.app.state.db
-    rows, _, plate_by_item, _, _, _ = await _menu_context(db, ctx.tenant_id)
+    menu = await costed_menu(db, ctx.tenant_id)
+    rows, plate_by_item = menu.rows, menu.plate_by_item
     return {
         "menu_items": [
             {
@@ -895,7 +906,7 @@ def price_moves(
 
     `pairs` is `db.list_price_move_pairs` grouped by ingredient (newest
     first); `rows`, `components_by_item` and `plate_by_item` are
-    `_menu_context`'s bundle. Same pack -> a real move, with the delta and
+    `costed_menu`'s bundle. Same pack -> a real move, with the delta and
     the per-plate impact (delta x the recipe's quantity in base units / the
     batch yield); a different pack -> "price basis changed", both packs
     named, **no delta** - a delta across packs is a pack artifact wearing a
@@ -1077,6 +1088,7 @@ async def list_price_moves(request: Request, ctx: Context) -> dict:
     pairs: dict[str, list[asyncpg.Record]] = {}
     for line in await db.list_price_move_pairs(tenant_id=tenant_id):
         pairs.setdefault(line["ingredient_id"], []).append(line)
-    rows, components_by_item, plate_by_item, _, _, _ = await _menu_context(db, tenant_id)
+    menu = await costed_menu(db, tenant_id)
+    rows, components_by_item, plate_by_item = menu.rows, menu.components_by_item, menu.plate_by_item
     moves = price_moves(pairs, rows, components_by_item, plate_by_item)
     return {"moves": [_move_payload(move) for move in moves]}
