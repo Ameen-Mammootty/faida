@@ -23,7 +23,6 @@ from ..matching import (
     match_supplier,
     normalize_invoice_no,
     same_name,
-    snap_item,
 )
 from ..provenance import Origin, changed_fields, initial, mark
 from ..replies import (
@@ -31,7 +30,6 @@ from ..replies import (
     REPLY_EXTRACTION_FAILED,
     REPLY_NOT_INVOICE,
     REPLY_Z_REPORT,
-    PriceAlert,
     SimilarPaper,
     compose_cash_hold_reply,
     compose_duplicate_hold_reply,
@@ -39,8 +37,7 @@ from ..replies import (
 )
 from ..storage import Storage
 from ..wa import WhatsAppClient
-from .constants import PRICE_ALERT_MIN_ABS, PRICE_ALERT_MIN_PCT
-from .currency import currency_differs
+from .filing import file_invoice, filed_names
 from .normalize import normalize_extracted
 from .provider import ExtractionProvider, ProviderUsage
 from .repair import repair_invoice
@@ -211,54 +208,37 @@ async def _persist_extracted(
     extracted = normalize_extracted(extracted)
     validation = validate_invoice(extracted)
     outcome = await repair_invoice(provider, image, doc["mime"], extracted, validation)
-    invoice, validation = outcome.invoice, outcome.validation
+    invoice = outcome.invoice
     # Repair latency comes from the provider's own timing (0 = no repair ran).
     stage_ms["repair"] = outcome.usage.latency_ms if outcome.usage is not None else 0
     logger.info("latency stage=repair document=%s elapsed_ms=%d", doc["id"], stage_ms["repair"])
 
     # Supplier memory (plan.md §5 layer 4, WP-22): match the supplier for the
-    # tenant, then fuzzy-snap each line against that supplier's catalog. Never
-    # blocks extraction - on any failure the draft persists unsnapped.
+    # tenant and fetch its catalog for the filing step below. Never blocks
+    # extraction - on any failure the draft persists unsnapped.
     supplier = None
-    snapped_items: list[Row | None] = [None] * len(invoice.lines)
+    catalog: list[Row] | None = None
     try:
         suppliers = await db.list_suppliers(tenant_id=str(doc["tenant_id"]))
         supplier = match_supplier(suppliers, invoice.supplier_name)
         if supplier is not None:
-            items = await db.list_supplier_items(str(supplier["id"]))
-            snapped_items = [snap_item(items, line.raw_name) for line in invoice.lines]
+            catalog = await db.list_supplier_items(str(supplier["id"]))
     except Exception:
         logger.exception(
             "supplier matching failed for document %s; persisting unsnapped", doc["id"]
         )
-        supplier, snapped_items = None, [None] * len(invoice.lines)
-
-    # With a matched supplier every line carries snapped True/False in its
-    # persisted check; without one snapping never ran, so None stays (neutral
-    # per validate.py). Statuses are NOT recomputed: in M1 an unsnapped line
-    # keeps its green arithmetic - the catalog is empty on day one, unknown
-    # items are normal (they self-build on confirm).
-    line_checks = validation.lines
-    if supplier is not None:
-        line_checks = [
-            check.model_copy(update={"snapped": item is not None})
-            for check, item in zip(line_checks, snapped_items, strict=True)
-        ]
-        # The composer sees exactly what persists, snapped flags included.
-        validation = validation.model_copy(update={"lines": line_checks})
+        supplier, catalog = None, None
 
     # WP-28: the tenant's own currency decides two things at once - whether
     # the reply asks about this invoice's currency, and whether comparing its
     # prices to a baseline means anything at all.
     tenant_currency = await db.tenant_currency(str(doc["tenant_id"]))
-    alerts = price_alerts(invoice, snapped_items, tenant_currency=tenant_currency)
-
-    # Derived confidence, never self-reported (plan.md §5 layer 5): the
-    # document-level check plus the per-line green/amber statuses.
-    confidence = {
-        "document": validation.document.model_dump(mode="json"),
-        "lines": [check.status.value for check in line_checks],
-    }
+    # Filing (extraction/filing.py, CONTEXT.md): snap, fold, alerts, derived
+    # confidence and the line rows - the one step this door shares with the
+    # correction door and the typed path. The composer sees exactly what
+    # persists, snapped flags included.
+    filed = file_invoice(invoice, catalog=catalog, tenant_currency=tenant_currency)
+    validation, snapped_items, alerts = filed.validation, filed.snapped_items, filed.alerts
     # C8: where each value came from. Everything starts as read off the image,
     # then the fields the scoped repair round actually moved are re-stamped -
     # diffed rather than self-reported, because a repair asked for three cells
@@ -279,24 +259,6 @@ async def _persist_extracted(
             actor=repair_actor,
             at=now,
         )
-    lines = [
-        {
-            "position": index,
-            "raw_name": line.raw_name,
-            "line_kind": line.line_kind.value,
-            "supplier_item_id": str(item["id"]) if item is not None else None,
-            "qty": line.qty,
-            "unit": line.unit,
-            "unit_price": line.unit_price,
-            "line_total": line.line_total,
-            "pack_size": line.pack_size,
-            "checks": check.model_dump(mode="json"),
-        }
-        for index, (line, check, item) in enumerate(
-            zip(invoice.lines, line_checks, snapped_items, strict=True)
-        )
-    ]
-
     # WP-44: the same paper sent twice is held, never double-counted. Checked
     # against every earlier header for the tenant; a failed check never blocks
     # extraction (same posture as supplier matching above).
@@ -378,9 +340,9 @@ async def _persist_extracted(
         discount_total=invoice.discount_total,
         rounding_amount=invoice.rounding_amount,
         status=status,
-        confidence=confidence,
+        confidence=filed.confidence,
         provenance=provenance,
-        lines=lines,
+        lines=filed.rows,
         # The hold, recorded rather than spent on the reply and forgotten. It is
         # what lets the review screen name the paper this one copies, and what
         # the dismiss door keys on - so the original, which carries none, can
@@ -457,52 +419,6 @@ def _same_supplier(row: Row, supplier_id: str | None, supplier_name: str | None)
     # One definition of "the same name" for the whole product (matching.same_name):
     # equal after normalization, and never two empty names.
     return same_name(row["supplier_name"], supplier_name)
-
-
-def filed_names(snapped_items: list[Row | None]) -> list[str | None]:
-    """WP-126: per line, the catalog name it snapped to, or None when it
-    matched nothing - what the read-out lists, so the sender sees the words
-    the price history will carry."""
-    return [None if item is None else item["canonical_name"] for item in snapped_items]
-
-
-def price_alerts(
-    invoice: ExtractedInvoice,
-    snapped_items: list[Row | None],
-    *,
-    tenant_currency: str | None = None,
-) -> list[PriceAlert]:
-    """WP-23 (plan.md §6 M2, the demo's money moment): one alert per snapped
-    line whose extracted unit_price moved from the item's last_price by both
-    >= PRICE_ALERT_MIN_ABS and >= PRICE_ALERT_MIN_PCT of it - either
-    direction, falling prices are signal too. Ordered by absolute delta
-    descending. The baseline itself moves only on confirm
-    (Database.record_confirmed_prices), never here.
-
-    WP-28: an invoice billed in another currency raises no alerts at all.
-    The baseline is a bare number in the tenant's money, so "USD 75 against a
-    baseline of AED 50" is not a price rise, it is two different questions
-    subtracted from each other - and this is the one message the demo asks to
-    be trusted on."""
-    if currency_differs(invoice.currency, tenant_currency):
-        return []
-    alerts: list[PriceAlert] = []
-    for line, item in zip(invoice.lines, snapped_items, strict=True):
-        if item is None or line.unit_price is None or item["last_price"] is None:
-            continue
-        last = item["last_price"]
-        delta = abs(line.unit_price - last)
-        if delta >= PRICE_ALERT_MIN_ABS and delta >= PRICE_ALERT_MIN_PCT * last:
-            alerts.append(
-                PriceAlert(
-                    item_name=item["canonical_name"],
-                    prev_price=last,
-                    new_price=line.unit_price,
-                    currency=invoice.currency or DEFAULT_CURRENCY,
-                )
-            )
-    alerts.sort(key=lambda alert: alert.delta, reverse=True)
-    return alerts
 
 
 async def _record_run(

@@ -1296,3 +1296,47 @@ and a reply in the shape of the pending-papers disambiguation when the name fits
 **Effort:** S
 **Priority:** P3
 **Depends on:** WP-87, and a customer quote before it enters plan.md (§2: new scope needs a named ask).
+
+### A typed invoice holds no duplicate and persists no tax treatment
+
+**What:** Run the WP-44 duplicate check on a typed invoice and hold a copy the way a photo is held;
+persist `tax_treatment` and `vat_rate` from the filing step's validation on the typed door, the
+way the photo path and the correction door do.
+
+**Why:** Found on 2026-09-14 when the filing chain became one module (`extraction/filing.py`) and
+the three copies were laid side by side. `api.create_manual_invoice` never ran `find_duplicate`,
+and it passes `insert_draft_invoice` no tax treatment, so `record_confirmed_prices` reads None on
+confirm and records the typed paper's prices gross where a photographed paper's are recorded net of
+VAT - the mixed-basis case C4 exists to prevent, on the one door that is meant to be the photo's
+exact fallback. Both are product changes, so the refactor preserved them rather than fixing them.
+
+**Context:** The typed door is `api.py`'s `create_manual_invoice`; the two values are
+`filed.validation.document.tax_treatment` and `.vat_rate`, already computed and dropped. The
+duplicate hold needs the headers read (`db.list_invoice_headers_for_tenant`) and the hold's
+reply shape, which a typed invoice has no phone to send to - the screen's duplicate note is the
+place. `test_api.py` covers the typed door with eight cases to extend.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** Nothing. Trigger: the first typed invoice confirmed on a VAT-inclusive supplier, or
+the first typed copy of a paper already photographed.
+
+### The web mock's copy of the validator and the fold rule
+
+**What:** Make `apps/web/src/lib/mock/validate.ts` fixture-driven from the shipped Python the way
+the dashboard mock is (`lib/mock/dashboard/generate.py`), or delete it once the review screen's
+mock no longer re-validates on a PATCH.
+
+**Why:** It is the last copy of the filing chain outside `extraction/filing.py` - the C4
+tolerances and the "snapped never changes status" rule in TypeScript, kept honest by nobody. It
+serves only the offline mock, which is why the 2026-09-14 refactor left it alone; it belongs to the
+architecture review's candidate 6 (one source for the wire shape: `types.ts`, `api.ts` and the mock
+store retype the API's models and refusal sentences with no parity test).
+
+**Context:** The review report of 2026-09-14 (`/improve-codebase-architecture`) has the candidate
+card; `generate.py` is the pattern.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** Candidate 6 being picked up; until then, a change to the tolerances in
+`extraction/validate.py` must be mirrored by hand.

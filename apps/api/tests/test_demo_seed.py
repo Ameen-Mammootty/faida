@@ -23,7 +23,7 @@ import pytest
 from fastapi import FastAPI
 
 from faida_api import costing, plates, takings
-from faida_api.extraction.pipeline import price_alerts
+from faida_api.extraction.filing import price_alerts
 from faida_api.extraction.schema import ExtractedInvoice, ExtractedLine
 from faida_api.matching import match_supplier, snap_item
 from faida_api.replies import ICON_DOWN, ICON_UP, render_price_alert

@@ -49,8 +49,8 @@ apps/api/.venv/bin/python -m eval.run --live --only EDGE-01 --corpus eval/fixtur
 ```
 
 `--live` calls the real provider and runs the layers the product runs, in the product's order,
-through the product's modules: extract, the pipeline's currency normalization, `validate_invoice`,
-one scoped `repair_invoice` round.
+through the product's modules: extract, the pipeline's currency normalization, the filing step
+(`extraction.filing.file_invoice`, the validate the pipeline persists), one scoped `repair_invoice` round.
 Re-implementing any of them in the eval would score a program we do not ship.
 `--record` refreshes each case's `recorded.json`/`usage.json`, which is both the §5 CI policy
 (regenerate whenever the prompt version bumps) and what makes every later re-score free.

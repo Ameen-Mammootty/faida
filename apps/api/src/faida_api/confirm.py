@@ -95,11 +95,12 @@ from .contracts import InvoiceStatus
 from .db import Database, SupplierAliasCollision
 from .extraction.currency import normalize_currency
 from .extraction.dates import parse_printed_date
+from .extraction.filing import file_invoice, filed_names
 from .extraction.normalize import blank_to_none
-from .extraction.pipeline import filed_names, find_duplicate, price_alerts
+from .extraction.pipeline import find_duplicate
 from .extraction.schema import ExtractedInvoice, ExtractedLine
 from .extraction.validate import validate_invoice
-from .matching import Row, filed_under, snap_item
+from .matching import filed_under
 from .provenance import Origin, line_key, mark
 from .replies import (
     REPLY_CASH_HOLD_OK,
@@ -807,10 +808,10 @@ async def _apply_correction(
     origin: Origin = Origin.CORRECTED_CHAT,
     message_id: str | None = None,
 ) -> str:
-    """Apply parsed edits: re-validate, re-snap against the supplier catalog
-    (the pipeline's convention - snapped flags folded into the checks, never
-    recomputing status), recompute price alerts the same way the pipeline
-    does, persist, and re-reply. Status stays where it was, with one
+    """Apply parsed edits: run the filing step over the corrected invoice
+    (`extraction.filing.file_invoice` - the pipeline's own validate, snap,
+    fold, alerts and confidence, so a correction can never re-derive them a
+    second way), persist, and re-reply. Status stays where it was, with one
     exception: a payment-kind edit moves it the way the pipeline would have
     (`status_after_payment_kind`, C1 as amended), and the reply takes the
     shape the new state calls for - the cash-hold closing on a cash hold, the
@@ -843,7 +844,6 @@ async def _apply_correction(
             return compose_line_out_of_range(edit.line_index + 1, line_count)
 
     invoice = apply_edits(_to_extracted(invoice_row, line_rows), edits)
-    validation = validate_invoice(invoice)
 
     # The supplier this paper points at after the edits: unchanged unless
     # somebody picked one, and resolved in this tenant when they did.
@@ -854,23 +854,19 @@ async def _apply_correction(
         supplier = await _resolve_supplier(db, choice, tenant_id=tenant_id)
         supplier_id, booked_under = str(supplier["id"]), supplier["name"]
 
-    snapped_items: list[Row | None] = [None] * len(invoice.lines)
-    line_checks = validation.lines
-    if supplier_id is not None:
-        items = await db.list_supplier_items(supplier_id)
-        snapped_items = [snap_item(items, line.raw_name) for line in invoice.lines]
-        line_checks = [
-            check.model_copy(update={"snapped": item is not None})
-            for check, item in zip(line_checks, snapped_items, strict=True)
-        ]
-        validation = validation.model_copy(update={"lines": line_checks})
-
+    # Filing (extraction/filing.py, CONTEXT.md): the same validate, snap,
+    # fold, alerts, confidence and rows the pipeline ran on the way in, over
+    # the corrected invoice and against the supplier it points at now. The
+    # stored positions ride along so a correction never renumbers a line.
+    catalog = None if supplier_id is None else await db.list_supplier_items(supplier_id)
     tenant_currency = invoice_row["tenant_currency"]
-    alerts = price_alerts(invoice, snapped_items, tenant_currency=tenant_currency)
-    confidence = {
-        "document": validation.document.model_dump(mode="json"),
-        "lines": [check.status.value for check in line_checks],
-    }
+    filed = file_invoice(
+        invoice,
+        catalog=catalog,
+        tenant_currency=tenant_currency,
+        positions=[row["position"] for row in line_rows],
+    )
+    validation, snapped_items, alerts = filed.validation, filed.snapped_items, filed.alerts
     corrected = edited_field_keys(edits)
     from_status = invoice_row["status"]
     status = InvoiceStatus(from_status)
@@ -908,22 +904,6 @@ async def _apply_correction(
         provenance = mark(
             provenance, reconstructed, origin=Origin.RECONSTRUCTED, actor=actor, at=now
         )
-    lines = [
-        {
-            "position": line_rows[index]["position"],
-            "raw_name": line.raw_name,
-            "supplier_item_id": str(item["id"]) if item is not None else None,
-            "qty": line.qty,
-            "unit": line.unit,
-            "pack_size": line.pack_size,
-            "unit_price": line.unit_price,
-            "line_total": line.line_total,
-            "checks": check.model_dump(mode="json"),
-        }
-        for index, (line, check, item) in enumerate(
-            zip(invoice.lines, line_checks, snapped_items, strict=True)
-        )
-    ]
     applied = await db.apply_invoice_correction(
         invoice_id,
         tenant_id=tenant_id,
@@ -943,9 +923,9 @@ async def _apply_correction(
         # under a net baseline - the mixed-basis alert C4 exists to prevent.
         tax_treatment=validation.document.tax_treatment,
         vat_rate=validation.document.vat_rate,
-        confidence=confidence,
+        confidence=filed.confidence,
         provenance=provenance,
-        lines=lines,
+        lines=filed.rows,
         actor=actor,
         corrected_fields=corrected,
         supplier_id=supplier_id,

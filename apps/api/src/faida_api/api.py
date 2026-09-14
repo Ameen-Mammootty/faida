@@ -97,9 +97,9 @@ from .contracts import InvoiceStatus, JobKind
 from .db import Database, SupplierAliasCollision
 from .extraction import units
 from .extraction.currency import currency_differs
+from .extraction.filing import file_invoice
 from .extraction.normalize import blank_to_none, normalize_extracted
 from .extraction.schema import ExtractedInvoice, ExtractedLine
-from .extraction.validate import validate_invoice
 from .matching import (
     Row,
     clean_name,
@@ -107,7 +107,6 @@ from .matching import (
     match_supplier,
     normalize,
     propose_ingredients,
-    snap_item,
 )
 from .provenance import Origin, initial
 from .replies import DEFAULT_CURRENCY, compose_cash_approved_notice
@@ -944,53 +943,27 @@ async def create_manual_invoice(body: ManualInvoice, request: Request, ctx: Cont
             raise HTTPException(status_code=422, detail=f"unknown branch_id '{body.branch_id}'")
 
     invoice = _to_extracted_invoice(body)
-    validation = validate_invoice(invoice)
 
     # Supplier memory (plan.md §5 layer 4), the pipeline's convention: match
-    # the supplier, snap each line, fold snapped flags into the checks without
-    # recomputing status. Deterministic - no AI - and never blocking: on any
-    # failure the invoice persists unsnapped.
+    # the supplier and fetch its catalog. Deterministic - no AI - and never
+    # blocking: on any failure the invoice persists unsnapped.
     supplier = None
-    snapped_items: list[Row | None] = [None] * len(invoice.lines)
+    catalog: list[Row] | None = None
     try:
         suppliers = await db.list_suppliers(tenant_id=tenant_id)
         supplier = match_supplier(suppliers, invoice.supplier_name)
         if supplier is not None:
-            items = await db.list_supplier_items(str(supplier["id"]))
-            snapped_items = [snap_item(items, line.raw_name) for line in invoice.lines]
+            catalog = await db.list_supplier_items(str(supplier["id"]))
     except Exception:
         logger.exception("supplier matching failed for a manual invoice; persisting unsnapped")
-        supplier, snapped_items = None, [None] * len(invoice.lines)
+        supplier, catalog = None, None
 
-    line_checks = validation.lines
-    if supplier is not None:
-        line_checks = [
-            check.model_copy(update={"snapped": item is not None})
-            for check, item in zip(line_checks, snapped_items, strict=True)
-        ]
-
-    # Derived confidence, never self-reported (plan.md §5 layer 5) - the same
-    # dump the pipeline persists.
-    confidence = {
-        "document": validation.document.model_dump(mode="json"),
-        "lines": [check.status.value for check in line_checks],
-    }
-    lines = [
-        {
-            "position": index,
-            "raw_name": line.raw_name,
-            "supplier_item_id": str(item["id"]) if item is not None else None,
-            "qty": line.qty,
-            "unit": line.unit,
-            "unit_price": line.unit_price,
-            "line_total": line.line_total,
-            "pack_size": line.pack_size,
-            "checks": check.model_dump(mode="json"),
-        }
-        for index, (line, check, item) in enumerate(
-            zip(invoice.lines, line_checks, snapped_items, strict=True)
-        )
-    ]
+    # Filing (extraction/filing.py, CONTEXT.md): the step a photo goes
+    # through, over a typed invoice. The price alerts it computes go unused
+    # here - a typed invoice sends no reply - and the confidence and rows are
+    # the same dumps the pipeline persists.
+    tenant_currency = await db.tenant_currency(tenant_id)
+    filed = file_invoice(invoice, catalog=catalog, tenant_currency=tenant_currency)
 
     # WP-24 (PRD §21) applies to typed invoices too: cash holds for approval.
     status = (
@@ -1014,7 +987,7 @@ async def create_manual_invoice(body: ManualInvoice, request: Request, ctx: Cont
         total=invoice.total,
         payment_kind=invoice.payment_kind,
         status=status,
-        confidence=confidence,
+        confidence=filed.confidence,
         # C8: no model ran, so every value here was typed by a person - or
         # derived from what they typed by the same seam a photo goes through
         # (currency word to ISO code, printed terms to cash-or-credit, a pack
@@ -1027,7 +1000,7 @@ async def create_manual_invoice(body: ManualInvoice, request: Request, ctx: Cont
             actor=ctx.actor,
             at=datetime.datetime.now(datetime.UTC),
         ),
-        lines=lines,
+        lines=filed.rows,
         document_classification=None,
         created_by=ctx.actor,
     )

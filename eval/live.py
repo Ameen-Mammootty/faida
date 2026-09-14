@@ -8,7 +8,7 @@ The default is the shipped provider (Gemini 3 Flash since 2026-08-29);
 
 The one rule this module exists to keep: a live case runs the layers the
 product runs, in the product's order, through the product's modules -
-extract (layer 1), the pipeline's currency normalization, `validate_invoice`
+extract (layer 1), the pipeline's currency normalization, the filing step
 (layer 2), one scoped `repair_invoice` round (layer 3). Re-implementing any
 of that here would score a program we do not ship, which is the trap
 `eval/score.py` fell into with its own copy of C4.
@@ -18,16 +18,13 @@ import asyncio
 import os
 from pathlib import Path
 
+from faida_api.extraction.filing import file_invoice
 from faida_api.extraction.normalize import normalize_extracted
 from faida_api.extraction.pipeline import build_provider
 from faida_api.extraction.provider import ExtractionProvider, ProviderUsage
 from faida_api.extraction.repair import repair_invoice
 from faida_api.extraction.schema import Classification, ExtractionResult
-from faida_api.extraction.validate import (
-    CheckStatus,
-    ValidationResult,
-    validate_invoice,
-)
+from faida_api.extraction.validate import CheckStatus, ValidationResult
 
 from eval.score import score_case
 
@@ -121,8 +118,9 @@ async def run_case_live(
     image: bytes,
     mime: str,
 ) -> tuple[dict, ExtractionResult, ExtractionResult, ProviderUsage]:
-    """Extract -> validate -> one repair round -> score, mirroring
-    `pipeline._persist_extracted`.
+    """Extract -> file -> one repair round -> score, through the modules the
+    pipeline runs (`extraction.filing.file_invoice` is the pipeline's own
+    validate; the eval never carries a copy of the chain).
 
     Returns the case score, the post-repair result that was scored (what the
     failure report explains), and the raw pre-repair extraction with its usage,
@@ -143,7 +141,9 @@ async def run_case_live(
     # printed terms), called rather than copied, so the eval scores the invoice
     # the database would have stored.
     invoice = normalize_extracted(extracted.invoice)
-    validation = validate_invoice(invoice)
+    # No catalog and no tenant here: the eval scores the arithmetic the
+    # database would have stored, snapping and alerts left neutral.
+    validation = file_invoice(invoice, catalog=None, tenant_currency=None).validation
     before = _reconciles(validation)
 
     outcome = await repair_invoice(provider, image, mime, invoice, validation)
