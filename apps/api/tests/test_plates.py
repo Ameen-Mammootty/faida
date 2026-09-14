@@ -52,6 +52,10 @@ def test_no_plate_vocabulary_can_say_verified():
     limitations* at best, because nothing corroborates a pack size."""
     assert "verified" not in [q.value for q in Quality]
     assert plates.component_quality("verified") is Quality.RELIABLE
+    # A plate is never unavailable either: that is a fact about a branch's
+    # sales, and the clamp lets only *estimated* through from a stored word.
+    assert plates.component_quality("unavailable") is Quality.RELIABLE
+    assert plates.component_quality("incomplete") is Quality.RELIABLE
     assert plates.component_quality(None) is Quality.RELIABLE
     assert plates.component_quality("estimated") is Quality.ESTIMATED
 

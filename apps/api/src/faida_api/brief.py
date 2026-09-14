@@ -246,9 +246,9 @@ def _quality_clause(total: dict) -> str:
     takes no clause: its note already says why there is no figure, and saying
     it twice reads like two different problems."""
     quality = total.get("contribution_quality")
-    if quality == Quality.ESTIMATED:
+    if quality == Quality.ESTIMATED.value:
         return f" ({word(Quality.ESTIMATED)})"
-    if quality == Quality.INCOMPLETE:
+    if quality == Quality.INCOMPLETE.value:
         return f" ({word(Quality.INCOMPLETE)}: {_first_note(total)})"
     return ""
 

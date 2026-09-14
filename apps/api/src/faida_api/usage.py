@@ -1094,7 +1094,7 @@ def _row(
     if branch is not None:
         notes.extend(n for n in branch.sales_notes if n not in notes)
 
-    quality = worst(worst(sales_quality, purchase_quality), material_quality)
+    quality = worst(sales_quality, purchase_quality, material_quality)
     return MaterialRow(
         ingredient_id=material.ingredient_id,
         ingredient_name=material.name,

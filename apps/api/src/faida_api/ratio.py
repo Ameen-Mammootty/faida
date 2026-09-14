@@ -692,11 +692,11 @@ def coverage(values: list[TillItemValue], plates: dict[str, MenuPlate]) -> Cover
                 plate_quality=plate.plate_quality,
             )
         )
-        if plate.plate_quality == Quality.INCOMPLETE:
+        if plate.plate_quality == Quality.INCOMPLETE.value:
             incomplete_value += item.positive_value
         else:
             costed_value += item.positive_value
-            if plate.plate_quality == Quality.ESTIMATED:
+            if plate.plate_quality == Quality.ESTIMATED.value:
                 estimated_value += item.positive_value
 
     def pct(part: Decimal) -> Decimal | None:

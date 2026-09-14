@@ -618,7 +618,7 @@ def price_spike(
         stake, total_portions, weighed = weighing.money_at_stake, weighing.portions, weighing.rows
 
         line_qualities = [
-            Quality.ESTIMATED if line.quality == Quality.ESTIMATED else Quality.RELIABLE
+            Quality.ESTIMATED if line.quality == Quality.ESTIMATED.value else Quality.RELIABLE
             for line in (move.current, move.previous)
         ]
         quality = _quality(*line_qualities, *(r.quality for r in weighed))

@@ -55,10 +55,3 @@ def test_the_word_as_a_person_reads_it():
     assert word(Quality.INCOMPLETE) == "incomplete"
     assert word(Quality.UNAVAILABLE) == "unavailable"
     assert "_" not in "".join(word(q) for q in Quality)
-
-
-def test_the_wire_value_is_the_enum():
-    """A word read back off a payload compares equal to its member, so a
-    reader never keeps a second string literal for it."""
-    assert Quality("estimated") is Quality.ESTIMATED
-    assert Quality.ESTIMATED == "estimated"

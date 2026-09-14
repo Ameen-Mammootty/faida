@@ -632,7 +632,7 @@ def payload(*, menu, sales, invoices, today, approvals, papers, moves, scope_id=
         "answer": {"branch": branch_sentence, "item": item_sentence, "quality": answer_quality.value, "notes": notes},
         "freshness": {"sales_through": iso(newest), "sales_age_days": age, "last_purchase_on": iso(last_purchase),
                       "branches_without_sales": sum(1 for r in ratio_rows.values() if r.net_sales is None),
-                      "quality": "estimated" if age is not None and age > 7 else "reliable_with_limitations",
+                      "quality": Quality.ESTIMATED.value if age is not None and age > 7 else Quality.RELIABLE.value,
                       "sentence": freshness_sentence(newest, today)},
         "latest_day": latest_day,
         "approvals": {**approvals[scope_id or ""], "invoices": papers if approvals[scope_id or ""]["count"] else []},
