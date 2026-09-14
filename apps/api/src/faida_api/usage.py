@@ -74,11 +74,10 @@ from .contribution import (
     _price_words,
     _qty_words,
 )
+from .quality import Quality, worst
 from .ratio import (
-    _QUALITY_RANK,
     FILS,
     PendingPaper,
-    Quality,
     Window,
     _pending_sentences,
     _plural,
@@ -129,10 +128,6 @@ EVEN = "even"
 #: line when it was costed, or the resolver reading its printed cells now.
 FROZEN = "frozen"
 RESOLVED = "resolved"
-
-
-def _worse(first: Quality, second: Quality) -> Quality:
-    return first if _QUALITY_RANK[first] <= _QUALITY_RANK[second] else second
 
 
 # --- inputs -----------------------------------------------------------------
@@ -1020,7 +1015,7 @@ def _row(
         # Nothing delivered inside the window is a fact, not a hole: the row
         # reads `under` by everything its recipes needed and says so.
         bought_base = Decimal(0)
-        purchase_quality = _worse(purchase_quality, Quality.INCOMPLETE)
+        purchase_quality = worst(purchase_quality, Quality.INCOMPLETE)
     else:
         lines = tuple(
             sorted(bought.entries, key=lambda entry: (entry.purchased_on, entry.line_position))
@@ -1033,11 +1028,11 @@ def _row(
         if unmeasured:
             bought_hole = f"{_plural(unmeasured, 'line')} could not be measured"
             bought_measured = bought.measured_total
-            material_quality = _worse(material_quality, Quality.INCOMPLETE)
+            material_quality = worst(material_quality, Quality.INCOMPLETE)
         else:
             bought_base = bought.measured_total
         if bought.overrides:
-            purchase_quality = _worse(purchase_quality, Quality.ESTIMATED)
+            purchase_quality = worst(purchase_quality, Quality.ESTIMATED)
 
     # --- the difference, and what it costs
     gap: Decimal | None = None
@@ -1066,7 +1061,7 @@ def _row(
         notes.append(sentence)
         price_quality = Quality.ESTIMATED.value if estimated_price else Quality.RELIABLE.value
         if estimated_price:
-            purchase_quality = _worse(purchase_quality, Quality.ESTIMATED)
+            purchase_quality = worst(purchase_quality, Quality.ESTIMATED)
         if gap is not None:
             money = (gap * usable_price.cost_per_base_unit).quantize(FILS, rounding=ROUND_HALF_UP)
 
@@ -1074,7 +1069,7 @@ def _row(
     if versions:
         notes.append(_recipe_sentence(versions))
     if after_period:
-        material_quality = _worse(material_quality, Quality.ESTIMATED)
+        material_quality = worst(material_quality, Quality.ESTIMATED)
         notes.append("recipe written after this period")
     if refunded:
         word = "portion" if refunded == 1 else "portions"
@@ -1091,15 +1086,15 @@ def _row(
     if material.has_packs and (bought is None or not bought.entries):
         notes.append(f"no purchases in this window, {window_words(window)}")
     if branch is not None and branch.pending:
-        purchase_quality = _worse(purchase_quality, Quality.ESTIMATED)
+        purchase_quality = worst(purchase_quality, Quality.ESTIMATED)
         notes.extend(_pending_sentences(list(branch.pending)))
     if used is not None and used.hole_note is not None:
-        material_quality = _worse(material_quality, Quality.INCOMPLETE)
+        material_quality = worst(material_quality, Quality.INCOMPLETE)
         notes.append(used.hole_note)
     if branch is not None:
         notes.extend(n for n in branch.sales_notes if n not in notes)
 
-    quality = _worse(_worse(sales_quality, purchase_quality), material_quality)
+    quality = worst(worst(sales_quality, purchase_quality), material_quality)
     return MaterialRow(
         ingredient_id=material.ingredient_id,
         ingredient_name=material.name,
@@ -1305,7 +1300,7 @@ def chain_material_rows(
         notes: list[str] = []
         quality = Quality.RELIABLE
         for row in group:
-            quality = _worse(quality, row.quality)
+            quality = worst(quality, row.quality)
 
         left_out: list[str] = []
         for row in group:
@@ -1317,7 +1312,7 @@ def chain_material_rows(
             if row.bought_base is None and row.bought_hole:
                 left_out.append(f"{branch} not included: {row.bought_hole}")
         if left_out:
-            quality = _worse(quality, Quality.INCOMPLETE)
+            quality = worst(quality, Quality.INCOMPLETE)
 
         gap: Decimal | None = None
         direction: str | None = None
@@ -1350,7 +1345,7 @@ def chain_material_rows(
             notes.append(sentence)
             price_quality = Quality.ESTIMATED.value if estimated_price else Quality.RELIABLE.value
             if estimated_price:
-                quality = _worse(quality, Quality.ESTIMATED)
+                quality = worst(quality, Quality.ESTIMATED)
             if gap is not None:
                 money = (gap * usable_price.cost_per_base_unit).quantize(
                     FILS, rounding=ROUND_HALF_UP

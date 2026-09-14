@@ -35,6 +35,7 @@ from enum import StrEnum
 
 from . import provenance
 from .extraction import units
+from .quality import Quality
 
 #: The column is `numeric(18,8)`, and this is the single point at which a cost
 #: is rounded: once, at the division, half up.
@@ -49,20 +50,6 @@ DISPLAY_UNITS: dict[str, tuple[str, Decimal]] = {
     "ml": ("litre", Decimal("1000")),
     "pc": ("each", Decimal("1")),
 }
-
-
-class Quality(StrEnum):
-    """PRD §24's report-quality vocabulary, minus the word we cannot earn.
-
-    `verified` is absent on purpose and a test pins its absence: nothing
-    anywhere corroborates a pack size, so a cost that claimed to be verified
-    would be the old platform's dominant failure - a confidently wrong number
-    nobody was invited to check - reappearing in the layer C9 exists to
-    protect.
-    """
-
-    RELIABLE = "reliable_with_limitations"
-    ESTIMATED = "estimated"
 
 
 class PackSource(StrEnum):

@@ -10,6 +10,7 @@ import datetime
 from decimal import Decimal
 
 from faida_api import ratio
+from faida_api.quality import Quality
 
 D = Decimal
 BRANCH = "b1"
@@ -84,7 +85,7 @@ def _row(days, invoices, period=WEEK, latest=None, branch=BRANCH, name="Al Qusai
 def test_a_full_week_with_confirmed_purchases_reads_reliable_to_the_tenth():
     papers = [_paper("2026-08-25", "5335.79", "254.09"), _paper("2026-08-28", "1500.00", "71.43")]
     row = _row(_week(), papers)
-    assert row.quality is ratio.Quality.RELIABLE
+    assert row.quality is Quality.RELIABLE
     assert row.net_sales == D("7000.00")
     # 5081.70 + 1428.57 = 6510.27, over 7000.00 = 93.0043% -> 93.0
     assert row.purchases == D("6510.27")
@@ -115,7 +116,7 @@ def test_the_ratio_rounds_half_up_to_a_tenth():
 def test_two_missing_days_read_incomplete_with_the_sentence():
     days = [_day(i, "1000.00") for i in (0, 1, 2, 5, 6)]
     row = _row(days, [_paper("2026-08-26", "700.00")])
-    assert row.quality is ratio.Quality.INCOMPLETE
+    assert row.quality is Quality.INCOMPLETE
     assert row.days_loaded == 5 and row.days_missing == 2
     assert "2 of 7 days have no sales" in row.notes
     # The figure is still there: withholding it would hide the papers.
@@ -133,12 +134,12 @@ def test_a_closed_day_is_a_loaded_zero_never_a_gap():
     days[4] = ratio.SalesDay(BRANCH, datetime.date(2026, 8, 29), D("0.00"), D("0.00"), "summary")
     row = _row(days, [_paper("2026-08-26", "700.00")])
     assert row.days_missing == 0
-    assert row.quality is ratio.Quality.RELIABLE
+    assert row.quality is Quality.RELIABLE
 
 
 def test_sales_with_no_purchases_reads_incomplete_with_no_ratio():
     row = _row(_week(), [])
-    assert row.quality is ratio.Quality.INCOMPLETE
+    assert row.quality is Quality.INCOMPLETE
     assert row.ratio_pct is None
     assert row.net_sales == D("7000.00")
     assert row.purchases == D("0.00")
@@ -147,7 +148,7 @@ def test_sales_with_no_purchases_reads_incomplete_with_no_ratio():
 
 def test_purchases_with_no_sales_reads_incomplete_with_the_purchases_shown():
     row = _row([], [_paper("2026-08-27", "700.00")], latest=datetime.date(2026, 8, 20))
-    assert row.quality is ratio.Quality.INCOMPLETE
+    assert row.quality is Quality.INCOMPLETE
     assert row.ratio_pct is None
     assert row.net_sales is None
     assert row.purchases == D("700.00")
@@ -163,13 +164,13 @@ def test_negative_net_sales_answers_no_ratio_and_reads_incomplete():
     ]
     row = _row(days, [_paper("2026-08-26", "700.00")])
     assert row.ratio_pct is None
-    assert row.quality is ratio.Quality.INCOMPLETE
+    assert row.quality is Quality.INCOMPLETE
     assert "net sales are not positive this period" in row.notes
 
 
 def test_sales_with_only_an_excluded_purchase_reads_incomplete_and_names_the_exclusion():
     row = _row(_week(), [_paper("2026-08-26", "120.00", currency="USD")])
-    assert row.quality is ratio.Quality.INCOMPLETE
+    assert row.quality is Quality.INCOMPLETE
     assert row.ratio_pct is None
     assert "no confirmed purchases 25-31 Aug" in row.notes
     assert "1 invoice in USD not counted" in row.notes
@@ -185,7 +186,7 @@ def test_an_awaiting_invoice_reads_estimated_and_is_not_counted():
         _paper("2026-08-28", "300.00", status="awaiting_confirm"),
     ]
     row = _row(_week(), papers)
-    assert row.quality is ratio.Quality.ESTIMATED
+    assert row.quality is Quality.ESTIMATED
     assert row.purchases == D("700.00")
     assert row.ratio_pct == D("10.0")
     assert "1 invoice awaiting confirm" in row.notes
@@ -199,13 +200,13 @@ def test_an_undated_pending_paper_is_placed_by_its_arrival_day():
         _paper(None, "300.00", status="awaiting_confirm", arrived="2026-08-30"),
     ]
     row = _row(_week(), papers)
-    assert row.quality is ratio.Quality.ESTIMATED
+    assert row.quality is Quality.ESTIMATED
     assert "1 undated invoice awaiting confirm" in row.notes
     assert row.pending[0].placed_on == datetime.date(2026, 8, 30)
     assert row.pending[0].undated is True
     # Outside the window it is nobody's paper for this period.
     outside = _paper(None, "300.00", status="awaiting_confirm", arrived="2026-09-15")
-    assert _row(_week(), [papers[0], outside]).quality is ratio.Quality.RELIABLE
+    assert _row(_week(), [papers[0], outside]).quality is Quality.RELIABLE
 
 
 def test_a_held_and_a_dismissed_invoice_are_not_counted():
@@ -217,7 +218,7 @@ def test_a_held_and_a_dismissed_invoice_are_not_counted():
     ]
     row = _row(_week(), papers)
     assert row.purchases == D("700.00")
-    assert row.quality is ratio.Quality.ESTIMATED
+    assert row.quality is Quality.ESTIMATED
     assert "1 invoice held for review" in row.notes
     assert len(row.pending) == 1
 
@@ -225,7 +226,7 @@ def test_a_held_and_a_dismissed_invoice_are_not_counted():
 def test_a_usd_invoice_is_excluded_and_the_row_reads_estimated_naming_it():
     papers = [_paper("2026-08-26", "700.00"), _paper("2026-08-27", "120.00", currency="USD")]
     row = _row(_week(), papers)
-    assert row.quality is ratio.Quality.ESTIMATED
+    assert row.quality is Quality.ESTIMATED
     assert row.purchases == D("700.00")
     assert "1 invoice in USD not counted" in row.notes
     assert row.excluded[0].total == D("120.00")
@@ -233,7 +234,7 @@ def test_a_usd_invoice_is_excluded_and_the_row_reads_estimated_naming_it():
 
 def test_a_total_typed_by_hand_reads_estimated():
     row = _row(_week(), [_paper("2026-08-26", "700.00", asserted=True)])
-    assert row.quality is ratio.Quality.ESTIMATED
+    assert row.quality is Quality.ESTIMATED
     assert row.purchases == D("700.00")
     assert "1 invoice with a total or VAT entered by hand" in row.notes
     assert row.days[1].invoices[0].quality == "estimated"
@@ -244,14 +245,14 @@ def test_a_total_typed_by_hand_reads_estimated():
 
 def test_precedence_is_unavailable_over_incomplete_over_estimated():
     nothing = _row([], [], latest=datetime.date(2026, 8, 1))
-    assert nothing.quality is ratio.Quality.UNAVAILABLE
+    assert nothing.quality is Quality.UNAVAILABLE
     assert nothing.ratio_pct is None and nothing.net_sales is None
     assert nothing.sales_through == datetime.date(2026, 8, 1)
     assert "no sales loaded and no confirmed purchases 25-31 Aug" in nothing.notes
 
     # Pending papers alone do not make a row available - nothing is counted.
     pending_only = _row([], [_paper("2026-08-26", "300.00", status="awaiting_confirm")])
-    assert pending_only.quality is ratio.Quality.UNAVAILABLE
+    assert pending_only.quality is Quality.UNAVAILABLE
     assert "1 invoice awaiting confirm" in pending_only.notes
 
     # A gap and a pending paper together: incomplete wins, and both sentences ride.
@@ -259,7 +260,7 @@ def test_precedence_is_unavailable_over_incomplete_over_estimated():
     both = _row(
         days, [_paper("2026-08-26", "700.00"), _paper("2026-08-27", "1", status="awaiting_confirm")]
     )
-    assert both.quality is ratio.Quality.INCOMPLETE
+    assert both.quality is Quality.INCOMPLETE
     assert "1 invoice awaiting confirm" in both.notes
 
 
@@ -279,26 +280,26 @@ def test_the_merged_word_is_the_worse_of_the_sales_side_and_the_purchase_side():
         _week(),
         [_paper("2026-08-26", "700.00"), _paper("2026-08-27", "1", status="awaiting_confirm")],
     )
-    assert pending.sales_quality is ratio.Quality.RELIABLE
+    assert pending.sales_quality is Quality.RELIABLE
     assert pending.sales_notes == ()
-    assert pending.quality is ratio.Quality.ESTIMATED
+    assert pending.quality is Quality.ESTIMATED
 
     # A hand-typed total does the same, and is equally not the sales side's.
     asserted = _row(_week(), [_paper("2026-08-26", "700.00", asserted=True)])
-    assert asserted.sales_quality is ratio.Quality.RELIABLE
-    assert asserted.quality is ratio.Quality.ESTIMATED
+    assert asserted.sales_quality is Quality.RELIABLE
+    assert asserted.quality is Quality.ESTIMATED
 
     # A gap in the week is the sales side's own, and both words move.
     gapped = _row(
         [_day(i, "1000.00") for i in (0, 1, 2, 3, 5, 6)], [_paper("2026-08-26", "700.00")]
     )
-    assert gapped.sales_quality is ratio.Quality.INCOMPLETE
-    assert gapped.quality is ratio.Quality.INCOMPLETE
+    assert gapped.sales_quality is Quality.INCOMPLETE
+    assert gapped.quality is Quality.INCOMPLETE
     assert "1 of 7 days has no sales" in gapped.sales_notes
 
     # Sales that are not positive are the sales side's too.
     refunded = _row([_day(0, "-50.00")], [_paper("2026-08-25", "100.00")])
-    assert refunded.sales_quality is ratio.Quality.INCOMPLETE
+    assert refunded.sales_quality is Quality.INCOMPLETE
     assert "net sales are not positive this period" in refunded.sales_notes
 
     # Nothing loaded is the sales side's `unavailable`, papers or no papers.
@@ -306,7 +307,7 @@ def test_the_merged_word_is_the_worse_of_the_sales_side_and_the_purchase_side():
         _row([], []),
         _row([], [_paper("2026-08-26", "700.00")]),
     ):
-        assert row.sales_quality is ratio.Quality.UNAVAILABLE
+        assert row.sales_quality is Quality.UNAVAILABLE
 
     for row in (pending, asserted, gapped, refunded, _row([], []), _row(_week(), [])):
         assert set(row.sales_notes) <= set(row.notes)
@@ -320,7 +321,7 @@ def test_a_lagging_branch_counts_purchases_to_its_own_newest_day_only():
     assert row.purchases == D("500.00")
     assert row.deliveries == 1
     assert row.days_missing == 0
-    assert row.quality is ratio.Quality.RELIABLE
+    assert row.quality is Quality.RELIABLE
     assert row.sales_through == datetime.date(2026, 8, 27)
 
 
@@ -414,7 +415,7 @@ def test_the_chain_total_equals_the_sum_of_the_rows_plus_the_group():
     assert total.net_sales == sum(r.net_sales or D(0) for r in rows) == D("14000.00")
     assert total.purchases == sum(r.purchases for r in rows) + group.purchases == D("1050.00")
     assert total.ratio_pct == D("7.5")
-    assert total.quality is ratio.Quality.INCOMPLETE  # Rolla has nothing: a hole in the chain
+    assert total.quality is Quality.INCOMPLETE  # Rolla has nothing: a hole in the chain
     assert "1 of 3 branches with nothing loaded" in total.notes
     assert "1 invoice on no branch, counted in the total" in total.notes
 
@@ -423,11 +424,11 @@ def test_the_total_is_unavailable_only_when_every_row_is():
     rows = [_row([], [], branch="b1"), _row([], [], branch="b2")]
     assert (
         ratio.chain_total(rows, ratio.unassigned_group([], WEEK, "AED")).quality
-        is ratio.Quality.UNAVAILABLE
+        is Quality.UNAVAILABLE
     )
     mixed = [_row(_week(), [_paper("2026-08-26", "700.00")]), _row([], [], branch="b2", name="x")]
     total = ratio.chain_total(mixed, ratio.unassigned_group([], WEEK, "AED"))
-    assert total.quality is ratio.Quality.INCOMPLETE
+    assert total.quality is Quality.INCOMPLETE
     assert "1 of 2 branches with nothing loaded" in total.notes
 
 

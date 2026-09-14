@@ -36,7 +36,7 @@ from faida_api import menu as M  # noqa: E402
 from faida_api import plates as P  # noqa: E402
 from faida_api import ratio as R  # noqa: E402
 from faida_api import signals as S  # noqa: E402
-from faida_api.ratio import Quality  # noqa: E402
+from faida_api.quality import Quality  # noqa: E402
 
 OUT = sys.argv[1]
 CURRENCY = "AED"
@@ -68,9 +68,9 @@ A28 = datetime.date(2026, 8, 28)
 A29 = datetime.date(2026, 8, 29)
 A30 = datetime.date(2026, 8, 30)
 
-REL = P.PlateQuality.RELIABLE
-EST = P.PlateQuality.ESTIMATED
-INC = P.PlateQuality.INCOMPLETE
+REL = Quality.RELIABLE
+EST = Quality.ESTIMATED
+INC = Quality.INCOMPLETE
 
 MENU_SPEC = [
     ("menu-1", "Karak Tea (Cup)", "Tea Corner", "5.00", 2, REL, (), [

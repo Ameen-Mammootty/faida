@@ -34,10 +34,9 @@ screen load with zero writes to any menu table (the WP-54 rule one layer up).
 
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
-from enum import StrEnum
 
-from .costing import Quality
 from .extraction import units
+from .quality import Quality
 
 #: A plate cost and a margin are money at fils precision, quantized **once,
 #: at the end** (WP-53's rounding rule one layer up): components sum at full
@@ -46,16 +45,6 @@ PLATE_QUANTUM = Decimal("0.001")
 
 #: A margin percentage on a screen: one decimal place, e.g. "64.1".
 PCT_QUANTUM = Decimal("0.1")
-
-
-class PlateQuality(StrEnum):
-    """The plate vocabulary: WP-53's two labels plus the one that means "no
-    number at all". `verified` is absent on purpose, and `component_quality`
-    clamps any input claiming it."""
-
-    RELIABLE = "reliable_with_limitations"
-    ESTIMATED = "estimated"
-    INCOMPLETE = "incomplete"
 
 
 #: The missing-piece sentence for an item with no recipe: incomplete by
@@ -252,7 +241,7 @@ class Plate:
     None and `missing` says why, piece by piece - never a cost of zero, which
     would read as the menu's best margin."""
 
-    quality: PlateQuality
+    quality: Quality
     missing: tuple[str, ...] = ()
     cost_per_portion: Decimal | None = None
     net_price: Decimal | None = None
@@ -262,7 +251,7 @@ class Plate:
 
 
 def no_recipe_plate() -> Plate:
-    return Plate(quality=PlateQuality.INCOMPLETE, missing=(NO_RECIPE,))
+    return Plate(quality=Quality.INCOMPLETE, missing=(NO_RECIPE,))
 
 
 def plate(
@@ -275,7 +264,7 @@ def plate(
     """Sum the components, divide once by the batch yield, margin against the
     net price. Quantized once, at the end."""
     if not components:
-        return Plate(quality=PlateQuality.INCOMPLETE, missing=(EMPTY_RECIPE,))
+        return Plate(quality=Quality.INCOMPLETE, missing=(EMPTY_RECIPE,))
     # One sentence per missing *thing*, not per component that wants it. The
     # real menu draws lemon twice in one dish (7 g in the marinade, 20 g as
     # the wedge), so an unmapped material would otherwise be listed as two
@@ -284,7 +273,7 @@ def plate(
     # so the first line that needs it is the one that names it.
     missing = tuple(dict.fromkeys(c.missing for c in components if c.missing is not None))
     if missing:
-        return Plate(quality=PlateQuality.INCOMPLETE, missing=missing)
+        return Plate(quality=Quality.INCOMPLETE, missing=missing)
 
     batch_cost = sum((c.cost for c in components), Decimal(0))
     cost_per_portion = (batch_cost / yield_portions).quantize(PLATE_QUANTUM, rounding=ROUND_HALF_UP)
@@ -292,9 +281,9 @@ def plate(
     margin = net - cost_per_portion
     margin_pct = (margin / net * 100).quantize(PCT_QUANTUM, rounding=ROUND_HALF_UP)
     quality = (
-        PlateQuality.ESTIMATED
+        Quality.ESTIMATED
         if any(c.quality is Quality.ESTIMATED for c in components)
-        else PlateQuality.RELIABLE
+        else Quality.RELIABLE
     )
     return Plate(
         quality=quality,

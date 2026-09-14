@@ -56,7 +56,7 @@ from .api import _dec, _iso
 from .auth import AuthContext, require_context
 from .db import Database
 from .menu import PriceMove, _menu_context, _plates_for, _pricing, price_moves
-from .ratio import Quality
+from .quality import Quality, worst
 from .sales import _invoice_input, _sales_day_input
 from .signals import _short_branch
 
@@ -291,12 +291,6 @@ def item_answer(
         f"{best.menu_item_name}: sells well{where} but keeps only {kept}% "
         f"against the menu's {menu}%.",
         row,
-    )
-
-
-def _worse(first: Quality, second: Quality) -> Quality:
-    return (
-        first if contribution._QUALITY_RANK[first] <= contribution._QUALITY_RANK[second] else second
     )
 
 
@@ -678,10 +672,10 @@ async def read_dashboard(
     answer_quality = Quality.RELIABLE
     answer_notes: list[str] = []
     if top_branch is not None:
-        answer_quality = _worse(answer_quality, top_branch.quality)
+        answer_quality = worst(answer_quality, top_branch.quality)
         answer_notes.extend(top_branch.notes)
     if top_item is not None:
-        answer_quality = _worse(answer_quality, top_item.quality)
+        answer_quality = worst(answer_quality, top_item.quality)
     if top_branch is None and top_item is None:
         answer_quality = Quality.UNAVAILABLE
 
@@ -742,9 +736,9 @@ async def read_dashboard(
                 1 for row in ratio_rows.values() if row.net_sales is None
             ),
             "quality": (
-                "estimated"
+                Quality.ESTIMATED.value
                 if age is not None and age > FRESHNESS_STALE_DAYS
-                else "reliable_with_limitations"
+                else Quality.RELIABLE.value
             ),
             "sentence": freshness_sentence(newest, today),
         },

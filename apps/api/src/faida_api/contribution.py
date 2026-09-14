@@ -69,11 +69,11 @@ from . import plates
 # worded by one function, so `/sales` and the dashboard can never say the same
 # thing two ways. The quanta and the vocabulary come from there for the same
 # reason - a percentage is a tenth on both screens or on neither.
+from .quality import Quality, total_of, worst
 from .ratio import (
     FILS,
     PCT_QUANTUM,
     Period,
-    Quality,
     Window,
     _plural,
     _short_date,
@@ -98,28 +98,6 @@ DEFAULT_CURRENCY = "AED"
 #: a tuned threshold: it is the precision the numbers are stored at, which is
 #: the only honest place to put the line.
 SOLD_AT_TOLERANCE = FILS
-
-#: Precedence, worst first - `ratio._QUALITY_RANK`'s order, one layer up.
-_QUALITY_RANK = {
-    Quality.UNAVAILABLE: 0,
-    Quality.INCOMPLETE: 1,
-    Quality.ESTIMATED: 2,
-    Quality.RELIABLE: 3,
-}
-
-#: A plate's vocabulary onto a period figure's (C9 extended). `verified` is
-#: absent from both, and `unavailable` is a fact about a branch's sales, never
-#: about a plate.
-_PLATE_QUALITY = {
-    plates.PlateQuality.RELIABLE: Quality.RELIABLE,
-    plates.PlateQuality.ESTIMATED: Quality.ESTIMATED,
-    plates.PlateQuality.INCOMPLETE: Quality.INCOMPLETE,
-}
-
-
-def _worse(first: Quality, second: Quality) -> Quality:
-    return first if _QUALITY_RANK[first] <= _QUALITY_RANK[second] else second
-
 
 # --- inputs -----------------------------------------------------------------
 
@@ -539,8 +517,8 @@ def _row(
     ):
         today_cost = today_plate.cost_per_portion
 
-    quality = _worse(
-        _PLATE_QUALITY[plate.quality],
+    quality = worst(
+        plate.quality,
         Quality.RELIABLE if counted else Quality.INCOMPLETE,
     )
 
@@ -825,10 +803,8 @@ def branch_contribution(
     sales_value = (mapped_value + unmapped_here.value).quantize(FILS)
     costed_share_pct = _pct(costed_value, sales_value)
 
-    cost_quality = (
-        min((r.quality for r in counted), key=lambda q: _QUALITY_RANK[q]) if counted else None
-    )
-    quality = sales_quality if cost_quality is None else _worse(sales_quality, cost_quality)
+    cost_quality = worst(*(r.quality for r in counted)) if counted else None
+    quality = sales_quality if cost_quality is None else worst(sales_quality, cost_quality)
 
     notes = list(sales_notes)
     if costed_share_pct is not None:
@@ -885,16 +861,11 @@ def chain_contribution(
     sales_value = sum((c.sales_value for c in rows), Decimal(0)).quantize(FILS)
     costed_share_pct = _pct(costed_value, sales_value)
 
-    if not rows or all(c.sales_quality is Quality.UNAVAILABLE for c in rows):
-        sales_quality = Quality.UNAVAILABLE
-    elif any(c.sales_quality in (Quality.UNAVAILABLE, Quality.INCOMPLETE) for c in rows):
-        sales_quality = Quality.INCOMPLETE
-    else:
-        sales_quality = min((c.sales_quality for c in rows), key=lambda q: _QUALITY_RANK[q])
+    sales_quality = total_of(c.sales_quality for c in rows)
 
     cost_qualities = [c.cost_quality for c in rows if c.cost_quality is not None]
-    cost_quality = min(cost_qualities, key=lambda q: _QUALITY_RANK[q]) if cost_qualities else None
-    quality = sales_quality if cost_quality is None else _worse(sales_quality, cost_quality)
+    cost_quality = worst(*cost_qualities) if cost_qualities else None
+    quality = sales_quality if cost_quality is None else worst(sales_quality, cost_quality)
 
     unmapped_here = unmapped or Unmapped(
         names=sum(c.unmapped.names for c in rows),

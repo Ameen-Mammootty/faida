@@ -47,7 +47,8 @@ import datetime
 from collections import defaultdict
 from dataclasses import dataclass, field
 from decimal import ROUND_HALF_UP, Decimal
-from enum import StrEnum
+
+from .quality import Quality, total_of
 
 #: A ratio on a screen: one decimal place, "30.4".
 PCT_QUANTUM = Decimal("0.1")
@@ -64,25 +65,6 @@ MAX_PERIOD_DAYS = 92
 
 #: The statuses a paper can be in and still be on its way to counting.
 PENDING_STATUSES = frozenset({"awaiting_confirm", "needs_review"})
-
-
-class Quality(StrEnum):
-    """PRD §24's vocabulary for a period figure. `verified` is absent on
-    purpose: nothing cross-checks a till's figures."""
-
-    RELIABLE = "reliable_with_limitations"
-    ESTIMATED = "estimated"
-    INCOMPLETE = "incomplete"
-    UNAVAILABLE = "unavailable"
-
-
-#: Precedence, worst first (C9 amended).
-_QUALITY_RANK = {
-    Quality.UNAVAILABLE: 0,
-    Quality.INCOMPLETE: 1,
-    Quality.ESTIMATED: 2,
-    Quality.RELIABLE: 3,
-}
 
 
 # --- inputs -----------------------------------------------------------------
@@ -593,13 +575,9 @@ def chain_total(rows: list[BranchRow], unassigned: Unassigned) -> Total:
     ratio = ratio_pct(purchases, net_sales) if with_sales else None
     # The chain figure's own gaps: a branch with nothing loaded is a hole in
     # the total the way a missing day is a hole in a row, so one such branch
-    # among others makes the total incomplete, never merely "unavailable".
-    if not rows or all(r.quality is Quality.UNAVAILABLE for r in rows):
-        quality = Quality.UNAVAILABLE
-    elif any(r.quality in (Quality.UNAVAILABLE, Quality.INCOMPLETE) for r in rows):
-        quality = Quality.INCOMPLETE
-    else:
-        quality = min((r.quality for r in rows), key=lambda q: _QUALITY_RANK[q])
+    # among others makes the total incomplete, never merely "unavailable"
+    # (`quality.total_of`).
+    quality = total_of(r.quality for r in rows)
     notes: list[str] = []
     unavailable = sum(1 for r in rows if r.quality is Quality.UNAVAILABLE)
     if unavailable and rows:
@@ -641,7 +619,7 @@ class TillItemValue:
 class MenuPlate:
     menu_item_id: str
     name: str
-    plate_quality: str  # plates.PlateQuality value
+    plate_quality: str  # a quality.Quality value
     archived: bool = False
 
 
@@ -714,11 +692,11 @@ def coverage(values: list[TillItemValue], plates: dict[str, MenuPlate]) -> Cover
                 plate_quality=plate.plate_quality,
             )
         )
-        if plate.plate_quality == "incomplete":
+        if plate.plate_quality == Quality.INCOMPLETE:
             incomplete_value += item.positive_value
         else:
             costed_value += item.positive_value
-            if plate.plate_quality == "estimated":
+            if plate.plate_quality == Quality.ESTIMATED:
                 estimated_value += item.positive_value
 
     def pct(part: Decimal) -> Decimal | None:

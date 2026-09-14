@@ -16,7 +16,7 @@ import datetime
 from decimal import Decimal
 
 from faida_api import contribution, costing, menu, plates, ratio, signals
-from faida_api.ratio import Quality
+from faida_api.quality import Quality
 
 D = Decimal
 QUSAIS = "b-qusais"
@@ -42,7 +42,7 @@ def _item(
     *,
     cost: str,
     price: str = "35.00",
-    quality: plates.PlateQuality = plates.PlateQuality.RELIABLE,
+    quality: Quality = Quality.RELIABLE,
 ) -> contribution.MenuItem:
     return contribution.MenuItem(
         menu_item_id=menu_item_id,
@@ -322,9 +322,7 @@ def test_an_incomplete_row_never_fires_and_an_estimated_one_says_so():
     rows = _rows(no_qty, _menu(KARAK, CHICKEN))
     assert signals.popular_low_margin(rows, _chain("60.0")) == []
 
-    estimated = _item(
-        "m-chicken", "Chicken 65 Dry", cost="6.000", quality=plates.PlateQuality.ESTIMATED
-    )
+    estimated = _item("m-chicken", "Chicken 65 Dry", cost="6.000", quality=Quality.ESTIMATED)
     rows = _rows(_two_item_week(), _menu(KARAK, estimated))
     [signal] = signals.popular_low_margin(rows, _chain("60.0"))
     assert signal.quality is Quality.ESTIMATED
@@ -818,7 +816,7 @@ def test_price_moves_pairs_the_same_pack_and_names_the_plate_it_moved():
         "m-old": [{"ingredient_id": "ing-milk", "qty": D("60"), "unit": "ml"}],
     }
     cup = plates.Plate(
-        quality=plates.PlateQuality.RELIABLE,
+        quality=Quality.RELIABLE,
         cost_per_portion=D("0.812"),
         net_price=D("9.524"),
         margin=D("8.712"),
@@ -868,7 +866,7 @@ def test_price_moves_refuses_a_delta_across_packs_and_skips_what_did_not_move():
         ]
     }
     plate = plates.Plate(
-        quality=plates.PlateQuality.RELIABLE,
+        quality=Quality.RELIABLE,
         cost_per_portion=D("0.812"),
         net_price=D("9.524"),
         margin=D("8.712"),
@@ -908,7 +906,7 @@ def test_price_moves_orders_newest_first_then_by_what_it_costs_a_plate():
         ]
     }
     plate = plates.Plate(
-        quality=plates.PlateQuality.RELIABLE,
+        quality=Quality.RELIABLE,
         cost_per_portion=D("0.812"),
         net_price=D("9.524"),
         margin=D("8.712"),
