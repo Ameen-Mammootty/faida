@@ -49,7 +49,8 @@ from decimal import ROUND_HALF_UP, Decimal
 from .contribution import _money_words, _pct_words
 from .dashboard import _weekday_date
 from .extraction.constants import PRICE_ALERT_MIN_PCT
-from .ratio import PCT_QUANTUM, Quality, Window, _short_date, window_words
+from .quality import Quality, word
+from .ratio import PCT_QUANTUM, Window, _short_date, window_words
 from .signals import _short_branch
 
 #: The template as Meta holds it (C15.11): one template, one language, edited
@@ -246,9 +247,9 @@ def _quality_clause(total: dict) -> str:
     it twice reads like two different problems."""
     quality = total.get("contribution_quality")
     if quality == Quality.ESTIMATED.value:
-        return " (estimated)"
+        return f" ({word(Quality.ESTIMATED)})"
     if quality == Quality.INCOMPLETE.value:
-        return f" (incomplete: {_first_note(total)})"
+        return f" ({word(Quality.INCOMPLETE)}: {_first_note(total)})"
     return ""
 
 

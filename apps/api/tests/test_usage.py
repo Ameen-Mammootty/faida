@@ -20,6 +20,7 @@ from decimal import Decimal
 import pytest
 
 from faida_api import contribution, costing, plates, ratio, usage
+from faida_api.quality import Quality
 
 D = Decimal
 
@@ -104,7 +105,7 @@ def _item(
     return contribution.MenuItem(
         menu_item_id=menu_item_id,
         name=name,
-        plate=plates.Plate(quality=plates.PlateQuality.RELIABLE, cost_per_portion=D("1.000")),
+        plate=plates.Plate(quality=Quality.RELIABLE, cost_per_portion=D("1.000")),
         selling_price=D(price),
         yield_portions=D(yield_portions),
         vat_rate=D("0.05"),
@@ -301,7 +302,7 @@ def _window(
     end: datetime.date | None = WEEK_TO,
     loaded: bool = True,
     pending: tuple[ratio.PendingPaper, ...] = (),
-    sales_quality: str = ratio.Quality.RELIABLE.value,
+    sales_quality: str = Quality.RELIABLE.value,
     sales_notes: tuple[str, ...] = (),
 ) -> usage.BranchWindow:
     return usage.BranchWindow(
@@ -497,7 +498,7 @@ def test_a_line_with_no_quantity_makes_used_null_for_every_material_it_names():
     assert sugar.used_measured == D("1308")  # the Nido rows that could be counted
     assert sugar.used_measured_words == "1.3 kg"
     assert sugar.gap_base is None and sugar.money is None and sugar.direction is None
-    assert sugar.quality is ratio.Quality.INCOMPLETE
+    assert sugar.quality is Quality.INCOMPLETE
     assert (
         "Karak Tea (Cup) has lines with no quantity, so what the recipes needed "
         "cannot be summed" in sugar.notes
@@ -524,7 +525,7 @@ def test_a_component_in_cups_makes_that_materials_used_null():
     evap = _by(rows, EVAP)
     assert evap.used_base is None
     assert "'cup' does not convert to how Evaporated Milk is measured" in evap.notes
-    assert evap.quality is ratio.Quality.INCOMPLETE
+    assert evap.quality is Quality.INCOMPLETE
     # the other material in the same recipe is unaffected
     assert _by(rows, SUGAR).used_base == D("1600")
 
@@ -547,7 +548,7 @@ def test_a_recipe_written_after_the_period_makes_the_row_estimated():
     rows = _rows([_sales(QUSAIS, menu[CUP], "110")], menu, _karak_paper(), [_window()])
     row = _by(rows, SUGAR)
     assert row.recipe_after_period is True
-    assert row.quality is ratio.Quality.ESTIMATED
+    assert row.quality is Quality.ESTIMATED
     assert "recipe written after this period" in row.notes
 
 
@@ -667,7 +668,7 @@ def test_an_unmeasured_line_makes_bought_null_with_the_rest_measured():
     assert row.bought_measured_words == "50 kg"
     assert row.unmeasured_lines == 1
     assert row.gap_base is None and row.money is None
-    assert row.quality is ratio.Quality.INCOMPLETE
+    assert row.quality is Quality.INCOMPLETE
     assert "1 line could not be measured - see Can't be costed yet" in row.notes
     assert row.lines[1].blocked == costing.Blocked.BARE_CONTAINER.value
 
@@ -685,7 +686,7 @@ def test_an_override_makes_the_purchase_half_estimated():
     rows = _rows([_sales(QUSAIS, menu[CUP], "40")], menu, [line], [_window()])
     row = _by(rows, SUGAR)
     assert row.bought_base == D("50000")
-    assert row.quality is ratio.Quality.ESTIMATED
+    assert row.quality is Quality.ESTIMATED
     assert "a pack size you entered measures 1 line" in row.notes
     assert row.lines[0].pack_source == costing.PackSource.OVERRIDE.value
 
@@ -772,7 +773,7 @@ def test_a_paper_outside_the_branchs_window_is_not_counted():
     assert row.bought_base == D("0")
     assert row.direction == usage.UNDER
     assert "no purchases in this window, 25-31 Aug" in row.notes
-    assert row.quality is ratio.Quality.INCOMPLETE
+    assert row.quality is Quality.INCOMPLETE
 
 
 # --- placement (D3, D6, D11, D12, C14.9) ------------------------------------
@@ -786,7 +787,7 @@ def test_no_pack_mapped_gives_a_row_with_used_and_no_bought():
     assert row.used_words == "13.9 kg"
     assert row.bought_base is None
     assert row.gap_base is None and row.money is None and row.direction is None
-    assert row.quality is ratio.Quality.INCOMPLETE
+    assert row.quality is Quality.INCOMPLETE
     assert "no supplier product is mapped to Atta Flour yet" in row.notes
 
 
@@ -918,7 +919,7 @@ def test_a_line_whose_quantity_cell_was_never_read_is_unmeasured_and_never_zero(
     assert sugar.bought_measured == D("100000")
     assert sugar.bought_measured_words == "100 kg"
     assert sugar.unmeasured_lines == 1
-    assert sugar.quality is ratio.Quality.INCOMPLETE
+    assert sugar.quality is Quality.INCOMPLETE
     assert "1 line could not be measured - see Can't be costed yet" in sugar.notes
     unread = next(entry for entry in sugar.lines if entry.qty is None)
     assert unread.base_qty is None
@@ -1022,14 +1023,14 @@ def test_a_branch_with_purchases_and_no_sales_keeps_purchase_only_rows():
     rolla = _window(
         ROLLA,
         loaded=False,
-        sales_quality=ratio.Quality.UNAVAILABLE.value,
+        sales_quality=Quality.UNAVAILABLE.value,
         sales_notes=("no sales loaded 25-31 Aug",),
     )
     rows = _rows(sales, menu, lines, [_window(), rolla])
     row = _by(rows, SUGAR, ROLLA)
     assert row.bought_base == D("50000")
     assert row.used_base is None and row.gap_base is None and row.money is None
-    assert row.quality is ratio.Quality.UNAVAILABLE
+    assert row.quality is Quality.UNAVAILABLE
     assert any("no sales loaded" in note for note in row.notes)
 
     chain = usage.chain_material_rows(
@@ -1043,7 +1044,7 @@ def test_a_branch_with_purchases_and_no_sales_keeps_purchase_only_rows():
     sugar = next(r for r in chain if r.ingredient_id == SUGAR)
     assert sugar.bought_base == D("150000")  # D12: the purchase-only bought is in
     assert sugar.used_base == D("5708")
-    assert sugar.quality is ratio.Quality.UNAVAILABLE
+    assert sugar.quality is Quality.UNAVAILABLE
     assert "Rolla: no sales loaded" in sugar.notes
 
 
@@ -1109,8 +1110,8 @@ def test_a_stale_price_makes_the_money_estimated_and_says_so():
     rows = _rows(sales, menu, lines, [_window()], stale=frozenset({SUGAR}))
     row = _by(rows, SUGAR)
     assert row.money == D("216.87")
-    assert row.price_quality == ratio.Quality.ESTIMATED.value
-    assert row.quality is ratio.Quality.ESTIMATED
+    assert row.price_quality == Quality.ESTIMATED.value
+    assert row.quality is Quality.ESTIMATED
     assert "at an estimated AED 2.30 per kg on 31 Aug 2026" in row.notes
 
 
@@ -1128,7 +1129,7 @@ def test_a_pending_paper_makes_the_purchase_half_estimated_in_the_ratios_words()
     )
     rows = _rows(sales, menu, lines, [_window(pending=pending)])
     row = _by(rows, SUGAR)
-    assert row.quality is ratio.Quality.ESTIMATED
+    assert row.quality is Quality.ESTIMATED
     assert "1 invoice awaiting confirm" in row.notes
 
 
@@ -1138,17 +1139,17 @@ def test_the_three_halves_take_the_worst_word_and_never_verified():
     half is about the recipe and the pack."""
     sales, menu, lines = _karak_week()
     incomplete_sales = _window(
-        sales_quality=ratio.Quality.INCOMPLETE.value,
+        sales_quality=Quality.INCOMPLETE.value,
         sales_notes=("2 of 7 days have no sales",),
     )
     rows = _rows(sales, menu, lines, [incomplete_sales], stale=frozenset({SUGAR}))
     row = _by(rows, SUGAR)
     # incomplete (sales) is worse than estimated (the stale price)
-    assert row.quality is ratio.Quality.INCOMPLETE
+    assert row.quality is Quality.INCOMPLETE
     assert "2 of 7 days have no sales" in row.notes
 
     clean = _rows(sales, menu, lines, [_window()])
-    assert _by(clean, SUGAR).quality is ratio.Quality.RELIABLE
+    assert _by(clean, SUGAR).quality is Quality.RELIABLE
     assert all(r.quality.value != "verified" for r in clean)
 
 
@@ -1220,7 +1221,7 @@ def test_the_chain_names_a_branch_it_left_out():
     sugar = next(r for r in chain if r.ingredient_id == SUGAR)
     assert sugar.used_base == D("5708")  # Al Qusais alone
     assert sugar.bought_base == D("150000")  # both branches still bought
-    assert sugar.quality is ratio.Quality.INCOMPLETE
+    assert sugar.quality is Quality.INCOMPLETE
     assert "Rolla not included: lines with no quantity" in sugar.notes
 
 
@@ -1495,14 +1496,14 @@ def _every_sentence() -> list[str]:
                     undated=False,
                 ),
             ),
-            sales_quality=ratio.Quality.INCOMPLETE.value,
+            sales_quality=Quality.INCOMPLETE.value,
             sales_notes=("2 of 7 days have no sales",),
         ),
         _window(ROLLA, start=datetime.date(2026, 8, 30), end=datetime.date(2026, 8, 31)),
         _window(
             NAHDA,
             loaded=False,
-            sales_quality=ratio.Quality.UNAVAILABLE.value,
+            sales_quality=Quality.UNAVAILABLE.value,
             sales_notes=("no sales loaded and no confirmed purchases 25-31 Aug",),
         ),
     ]

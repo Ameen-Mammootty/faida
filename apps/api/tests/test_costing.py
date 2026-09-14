@@ -20,7 +20,8 @@ from fastapi import FastAPI
 
 from faida_api import costing
 from faida_api.api import router as api_router
-from faida_api.costing import Blocked, PackSource, Quality
+from faida_api.costing import Blocked, PackSource
+from faida_api.quality import Quality
 
 from .conftest import AUTH, DEMO_TENANT_ID, requires_db, wire_auth
 

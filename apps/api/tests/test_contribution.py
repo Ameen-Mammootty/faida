@@ -15,6 +15,7 @@ import datetime
 from decimal import Decimal
 
 from faida_api import contribution, plates, ratio
+from faida_api.quality import Quality
 
 D = Decimal
 QUSAIS = "b-qusais"
@@ -34,11 +35,11 @@ def _on(offset: int) -> datetime.date:
 def _plate(
     cost: str | None = "6.204",
     *,
-    quality: plates.PlateQuality = plates.PlateQuality.RELIABLE,
+    quality: Quality = Quality.RELIABLE,
     missing: tuple[str, ...] = (),
 ) -> plates.Plate:
     if cost is None:
-        return plates.Plate(quality=plates.PlateQuality.INCOMPLETE, missing=missing)
+        return plates.Plate(quality=Quality.INCOMPLETE, missing=missing)
     return plates.Plate(quality=quality, cost_per_portion=D(cost))
 
 
@@ -48,7 +49,7 @@ def _item(
     *,
     cost: str | None = "6.204",
     price: str = "35.00",
-    quality: plates.PlateQuality = plates.PlateQuality.RELIABLE,
+    quality: Quality = Quality.RELIABLE,
     missing: tuple[str, ...] = (),
     components: tuple[contribution.RecipeComponent, ...] = (),
     recipe_version: int | None = 1,
@@ -139,7 +140,7 @@ def _branch(
     rows,
     *,
     branch_id: str = QUSAIS,
-    quality: ratio.Quality = ratio.Quality.RELIABLE,
+    quality: Quality = Quality.RELIABLE,
     notes: tuple[str, ...] = (),
     unmapped: contribution.Unmapped | None = None,
 ) -> contribution.Contribution:
@@ -171,7 +172,7 @@ def test_the_karak_contributes_to_the_fil_by_hand():
     assert row.contribution_pct == D("81.4")
     assert row.avg_sold_at == D("33.333")
     assert row.net_price == D("33.333")  # 35.00 inclusive of 5% VAT
-    assert row.quality is ratio.Quality.RELIABLE
+    assert row.quality is Quality.RELIABLE
     assert row.notes == (
         "costed at the prices in force on 31 Aug 2026",
         "recipe version 1",
@@ -273,7 +274,7 @@ def test_a_line_with_no_quantity_leaves_the_row_incomplete_with_no_numbers():
     quantity is never derived from money ÷ menu price (C12.6)."""
     (row,) = _rows([_from_lines([("10", "200.00"), (None, "60.00")])])
 
-    assert row.quality is ratio.Quality.INCOMPLETE
+    assert row.quality is Quality.INCOMPLETE
     assert row.qty_sold is None
     assert row.qty_refunded is None
     assert row.cost_per_portion is None
@@ -300,7 +301,7 @@ def test_an_incomplete_plate_produces_one_row_with_every_number_null():
     (row,) = _rows([_day(qty_sold="412", positive="13733.33")], menu)
 
     assert row.plate_quality == "incomplete"
-    assert row.quality is ratio.Quality.INCOMPLETE
+    assert row.quality is Quality.INCOMPLETE
     assert row.cost_per_portion is None
     assert row.cost is None
     assert row.contribution is None
@@ -346,7 +347,7 @@ def test_an_unmapped_till_name_is_a_note_and_not_a_label():
 
     assert len(rows) == 1  # the unmapped name produces no row at all
     branch = _branch(rows, unmapped=contribution.unmapped(days))
-    assert branch.quality is ratio.Quality.RELIABLE
+    assert branch.quality is Quality.RELIABLE
     assert branch.unmapped == contribution.Unmapped(names=1, value=D("2000.00"))
     assert "1 till name with sales is not mapped to a menu item" in branch.notes
     assert branch.costed_share_pct == D("87.3")  # 13733.33 / 15733.33
@@ -389,7 +390,7 @@ def test_one_plu_with_no_quantity_lowers_the_share_and_not_the_label():
     )
     branch = _branch(rows)
 
-    assert branch.quality is ratio.Quality.RELIABLE
+    assert branch.quality is Quality.RELIABLE
     assert branch.contribution == D("11177.28")
     assert branch.costed_share_pct == D("77.4")
     assert "covers 77% of this branch's sales value" in branch.notes
@@ -401,7 +402,7 @@ def test_one_estimated_plate_makes_the_whole_branch_estimated():
     its plate's label up."""
     menu = _menu(
         _item(),
-        _item("m-chicken", "Chicken 65 Dry", cost="9.100", quality=plates.PlateQuality.ESTIMATED),
+        _item("m-chicken", "Chicken 65 Dry", cost="9.100", quality=Quality.ESTIMATED),
     )
     rows = _rows(
         [
@@ -417,8 +418,8 @@ def test_one_estimated_plate_makes_the_whole_branch_estimated():
     )
     branch = _branch(rows)
 
-    assert branch.cost_quality is ratio.Quality.ESTIMATED
-    assert branch.quality is ratio.Quality.ESTIMATED
+    assert branch.cost_quality is Quality.ESTIMATED
+    assert branch.quality is Quality.ESTIMATED
 
 
 def test_the_branch_label_is_the_worse_of_its_sales_side_and_its_plates():
@@ -426,21 +427,21 @@ def test_the_branch_label_is_the_worse_of_its_sales_side_and_its_plates():
     rows = _rows([_day()])
     gapped = _branch(
         rows,
-        quality=ratio.Quality.INCOMPLETE,
+        quality=Quality.INCOMPLETE,
         notes=("2 of 7 days have no sales",),
     )
 
-    assert gapped.quality is ratio.Quality.INCOMPLETE
+    assert gapped.quality is Quality.INCOMPLETE
     assert "2 of 7 days have no sales" in gapped.notes
 
 
 def test_a_branch_with_nothing_loaded_reads_unavailable():
     branch = _branch(
         [],
-        quality=ratio.Quality.UNAVAILABLE,
+        quality=Quality.UNAVAILABLE,
         notes=("no sales loaded 25-31 Aug",),
     )
-    assert branch.quality is ratio.Quality.UNAVAILABLE
+    assert branch.quality is Quality.UNAVAILABLE
     assert branch.contribution is None
     assert branch.contribution_pct is None
 
@@ -531,7 +532,7 @@ def test_a_chain_row_sums_only_the_pairs_that_produced_numbers_and_names_the_res
     assert chain_row.qty_sold == D("412.000")
     assert chain_row.net_item_sales == D("13733.33")
     assert chain_row.contribution == D("11177.28")
-    assert chain_row.quality is ratio.Quality.RELIABLE
+    assert chain_row.quality is Quality.RELIABLE
     assert "Rolla Branch not included in this row, holding AED 6,000 of sales" in chain_row.notes
 
 
@@ -555,12 +556,12 @@ def test_the_chain_label_follows_the_sales_side_and_the_worst_plate():
     menu, days, rows = _two_branch_chain()
     branches = [
         _branch(rows, branch_id=QUSAIS),
-        _branch(rows, branch_id=ROLLA, quality=ratio.Quality.UNAVAILABLE),
+        _branch(rows, branch_id=ROLLA, quality=Quality.UNAVAILABLE),
     ]
     chain = contribution.chain_contribution(branches)
 
-    assert chain.sales_quality is ratio.Quality.INCOMPLETE
-    assert chain.quality is ratio.Quality.INCOMPLETE
+    assert chain.sales_quality is Quality.INCOMPLETE
+    assert chain.quality is Quality.INCOMPLETE
     assert "1 of 2 branches with nothing loaded" in chain.notes
     assert contribution.OVERHEADS_NOTE in chain.notes
 
@@ -710,10 +711,10 @@ def _contribution(name: str, pct: str | None) -> contribution.Contribution:
         costed_value=D("1000.00"),
         sales_value=D("1000.00"),
         costed_share_pct=D("100.0"),
-        quality=ratio.Quality.RELIABLE,
+        quality=Quality.RELIABLE,
         notes=(),
-        sales_quality=ratio.Quality.RELIABLE,
-        cost_quality=ratio.Quality.RELIABLE,
+        sales_quality=Quality.RELIABLE,
+        cost_quality=Quality.RELIABLE,
         items=1,
         items_without_numbers=0,
         unmapped=contribution.Unmapped(0, D(0)),

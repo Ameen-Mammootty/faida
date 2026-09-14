@@ -10,3 +10,11 @@ This glossary holds the words the product uses and the words it refuses, so a sc
 **Filing**:
 The one step that turns a normalized invoice and a supplier's catalog into what the database stores and the reply reads: the checks with snapped folded in, the price alerts, the derived confidence and the line rows. Runs the same for a photo, a correction and a typed invoice.
 _Avoid_: Processing, post-processing, enrichment, validation (that is the arithmetic alone)
+
+### Figures
+
+**Quality word**:
+The one of four words every derived figure carries, in PRD §24's vocabulary: reliable with limitations, estimated, incomplete, unavailable.
+A figure is never greener than its worst input (C9), so the word of a derived figure is the worst of its inputs' words, in that precedence, worst first; a total over rows reads unavailable only when every row is and incomplete when any row is a hole among others.
+Owned once, in `quality.py`: the words, their order and their English; which of the four a layer may produce is that layer's rule.
+_Avoid_: Verified (nothing corroborates a pack size or cross-checks a till), complete (coverage is *costed*), confidence (that is the extraction's own derived number, not this word), label or badge as the noun

@@ -66,7 +66,8 @@ from .contribution import (
     _price_words,
 )
 from .extraction.constants import PRICE_ALERT_MIN_PCT
-from .ratio import FILS, PCT_QUANTUM, Period, Quality, Window, _short_date, window_words
+from .quality import Quality, word, worst
+from .ratio import FILS, PCT_QUANTUM, Period, Window, _short_date, window_words
 
 if TYPE_CHECKING:  # pragma: no cover - the type only; `menu.py` is a router
     from .menu import PriceMove
@@ -107,9 +108,6 @@ MOVE_ALSO_NAMED = 3
 KIND_POPULAR_LOW_MARGIN = "popular_low_margin"
 KIND_PRICE_SPIKE = "price_spike"
 KIND_BRANCH_GAP = "branch_gap"
-
-#: The one word beside a number that changes what it means (C13.3).
-ESTIMATED_WORD = "estimated"
 
 #: The labels a signal may fire on. `incomplete` and `unavailable` never do.
 _TRUSTED = frozenset({Quality.RELIABLE, Quality.ESTIMATED})
@@ -205,7 +203,7 @@ def _estimated(detail: str, quality: Quality) -> str:
     """The word rides on the detail, in the sentence's own words, when the
     signal fired on an estimated input (C13.3): the screen may show a chip
     beside it, but the wire already says it."""
-    return f"{detail} ({ESTIMATED_WORD})" if quality is Quality.ESTIMATED else detail
+    return f"{detail} ({word(Quality.ESTIMATED)})" if quality is Quality.ESTIMATED else detail
 
 
 def _quality(*inputs: Quality) -> Quality:
@@ -213,7 +211,7 @@ def _quality(*inputs: Quality) -> Quality:
     reliable. The benchmark is an input too - a chain figure carrying a
     sibling's gap is a partial average, and a comparison against a partial
     average is an estimate the sentence should admit (C13.3a)."""
-    return Quality.ESTIMATED if any(q is not Quality.RELIABLE for q in inputs) else Quality.RELIABLE
+    return Quality.RELIABLE if worst(*inputs) is Quality.RELIABLE else Quality.ESTIMATED
 
 
 # --- popular and low-margin (C13.2) ----------------------------------------
@@ -620,7 +618,7 @@ def price_spike(
         stake, total_portions, weighed = weighing.money_at_stake, weighing.portions, weighing.rows
 
         line_qualities = [
-            Quality.ESTIMATED if line.quality == ESTIMATED_WORD else Quality.RELIABLE
+            Quality.ESTIMATED if line.quality == Quality.ESTIMATED.value else Quality.RELIABLE
             for line in (move.current, move.previous)
         ]
         quality = _quality(*line_qualities, *(r.quality for r in weighed))

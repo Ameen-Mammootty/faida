@@ -26,6 +26,7 @@ from faida_api import costing, plates, takings
 from faida_api.extraction.filing import price_alerts
 from faida_api.extraction.schema import ExtractedInvoice, ExtractedLine
 from faida_api.matching import match_supplier, snap_item
+from faida_api.quality import Quality
 from faida_api.replies import ICON_DOWN, ICON_UP, render_price_alert
 from faida_api.sales import router as sales_router
 from faida_api.storage import Storage
@@ -439,7 +440,7 @@ async def test_the_staged_menu_costs_to_the_fils(db):
     }
     for name, (cost, net, margin, pct) in expected.items():
         answer = await _plate(db, name)
-        assert answer.quality is plates.PlateQuality.RELIABLE, name
+        assert answer.quality is Quality.RELIABLE, name
         assert answer.cost_per_portion == Decimal(cost), name
         assert answer.net_price == Decimal(net), name
         assert answer.margin == Decimal(margin), name
@@ -467,7 +468,7 @@ async def test_the_paratha_shows_no_cost_and_names_what_it_is_waiting_for(db):
     menu price and no numbers at all - never a cheap plate."""
     await apply_demo_seed(db)
     answer = await _plate(db, "Paratha")
-    assert answer.quality is plates.PlateQuality.INCOMPLETE
+    assert answer.quality is Quality.INCOMPLETE
     assert answer.cost_per_portion is None and answer.margin is None
     assert answer.missing == ("no supplier product is mapped to Atta Flour yet",)
     assert (

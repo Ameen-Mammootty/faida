@@ -20,8 +20,8 @@ from fastapi import FastAPI
 
 from faida_api import plates
 from faida_api.api import router as api_router
-from faida_api.costing import Quality
 from faida_api.menu import router as menu_router
+from faida_api.quality import Quality
 
 from .conftest import AUTH, DEMO_TENANT_ID, requires_db, wire_auth
 
@@ -50,8 +50,12 @@ def test_no_plate_vocabulary_can_say_verified():
     """The pin (WP-53's rule one layer up): even a line whose stored quality
     claimed 'verified' - which no write path produces - reads *reliable with
     limitations* at best, because nothing corroborates a pack size."""
-    assert "verified" not in [q.value for q in plates.PlateQuality]
+    assert "verified" not in [q.value for q in Quality]
     assert plates.component_quality("verified") is Quality.RELIABLE
+    # A plate is never unavailable either: that is a fact about a branch's
+    # sales, and the clamp lets only *estimated* through from a stored word.
+    assert plates.component_quality("unavailable") is Quality.RELIABLE
+    assert plates.component_quality("incomplete") is Quality.RELIABLE
     assert plates.component_quality(None) is Quality.RELIABLE
     assert plates.component_quality("estimated") is Quality.ESTIMATED
 
@@ -68,7 +72,7 @@ def test_plate_arithmetic_by_hand_quantized_once():
         selling_price=Decimal("10.00"),
         vat_rate=Decimal("0.05"),
     )
-    assert result.quality is plates.PlateQuality.RELIABLE
+    assert result.quality is Quality.RELIABLE
     assert result.cost_per_portion == Decimal("0.752")
     assert result.net_price == Decimal("9.524")
     assert result.margin == Decimal("8.772")
@@ -86,7 +90,7 @@ def test_one_estimated_component_makes_the_plate_estimated():
         selling_price=Decimal("10.00"),
         vat_rate=Decimal("0.05"),
     )
-    assert result.quality is plates.PlateQuality.ESTIMATED
+    assert result.quality is Quality.ESTIMATED
 
 
 def test_a_missing_component_means_no_numbers_at_all():
@@ -102,7 +106,7 @@ def test_a_missing_component_means_no_numbers_at_all():
         selling_price=Decimal("10.00"),
         vat_rate=Decimal("0.05"),
     )
-    assert result.quality is plates.PlateQuality.INCOMPLETE
+    assert result.quality is Quality.INCOMPLETE
     assert result.missing == ("no supplier product is mapped to Saffron yet",)
     assert result.cost_per_portion is None
     assert result.margin is None
@@ -183,7 +187,7 @@ def test_an_empty_version_is_incomplete_never_pure_margin():
     result = plates.plate(
         [], yield_portions=Decimal("1"), selling_price=Decimal("10.00"), vat_rate=None
     )
-    assert result.quality is plates.PlateQuality.INCOMPLETE
+    assert result.quality is Quality.INCOMPLETE
     assert result.missing == (plates.EMPTY_RECIPE,)
     assert result.margin is None
 

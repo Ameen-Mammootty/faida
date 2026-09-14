@@ -47,6 +47,7 @@ from .contribution import _price_words
 from .dashboard import _branch_ratio_rows, _item_sales, _menu_items
 from .db import Database
 from .menu import _menu_context
+from .quality import word
 from .ratio import _plural, window_words
 from .sales import _invoice_input, _sales_day_input
 
@@ -553,13 +554,6 @@ def usage_payload(blocks: UsageBlocks) -> dict:
 # --- layer three: the printout ----------------------------------------------
 
 
-def _quality_word(quality: ratio.Quality) -> str:
-    """The C9 vocabulary as a person reads it: "reliable with limitations",
-    "estimated", "incomplete", "unavailable". The words are the enum's own -
-    the underscores are how it is stored, not how it is said."""
-    return quality.value.replace("_", " ")
-
-
 def _figure(words: str | None, hole: str | None) -> str:
     """A figure, or its reason in the hole and no number - never a dash on its
     own where a reader could take it for zero (§3.1)."""
@@ -580,7 +574,7 @@ def _row_lines(row: usage.MaterialRow, *, position: str, currency: str) -> list[
     single-delivery sentence, the recipe sentence - are printed in the order
     `usage.py` composed them.
     """
-    out = [f"{position} {row.ingredient_name} - {_quality_word(row.quality)}"]
+    out = [f"{position} {row.ingredient_name} - {word(row.quality)}"]
     figures = [
         f"recipes needed {_figure(row.used_words, row.used_hole)}",
         f"bought {_figure(row.bought_words, row.bought_hole)}",

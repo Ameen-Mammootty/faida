@@ -36,7 +36,7 @@ from faida_api import menu as M  # noqa: E402
 from faida_api import plates as P  # noqa: E402
 from faida_api import ratio as R  # noqa: E402
 from faida_api import signals as S  # noqa: E402
-from faida_api.ratio import Quality  # noqa: E402
+from faida_api.quality import Quality  # noqa: E402
 
 OUT = sys.argv[1]
 CURRENCY = "AED"
@@ -68,9 +68,9 @@ A28 = datetime.date(2026, 8, 28)
 A29 = datetime.date(2026, 8, 29)
 A30 = datetime.date(2026, 8, 30)
 
-REL = P.PlateQuality.RELIABLE
-EST = P.PlateQuality.ESTIMATED
-INC = P.PlateQuality.INCOMPLETE
+REL = Quality.RELIABLE
+EST = Quality.ESTIMATED
+INC = Quality.INCOMPLETE
 
 MENU_SPEC = [
     ("menu-1", "Karak Tea (Cup)", "Tea Corner", "5.00", 2, REL, (), [
@@ -632,7 +632,7 @@ def payload(*, menu, sales, invoices, today, approvals, papers, moves, scope_id=
         "answer": {"branch": branch_sentence, "item": item_sentence, "quality": answer_quality.value, "notes": notes},
         "freshness": {"sales_through": iso(newest), "sales_age_days": age, "last_purchase_on": iso(last_purchase),
                       "branches_without_sales": sum(1 for r in ratio_rows.values() if r.net_sales is None),
-                      "quality": "estimated" if age is not None and age > 7 else "reliable_with_limitations",
+                      "quality": Quality.ESTIMATED.value if age is not None and age > 7 else Quality.RELIABLE.value,
                       "sentence": freshness_sentence(newest, today)},
         "latest_day": latest_day,
         "approvals": {**approvals[scope_id or ""], "invoices": papers if approvals[scope_id or ""]["count"] else []},

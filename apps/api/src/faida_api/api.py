@@ -109,6 +109,7 @@ from .matching import (
     propose_ingredients,
 )
 from .provenance import Origin, initial
+from .quality import Quality
 from .replies import DEFAULT_CURRENCY, compose_cash_approved_notice
 
 logger = logging.getLogger(__name__)
@@ -1263,7 +1264,7 @@ def _material_price(row: asyncpg.Record, stale_line: asyncpg.Record | None = Non
         "newer_uncosted": None,
     }
     if stale_line is not None:
-        payload["quality"] = costing.Quality.ESTIMATED.value
+        payload["quality"] = Quality.ESTIMATED.value
         payload["newer_uncosted"] = newer_uncosted_summary(stale_line)
     return payload
 
