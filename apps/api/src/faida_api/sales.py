@@ -459,17 +459,24 @@ def _today() -> datetime.date:
     return datetime.datetime.now(datetime.UTC).date()
 
 
+def _refused(error: ratio.PeriodError) -> HTTPException:
+    """The period rule's refusal as the 422 every period route answers, in
+    the rule's own sentence (M9 C6 extended): `/sales/branches`, `/sales/coverage`,
+    `/sales/days` and the dashboard all say the same words."""
+    return HTTPException(status_code=422, detail=str(error))
+
+
 async def _period(
     db: Database, tenant_id: str, date_from: datetime.date | None, date_to: datetime.date | None
 ) -> ResolvedPeriod:
-    """The period a read covers, its `default` flag, the tenant's newest
-    loaded day (the freshness fact every period line states), and the months
-    that hold sales (the picker's choices, WP-84 review) - `period_read.resolve`,
-    the rule's refusal turned into the 422 every period route answers."""
+    """`period_read.resolve` for the two routes that need the period and
+    its facts but not the full read - the period, its `default` flag, the
+    newest loaded day overall and per branch, the months that hold sales -
+    with the rule's refusal turned into the 422."""
     try:
         return await resolve(db, tenant_id, today=_today(), date_from=date_from, date_to=date_to)
     except ratio.PeriodError as error:
-        raise HTTPException(status_code=422, detail=str(error)) from error
+        raise _refused(error) from error
 
 
 def _period_json(read: ResolvedPeriod) -> dict:
@@ -572,7 +579,7 @@ async def sales_by_branch(
             db, ctx.tenant_id, today=_today(), date_from=date_from, date_to=date_to
         )
     except ratio.PeriodError as error:
-        raise HTTPException(status_code=422, detail=str(error)) from error
+        raise _refused(error) from error
     rows = ratio.rank(list(read.ratio_rows.values()))
     unassigned, total = read.unassigned, read.ratio_total
     return {

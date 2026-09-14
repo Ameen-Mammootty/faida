@@ -534,9 +534,9 @@ async def test_a_blocked_purchase_after_the_period_does_not_mark_the_plate_stale
     }
     assert bounded == {}
 
-    _, _, plate_by_item, _, _, _ = await costed_menu(db, TENANT)
+    plate_by_item = (await costed_menu(db, TENANT)).plate_by_item
     assert plate_by_item[scenario["item_id"]].quality.value == "estimated"
-    _, _, as_of_plates, _, _, _ = await costed_menu(db, TENANT, as_of=AS_OF)
+    as_of_plates = (await costed_menu(db, TENANT, as_of=AS_OF)).plate_by_item
     assert as_of_plates[scenario["item_id"]].quality.value == "reliable_with_limitations"
     assert as_of_plates[scenario["item_id"]].cost_per_portion == Decimal("0.752")
 

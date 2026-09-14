@@ -15,11 +15,11 @@ Nothing is computed here that a pure module already computes: the league
 **calls** `ratio.period_row`, `unassigned_group` and `chain_total` (a second
 ratio is a contract breach, C12.9), contribution comes from `contribution`,
 the signals from `signals`, the price moves from `menu.price_moves`, and the
-period rule from `ratio.resolve_period`, which `sales.py` calls too. This
-module reads, adapts rows into those modules' inputs, composes the few
-sentences that are about the whole screen (the answer, the freshness line),
-and serialises - money as strings, percentages to a tenth as strings, dates
-ISO (C4, C11).
+period rule from `ratio.resolve_period` through `period_read.resolve`, the
+way `sales.py` reaches it too. This module takes the period read, adds its
+own three reads, composes the few sentences that are about the whole screen
+(the answer, the freshness line), and serialises - money as strings,
+percentages to a tenth as strings, dates ISO (C4, C11).
 
 The inputs are the period read (`period_read.read_period`, 2026-09-14):
 one period, one set of clipped windows, one costed menu and the item sales,

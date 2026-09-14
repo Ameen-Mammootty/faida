@@ -206,10 +206,12 @@ async def usage_inputs(
 
     Every window, every portion and every price therefore comes from the
     function that already owns it, so this printout and the dashboard above it
-    cannot disagree about a figure they both show. The dates arrive already
-    passed through the period rule by the command, so the door's own pass is
-    the same answer; `today` matters only to a default period, which this
-    printout never asks for.
+    cannot disagree about a figure they both show. The door runs the period
+    rule (`ratio.resolve_period`) and raises `ratio.PeriodError` for a span
+    it refuses - reversed, or longer than 92 days: the command has already
+    refused those in the same words, and a phase-two caller inherits the
+    raise. `today` matters only to a default period, which this printout
+    never asks for.
     """
     read = await read_period(db, tenant_id, today=date_to, date_from=date_from, date_to=date_to)
     period, names = read.period, read.names

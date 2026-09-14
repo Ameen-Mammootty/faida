@@ -164,38 +164,38 @@ async def read_period(
     currency = await db.tenant_currency(tenant_id) or ""
     branches = tuple(await db.list_branches(tenant_id=tenant_id))
 
-    days = tuple(
-        sales_day_input(row)
+    days = [
+        _sales_day_input(row)
         for row in await db.list_sales_days(
             tenant_id=tenant_id, date_from=period.start, date_to=period.end
         )
-    )
-    invoices = tuple(
-        invoice_input(row)
+    ]
+    invoices = [
+        _invoice_input(row)
         for row in await db.list_period_invoices(
             tenant_id=tenant_id, date_from=period.start, date_to=period.end
         )
-    )
+    ]
     ratio_rows = {
         branch["id"]: ratio.period_row(
             branch_id=branch["id"],
             branch_name=branch["name"],
-            days=list(days),
-            invoices=list(invoices),
+            days=days,
+            invoices=invoices,
             period=period,
             tenant_currency=currency,
             latest_sales_day=resolved.newest_by_branch.get(branch["id"]),
         )
         for branch in branches
     }
-    unassigned = ratio.unassigned_group(list(invoices), period, currency)
+    unassigned = ratio.unassigned_group(invoices, period, currency)
     ratio_total = ratio.chain_total(list(ratio_rows.values()), unassigned)
 
     menu = await costed_menu(db, tenant_id, as_of=period.end)
-    items = menu_items(menu)
+    items = _menu_items(menu)
 
     sales = tuple(
-        item_sales_input(row)
+        _item_sales_input(row)
         for row in await db.list_period_item_sales(
             tenant_id=tenant_id, date_from=period.start, date_to=period.end
         )
@@ -206,8 +206,8 @@ async def read_period(
         resolved=resolved,
         currency=currency,
         branches=branches,
-        days=days,
-        invoices=invoices,
+        days=tuple(days),
+        invoices=tuple(invoices),
         ratio_rows=ratio_rows,
         unassigned=unassigned,
         ratio_total=ratio_total,
@@ -217,10 +217,10 @@ async def read_period(
     )
 
 
-# --- adapters: rows into the pure modules' inputs ------------------------------
+# --- adapters: rows into the pure modules' inputs (the door's implementation) ---
 
 
-def sales_day_input(row: asyncpg.Record) -> ratio.SalesDay:
+def _sales_day_input(row: asyncpg.Record) -> ratio.SalesDay:
     return ratio.SalesDay(
         branch_id=row["branch_id"],
         business_date=row["business_date"],
@@ -230,7 +230,7 @@ def sales_day_input(row: asyncpg.Record) -> ratio.SalesDay:
     )
 
 
-def invoice_input(row: asyncpg.Record) -> ratio.Invoice:
+def _invoice_input(row: asyncpg.Record) -> ratio.Invoice:
     provenance = row["provenance"] or {}
     asserted = any(key in ("total", "tax") for key in asserted_fields(provenance))
     return ratio.Invoice(
@@ -249,7 +249,7 @@ def invoice_input(row: asyncpg.Record) -> ratio.Invoice:
     )
 
 
-def item_sales_input(row: asyncpg.Record) -> contribution.ItemSales:
+def _item_sales_input(row: asyncpg.Record) -> contribution.ItemSales:
     return contribution.ItemSales(
         branch_id=row["branch_id"],
         business_date=row["business_date"],
@@ -266,7 +266,7 @@ def item_sales_input(row: asyncpg.Record) -> contribution.ItemSales:
     )
 
 
-def menu_items(menu: CostedMenu) -> dict[str, contribution.MenuItem]:
+def _menu_items(menu: CostedMenu) -> dict[str, contribution.MenuItem]:
     """The menu as `contribution` reads it: each item's as-of plate, its
     current recipe version, and every component with the invoice line behind
     the price that costed it (C12.4a). The batch cost is the same

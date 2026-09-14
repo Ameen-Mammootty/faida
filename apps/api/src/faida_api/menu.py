@@ -410,8 +410,9 @@ async def costed_menu(
     item row, each item's current components, each item's plate answer, the
     VAT rate, and the price row each material was costed from. Both menu
     reads - the list and the money moment - derive from this same bundle, so
-    they can never disagree on what a plate earns; the dashboard, the sales
-    screen and the usage printout read it through `period_read.read_period`.
+    they can never disagree on what a plate earns. The menu screens call it
+    for today's plates; a period screen reads it as of the period's end
+    through `period_read.read_period`.
 
     `as_of` is passed straight to `pricing` (M9 C12.4). The **recipe** is
     always the current version even then, by decision: recipes are loaded at
