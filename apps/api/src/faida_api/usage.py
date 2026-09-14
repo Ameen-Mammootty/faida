@@ -184,7 +184,7 @@ class PurchaseLine:
 
 @dataclass(frozen=True)
 class MaterialPrice:
-    """The price a material's gap is valued at: what `menu._menu_context`
+    """The price a material's gap is valued at: what `menu.costed_menu`
     holds for the ingredient, costed as of the **period's end** for every
     branch (C14.7, C12.4's rule).
 

@@ -56,7 +56,7 @@ import re
 import uuid
 from collections import defaultdict
 from decimal import Decimal
-from typing import Annotated, Literal, NamedTuple
+from typing import Annotated, Literal
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, UploadFile
@@ -68,8 +68,8 @@ from .auth import AuthContext, require_context
 from .confirm import _parse_number
 from .db import Database
 from .extraction.constants import VAT_RATE_BY_CURRENCY
-from .menu import _menu_context
-from .provenance import asserted_fields
+from .menu import costed_menu
+from .period_read import ResolvedPeriod, read_period, resolve
 
 # Declared twice like api.py: at the router, so no route here can exist
 # without the token check, and per handler, to receive the tenant and actor.
@@ -455,32 +455,31 @@ def _proposals_for(till_item: dict, menu_items: list[dict]) -> list[dict]:
     ]
 
 
-class _PeriodRead(NamedTuple):
-    period: ratio.Period
-    default: bool
-    newest: datetime.date | None
-    months: list[datetime.date]
+def _today() -> datetime.date:
+    return datetime.datetime.now(datetime.UTC).date()
+
+
+def _refused(error: ratio.PeriodError) -> HTTPException:
+    """The period rule's refusal as the 422 every period route answers, in
+    the rule's own sentence (M9 C6 extended): `/sales/branches`, `/sales/coverage`,
+    `/sales/days` and the dashboard all say the same words."""
+    return HTTPException(status_code=422, detail=str(error))
 
 
 async def _period(
     db: Database, tenant_id: str, date_from: datetime.date | None, date_to: datetime.date | None
-) -> _PeriodRead:
-    """The period a read covers, its `default` flag, the tenant's newest
-    loaded day (the freshness fact every period line states), and the months
-    that hold sales (the picker's choices, WP-84 review)."""
-    newest_by_branch = await db.newest_sales_dates(tenant_id=tenant_id)
-    newest = max(newest_by_branch.values()) if newest_by_branch else None
-    months = await db.sales_months(tenant_id=tenant_id)
-    # The rule itself is `ratio.resolve_period` (M9 C6 extended), shared with
-    # the dashboard read; its refusal is the same 422 sentence on both.
+) -> ResolvedPeriod:
+    """`period_read.resolve` for the two routes that need the period and
+    its facts but not the full read - the period, its `default` flag, the
+    newest loaded day overall and per branch, the months that hold sales -
+    with the rule's refusal turned into the 422."""
     try:
-        period, default = ratio.resolve_period(newest, date_from, date_to)
+        return await resolve(db, tenant_id, today=_today(), date_from=date_from, date_to=date_to)
     except ratio.PeriodError as error:
-        raise HTTPException(status_code=422, detail=str(error)) from error
-    return _PeriodRead(period, default, newest, months)
+        raise _refused(error) from error
 
 
-def _period_json(read: _PeriodRead) -> dict:
+def _period_json(read: ResolvedPeriod) -> dict:
     return {
         "from": read.period.start.isoformat(),
         "to": read.period.end.isoformat(),
@@ -489,35 +488,6 @@ def _period_json(read: _PeriodRead) -> dict:
         "sales_through": _iso(read.newest),
         "months": [month.strftime("%Y-%m") for month in read.months],
     }
-
-
-def _sales_day_input(row) -> ratio.SalesDay:
-    return ratio.SalesDay(
-        branch_id=row["branch_id"],
-        business_date=row["business_date"],
-        net_sales=row["net_sales"],
-        takings=row["takings"],
-        granularity=row["granularity"],
-    )
-
-
-def _invoice_input(row) -> ratio.Invoice:
-    provenance = row["provenance"] or {}
-    asserted = any(key in ("total", "tax") for key in asserted_fields(provenance))
-    return ratio.Invoice(
-        invoice_id=row["id"],
-        branch_id=row["branch_id"],
-        status=row["status"],
-        currency=row["currency"],
-        total=row["total"],
-        tax=row["tax"],
-        invoice_date=row["invoice_date"],
-        purchased_on=row["purchased_on"],
-        placed_on=row["placed_on"],
-        supplier_name=row["supplier_name"],
-        invoice_no=row["invoice_no"],
-        asserted=asserted,
-    )
 
 
 def _invoice_figure_json(figure: ratio.InvoiceFigure) -> dict:
@@ -598,44 +568,22 @@ async def sales_by_branch(
     highest first, every row labelled by its gaps with the sentences that made
     the label, the drill to each day's papers, the papers the ranking could
     not place, and the chain total that reconciles the table (C11.5-C11.6,
-    the C9 amendment)."""
+    the C9 amendment).
+
+    The windows are the period read's (`period_read.read_period`), the same
+    rows the dashboard's league is drawn from, ranked here and nowhere else;
+    the rule's refusal is the same 422 sentence on both."""
     db: Database = request.app.state.db
-    tenant_id = ctx.tenant_id
-    read = await _period(db, tenant_id, date_from, date_to)
-    period = read.period
-    currency = await db.tenant_currency(tenant_id) or ""
-    branches = await db.list_branches(tenant_id=tenant_id)
-    newest_by_branch = await db.newest_sales_dates(tenant_id=tenant_id)
-    days = [
-        _sales_day_input(row)
-        for row in await db.list_sales_days(
-            tenant_id=tenant_id, date_from=period.start, date_to=period.end
+    try:
+        read = await read_period(
+            db, ctx.tenant_id, today=_today(), date_from=date_from, date_to=date_to
         )
-    ]
-    invoices = [
-        _invoice_input(row)
-        for row in await db.list_period_invoices(
-            tenant_id=tenant_id, date_from=period.start, date_to=period.end
-        )
-    ]
-    rows = ratio.rank(
-        [
-            ratio.period_row(
-                branch_id=branch["id"],
-                branch_name=branch["name"],
-                days=days,
-                invoices=invoices,
-                period=period,
-                tenant_currency=currency,
-                latest_sales_day=newest_by_branch.get(branch["id"]),
-            )
-            for branch in branches
-        ]
-    )
-    unassigned = ratio.unassigned_group(invoices, period, currency)
-    total = ratio.chain_total(rows, unassigned)
+    except ratio.PeriodError as error:
+        raise _refused(error) from error
+    rows = ratio.rank(list(read.ratio_rows.values()))
+    unassigned, total = read.unassigned, read.ratio_total
     return {
-        "period": _period_json(read),
+        "period": _period_json(read.resolved),
         "rows": [_branch_row_json(row) for row in rows],
         "unassigned": {
             "count": unassigned.count,
@@ -672,7 +620,7 @@ async def sales_coverage(
     sales whose till item maps to a plate that can be costed - *costed*, never
     *complete* - with the estimated points named, the two uncosted buckets,
     what sits beside the figure, and the mapping queue ranked by value. A
-    plate's quality comes from `menu._menu_context`, so it is computed by
+    plate's quality comes from `menu.costed_menu`, so it is computed by
     exactly one function on every screen."""
     db: Database = request.app.state.db
     tenant_id = ctx.tenant_id
@@ -692,7 +640,8 @@ async def sales_coverage(
             tenant_id=tenant_id, date_from=period.start, date_to=period.end
         )
     ]
-    menu_rows, _, plate_by_item, _, _, _ = await _menu_context(db, tenant_id)
+    menu = await costed_menu(db, tenant_id)
+    menu_rows, plate_by_item = menu.rows, menu.plate_by_item
     plates = {
         row["id"]: ratio.MenuPlate(
             menu_item_id=row["id"],

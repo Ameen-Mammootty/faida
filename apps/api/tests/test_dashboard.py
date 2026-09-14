@@ -24,7 +24,7 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
-from faida_api import ratio
+from faida_api import period_read, ratio
 from faida_api.api import router as api_router
 from faida_api.dashboard import PRICE_MOVES_LISTED, BranchNotFound, read_dashboard
 from faida_api.dashboard import router as dashboard_router
@@ -49,28 +49,17 @@ pytestmark = requires_db
 
 TENANT = DEMO_TENANT_ID
 
-#: The reads the route makes, in order, as `db.py` names them (D16, D20).
-#: The maximum a read may make is the length of this list, derived rather
-#: than typed: a new read must be added here, and one taken out must leave.
+#: The reads the route makes, in order, as `db.py` names them (D16, D20):
+#: the period read's own list (`period_read.READS`, derived, never typed
+#: twice), then this screen's three extras. The maximum a read may make is
+#: the length of this list.
 READS = [
     "membership_tenant_id",  # require_context, on every request (WP-70)
-    "newest_sales_dates",
-    "sales_months",
-    "tenant_currency",
-    "list_branches",
-    "list_sales_days",
-    "list_period_invoices",
-    # _menu_context, as of the period's end: _pricing's three, then the recipes and the items.
+    *period_read.READS,
+    # `menu.pricing` again, today, for cost_per_portion_today.
     "tenant_currency",
     "list_mapped_pack_costs",
     "list_newest_purchases",
-    "list_current_recipe_components",
-    "list_menu_items",
-    # _pricing again, today, for cost_per_portion_today.
-    "tenant_currency",
-    "list_mapped_pack_costs",
-    "list_newest_purchases",
-    "list_period_item_sales",
     "list_price_move_pairs",
     "list_invoices",
 ]
