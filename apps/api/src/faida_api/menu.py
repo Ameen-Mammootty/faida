@@ -908,8 +908,9 @@ def price_moves(
     `pairs` is `db.list_price_move_pairs` grouped by ingredient (newest
     first); `rows`, `components_by_item` and `plate_by_item` are
     `costed_menu`'s bundle. Same pack -> a real move, with the delta and
-    the per-plate impact (delta x the recipe's quantity in base units / the
-    batch yield); a different pack -> "price basis changed", both packs
+    the per-plate impact (delta x what the recipe draws off the shelf, in
+    base units and after its usable share, / the batch yield); a different
+    pack -> "price basis changed", both packs
     named, **no delta** - a delta across packs is a pack artifact wearing a
     percent sign (D3, WP-28's rule one layer up). A first purchase is a
     price, not a move; the same price again is not a move; a material no
@@ -969,17 +970,24 @@ def price_moves(
                 continue
             # Two components on the same material (rare, legal) sum before
             # the impact is taken, so the item appears once with its whole
-            # exposure.
-            base_qty = Decimal(0)
+            # exposure. Each weighs what it draws off the shelf, share and
+            # all, because that is the quantity the plate was costed on.
+            bought = Decimal(0)
             for component in components_by_item.get(row["id"], []):
                 if component["ingredient_id"] != ingredient_id:
                     continue
-                converted = plates.to_base_qty(component["qty"], component["unit"])
-                if converted is not None:
-                    base_qty += converted[0]
-            if base_qty == 0:
+                draw = plates.line_draw(
+                    qty=component["qty"],
+                    unit=component["unit"],
+                    usable_share=component["usable_share"],
+                    measured_in=current["base_unit"],
+                    ingredient_name=current["ingredient_name"],
+                )
+                if draw.bought is not None:
+                    bought += draw.bought
+            if bought == 0:
                 continue
-            impact = plates.margin_impact(delta, base_qty, row["yield_portions"])
+            impact = plates.margin_impact(delta, bought, row["yield_portions"])
             if impact == 0:
                 continue
             margin_before = plate.margin + impact

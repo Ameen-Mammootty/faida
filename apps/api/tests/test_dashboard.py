@@ -872,3 +872,30 @@ async def test_a_month_to_date_period_resolves_and_still_names_the_latest_day(ap
         _money(row["net_sales"]) for row in payload["league"]
     )
     assert Decimal(payload["total"]["net_sales"]) > 0
+
+
+async def test_a_trimmed_line_weighs_its_rise_by_what_was_bought(api, db):
+    """The supplier prices panel and the spike weigh a rise by the portions
+    sold times what each plate draws off the shelf: a dish pouring 60 ml of
+    milk at 0.8 usable draws 75 ml, so a 1.00-a-litre rise costs it 0.075 a
+    plate, not the 0.060 the poured amount alone would say."""
+    await _branches(db)
+    scenario = await _karak(db, api)
+    special = await _menu_item(api, "Karak Special", "10.00")
+    await _recipe(
+        api,
+        special,
+        [
+            {"ingredient_id": scenario["milk"], "qty": "60", "unit": "ml", "usable_share": "0.8"},
+        ],
+    )
+    await _week(api, BRANCH, [("SPECIAL", "100", "952.38")])
+    await _map(api, db, "SPECIAL", special)
+    await _paper(db, date=_on(1), total="5335.79", tax="254.09", invoice_no="GF-3318")
+    await _again(db, scenario, scenario["milk_pack"], pack_size="1l", price="9.00", offset=1)
+
+    payload = await _read(api)
+    [move] = payload["price_moves"]["moves"]
+    spike = next(s for s in payload["signals"] if s["kind"] == "price_spike")
+    # Six days of 100 plates after the move, at 75 ml x 0.001 a plate.
+    assert move["money_at_stake"] == spike["money_at_stake"] == "45.00"

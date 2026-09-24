@@ -812,8 +812,12 @@ def test_price_moves_pairs_the_same_pack_and_names_the_plate_it_moved():
         {"id": "m-old", "name": "Old Cup", "archived_at": aug_1, "yield_portions": D("1")},
     ]
     components = {
-        "m-cup": [{"ingredient_id": "ing-milk", "qty": D("60"), "unit": "ml"}],
-        "m-old": [{"ingredient_id": "ing-milk", "qty": D("60"), "unit": "ml"}],
+        "m-cup": [
+            {"ingredient_id": "ing-milk", "qty": D("60"), "unit": "ml", "usable_share": None}
+        ],
+        "m-old": [
+            {"ingredient_id": "ing-milk", "qty": D("60"), "unit": "ml", "usable_share": None}
+        ],
     }
     cup = plates.Plate(
         quality=Quality.RELIABLE,
@@ -860,9 +864,9 @@ def test_price_moves_refuses_a_delta_across_packs_and_skips_what_did_not_move():
     rows = [{"id": "m-cup", "name": "Karak Cup", "archived_at": None, "yield_portions": D("1")}]
     components = {
         "m-cup": [
-            {"ingredient_id": "ing-milk", "qty": D("60"), "unit": "ml"},
-            {"ingredient_id": "ing-tea", "qty": D("4"), "unit": "g"},
-            {"ingredient_id": "ing-first", "qty": D("4"), "unit": "g"},
+            {"ingredient_id": "ing-milk", "qty": D("60"), "unit": "ml", "usable_share": None},
+            {"ingredient_id": "ing-tea", "qty": D("4"), "unit": "g", "usable_share": None},
+            {"ingredient_id": "ing-first", "qty": D("4"), "unit": "g", "usable_share": None},
         ]
     }
     plate = plates.Plate(
@@ -900,9 +904,9 @@ def test_price_moves_orders_newest_first_then_by_what_it_costs_a_plate():
     rows = [{"id": "m-cup", "name": "Karak Cup", "archived_at": None, "yield_portions": D("1")}]
     components = {
         "m-cup": [
-            {"ingredient_id": "ing-milk", "qty": D("60"), "unit": "ml"},
-            {"ingredient_id": "ing-sugar", "qty": D("10"), "unit": "g"},
-            {"ingredient_id": "ing-tea", "qty": D("4"), "unit": "g"},
+            {"ingredient_id": "ing-milk", "qty": D("60"), "unit": "ml", "usable_share": None},
+            {"ingredient_id": "ing-sugar", "qty": D("10"), "unit": "g", "usable_share": None},
+            {"ingredient_id": "ing-tea", "qty": D("4"), "unit": "g", "usable_share": None},
         ]
     }
     plate = plates.Plate(

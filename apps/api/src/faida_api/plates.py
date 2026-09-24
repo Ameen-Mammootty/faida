@@ -65,7 +65,7 @@ def component_quality(price_quality: str | None) -> Quality:
     return Quality.ESTIMATED if price_quality == Quality.ESTIMATED.value else Quality.RELIABLE
 
 
-def to_base_qty(qty: Decimal, unit: str) -> tuple[Decimal, str] | None:
+def _to_base_qty(qty: Decimal, unit: str) -> tuple[Decimal, str] | None:
     """A typed quantity in its ingredient's base units: (2, "kg") -> (2000,
     "g"). None when the unit is not a measure or has no base (a container) -
     the WP-60 door refuses those at write time, so this is the defensive
@@ -105,24 +105,62 @@ class ComponentCost:
     missing: str | None = None
 
 
-def bought_base_qty(base_qty: Decimal, usable_share: Decimal | None) -> Decimal:
-    """What the storeroom issued for a recipe line that puts `base_qty` in the
-    pot (M12 WP-119, D13).
+@dataclass(frozen=True)
+class LineDraw:
+    """What one recipe line takes off the shelf, in its material's base units,
+    or the plain-words reason it cannot be said. Never both.
+
+    `bought` is full precision and per batch: the yield is not applied and
+    nothing is rounded, because each reader divides and rounds at its own
+    grain (a plate once per plate, a price move once per plate and move,
+    usage once per dish, contribution once per component) and those rules
+    are pinned where they live."""
+
+    bought: Decimal | None = None
+    missing: str | None = None
+
+    def cost(self, cost_per_base_unit: Decimal) -> Decimal:
+        """The line's batch cost at a price per base unit, unrounded. A line
+        with a hole has no cost, and asking for one is a bug, not a zero."""
+        if self.bought is None:
+            raise ValueError(f"a recipe line with a hole has no cost: {self.missing}")
+        return self.bought * cost_per_base_unit
+
+
+def line_draw(
+    *,
+    qty: Decimal,
+    unit: str,
+    usable_share: Decimal | None,
+    measured_in: str,
+    ingredient_name: str,
+) -> LineDraw:
+    """The one answer to "what did this recipe line draw off the shelf": the
+    typed quantity in the base unit its material is `measured_in`, divided by
+    the line's usable share when it has one (M12 WP-119, D13).
 
     A recipe is written for costing, so its quantities are what goes *in*:
     500 g of chicken means 500 g in the curry. Trim, bone and a cooking loss
-    mean more than that left the shelf, and the plate must cost what left the
-    shelf - so a share of 0.85 costs 588 g, not 500.
+    mean more than that left the shelf, and every figure built on the line -
+    the plate, a price move's impact, contribution, usage - must describe
+    what left the shelf, so a share of 0.85 draws 588 g, not 500. A null
+    share means the quantity is already as purchased, the M6 convention every
+    recipe written before 0021 was typed under, and it is returned untouched
+    rather than divided by a manufactured 1. The door and the 0021 check keep
+    the share inside (0, 1], so this never divides by zero.
 
-    Null means the quantity is already as-purchased, the M6 convention every
-    recipe written before WP-119 was typed under, and it returns the quantity
-    untouched rather than dividing by a manufactured 1: this function is the
-    one place the two conventions meet, so no caller has to know which it
-    holds. The door and the 0021 check keep the share inside (0, 1], so this
-    never divides by zero and never shrinks a quantity."""
+    A unit that is not a measure, has no base (a container) or measures
+    another dimension than the material is a hole with the sentence the
+    Menu screen prints: the WP-60 door refuses those at write time, but a
+    remap or old data could still produce one, and a wrong-dimension
+    multiplication must never run."""
+    converted = _to_base_qty(qty, unit)
+    if converted is None or converted[1] != measured_in:
+        return LineDraw(missing=f"'{unit}' does not convert to how {ingredient_name} is measured")
+    base_qty, _ = converted
     if usable_share is None:
-        return base_qty
-    return base_qty / usable_share
+        return LineDraw(bought=base_qty)
+    return LineDraw(bought=base_qty / usable_share)
 
 
 def cost_component(
@@ -158,20 +196,19 @@ def cost_component(
             sentence = f"{sentence}: {no_price_reason}"
         return ComponentCost(position, missing=sentence)
 
-    converted = to_base_qty(qty, unit)
-    if converted is None or converted[1] != price.base_unit:
-        # Unreachable through the WP-60 door; a remap or old data could still
-        # produce it, and a wrong-dimension multiplication must never run.
-        return ComponentCost(
-            position,
-            missing=f"'{unit}' does not convert to how {ingredient_name} is measured",
-        )
-    base_qty, _ = converted
+    draw = line_draw(
+        qty=qty,
+        unit=unit,
+        usable_share=usable_share,
+        measured_in=price.base_unit,
+        ingredient_name=ingredient_name,
+    )
+    if draw.missing is not None:
+        return ComponentCost(position, missing=draw.missing)
     quality = component_quality(price.quality)
     if price.stale:
         quality = Quality.ESTIMATED
-    bought = bought_base_qty(base_qty, usable_share)
-    return ComponentCost(position, cost=bought * price.cost_per_base_unit, quality=quality)
+    return ComponentCost(position, cost=draw.cost(price.cost_per_base_unit), quality=quality)
 
 
 def _plain_number(value: Decimal) -> str:
@@ -215,13 +252,14 @@ def usable_words(qty: Decimal, unit: str, usable_share: Decimal | None) -> str |
 
 
 def margin_impact(
-    delta_per_base_unit: Decimal, base_qty: Decimal, yield_portions: Decimal
+    delta_per_base_unit: Decimal, bought_base_qty: Decimal, yield_portions: Decimal
 ) -> Decimal:
     """What one material's price move does to one plate's margin (WP-63): the
-    delta times the recipe's quantity in base units, divided by the batch
-    yield, quantized once. Positive when the price rose - the margin fell by
+    delta times what the recipe draws off the shelf in base units
+    (`line_draw`, so a trimmed line weighs what was bought), divided by the
+    batch yield, quantized once. Positive when the price rose - the margin fell by
     this much - because the sign belongs to the cost, not the feeling."""
-    return (delta_per_base_unit * base_qty / yield_portions).quantize(
+    return (delta_per_base_unit * bought_base_qty / yield_portions).quantize(
         PLATE_QUANTUM, rounding=ROUND_HALF_UP
     )
 
