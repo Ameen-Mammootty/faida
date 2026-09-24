@@ -42,7 +42,7 @@ from .test_plates import (
     _menu_item,
     _recipe,
 )
-from .test_sales_api import BRANCH, BRANCH_2, DAY, _branches, _iso, _on, _paper
+from .test_sales_api import BRANCH, BRANCH_2, _branches, _iso, _on, _paper
 from .test_sales_load import _item_day, _line
 
 pytestmark = requires_db
@@ -454,12 +454,15 @@ def test_resolve_period_is_the_rule_both_routers_share():
     assert (period.start, period.end, default) == (datetime.date(2026, 8, 4), newest, True)
     period, default = ratio.resolve_period(None, None, None, today=datetime.date(2026, 9, 5))
     assert (period.end, default) == (datetime.date(2026, 9, 5), True)
-    period, default = ratio.resolve_period(newest, DAY, newest)
-    assert (period.start, period.end, default) == (DAY, newest, False)
+    # A fixed start, not the shared `DAY`: that one is today minus 20 days, and
+    # against a fixed `newest` it walked past it on 2026-09-21.
+    start = newest - datetime.timedelta(days=20)
+    period, default = ratio.resolve_period(newest, start, newest)
+    assert (period.start, period.end, default) == (start, newest, False)
     with pytest.raises(ratio.PeriodError, match="both 'from' and 'to'"):
-        ratio.resolve_period(newest, DAY, None)
+        ratio.resolve_period(newest, start, None)
     with pytest.raises(ratio.PeriodError, match="after"):
-        ratio.resolve_period(newest, newest, DAY)
+        ratio.resolve_period(newest, newest, start)
     with pytest.raises(ratio.PeriodError, match="93 days"):
         ratio.resolve_period(newest, newest - datetime.timedelta(days=92), newest)
 
