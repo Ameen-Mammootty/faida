@@ -1,6 +1,6 @@
 # Architecture specs - the first four candidates of the 2026-09-24 review (drafted 2026-09-24)
 
-Status: **drafted 2026-09-24 against master `e90a68a`; the founder accepted every recommendation the same day (D1 to D10 as written in §0.2) and asked for Wave 0, the four bug fixes, to start; nothing else built.**
+Status: **drafted 2026-09-24 against master `e90a68a`; the founder accepted every recommendation the same day (D1 to D10 as written in §0.2) and asked for Wave 0, the four bug fixes, to start. Wave 0 was built the same day on `wave0-bugfixes` (candidate 1 whole and spec 2 Part A, each bug reproduced first); the rest is not built.**
 Each spec was drafted by a read-only design pass over the code, and the load-bearing claims (the four bugs, the two price derivations, the plate-money split) were re-read by hand before this file was written.
 The bugs are confirmed by reading the code, not yet reproduced; each spec's first step is the failing test that reproduces it.
 The review that ranked these is `$TMPDIR/architecture-review-20260924-122317.html` (temp, may be gone); the earlier review's candidates 1 to 3 (filing, the quality word, the period read) are merged and are not re-argued here.
