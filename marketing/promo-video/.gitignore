@@ -2,3 +2,4 @@ node_modules/
 out/frames/
 out/preview.mp4
 out/music.wav
+out/render.log
