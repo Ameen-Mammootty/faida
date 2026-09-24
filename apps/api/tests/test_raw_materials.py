@@ -1334,3 +1334,36 @@ async def test_the_blocked_cost_endpoints_refuse_an_unauthorized_caller(api, db)
     assert (
         await api.post(f"/api/supplier-items/{item_id}/pack-size", json={"pack_size": "10kg"})
     ).status_code == 401
+
+
+@requires_db
+async def test_an_answer_racing_a_mapping_is_checked_against_the_mapping(api, db, monkeypatch):
+    """The carton was unmapped when the answer read it, so there was no
+    material to disagree with; a colleague mapped it to a weight material
+    before the answer wrote. The answer is checked against the material the
+    pack has at the write, so a millilitre conversion never lands under it."""
+    gulf = await _supplier(db, "Gulf Foods Trading L.L.C.")
+    carton = await _item(db, gulf, "Chicken Carton", "1 ctn")
+    read = db.get_supplier_item_for_mapping
+
+    async def read_then_map(item_id, *, tenant_id):
+        row = await read(item_id, tenant_id=tenant_id)
+        monkeypatch.setattr(db, "get_supplier_item_for_mapping", read)
+        await db.map_supplier_item(
+            item_id, tenant_id=tenant_id, name="Chicken", base_unit="g", actor=TEST_ACTOR
+        )
+        return row
+
+    monkeypatch.setattr(db, "get_supplier_item_for_mapping", read_then_map)
+    refused = await api.post(
+        f"/api/supplier-items/{carton}/pack-size", json={"pack_size": "5 litres"}, headers=AUTH
+    )
+    assert refused.status_code == 422, refused.text
+    assert "measured by volume" in refused.json()["detail"]
+    assert "measured by weight" in refused.json()["detail"]
+    assert (
+        await db.pool.fetchval(
+            "select pack_size_override from supplier_items where id = $1", carton
+        )
+        is None
+    )

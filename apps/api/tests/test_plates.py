@@ -589,7 +589,7 @@ async def test_an_estimated_material_cost_makes_the_plate_estimated(api, db):
     )
     flour = await _material(db, flour_pack, "Refined Flour", "g")
     costed = await db.set_pack_size_override(
-        flour_pack, tenant_id=DEMO_TENANT_ID, pack_size="25 kg", actor="console"
+        flour_pack, tenant_id=DEMO_TENANT_ID, pack_size="25 kg", base_unit="g", actor="console"
     )
     assert costed == 1
 

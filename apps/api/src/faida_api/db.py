@@ -268,6 +268,19 @@ class MaterialMeasuredOtherwise(Exception):
         super().__init__(f"{material_name} is measured in {base_unit}")
 
 
+class MenuItemArchived(Exception):
+    """A write reached a menu item that is archived (2026-09-24). Archived is
+    read-only - bring it back first, so its history cannot grow while it is
+    off every screen - and the rule holds at the write, under the row's lock,
+    not only in a read before it: an owner archiving a dish in one tab while
+    another tab saves a change to it would otherwise land the change on a
+    dish nobody ranks. Nothing is written; each door words the refusal."""
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+        super().__init__(f"menu item {name!r} is archived")
+
+
 async def _learn_supplier_alias(
     conn: asyncpg.Connection, invoice_id: str, *, tenant_id: str, actor: str
 ) -> dict:
@@ -1434,7 +1447,13 @@ class Database:
             )
 
     async def set_pack_size_override(
-        self, supplier_item_id: str, *, tenant_id: str, pack_size: str, actor: str
+        self,
+        supplier_item_id: str,
+        *,
+        tenant_id: str,
+        pack_size: str,
+        base_unit: str,
+        actor: str,
     ) -> int:
         """A person says how much is in one of these, once (WP-55).
 
@@ -1458,7 +1477,13 @@ class Database:
         `audit_events` is the version history: one row per change, naming who,
         when, and what it replaced. There is no `container_conversions` table
         because that would keep the same fact in two places (the duplication
-        migration 0010 was written to delete)."""
+        migration 0010 was written to delete).
+
+        `base_unit` is what the answer measures. A material has one dimension,
+        so an answer measured another way than the material the pack is mapped
+        to *at this write* raises `MaterialMeasuredOtherwise` - checked under
+        the pack's lock, so a mapping that lands between the screen's read and
+        this write is the one the answer is held against (2026-09-24)."""
         blocked = """
             select count(*) from invoice_lines l join invoices i on i.id = l.invoice_id
             where l.supplier_item_id = $1 and i.status = 'confirmed'
@@ -1466,13 +1491,20 @@ class Database:
             """
         async with self.pool.acquire() as conn, conn.transaction():
             item = await conn.fetchrow(
-                "select pack_size_override from supplier_items "
-                "where id = $1 and tenant_id = $2 for update",
+                """
+                select s.pack_size_override, g.name as ingredient_name,
+                       g.base_unit as ingredient_base_unit
+                from supplier_items s left join ingredients g on g.id = s.ingredient_id
+                where s.id = $1 and s.tenant_id = $2 for update of s
+                """,
                 supplier_item_id,
                 tenant_id,
             )
             if item is None:
                 raise LookupError(f"supplier item {supplier_item_id} is not in tenant {tenant_id}")
+            material_unit = item["ingredient_base_unit"]
+            if material_unit is not None and material_unit != base_unit:
+                raise MaterialMeasuredOtherwise(item["ingredient_name"], material_unit)
             previous = item["pack_size_override"]
             await conn.execute(
                 "update supplier_items set pack_size_override = $2 where id = $1",
@@ -1879,12 +1911,18 @@ class Database:
         Quantized like the insert, so detail and column never disagree."""
         selling_price = selling_price.quantize(PRICE_QUANTUM)
         async with self._txn(conn) as conn:
-            previous = await conn.fetchval(
-                "select selling_price from menu_items where id = $1 and tenant_id = $2 for update",
+            item = await conn.fetchrow(
+                "select name, selling_price, archived_at from menu_items "
+                "where id = $1 and tenant_id = $2 for update",
                 menu_item_id,
                 tenant_id,
             )
-            if previous is None or previous == selling_price:
+            if item is None:
+                return False
+            if item["archived_at"] is not None:
+                raise MenuItemArchived(item["name"])
+            previous = item["selling_price"]
+            if previous == selling_price:
                 return False
             await conn.execute(
                 "update menu_items set selling_price = $2 where id = $1",
@@ -1922,11 +1960,16 @@ class Database:
         reads that way, so a re-upload writes no history of nothing changing."""
         async with self._txn(conn) as conn:
             row = await conn.fetchrow(
-                "select category from menu_items where id = $1 and tenant_id = $2 for update",
+                "select name, category, archived_at from menu_items "
+                "where id = $1 and tenant_id = $2 for update",
                 menu_item_id,
                 tenant_id,
             )
-            if row is None or row["category"] == category:
+            if row is None:
+                return False
+            if row["archived_at"] is not None:
+                raise MenuItemArchived(row["name"])
+            if row["category"] == category:
                 return False
             await conn.execute(
                 "update menu_items set category = $2 where id = $1", menu_item_id, category
@@ -2020,8 +2063,19 @@ class Database:
         A component may carry `usable_share` (M12 WP-119, D13); absent, the
         column stores null and the line costs as-purchased, exactly as every
         recipe written before 0021 does. The door validates the bounds and
-        0021's check constraint is the backstop."""
+        0021's check constraint is the backstop.
+
+        The item is locked first and refused when archived (`MenuItemArchived`),
+        which also serialises a save with an archive click on the same dish."""
         async with self._txn(conn) as conn:
+            item = await conn.fetchrow(
+                "select name, archived_at from menu_items "
+                "where id = $1 and tenant_id = $2 for update",
+                menu_item_id,
+                tenant_id,
+            )
+            if item is not None and item["archived_at"] is not None:
+                raise MenuItemArchived(item["name"])
             recipe = await conn.fetchrow(
                 """
                 insert into recipes (tenant_id, menu_item_id, version, yield_portions, yield_label)
@@ -2999,6 +3053,17 @@ class Database:
             )
             if before is None:
                 raise LookupError(f"till item {till_item_id} is not in tenant {tenant_id}")
+            # The dish is locked and read here, in the transaction that links
+            # to it: sales mapped onto a dish archived a moment ago is value
+            # nobody sees, whatever the route read before.
+            dish = await conn.fetchrow(
+                "select name, archived_at from menu_items "
+                "where id = $1 and tenant_id = $2 for update",
+                menu_item_id,
+                tenant_id,
+            )
+            if dish is not None and dish["archived_at"] is not None:
+                raise MenuItemArchived(dish["name"])
             await conn.execute(
                 "update till_items set menu_item_id = $3, excluded_at = null "
                 "where id = $1 and tenant_id = $2",

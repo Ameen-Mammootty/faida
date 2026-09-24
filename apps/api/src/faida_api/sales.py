@@ -66,7 +66,7 @@ from . import matching, ratio, takings
 from .api import _clean, _dec, _iso
 from .auth import AuthContext, require_context
 from .confirm import _parse_number
-from .db import Database
+from .db import Database, MenuItemArchived
 from .extraction.constants import VAT_RATE_BY_CURRENCY
 from .menu import costed_menu
 from .period_read import ResolvedPeriod, read_period, resolve
@@ -897,18 +897,26 @@ async def map_till_item(
     menu_item = await db.get_menu_item(str(body.menu_item_id), tenant_id=ctx.tenant_id)
     if menu_item is None:
         raise HTTPException(status_code=404, detail="menu item not found")
-    if menu_item["archived_at"] is not None:
-        raise HTTPException(
+
+    def archived(name: str) -> HTTPException:
+        return HTTPException(
             status_code=409,
-            detail=f"'{menu_item['name']}' is archived: unarchive it on the menu first, "
-            "or pick a live item",
+            detail=f"'{name}' is archived: unarchive it on the menu first, or pick a live item",
         )
-    row = await db.map_till_item(
-        str(till_item_id),
-        tenant_id=ctx.tenant_id,
-        menu_item_id=str(body.menu_item_id),
-        actor=ctx.actor,
-    )
+
+    if menu_item["archived_at"] is not None:
+        raise archived(menu_item["name"])
+    try:
+        row = await db.map_till_item(
+            str(till_item_id),
+            tenant_id=ctx.tenant_id,
+            menu_item_id=str(body.menu_item_id),
+            actor=ctx.actor,
+        )
+    except MenuItemArchived as refused:
+        # Archived after the read above and before the write: the write's own
+        # lock saw it, and the answer is the same sentence (2026-09-24).
+        raise archived(refused.name) from None
     return {"till_item": _till_item_json(row)}
 
 

@@ -62,7 +62,7 @@ from .api import (
 )
 from .auth import AuthContext, require_context
 from .confirm import _parse_number
-from .db import Database
+from .db import Database, MenuItemArchived
 from .extraction import units
 from .extraction.constants import VAT_RATE_BY_CURRENCY
 
@@ -557,11 +557,17 @@ async def _live_item(db: Database, menu_item_id: uuid.UUID, tenant_id: str) -> a
     if item is None:
         raise HTTPException(status_code=404, detail="menu item not found")
     if item["archived_at"] is not None:
-        raise HTTPException(
-            status_code=409,
-            detail="menu item is archived; bring it back before changing it",
-        )
+        raise _archived()
     return item
+
+
+def _archived() -> HTTPException:
+    """The one answer to a write on an archived item, whether the read before
+    the write saw it archived or the write's own lock did (2026-09-24)."""
+    return HTTPException(
+        status_code=409,
+        detail="menu item is archived; bring it back before changing it",
+    )
 
 
 # --- routes ------------------------------------------------------------------
@@ -643,12 +649,15 @@ async def set_menu_item_price(
     db: Database = request.app.state.db
     await _live_item(db, menu_item_id, ctx.tenant_id)
     price = _positive_number(body.selling_price, what="selling price", example="17.00")
-    await db.set_menu_item_price(
-        str(menu_item_id),
-        tenant_id=ctx.tenant_id,
-        selling_price=price,
-        actor=ctx.actor,
-    )
+    try:
+        await db.set_menu_item_price(
+            str(menu_item_id),
+            tenant_id=ctx.tenant_id,
+            selling_price=price,
+            actor=ctx.actor,
+        )
+    except MenuItemArchived:
+        raise _archived() from None
     return await _menu_item_detail(db, str(menu_item_id), ctx.tenant_id)
 
 
@@ -711,6 +720,8 @@ async def create_recipe_version(
             components=components,
             actor=ctx.actor,
         )
+    except MenuItemArchived:
+        raise _archived() from None
     except asyncpg.UniqueViolationError:
         # Two concurrent saves computed the same max+1; the constraint let
         # exactly one through (D17).

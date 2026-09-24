@@ -1632,25 +1632,35 @@ async def set_pack_size_override(
                 "like '10 kg', '750 ml' or '24 x 400 ml'."
             ),
         )
+
     # The same refusal the approval gate makes, for the same reason: a material
     # has one dimension, and a millilitre conversion feeding a gram material is
     # wrong in a way nothing downstream can see.
-    material_unit = item["ingredient_base_unit"]
-    if material_unit is not None and material_unit != base_unit:
-        raise HTTPException(
+    def measured_otherwise(material: str, material_unit: str) -> HTTPException:
+        return HTTPException(
             status_code=422,
             detail=(
                 f"{printed} is measured {MEASURE_WORDS[base_unit]}, but "
-                f"{item['ingredient_name']} is measured {MEASURE_WORDS[material_unit]}"
+                f"{material} is measured {MEASURE_WORDS[material_unit]}"
             ),
         )
 
-    costed = await db.set_pack_size_override(
-        str(item_id),
-        tenant_id=ctx.tenant_id,
-        pack_size=printed,
-        actor=ctx.actor,
-    )
+    material_unit = item["ingredient_base_unit"]
+    if material_unit is not None and material_unit != base_unit:
+        raise measured_otherwise(item["ingredient_name"], material_unit)
+
+    try:
+        costed = await db.set_pack_size_override(
+            str(item_id),
+            tenant_id=ctx.tenant_id,
+            pack_size=printed,
+            base_unit=base_unit,
+            actor=ctx.actor,
+        )
+    except MaterialMeasuredOtherwise as clash:
+        # Mapped, or remapped, between the read above and the write: the
+        # write's own lock held the answer against the material it has now.
+        raise measured_otherwise(clash.material_name, clash.base_unit) from None
     return {"supplier_item_id": str(item_id), "pack_size": printed, "lines_costed": costed}
 
 
