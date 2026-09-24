@@ -448,7 +448,6 @@ export async function mockMapSupplierItem(
     }
     const existing = INGREDIENTS.find((row) => row.name.toLowerCase() === name.toLowerCase());
     ingredient = existing ?? { id: `ing-${nextId++}`, name, base_unit: baseUnit };
-    if (!existing) INGREDIENTS.push(ingredient);
   }
 
   if (packBaseUnit !== null && packBaseUnit !== ingredient.base_unit) {
@@ -459,6 +458,9 @@ export async function mockMapSupplierItem(
     );
   }
 
+  // Created only once nothing can refuse it, like the real door's one
+  // transaction: a refused mapping leaves no material behind.
+  if (!INGREDIENTS.includes(ingredient)) INGREDIENTS.push(ingredient);
   pack.ingredient_id = ingredient.id;
   return { supplier_item_id: itemId, ingredient: { ...ingredient } };
 }

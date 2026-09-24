@@ -312,6 +312,54 @@ async def test_a_millilitre_pack_cannot_be_mapped_onto_a_gram_material(api, db):
 
 
 @requires_db
+async def test_a_millilitre_pack_named_after_a_gram_material_is_refused_too(api, db):
+    """Mapping by name joins the material already called that - the same
+    material, the same one dimension - so naming a gram material for a
+    millilitre pack is the same wrong merge as picking it, and is refused
+    with the same sentence, before anything is written."""
+    supplier_id = await _supplier(db, "Gulf Foods Trading L.L.C.")
+    powder = await _item(db, supplier_id, "Milk Powder 2.5kg", "2.5kg")
+    liquid = await _item(db, supplier_id, "Evaporated Milk 400ml", "400ml")
+    created = await api.post(
+        f"/api/supplier-items/{powder}/ingredient", json={"name": "Milk"}, headers=AUTH
+    )
+    assert created.status_code == 200, created.text
+    assert created.json()["ingredient"]["base_unit"] == "g"
+
+    response = await api.post(
+        f"/api/supplier-items/{liquid}/ingredient", json={"name": "Milk"}, headers=AUTH
+    )
+    assert response.status_code == 422, response.text
+    detail = response.json()["detail"]
+    assert "measured by volume" in detail
+    assert "measured by weight" in detail
+    assert "Milk" in detail
+    assert await _audit(db, liquid) == []
+    mapped = await db.pool.fetchval(
+        "select ingredient_id from supplier_items where id = $1", liquid
+    )
+    assert mapped is None
+
+
+@requires_db
+async def test_a_second_weight_pack_named_after_a_weight_material_joins_it(api, db):
+    """The twin of the refusal above: the name is how a second supplier's pack
+    joins the material the first one made, and that must keep working."""
+    gulf = await _supplier(db, "Gulf Foods Trading L.L.C.")
+    madina = await _supplier(db, "Al Madina Trading Co.")
+    first = await _item(db, gulf, "Milk Powder 2.5kg", "2.5kg")
+    second = await _item(db, madina, "Milk Powder 1kg", "1kg")
+    made = await api.post(
+        f"/api/supplier-items/{first}/ingredient", json={"name": "Milk Powder"}, headers=AUTH
+    )
+    joined = await api.post(
+        f"/api/supplier-items/{second}/ingredient", json={"name": "Milk Powder"}, headers=AUTH
+    )
+    assert joined.status_code == 200, joined.text
+    assert joined.json()["ingredient"]["id"] == made.json()["ingredient"]["id"]
+
+
+@requires_db
 async def test_a_bare_carton_has_to_be_told_what_it_measures(api, db):
     """units.py refuses to guess what is inside a carton, so the approval asks
     instead of picking. Answering is allowed; guessing is not."""

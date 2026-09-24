@@ -253,6 +253,21 @@ class SupplierAliasCollision(Exception):
         super().__init__(self.message)
 
 
+class MaterialMeasuredOtherwise(Exception):
+    """A pack mapped by name onto a material that already exists under that
+    name and is measured another way (2026-09-24). A material has one
+    dimension, and a millilitre pack on a gram material is wrong in a way no
+    later arithmetic can notice; the name resolves to the existing material
+    only inside the mapping's transaction, so this is where it is refused.
+    Nothing is written. The door words it, because the sentence names the
+    pack as the screen shows it."""
+
+    def __init__(self, material_name: str, base_unit: str) -> None:
+        self.material_name = material_name
+        self.base_unit = base_unit
+        super().__init__(f"{material_name} is measured in {base_unit}")
+
+
 async def _learn_supplier_alias(
     conn: asyncpg.Connection, invoice_id: str, *, tenant_id: str, actor: str
 ) -> dict:
@@ -1305,7 +1320,6 @@ class Database:
         name: str | None = None,
         base_unit: str | None = None,
         actor: str,
-        previous_ingredient_id: str | None = None,
     ) -> asyncpg.Record:
         """Approve a merge: point this pack at a material, creating the
         material when the approval names a new one rather than an existing id.
@@ -1325,18 +1339,47 @@ class Database:
         nothing (WP-73); the 0012 composite key refuses the material half of
         a cross-tenant merge regardless."""
         async with self.pool.acquire() as conn, conn.transaction():
+            # The pack is locked first, so the material it pointed at - the
+            # audit row's "previous" - is read in the transaction that moves
+            # it, never from a read a concurrent remap has overtaken.
+            pack = await conn.fetchrow(
+                """
+                select ingredient_id::text as ingredient_id from supplier_items
+                where id = $1 and tenant_id = $2 for update
+                """,
+                supplier_item_id,
+                tenant_id,
+            )
+            if pack is None:
+                raise LookupError(f"supplier item {supplier_item_id} is not in tenant {tenant_id}")
             if ingredient_id is None:
                 ingredient_id = await conn.fetchval(
                     """
                     insert into ingredients (tenant_id, name, base_unit)
                     values ($1, $2, $3)
-                    on conflict (tenant_id, name) do update set name = excluded.name
+                    on conflict (tenant_id, name) do nothing
                     returning id::text
                     """,
                     tenant_id,
                     name,
                     base_unit,
                 )
+                if ingredient_id is None:
+                    # The name is taken: the approval joins that material,
+                    # which keeps the measure it was made with. The route
+                    # checked the pack against the measure it asked for, not
+                    # this one, so the check that matters happens here.
+                    existing = await conn.fetchrow(
+                        """
+                        select id::text as id, name, base_unit from ingredients
+                        where tenant_id = $1 and name = $2
+                        """,
+                        tenant_id,
+                        name,
+                    )
+                    if existing["base_unit"] != base_unit:
+                        raise MaterialMeasuredOtherwise(existing["name"], existing["base_unit"])
+                    ingredient_id = existing["id"]
             updated = await conn.execute(
                 "update supplier_items set ingredient_id = $2 where id = $1 and tenant_id = $3",
                 supplier_item_id,
@@ -1359,7 +1402,7 @@ class Database:
                 detail={
                     "ingredient_id": ingredient_id,
                     "ingredient_name": ingredient["name"],
-                    "previous_ingredient_id": previous_ingredient_id,
+                    "previous_ingredient_id": pack["ingredient_id"],
                 },
             )
         return ingredient
