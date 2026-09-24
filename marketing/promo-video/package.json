@@ -1,0 +1,14 @@
+{
+  "name": "faida-promo-video",
+  "private": true,
+  "type": "module",
+  "description": "Faida promo video: an HTML timeline rendered frame by frame with Playwright, encoded with ffmpeg.",
+  "scripts": {
+    "music": "node music.mjs",
+    "render": "node music.mjs && node render.mjs",
+    "preview": "node render.mjs --fps 15 --out out/preview.mp4"
+  },
+  "devDependencies": {
+    "playwright": "1.56.1"
+  }
+}

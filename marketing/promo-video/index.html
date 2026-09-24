@@ -1,0 +1,629 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Faida promo</title>
+<!--
+  The whole film is one pure function: window.renderFrame(t) draws the frame at
+  t seconds from nothing but t, so render.mjs can step through it frame by frame
+  and every render is identical. Open this file in a browser to scrub it live
+  (append ?play to autoplay in real time).
+-->
+<style>
+@font-face { font-family: Manrope; src: url("../../apps/api/src/faida_api/fonts/Manrope%5Bwght%5D.ttf"); font-weight: 200 800; }
+@font-face { font-family: Inter; src: url("../../apps/api/src/faida_api/fonts/Inter%5Bopsz%2Cwght%5D.ttf"); font-weight: 100 900; }
+
+:root {
+  --cream: #fbf6ec; --paper: #ffffff; --ink: #172421; --palm: #153e35; --palm-deep: #0e2b25;
+  --gold: #e3a13b; --gold-soft: #f8eed9; --sage: #9cc8b3; --mist: #e7efea; --stone: #52625d;
+  --verified: #1d6d50; --caution: #80520a;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--cream); }
+body { font-family: Inter, sans-serif; color: var(--ink); -webkit-font-smoothing: antialiased; }
+#stage { position: relative; width: 1920px; height: 1080px; overflow: hidden; }
+.scene { position: absolute; inset: 0; display: none; overflow: hidden; }
+.abs { position: absolute; }
+.h { font-family: Manrope, sans-serif; font-weight: 800; letter-spacing: -0.035em; line-height: 1.02; }
+.eyebrow { font-family: Inter; font-weight: 600; font-size: 22px; letter-spacing: 0.28em; text-transform: uppercase; color: var(--stone); }
+.gold { color: var(--gold); }
+.dots { background-image: radial-gradient(rgba(21,62,53,.10) 1.4px, transparent 1.6px); background-size: 34px 34px; }
+.dots-dark { background-image: radial-gradient(rgba(156,200,179,.10) 1.4px, transparent 1.6px); background-size: 34px 34px; }
+
+/* till roll */
+#rollin { background: var(--paper); padding: 26px 30px; font-family: "SFMono-Regular", Menlo, Consolas, monospace; font-size: 19px; color: var(--ink);
+  box-shadow: 0 20px 50px rgba(14,43,37,.18); will-change: transform; }
+#rollin div { display: flex; justify-content: space-between; padding: 7px 0; }
+#rollin .sep { border-top: 2px dashed #c9d2cd; margin: 12px 0; padding: 0; }
+
+/* word reveal */
+.wm { display: inline-block; overflow: hidden; vertical-align: top; padding: 0 0.02em 0.12em; margin-bottom: -0.12em; }
+.wi { display: inline-block; will-change: transform; }
+
+/* wipes */
+.wipe { position: absolute; top: -10%; left: 0; width: 130%; height: 120%; z-index: 50; transform: translateX(120%) skewX(-12deg); }
+#wipeA { background: var(--gold); }
+#wipeB { background: var(--palm); }
+
+/* ---------- S2 invoices ---------- */
+.inv { position: absolute; width: 330px; height: 440px; background: var(--paper); border-radius: 10px;
+  box-shadow: 0 30px 60px rgba(0,0,0,.35); padding: 26px 26px; font-size: 15px; color: var(--ink); }
+.inv .sup { font-family: Manrope; font-weight: 800; font-size: 19px; letter-spacing: -0.01em; }
+.inv .meta { color: var(--stone); font-size: 13px; margin: 6px 0 18px; }
+.inv .ln { height: 10px; background: #e9ece9; border-radius: 5px; margin: 12px 0; }
+.inv .tot { position: absolute; left: 26px; right: 26px; bottom: 24px; display: flex; justify-content: space-between;
+  border-top: 2px solid var(--ink); padding-top: 12px; font-weight: 700; font-size: 17px; }
+.chip { position: absolute; display: flex; align-items: center; gap: 14px; background: var(--gold-soft); color: var(--caution);
+  border: 2px solid var(--gold); border-radius: 999px; padding: 14px 26px 14px 16px; font-weight: 700; font-size: 28px; white-space: nowrap;
+  box-shadow: 0 18px 40px rgba(0,0,0,.35); }
+.chip .ic { width: 40px; height: 40px; border-radius: 50%; background: var(--gold); display: grid; place-items: center; }
+
+/* ---------- phone ---------- */
+.phone { position: absolute; width: 440px; height: 900px; border-radius: 64px; background: #0b1f1b; padding: 14px;
+  box-shadow: 0 50px 100px rgba(14,43,37,.35), inset 0 0 0 2px #2a4a43; }
+.screen { position: relative; width: 100%; height: 100%; border-radius: 52px; overflow: hidden; background: #f1ede4; display: flex; flex-direction: column; }
+.screen .notch { position: absolute; top: 12px; left: 50%; width: 120px; height: 32px; margin-left: -60px; background: #0b1f1b; border-radius: 20px; z-index: 3; }
+.chathead { background: var(--palm); color: var(--cream); padding: 58px 22px 16px; display: flex; align-items: center; gap: 14px; }
+.avatar { width: 48px; height: 48px; border-radius: 50%; background: var(--cream); display: grid; place-items: center; }
+.chathead b { font-family: Manrope; font-size: 21px; display: block; }
+.chathead small { color: var(--sage); font-size: 14px; }
+.chat { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; padding: 14px 14px 18px; overflow: hidden;
+  background-image: radial-gradient(rgba(21,62,53,.07) 1.2px, transparent 1.4px); background-size: 22px 22px; }
+.bw { overflow: hidden; flex-shrink: 0; }
+.bub { max-width: 84%; border-radius: 18px; padding: 10px 14px; font-size: 16px; line-height: 1.38; margin-top: 10px; box-shadow: 0 1px 1px rgba(0,0,0,.08); position: relative; }
+.out { margin-left: auto; background: #d7eadf; border-top-right-radius: 4px; }
+.in { background: var(--paper); border-top-left-radius: 4px; }
+.time { font-size: 11px; color: var(--stone); text-align: right; margin-top: 4px; }
+.fwd { font-size: 12px; color: var(--stone); font-style: italic; margin-bottom: 6px; }
+.thumb { width: 250px; height: 250px; border-radius: 10px; background: #fff; overflow: hidden; position: relative; padding: 18px; transform-origin: center; }
+.thumb .ln { height: 7px; background: #e6e8e6; border-radius: 4px; margin: 9px 0; }
+.typing { display: flex; gap: 6px; padding: 16px 18px; }
+.typing i { width: 10px; height: 10px; border-radius: 50%; background: var(--stone); display: block; }
+.card b { font-weight: 700; }
+.row { display: flex; justify-content: space-between; gap: 12px; font-size: 15px; }
+.row span:last-child { color: var(--stone); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pill { display: flex; align-items: center; gap: 8px; margin-top: 10px; background: var(--gold-soft); border-radius: 10px; padding: 8px 10px; color: var(--caution); font-weight: 600; font-size: 15px; }
+
+/* ---------- S5 flow ---------- */
+.colh { position: absolute; top: 330px; font-weight: 600; font-size: 19px; letter-spacing: .22em; text-transform: uppercase; color: var(--stone); }
+.src { position: absolute; left: 150px; width: 430px; height: 84px; background: var(--paper); border-radius: 14px; border: 1.5px solid #dfe5e1;
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace; font-size: 19px; display: flex; align-items: center; padding: 0 24px; justify-content: space-between; color: var(--ink); }
+.src span:last-child { color: var(--stone); }
+.mat { position: absolute; left: 760px; width: 360px; height: 84px; background: var(--mist); border-radius: 14px; display: flex; align-items: center;
+  justify-content: space-between; padding: 0 24px; font-size: 24px; font-weight: 600; color: var(--palm); }
+.mat small { font-size: 17px; font-weight: 500; color: var(--stone); }
+.dish { position: absolute; left: 1300px; top: 380px; width: 470px; height: 560px; background: var(--palm); color: var(--cream); border-radius: 24px; padding: 36px 38px;
+  box-shadow: 0 40px 80px rgba(14,43,37,.28); }
+.dish .name { font-family: Manrope; font-weight: 800; font-size: 46px; letter-spacing: -0.02em; }
+.dish .sub { color: var(--sage); font-size: 18px; margin: 4px 0 22px; }
+.rec { display: flex; justify-content: space-between; font-size: 20px; padding: 10px 0; border-bottom: 1px solid rgba(156,200,179,.22); }
+.rec span:last-child { font-variant-numeric: tabular-nums; }
+.big { display: flex; justify-content: space-between; align-items: baseline; margin-top: 20px; }
+.big .v { font-family: Manrope; font-weight: 800; font-size: 44px; font-variant-numeric: tabular-nums; }
+.bar { height: 14px; background: rgba(156,200,179,.2); border-radius: 7px; margin-top: 14px; overflow: hidden; }
+.bar i { display: block; height: 100%; width: 0; background: var(--gold); border-radius: 7px; }
+
+/* ---------- S6 dashboard ---------- */
+.dash { position: absolute; left: 180px; top: 250px; width: 1560px; height: 715px; background: var(--paper); border-radius: 26px;
+  box-shadow: 0 50px 110px rgba(14,43,37,.22); padding: 30px 36px; transform-origin: 50% 20%; }
+.dtop { display: flex; align-items: center; gap: 14px; }
+.dtop .t { font-family: Manrope; font-weight: 800; font-size: 30px; margin-right: auto; }
+.dchip { border: 1.5px solid #dfe5e1; border-radius: 999px; padding: 8px 18px; font-size: 16px; color: var(--stone); font-weight: 500; }
+.answer { background: var(--palm); color: var(--cream); border-radius: 18px; padding: 22px 30px; margin-top: 20px; font-size: 25px; line-height: 1.55; font-weight: 500; min-height: 124px; }
+.answer div::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--gold); margin: 0 16px 4px 0; }
+.tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-top: 20px; }
+.tile { background: var(--cream); border-radius: 18px; padding: 20px 26px; height: 150px; }
+.tile .k { font-size: 18px; color: var(--stone); font-weight: 600; }
+.tile .v { font-family: Manrope; font-weight: 800; font-size: 50px; letter-spacing: -0.02em; margin-top: 6px; font-variant-numeric: tabular-nums; }
+.tile .s { font-size: 16px; color: var(--stone); margin-top: 2px; }
+.bottom { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px; }
+.panel { border: 1.5px solid #e4e9e6; border-radius: 18px; padding: 20px 26px; height: 230px; }
+.panel h4 { font-family: Manrope; font-weight: 800; font-size: 20px; margin-bottom: 12px; }
+.lg { display: grid; grid-template-columns: 110px 1fr 60px; align-items: center; gap: 16px; font-size: 18px; margin: 14px 0; }
+.lg .track { height: 16px; background: var(--mist); border-radius: 8px; overflow: hidden; }
+.lg .track i { display: block; height: 100%; width: 0; background: var(--palm); border-radius: 8px; }
+.lg b { text-align: right; font-variant-numeric: tabular-nums; }
+.tr { margin: 10px 0 18px; font-size: 18px; }
+.tr .l { display: flex; justify-content: space-between; margin-bottom: 8px; }
+.tr .l span:last-child { color: var(--stone); }
+.tr .track { position: relative; height: 16px; background: var(--mist); border-radius: 8px; }
+.tr .track i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--palm); border-radius: 8px; }
+.tr .tick { position: absolute; top: -5px; bottom: -5px; width: 4px; background: var(--gold); border-radius: 2px; }
+.upchip { display: inline-block; background: var(--gold-soft); color: var(--caution); border-radius: 999px; padding: 2px 10px; font-weight: 700; font-size: 15px; margin-left: 8px; }
+
+/* ---------- S7 brief ---------- */
+.notif { position: absolute; left: 14px; right: 14px; top: 60px; background: rgba(255,255,255,.96); border-radius: 22px; padding: 14px 16px; display: flex; gap: 12px; z-index: 4;
+  box-shadow: 0 16px 40px rgba(0,0,0,.25); }
+.notif b { font-size: 15px; } .notif p { font-size: 14px; color: var(--stone); }
+.bcard { background: var(--cream); border-radius: 14px; padding: 18px; width: 300px; }
+.bcard .bh { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--stone); font-weight: 600; margin-bottom: 12px; }
+.bt { background: var(--paper); border-radius: 12px; padding: 12px 14px; margin-top: 10px; }
+.bt .k { font-size: 12px; color: var(--stone); font-weight: 600; }
+.bt .v { font-family: Manrope; font-weight: 800; font-size: 30px; letter-spacing: -0.02em; }
+.bt .s { font-size: 12px; color: var(--stone); }
+
+/* step label */
+.step { position: absolute; display: flex; align-items: center; gap: 18px; font-family: Manrope; font-weight: 800; font-size: 26px; color: var(--gold); letter-spacing: .06em; }
+.step::after { content: ""; width: 70px; height: 3px; background: var(--gold); }
+.cta { position: absolute; border: 2px solid var(--gold); color: var(--cream); border-radius: 999px; padding: 18px 38px; font-size: 26px; font-weight: 600; white-space: nowrap; }
+</style>
+</head>
+<body>
+<div id="stage">
+
+  <!-- S1 · hook -->
+  <section class="scene dots" id="s1">
+    <div class="abs eyebrow" id="s1e" style="left:180px; top:300px">A day at the counter</div>
+    <div class="abs h" id="s1n" style="left:170px; top:370px; font-size:170px; color:var(--palm)"><span id="s1c">AED 0</span> <span id="s1sold" style="color:var(--ink)">sold.</span></div>
+    <div class="abs h rw" id="s1q" style="left:176px; top:590px; font-size:112px" data-t="How much did you *keep?*"></div>
+    <div class="abs" id="roll" style="left:1500px; top:-40px; width:360px; height:1160px; transform:rotate(4deg)">
+      <div class="abs" style="left:-20px; right:-20px; top:0; height:70px; background:var(--palm); border-radius:0 0 18px 18px; z-index:2; box-shadow:0 10px 30px rgba(14,43,37,.3)"></div>
+      <div class="abs" style="left:10px; right:10px; top:60px; bottom:0; overflow:hidden"><div id="rollin"></div></div>
+    </div>
+    <div class="abs" id="s1u" style="left:1245px; top:735px; height:12px; width:0; background:var(--gold); border-radius:6px"></div>
+  </section>
+
+  <!-- S2 · the problem -->
+  <section class="scene dots-dark" id="s2" style="background:var(--palm-deep)">
+    <div class="abs h rw" id="s2a" style="left:150px; top:250px; font-size:112px; color:var(--cream)" data-t="Invoices pile up."></div>
+    <div class="abs h rw" id="s2b" style="left:150px; top:395px; font-size:112px; color:var(--cream)" data-t="Prices move."></div>
+    <div class="abs h rw" id="s2c" style="left:150px; top:540px; font-size:112px" data-t="*Quietly.*"></div>
+    <div class="abs rw" id="s2d" style="left:156px; top:740px; font-size:40px; color:var(--sage); font-weight:500" data-t="And your margin moves with them."></div>
+    <div id="pile"></div>
+  </section>
+
+  <!-- S3 · logo -->
+  <section class="scene dots" id="s3">
+    <svg class="abs" id="mark" viewBox="0 0 112 104" style="left:560px; top:330px; width:300px; height:279px; overflow:visible">
+      <path id="t1" fill="#153E35" d="M8 61c0-8 4-14 11-18l27-16v30L20 72c-6 4-12 0-12-7z"/>
+      <path id="t2" fill="#E3A13B" d="M37 47c0-8 4-14 11-18l26-15v30L48 59c-6 4-11 0-11-7z"/>
+      <path id="t3" fill="#153E35" d="M66 32c0-8 4-14 11-18L104 0v70L78 85c-6 4-12 0-12-7z"/>
+    </svg>
+    <div class="abs" id="wmclip" style="left:900px; top:330px; height:300px; overflow:hidden">
+      <div class="h" id="wm" style="font-family:Manrope; font-weight:600; font-size:250px; letter-spacing:-0.045em; line-height:260px; color:var(--ink)">faida</div>
+    </div>
+    <div class="abs h rw" id="s3t" style="left:0; width:1920px; text-align:center; top:720px; font-size:64px; font-weight:700; color:var(--palm)" data-t="Profit, in *plain* *sight.*"></div>
+  </section>
+
+  <!-- S4 · forward it -->
+  <section class="scene dots" id="s4">
+    <div class="phone" id="ph1" style="left:250px; top:90px">
+      <div class="screen">
+        <div class="notch"></div>
+        <div class="chathead">
+          <div class="avatar"><svg viewBox="0 0 112 104" width="30"><path fill="#153E35" d="M8 61c0-8 4-14 11-18l27-16v30L20 72c-6 4-12 0-12-7z"/><path fill="#E3A13B" d="M37 47c0-8 4-14 11-18l26-15v30L48 59c-6 4-11 0-11-7z"/><path fill="#153E35" d="M66 32c0-8 4-14 11-18L104 0v70L78 85c-6 4-12 0-12-7z"/></svg></div>
+          <div><b>Faida</b><small>Al Quoz branch</small></div>
+        </div>
+        <div class="chat">
+          <div class="bw" id="b1"><div class="bub out" style="padding:6px">
+            <div class="fwd" style="padding:4px 8px 0">Forwarded</div>
+            <div class="thumb">
+              <div style="font-family:Manrope; font-weight:800; font-size:14px">AL MADINA FOODSTUFF</div>
+              <div style="font-size:10px; color:#52625d; margin:3px 0 10px">TAX INVOICE #10482 · 21/08</div>
+              <div class="ln" style="width:92%"></div><div class="ln" style="width:78%"></div><div class="ln" style="width:88%"></div>
+              <div class="ln" style="width:70%"></div><div class="ln" style="width:84%"></div><div class="ln" style="width:60%"></div>
+              <div class="ln" style="width:80%"></div><div class="ln" style="width:74%"></div>
+              <div style="position:absolute; left:18px; right:18px; bottom:16px; border-top:2px solid #172421; padding-top:6px; display:flex; justify-content:space-between; font-weight:700; font-size:12px"><span>TOTAL</span><span>716.89</span></div>
+            </div>
+            <div class="time" style="padding:0 8px 2px">09:42</div>
+          </div></div>
+          <div class="bw" id="b2"><div class="bub in typing"><i></i><i></i><i></i></div></div>
+          <div class="bw" id="b3"><div class="bub in card" style="max-width:92%">
+            <div style="display:flex; align-items:center; gap:8px"><svg width="22" height="22" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#1d6d50"/><path d="M7 12.5l3.2 3.2L17 9" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg><b>Read it</b></div>
+            <div style="margin-top:4px">Al Madina Foodstuff · #10482</div>
+            <div style="font-family:Manrope; font-weight:800; font-size:30px; margin:2px 0 6px">AED 716.89</div>
+            <div class="row l3"><span>Milk powder</span><span>4 × 47.00</span></div>
+            <div class="row l3"><span>Evaporated milk</span><span>24 × 3.25</span></div>
+            <div class="row l3"><span>Tea dust</span><span>6 × 28.50</span></div>
+            <div class="row l3"><span>Sugar</span><span>2 × 62.00</span></div>
+            <div class="row l3" style="color:var(--stone)"><span>+ 8 more lines</span><span></span></div>
+            <div class="pill l3"><svg width="20" height="20" viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8M15 7h6v6" stroke="#80520a" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>Milk powder is up AED 4.00</div>
+            <div class="l3" style="margin-top:10px">Reply <b>OK</b> to confirm.</div>
+            <div class="time">09:42</div>
+          </div></div>
+          <div class="bw" id="b4"><div class="bub out" style="max-width:40%">OK<div class="time">09:43</div></div></div>
+          <div class="bw" id="b5"><div class="bub in"><div style="display:flex; align-items:center; gap:8px"><svg width="22" height="22" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#1d6d50"/><path d="M7 12.5l3.2 3.2L17 9" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg><b>Confirmed</b></div>Recorded for Al Quoz.<div class="time">09:43</div></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="step" id="s4s" style="left:880px; top:300px">01</div>
+    <div class="abs h rw" id="s4h" style="left:874px; top:360px; font-size:100px; white-space:nowrap" data-t="Forward the invoice."></div>
+    <div class="abs rw" id="s4p" style="left:880px; top:500px; font-size:36px; line-height:1.4; width:880px; color:var(--stone)" data-t="Send the supplier's photo to one WhatsApp number. No app. No login. No data entry."></div>
+    <div class="abs" id="s4k" style="left:880px; top:690px; display:flex; flex-direction:column; gap:22px; font-size:30px; font-weight:600; color:var(--palm)">
+      <div class="k4" style="display:flex; align-items:center; gap:16px"><svg width="38" height="38" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#1d6d50"/><path d="M7 12.5l3.2 3.2L17 9" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>Every line read and added up</div>
+      <div class="k4" style="display:flex; align-items:center; gap:16px"><svg width="38" height="38" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#e3a13b"/><path d="M6 15l4-4 3 3 5-5" stroke="#fff" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>Price rises flagged on the spot</div>
+      <div class="k4" style="display:flex; align-items:center; gap:16px"><svg width="38" height="38" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#153e35"/><rect x="7" y="6" width="10" height="12" rx="1.5" stroke="#fbf6ec" stroke-width="2" fill="none"/><path d="M9.5 10h5M9.5 13h5" stroke="#fbf6ec" stroke-width="2" stroke-linecap="round"/></svg>Original photo kept as proof</div>
+    </div>
+  </section>
+
+  <!-- S5 · costed to the plate -->
+  <section class="scene dots" id="s5">
+    <div class="step" id="s5s" style="left:150px; top:110px">02</div>
+    <div class="abs h rw" id="s5h" style="left:144px; top:160px; font-size:92px" data-t="Every line, costed to the *plate.*"></div>
+    <div class="colh" id="c1" style="left:150px">On the invoice</div>
+    <div class="colh" id="c2" style="left:760px">Raw material</div>
+    <div class="colh" id="c3" style="left:1300px">On the menu</div>
+    <svg class="abs" id="links" width="1920" height="1080" style="left:0; top:0; overflow:visible"></svg>
+    <div class="src" style="top:390px"><span>NIDO FCMP 2.5KG TIN</span><span>47.00</span></div>
+    <div class="src" style="top:510px"><span>EVAP MILK 410G</span><span>3.25</span></div>
+    <div class="src" style="top:630px"><span>TEA DUST 1KG</span><span>28.50</span></div>
+    <div class="src" style="top:750px"><span>SUGAR WHITE 10KG</span><span>62.00</span></div>
+    <div class="mat" style="top:390px">Milk powder <small>18.80 / kg</small></div>
+    <div class="mat" style="top:510px">Evaporated milk <small>7.93 / l</small></div>
+    <div class="mat" style="top:630px">Tea dust <small>28.50 / kg</small></div>
+    <div class="mat" style="top:750px">Sugar <small>6.20 / kg</small></div>
+    <div class="dish" id="dish">
+      <div class="name">Karak chai</div>
+      <div class="sub">One cup · recipe on file</div>
+      <div class="rec"><span>Evaporated milk 30 ml</span><span>0.24</span></div>
+      <div class="rec"><span>Milk powder 5 g</span><span>0.09</span></div>
+      <div class="rec"><span>Tea dust 3 g</span><span>0.09</span></div>
+      <div class="rec"><span>Sugar 12 g</span><span>0.07</span></div>
+      <div class="big"><span style="color:var(--sage); font-size:22px">Plate cost</span><span class="v" id="pc">AED 0.00</span></div>
+      <div class="big" style="margin-top:4px"><span style="color:var(--sage); font-size:22px">Sells at AED 1.50 · keeps</span><span class="v gold" id="kp">0%</span></div>
+      <div class="bar"><i id="kbar"></i></div>
+    </div>
+    <div class="abs rw" id="s5f" style="left:150px; top:900px; font-size:32px; color:var(--stone); font-weight:500" data-t="When a supplier's price moves, *every* *dish* *it* *touches* *moves* *with* *it.*"></div>
+  </section>
+
+  <!-- S6 · dashboard -->
+  <section class="scene" id="s6" style="background:var(--mist)">
+    <div class="step" id="s6s" style="left:180px; top:80px">03</div>
+    <div class="abs h rw" id="s6h" style="left:174px; top:128px; font-size:84px" data-t="Know what to *push.*"></div>
+    <div class="dash" id="dash">
+      <div class="dtop"><div class="t">Your cafeterias</div><div class="dchip">1 – 23 Sep</div><div class="dchip">All branches</div><div class="dchip" style="color:var(--verified); border-color:#b9d6c8">Sales loaded to 23 Sep</div></div>
+      <div class="answer"><div id="a1"></div><div id="a2"></div></div>
+      <div class="tiles">
+        <div class="tile"><div class="k">Sold</div><div class="v" id="v1">AED 0</div><div class="s">3 branches, 23 days</div></div>
+        <div class="tile"><div class="k">Kept after ingredients</div><div class="v" id="v2">AED 0</div><div class="s">of every 100 sold</div></div>
+        <div class="tile"><div class="k">Paid to suppliers</div><div class="v" id="v3">AED 0</div><div class="s">48 invoices, all confirmed</div></div>
+      </div>
+      <div class="bottom">
+        <div class="panel"><h4>Branches · share kept</h4>
+          <div class="lg"><span>Deira</span><div class="track"><i style="background:var(--gold)"></i></div><b>61%</b></div>
+          <div class="lg"><span>Karama</span><div class="track"><i></i></div><b>68%</b></div>
+          <div class="lg"><span>Al Quoz</span><div class="track"><i></i></div><b>71%</b></div>
+        </div>
+        <div class="panel"><h4>Worth a look</h4>
+          <div class="tr"><div class="l"><span>Chicken 65 Dry · keeps 38%</span><span>menu 67%</span></div><div class="track"><i style="background:var(--gold)"></i><span class="tick" style="left:67%"></span></div></div>
+          <div class="tr"><div class="l"><span>Milk powder · AED 47.00 <span class="upchip">+9%</span></span><span>was 43.00</span></div><div class="track"><i></i><span class="tick" style="left:73%"></span></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- S7 · morning brief -->
+  <section class="scene dots-dark" id="s7" style="background:var(--palm)">
+    <div class="abs eyebrow" id="s7e" style="left:170px; top:330px; color:var(--sage)">The morning brief</div>
+    <div class="abs h rw" id="s7h" style="left:164px; top:385px; font-size:108px; color:var(--cream)" data-t="Every morning, *7:00.*"></div>
+    <div class="abs rw" id="s7p" style="left:170px; top:560px; font-size:38px; line-height:1.4; width:880px; color:var(--sage)" data-t="Your numbers, on the phone you already carry. Nothing new to open."></div>
+    <div class="phone" id="ph2" style="left:1320px; top:90px">
+      <div class="screen">
+        <div class="notch"></div>
+        <div class="notif" id="notif"><div class="avatar" style="width:40px; height:40px; background:var(--palm)"><svg viewBox="0 0 112 104" width="24"><path fill="#fbf6ec" d="M8 61c0-8 4-14 11-18l27-16v30L20 72c-6 4-12 0-12-7z"/><path fill="#E3A13B" d="M37 47c0-8 4-14 11-18l26-15v30L48 59c-6 4-11 0-11-7z"/><path fill="#fbf6ec" d="M66 32c0-8 4-14 11-18L104 0v70L78 85c-6 4-12 0-12-7z"/></svg></div><div><b>Faida · 07:00</b><p>Your morning brief is here</p></div></div>
+        <div class="chathead">
+          <div class="avatar"><svg viewBox="0 0 112 104" width="30"><path fill="#153E35" d="M8 61c0-8 4-14 11-18l27-16v30L20 72c-6 4-12 0-12-7z"/><path fill="#E3A13B" d="M37 47c0-8 4-14 11-18l26-15v30L48 59c-6 4-11 0-11-7z"/><path fill="#153E35" d="M66 32c0-8 4-14 11-18L104 0v70L78 85c-6 4-12 0-12-7z"/></svg></div>
+          <div><b>Faida</b><small>Daily brief</small></div>
+        </div>
+        <div class="chat">
+          <div class="bw" id="m1"><div class="bub in" style="padding:8px">
+            <div class="bcard">
+              <div class="bh"><span>Tue 23 Sep · all branches</span><svg viewBox="0 0 112 104" width="22"><path fill="#153E35" d="M8 61c0-8 4-14 11-18l27-16v30L20 72c-6 4-12 0-12-7z"/><path fill="#E3A13B" d="M37 47c0-8 4-14 11-18l26-15v30L48 59c-6 4-11 0-11-7z"/><path fill="#153E35" d="M66 32c0-8 4-14 11-18L104 0v70L78 85c-6 4-12 0-12-7z"/></svg></div>
+              <div class="bt"><div class="k">Sold on 23 Sep</div><div class="v" id="bv1">AED 0</div></div>
+              <div class="bt"><div class="k">Month so far</div><div class="v" id="bv2">AED 0</div></div>
+              <div class="bt"><div class="k">Materials share of costed sales</div><div class="v" id="bv3">0%</div><div class="s">covers 91% of sales</div></div>
+            </div>
+            <div style="padding:10px 6px 2px; font-size:15px">Deira keeps the least of the three branches this month.</div>
+            <div class="time">07:00</div>
+          </div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- S8 · outro -->
+  <section class="scene dots-dark" id="s8" style="background:var(--palm-deep)">
+    <div class="abs" id="s8w" style="left:0; width:1920px; top:250px; text-align:center">
+      <div class="h rw" id="o1" style="font-size:150px; color:var(--cream)" data-t="Every item."></div>
+      <div class="h rw" id="o2" style="font-size:150px; color:var(--cream)" data-t="Every branch."></div>
+      <div class="h rw" id="o3" style="font-size:150px" data-t="*Real* *margins.*"></div>
+    </div>
+    <div class="abs" id="logo2" style="left:0; width:1920px; top:330px; display:flex; justify-content:center; align-items:center; gap:44px">
+      <svg viewBox="0 0 112 104" style="width:200px; height:186px; overflow:visible">
+        <path id="u1" fill="#9cc8b3" d="M8 61c0-8 4-14 11-18l27-16v30L20 72c-6 4-12 0-12-7z"/>
+        <path id="u2" fill="#E3A13B" d="M37 47c0-8 4-14 11-18l26-15v30L48 59c-6 4-11 0-11-7z"/>
+        <path id="u3" fill="#fbf6ec" d="M66 32c0-8 4-14 11-18L104 0v70L78 85c-6 4-12 0-12-7z"/>
+      </svg>
+      <div id="wm2clip" style="overflow:hidden; height:200px"><div id="wm2" style="font-family:Manrope; font-weight:600; font-size:190px; letter-spacing:-0.045em; line-height:196px; color:var(--cream)">faida</div></div>
+    </div>
+    <div class="abs h rw" id="o4" style="left:0; width:1920px; text-align:center; top:610px; font-size:56px; font-weight:700; color:var(--sage)" data-t="Profit, in *plain* *sight.*"></div>
+    <div class="cta" id="cta" style="left:50%; top:760px">Private pilot now open for GCC cafeterias</div>
+    <div class="abs" id="fine" style="left:0; width:1920px; text-align:center; top:1010px; font-size:16px; color:rgba(156,200,179,.6)">Figures shown are illustrative.</div>
+  </section>
+
+  <div class="wipe" id="wipeA"></div>
+  <div class="wipe" id="wipeB"></div>
+  <div class="abs" id="fade" style="inset:0; background:#000; opacity:0; z-index:60"></div>
+</div>
+
+<script>
+const DURATION = 48;
+const SCENES = [["s1", 0, 4], ["s2", 4, 10], ["s3", 10, 14], ["s4", 14, 22], ["s5", 22, 29], ["s6", 29, 37], ["s7", 37, 41], ["s8", 41, 48]];
+const CUTS = SCENES.slice(1).map(s => s[1]);
+
+// ---------- maths ----------
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const prog = (t, s, d) => clamp((t - s) / d);
+const lerp = (a, b, x) => a + (b - a) * x;
+const E = {
+  out: x => 1 - Math.pow(1 - x, 3),
+  out5: x => 1 - Math.pow(1 - x, 5),
+  inOut: x => x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2,
+  in: x => x * x * x,
+  back: x => { const c1 = 1.9, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); },
+  spring: x => x === 0 ? 0 : x === 1 ? 1 : Math.pow(2, -9 * x) * Math.sin((x * 10 - .75) * (2 * Math.PI / 3.2)) + 1,
+};
+const $ = id => document.getElementById(id);
+function tf(el, { x = 0, y = 0, s = 1, r = 0, o = 1, blur = 0 } = {}) {
+  el.style.transform = `translate(${x}px, ${y}px) scale(${s}) rotate(${r}deg)`;
+  el.style.opacity = o;
+  el.style.filter = blur > 0.05 ? `blur(${blur}px)` : "none";
+}
+// an element that rises in from below and un-blurs
+function rise(el, t, start, dur = .7, dist = 40) {
+  const k = E.out5(prog(t, start, dur));
+  tf(el, { y: (1 - k) * dist, o: clamp(k * 1.6), blur: (1 - k) * 8 });
+}
+const money = (v, dp = 0) => "AED " + v.toLocaleString("en-US", { minimumFractionDigits: dp, maximumFractionDigits: dp });
+
+// ---------- word reveal ----------
+document.querySelectorAll(".rw").forEach(el => {
+  el.innerHTML = el.dataset.t.split(" ").map(w => {
+    const g = /^\*(.*)\*$/.exec(w);
+    return `<span class="wm"><span class="wi${g ? " gold" : ""}">${g ? g[1] : w}</span></span>`;
+  }).join(" ");
+});
+function words(el, t, start, stagger = .07, dur = .6) {
+  el.querySelectorAll(".wi").forEach((w, i) => {
+    const k = E.out5(prog(t, start + i * stagger, dur));
+    w.style.transform = `translateY(${(1 - k) * 110}%) rotate(${(1 - k) * 6}deg)`;
+  });
+}
+function typeText(el, text, t, start, cps = 45) {
+  const n = Math.floor(clamp((t - start) * cps, 0, text.length));
+  el.textContent = text.slice(0, n);
+  el.style.display = t >= start ? "block" : "none";
+}
+
+// ---------- S1 till roll ----------
+(() => {
+  const items = [["KARAK CHAI", "1.50"], ["PARATHA EGG", "4.00"], ["CHICKEN 65 DRY", "14.00"], ["KARAK CHAI x2", "3.00"], ["ZAATAR MANAKISH", "5.00"],
+    ["FRESH LIME", "6.00"], ["CHEESE PARATHA", "5.50"], ["KARAK CHAI", "1.50"], ["FALAFEL WRAP", "7.00"], ["MASALA TEA", "2.00"]];
+  let h = "";
+  for (let r = 0; r < 7; r++) {
+    for (let i = 0; i < 5; i++) { const [n, v] = items[(r * 3 + i) % items.length]; h += `<div><span>${n}</span><span>${v}</span></div>`; }
+    h += `<div class="sep"></div>`;
+  }
+  $("rollin").innerHTML = h;
+})();
+
+// ---------- S2 invoice pile ----------
+const SUPPLIERS = [["Al Madina Foodstuff", "716.89"], ["Gulf Dairy Trading", "1,284.50"], ["Emirates Poultry", "2,410.00"], ["Fresh Bake Supplies", "388.20"],
+  ["Al Ain Farms", "942.75"], ["Deira Spice House", "215.40"], ["Karama Veg Market", "603.10"]];
+const PILE = SUPPLIERS.map((s, i) => ({ x: 1080 + (i % 3) * 150 + (i * 37 % 60), y: 200 + (i % 2) * 90 + (i * 53 % 70), r: ((i * 47) % 30) - 15 }));
+$("pile").innerHTML = SUPPLIERS.map(([n, tot], i) => `<div class="inv" id="inv${i}"><div class="sup">${n}</div><div class="meta">Tax invoice #${10470 + i * 7} · ${14 + i} Aug</div>` +
+  Array.from({ length: 9 }, (_, j) => `<div class="ln" style="width:${60 + (i * 13 + j * 29) % 38}%"></div>`).join("") +
+  `<div class="tot"><span>Total</span><span>AED ${tot}</span></div></div>`).join("") +
+  [["Milk powder", "+AED 4.00"], ["Chicken", "+8%"], ["Cardamom", "+AED 1.50"]].map(([n, v], i) =>
+    `<div class="chip" id="ch${i}"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8M15 7h6v6" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span>${n} <span style="color:var(--ink)">${v}</span></div>`).join("");
+const CHIP_POS = [[1050, 560], [1380, 330], [1250, 770]];
+
+// ---------- S5 links ----------
+(() => {
+  const ys = [432, 552, 672, 792];
+  let d = "";
+  ys.forEach((y, i) => {
+    d += `<path class="lk" d="M580 ${y} C 680 ${y}, 660 ${y}, 760 ${y}" />`;
+    d += `<path class="lk" d="M1120 ${y} C 1220 ${y}, 1200 ${560 + i * 50}, 1300 ${560 + i * 50}" />`;
+  });
+  $("links").innerHTML = d;
+  $("links").querySelectorAll(".lk").forEach(p => {
+    p.setAttribute("fill", "none"); p.setAttribute("stroke", "#e3a13b"); p.setAttribute("stroke-width", "4"); p.setAttribute("stroke-linecap", "round");
+    const L = p.getTotalLength(); p.dataset.len = L; p.style.strokeDasharray = L;
+  });
+})();
+
+// chat bubbles grow their height so the chat scrolls up smoothly, like a real one
+const BUBBLE_H = {};
+function measureBubbles() {
+  document.querySelectorAll(".bw").forEach(el => {
+    const scene = el.closest(".scene"); const prev = scene.style.display; scene.style.display = "block";
+    el.style.height = "auto"; BUBBLE_H[el.id] = el.getBoundingClientRect().height; scene.style.display = prev;
+  });
+}
+function bubble(id, t, start, dur = .45) {
+  const el = $(id), k = E.out5(prog(t, start, dur));
+  el.style.height = (BUBBLE_H[id] * k) + "px";
+  const b = el.firstElementChild;
+  const out = b.classList.contains("out");
+  b.style.transformOrigin = out ? "100% 100%" : "0% 100%";
+  const s = E.back(prog(t, start, dur + .1));
+  b.style.transform = `scale(${lerp(.6, 1, s)})`; b.style.opacity = clamp(k * 2);
+}
+
+// ---------- the frame ----------
+function renderFrame(t) {
+  for (const [id, a, b] of SCENES) $(id).style.display = (t >= a && t < b) || (id === "s8" && t >= b) ? "block" : "none";
+
+  // wipes: gold leads, palm follows, each crossing the frame around a cut
+  let wa = 120, wb = 120;
+  for (const c of CUTS) {
+    const ka = prog(t, c - .34, .62), kb = prog(t, c - .28, .62);
+    if (ka > 0 && ka < 1) wa = lerp(120, -140, E.inOut(ka));
+    if (kb > 0 && kb < 1) wb = lerp(120, -140, E.inOut(kb));
+  }
+  $("wipeA").style.transform = `translateX(${wa}%) skewX(-12deg)`;
+  $("wipeB").style.transform = `translateX(${wb}%) skewX(-12deg)`;
+
+  if (t < 4) s1(t); else if (t < 10) s2(t); else if (t < 14) s3(t); else if (t < 22) s4(t);
+  else if (t < 29) s5(t); else if (t < 37) s6(t); else if (t < 41) s7(t); else s8(t);
+  $("fade").style.opacity = E.inOut(prog(t, 47.2, .8));
+}
+
+function s1(t) {
+  rise($("s1e"), t, .15);
+  const k = E.out5(prog(t, .25, 1.3));
+  $("s1c").textContent = money(Math.round(6420 * k));
+  tf($("s1n"), { y: (1 - E.out5(prog(t, .2, .7))) * 80, o: clamp(prog(t, .2, .3)), s: lerp(1.06, 1, E.out(prog(t, .2, 1.2))) });
+  tf($("s1sold"), { o: clamp(prog(t, 1.2, .3)), x: (1 - E.out5(prog(t, 1.2, .5))) * 30 });
+  words($("s1q"), t, 1.75, .09);
+  // the roll prints downward out of the till, fast at first then steady
+  $("rollin").style.transform = `translateY(${-1500 + 900 * E.out(prog(t, 0, 1.6)) + 90 * t}px)`;
+  $("s1u").style.width = $("s1u").dataset.w * E.out5(prog(t, 2.55, .5)) + "px";
+  $("s1").style.transform = `scale(${1 + .035 * E.inOut(prog(t, 1.8, 2.2))})`;
+}
+
+function s2(t) {
+  words($("s2a"), t, 4.3); words($("s2b"), t, 5.9); words($("s2c"), t, 6.7, .07, .5); words($("s2d"), t, 8.0, .05);
+  PILE.forEach((p, i) => {
+    const st = 4.35 + i * .24, k = E.out5(prog(t, st, .65));
+    const drift = (t - st) * 4;
+    tf($("inv" + i), { x: p.x + (1 - k) * 260, y: p.y + (1 - k) * 700 - drift, r: p.r + (1 - k) * 35, o: clamp(k * 3) });
+  });
+  CHIP_POS.forEach(([x, y], i) => {
+    const st = 6.1 + i * .4, k = E.spring(prog(t, st, .9));
+    const el = $("ch" + i);
+    el.style.left = x + "px"; el.style.top = y + "px";
+    tf(el, { s: k, o: clamp(prog(t, st, .12)), r: (i - 1) * -3, y: -(t - st) * 5 * (t > st) });
+  });
+  $("s2").style.transform = `scale(${1 + .03 * prog(t, 4, 6)})`;
+}
+
+function s3(t) {
+  [["t1", 10.0], ["t2", 10.2], ["t3", 10.4]].forEach(([id, st], i) => {
+    const k = E.back(prog(t, st, .6));
+    const el = $(id);
+    el.style.transformBox = "fill-box"; el.style.transformOrigin = "50% 100%";
+    el.style.transform = `translateY(${(1 - k) * -90}px) scale(${lerp(.3, 1, k)}) rotate(${(1 - k) * -25}deg)`;
+    el.style.opacity = clamp(prog(t, st, .1));
+  });
+  // the mark slides left as the wordmark opens beside it
+  const m = E.inOut(prog(t, 11.0, .7));
+  $("mark").style.transform = `translateX(${lerp(390, 0, m)}px)`;
+  $("wmclip").style.width = lerp(0, 700, E.out5(prog(t, 11.15, .8))) + "px";
+  tf($("wm"), { x: (1 - E.out5(prog(t, 11.15, .8))) * -120 });
+  words($("s3t"), t, 11.9, .1, .7);
+  $("s3").style.transform = `scale(${1 + .03 * E.inOut(prog(t, 11, 3))})`;
+}
+
+function s4(t) {
+  const pk = E.out5(prog(t, 14.05, .9));
+  tf($("ph1"), { y: (1 - pk) * 500, r: (1 - pk) * -8, o: clamp(pk * 2) });
+  rise($("s4s"), t, 14.3); words($("s4h"), t, 14.4); words($("s4p"), t, 15.1, .035);
+  bubble("b1", t, 15.0);
+  const th = document.querySelector("#b1 .thumb");
+  th.style.transform = `rotate(${(1 - E.out5(prog(t, 15.0, .8))) * 4}deg)`;
+  // typing dots, then they give way to the reply
+  const typingOn = t >= 16.0 && t < 17.1;
+  $("b2").style.height = typingOn ? BUBBLE_H.b2 * E.out5(prog(t, 16.0, .3)) + "px" : "0px";
+  document.querySelectorAll("#b2 i").forEach((d, i) => d.style.transform = `translateY(${-6 * Math.max(0, Math.sin((t * 7) - i * .9))}px)`);
+  bubble("b3", t, 17.1, .5);
+  document.querySelectorAll("#b3 .l3").forEach((el, i) => rise(el, t, 17.35 + i * .13, .5, 14));
+  const pill = document.querySelector("#b3 .pill"), pp = E.spring(prog(t, 18.0, .8));
+  pill.style.transform = `scale(${lerp(.85, 1, pp)})`;
+  bubble("b4", t, 19.3); bubble("b5", t, 19.9);
+  document.querySelectorAll(".k4").forEach((el, i) => rise(el, t, 17.5 + i * .55, .6, 30));
+}
+
+function s5(t) {
+  rise($("s5s"), t, 22.1); words($("s5h"), t, 22.2, .07);
+  ["c1", "c2", "c3"].forEach((id, i) => rise($(id), t, 22.7 + i * .5, .5, 16));
+  document.querySelectorAll("#s5 .src").forEach((el, i) => rise(el, t, 22.8 + i * .12, .6, 30));
+  document.querySelectorAll("#s5 .mat").forEach((el, i) => rise(el, t, 23.7 + i * .12, .6, 30));
+  document.querySelectorAll("#links .lk").forEach((p, i) => {
+    const st = i % 2 === 0 ? 23.4 + (i / 2) * .1 : 24.4 + ((i - 1) / 2) * .1;
+    p.style.strokeDashoffset = p.dataset.len * (1 - E.inOut(prog(t, st, .6)));
+  });
+  const dk = E.out5(prog(t, 24.3, .8));
+  tf($("dish"), { x: (1 - dk) * 120, o: clamp(dk * 2), s: lerp(.94, 1, dk) });
+  document.querySelectorAll("#dish .rec").forEach((el, i) => rise(el, t, 24.9 + i * .15, .5, 14));
+  const pc = E.out5(prog(t, 25.7, .9));
+  $("pc").textContent = "AED " + (0.49 * pc).toFixed(2);
+  const kp = E.out5(prog(t, 26.3, 1));
+  $("kp").textContent = Math.round(67 * kp) + "%";
+  $("kbar").style.width = 67 * kp + "%";
+  words($("s5f"), t, 27.1, .04);
+}
+
+function s6(t) {
+  rise($("s6s"), t, 29.1); words($("s6h"), t, 29.2, .08);
+  const dk = E.out5(prog(t, 29.2, 1));
+  const push = E.inOut(prog(t, 33.2, 3.6));
+  tf($("dash"), { y: (1 - dk) * 600, o: clamp(dk * 2), s: 1 + .06 * push });
+  typeText($("a1"), "Look at Deira: keeps 61%, the least of the three branches.", t, 30.1, 60);
+  typeText($("a2"), "Chicken 65 Dry: sells well but keeps only 38% against the menu's 67%.", t, 31.2, 60);
+  const c = E.out5(prog(t, 30.3, 1.4));
+  $("v1").textContent = money(Math.round(184220 * c));
+  $("v2").textContent = money(Math.round(67 * c));
+  $("v3").textContent = money(Math.round(61480 * c));
+  document.querySelectorAll("#s6 .tile").forEach((el, i) => rise(el, t, 29.9 + i * .1, .6, 30));
+  [61, 68, 71].forEach((v, i) => document.querySelectorAll("#s6 .lg .track i")[i].style.width = v * E.out5(prog(t, 31.0 + i * .15, 1)) + "%");
+  [38, 81].forEach((v, i) => document.querySelectorAll("#s6 .tr .track i")[i].style.width = v * E.out5(prog(t, 31.4 + i * .2, 1)) + "%");
+  document.querySelectorAll("#s6 .panel").forEach((el, i) => rise(el, t, 30.4 + i * .12, .7, 30));
+}
+
+function s7(t) {
+  rise($("s7e"), t, 37.15); words($("s7h"), t, 37.2, .08); words($("s7p"), t, 37.9, .04);
+  const pk = E.out5(prog(t, 37.05, .9));
+  tf($("ph2"), { y: (1 - pk) * 600, r: (1 - pk) * 8, o: clamp(pk * 2) });
+  // notification drops in, then slides away as the message lands
+  const nIn = E.back(prog(t, 37.6, .5)), nOut = E.in(prog(t, 38.5, .35));
+  tf($("notif"), { y: lerp(-140, 0, nIn) - nOut * 160, o: 1 - nOut });
+  bubble("m1", t, 38.55, .55);
+  const c = E.out5(prog(t, 38.9, 1.1));
+  $("bv1").textContent = money(Math.round(6420 * c));
+  $("bv2").textContent = money(Math.round(142880 * c));
+  $("bv3").textContent = Math.round(34 * c) + "%";
+}
+
+function s8(t) {
+  words($("o1"), t, 41.1, .08, .55); words($("o2"), t, 41.55, .08, .55); words($("o3"), t, 42.0, .08, .6);
+  const up = E.in(prog(t, 43.3, .45));
+  tf($("s8w"), { y: -up * 140, o: 1 - up, blur: up * 10 });
+  [["u1", 43.75], ["u2", 43.95], ["u3", 44.15]].forEach(([id, st]) => {
+    const el = $(id), k = E.back(prog(t, st, .55));
+    el.style.transformBox = "fill-box"; el.style.transformOrigin = "50% 100%";
+    el.style.transform = `translateY(${(1 - k) * -80}px) scale(${lerp(.3, 1, k)})`;
+    el.style.opacity = clamp(prog(t, st, .1));
+  });
+  const w = E.out5(prog(t, 44.4, .8));
+  $("wm2clip").style.width = lerp(0, 540, w) + "px";
+  tf($("wm2"), { x: (1 - w) * -100 });
+  words($("o4"), t, 44.9, .1, .7);
+  const ck = E.out5(prog(t, 45.5, .7));
+  $("cta").style.transform = `translateX(-50%) translateY(${(1 - ck) * 30}px)`;
+  $("cta").style.opacity = ck;
+  $("fine").style.opacity = prog(t, 45.8, .6);
+  $("logo2").style.transform = `scale(${1 + .02 * prog(t, 44, 4)})`;
+}
+
+window.DURATION = DURATION;
+window.renderFrame = renderFrame;
+// the underline sits under the gold word wherever the type puts it
+function placeUnderline() {
+  $("s1").style.display = "block";
+  const w = $("s1q").querySelector(".gold").getBoundingClientRect();
+  Object.assign($("s1u").style, { left: w.left + 4 + "px", top: w.bottom - 4 + "px" });
+  $("s1u").dataset.w = w.width - 8;
+}
+window.ready = document.fonts.ready.then(() => { measureBubbles(); placeUnderline(); renderFrame(0); });
+
+// open in a browser to preview: ?t=12.5 freezes a frame, ?play runs it in real time
+const q = new URLSearchParams(location.search);
+window.ready.then(() => {
+  if (q.has("t")) renderFrame(parseFloat(q.get("t")));
+  if (q.has("play")) { const t0 = performance.now(); const tick = () => { const t = (performance.now() - t0) / 1000; renderFrame(t % DURATION); requestAnimationFrame(tick); }; tick(); }
+});
+</script>
+</body>
+</html>
