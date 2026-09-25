@@ -93,8 +93,8 @@ menu settles into PUSH and FIX. Everything lives in `cartoon/`:
   from the loudness of their own voice, the sound effects (typing, the clock, the error buzzer,
   whooshes, pops), all synthesised, and the music's timeline (`build/score.json`).
 - `index.html` draws the characters in SVG and animates them as a pure function of time. The owner
-  is a Gulf restaurateur (white kandura with its tassel, ghutra and agal, a kept beard, a gold
-  watch); the supervisor is at his desk in shirt and tie. Each arm is one smooth curve from shoulder
+  is a slim, well-dressed Indian restaurateur (navy blazer over a white shirt, gold pocket square,
+  neat side-parted hair, a trimmed beard, a gold watch); the supervisor is at his desk in shirt and tie. Each arm is one smooth curve from shoulder
   to wrist, bent toward the elbow a two-bone solve gives, so no pose shows a joint, and ends in a
   cartoon hand shaped for the moment (fist, open palm, pointing, thumbs-up, holding a cup or a
   phone). Eyelids, brows, sweat and stress marks carry the rest. Spoken lines show as speech bubbles and
