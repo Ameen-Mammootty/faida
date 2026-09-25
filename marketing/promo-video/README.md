@@ -79,3 +79,26 @@ To change a line, edit `SCRIPT` in `narration.py`; scene lengths and cuts follow
 try another voice, set `VOICE` (`am_michael`, `bf_emma` and `bm_george` are the other good
 English ones). The model files are the ONNX export of Kokoro-82M v1.0 (Apache 2.0) from the
 kokoro-onnx releases, not Hugging Face, which this build environment cannot reach.
+
+## The cartoon cut (the problem, told with characters)
+
+`out/faida-cartoon.mp4`: about a minute, 1080p at 30 fps. A supervisor types invoices in by hand
+at midnight, mistypes 47.00 as 4700 and rubs his head ("Okay... I made a mistake. Again."); the
+owner stares at a menu whose red and green tags will not settle, while costs climb and profit
+slides. Then Faida arrives: the invoices fly into WhatsApp, the supervisor sips his tea, and the
+menu settles into PUSH and FIX. Everything lives in `cartoon/`:
+
+- `soundtrack.py` holds the script (narrator, owner, supervisor, each a Kokoro voice) and writes
+  the timeline every beat keys to (`build/timings.js`), each character's mouth movement taken
+  from the loudness of their own voice, the sound effects (typing, the clock, the error buzzer,
+  whooshes, pops), all synthesised, and the music's timeline (`build/score.json`).
+- `index.html` draws the characters in SVG, with two-bone arms, eyelids, brows, sweat and stress
+  marks, and animates them as a pure function of time. Spoken lines show as speech bubbles and
+  the narrator as a caption, so the film works with the sound off.
+- `../music.mjs` scores it: only the pad under the problem (`calmUntil`), the drop when Faida
+  appears.
+- `build.sh` runs it all: voices and effects, music, the mix (voices lead, music ducks), then
+  `../render.mjs --page cartoon/index.html` for the frames.
+
+Red and green carry meaning on the menu here because that is the joke, but never alone: the tags
+read "?" while nobody knows, then "PUSH · 67%" or "FIX · 38%".

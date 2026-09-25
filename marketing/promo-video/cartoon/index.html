@@ -1,0 +1,755 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Faida cartoon</title>
+<!--
+  The cartoon cut. Like ../index.html, the whole film is window.renderFrame(t),
+  a pure function of time: ../render.mjs steps it frame by frame. Every beat is
+  keyed to a line of dialogue in build/timings.js (written by soundtrack.py),
+  and each character's mouth follows the loudness of their own voice.
+  Open with ?t=14.5 to freeze a frame or ?play to watch (silent).
+-->
+<style>
+@font-face { font-family: Manrope; src: url("../../../apps/api/src/faida_api/fonts/Manrope%5Bwght%5D.ttf"); font-weight: 200 800; }
+@font-face { font-family: Inter; src: url("../../../apps/api/src/faida_api/fonts/Inter%5Bopsz%2Cwght%5D.ttf"); font-weight: 100 900; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 1920px; height: 1080px; overflow: hidden; background: #0e2b25; }
+#stage { position: relative; width: 1920px; height: 1080px; overflow: hidden; font-family: Inter, sans-serif; }
+svg { position: absolute; inset: 0; }
+text { font-family: Manrope, sans-serif; }
+.bubble { position: absolute; background: #fff; border: 5px solid #172421; border-radius: 34px; padding: 18px 28px; font-family: Manrope; font-weight: 800;
+  font-size: 40px; line-height: 1.15; color: #172421; max-width: 560px; transform-origin: var(--ox, 50%) var(--oy, 100%); box-shadow: 0 8px 0 rgba(23,36,33,.18); z-index: 20; }
+.bubble::after { content: ""; position: absolute; width: 34px; height: 34px; background: #fff; border-right: 5px solid #172421; border-bottom: 5px solid #172421;
+  left: var(--tx, 40px); bottom: -20px; transform: rotate(45deg) skew(12deg, 12deg); }
+.bubble.top::after { bottom: auto; top: -20px; transform: rotate(225deg) skew(12deg, 12deg); }
+#caption { position: absolute; left: 50%; bottom: 46px; transform: translateX(-50%); max-width: 1500px; background: rgba(14,43,37,.88); color: #fbf6ec;
+  font-size: 38px; font-weight: 600; line-height: 1.3; padding: 16px 34px; border-radius: 18px; text-align: center; z-index: 30; white-space: nowrap; }
+.wipe { position: absolute; top: -10%; left: 0; width: 130%; height: 120%; z-index: 50; transform: translateX(120%) skewX(-12deg); }
+#wipeA { background: #e3a13b; } #wipeB { background: #153e35; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <svg id="svg" viewBox="0 0 1920 1080" width="1920" height="1080" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="nightSky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0b1d33"/><stop offset="1" stop-color="#1d3d5c"/></linearGradient>
+      <linearGradient id="daySky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8fc7e8"/><stop offset="1" stop-color="#d7eef7"/></linearGradient>
+      <radialGradient id="lamp" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#e3a13b" stop-opacity=".32"/><stop offset="1" stop-color="#e3a13b" stop-opacity="0"/></radialGradient>
+      <radialGradient id="burst" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#f8eed9"/><stop offset="1" stop-color="#fbf6ec" stop-opacity="0"/></radialGradient>
+    </defs>
+    <g id="night"></g>
+    <g id="owner"></g>
+    <g id="faida"></g>
+    <g id="fixed"></g>
+    <g id="end"></g>
+    <rect id="flash" x="0" y="0" width="1920" height="1080" fill="#fff" opacity="0"/>
+    <rect id="fade" x="0" y="0" width="1920" height="1080" fill="#000" opacity="0"/>
+  </svg>
+  <div id="bubbles"></div>
+  <div id="caption"></div>
+  <div class="wipe" id="wipeA"></div>
+  <div class="wipe" id="wipeB"></div>
+</div>
+<script src="build/timings.js"></script>
+<script>
+// ---------- palette ----------
+const C = {
+  cream: "#fbf6ec", paper: "#ffffff", ink: "#172421", palm: "#153e35", palmDeep: "#0e2b25", gold: "#e3a13b", goldSoft: "#f8eed9",
+  sage: "#9cc8b3", mist: "#e7efea", stone: "#52625d", red: "#c62828", redDeep: "#8e1b1b", green: "#2e9e4f", wood: "#7a4b2e", woodTop: "#93603c",
+};
+
+// ---------- maths ----------
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const prog = (t, s, d) => clamp((t - s) / d);
+const lerp = (a, b, x) => a + (b - a) * x;
+const E = {
+  out: x => 1 - Math.pow(1 - x, 3),
+  inOut: x => x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2,
+  in: x => x * x * x,
+  back: x => { const c1 = 1.9, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); },
+  spring: x => x === 0 ? 0 : x === 1 ? 1 : Math.pow(2, -9 * x) * Math.sin((x * 10 - .75) * (2 * Math.PI / 3.2)) + 1,
+};
+// keyframes: [[t, value], ...]; value a number, an array or a flat object of numbers
+function kf(t, keys) {
+  if (t <= keys[0][0]) return keys[0][1];
+  for (let i = 0; i < keys.length - 1; i++) {
+    const [t0, a] = keys[i], [t1, b] = keys[i + 1];
+    if (t < t1) {
+      const x = E.inOut((t - t0) / (t1 - t0));
+      if (typeof a === "number") return lerp(a, b, x);
+      if (Array.isArray(a)) return a.map((v, j) => lerp(v, b[j], x));
+      const o = {}; for (const k in a) o[k] = typeof a[k] === "number" ? lerp(a[k], b[k] ?? a[k], x) : (x < .5 ? a[k] : b[k]); return o;
+    }
+  }
+  return keys[keys.length - 1][1];
+}
+const T = window.T, L = id => T.lines[id], S = id => T.scenes.find(s => s.id === id).start;
+const mouth = (who, t) => T.mouth[who][Math.round(t * T.fps)] || 0;
+const talking = (id, t) => t >= L(id).start && t <= L(id).end;
+// a blink every few seconds, different per character
+function blink(t, seed) { const p = 3.1 + seed * .7, k = ((t + seed * 1.3) % p) / p; return k > .96 ? 0.05 : 1; }
+
+// ---------- svg helpers ----------
+const NS = "http://www.w3.org/2000/svg";
+function el(tag, attrs = {}, parent) {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+const at = (e, x, y, s = 1, r = 0) => e.setAttribute("transform", `translate(${x} ${y}) rotate(${r}) scale(${s})`);
+const ink = { stroke: C.ink, "stroke-width": 6, "stroke-linejoin": "round", "stroke-linecap": "round" };
+function text(parent, str, x, y, size, fill, weight = 800, anchor = "start", family = "Manrope") {
+  const e = el("text", { x, y, "font-size": size, fill, "font-weight": weight, "text-anchor": anchor, "font-family": family }, parent);
+  e.textContent = str; return e;
+}
+
+// ---------- two-bone arm ----------
+function ik(sx, sy, tx, ty, l1, l2, bend) {
+  const dx = tx - sx, dy = ty - sy;
+  const d = Math.min(Math.hypot(dx, dy), l1 + l2 - .01);
+  const a = Math.acos(clamp((l1 * l1 + d * d - l2 * l2) / (2 * l1 * d), -1, 1));
+  const base = Math.atan2(dy, dx) + bend * a;
+  const ex = sx + l1 * Math.cos(base), ey = sy + l1 * Math.sin(base);
+  const hb = Math.atan2(ty - ey, tx - ex);
+  return { ex, ey, hx: ex + l2 * Math.cos(hb), hy: ey + l2 * Math.sin(hb), hb };
+}
+
+// ---------- the characters ----------
+// Origin at the base of the neck. p holds the pose: x, y, s, lean, tilt, look [x,y],
+// open (eyelids), worry (brows), browY, talk (mouth 0..1), smile (-1..1), lh/rh hand
+// targets, lShape/rShape, sweat, stress, t.
+function Character(parent, kind) {
+  const sup = kind === "sup";
+  const skin = sup ? "#d9a06f" : "#b9794c", skinDark = sup ? "#b47c50" : "#94603a";
+  const shirt = sup ? "#bcd6ea" : "#1f5a4c", shirtDark = sup ? "#9dbfd8" : "#174a3e";
+  const root = el("g", {}, parent);
+  const body = el("g", {}, root);
+  const c = { root, kind };
+
+  if (!sup) { // legs and belt
+    el("path", { d: "M-120,330 L-130,800 L-20,800 L0,420 L20,800 L130,800 L120,330 Z", fill: "#2b3139", ...ink }, body);
+    el("rect", { x: -150, y: 300, width: 300, height: 34, rx: 10, fill: "#5b3a24", ...ink }, body);
+    el("rect", { x: -22, y: 304, width: 44, height: 26, rx: 5, fill: C.gold, ...ink, "stroke-width": 4 }, body);
+  }
+  const torso = sup
+    ? "M-150,30 Q-165,12 -118,2 L118,2 Q165,12 150,30 L178,340 L-178,340 Z"
+    : "M-150,24 Q-170,6 -110,-4 L110,-4 Q170,6 150,24 Q205,160 170,306 L-170,306 Q-205,160 -150,24 Z";
+  el("path", { d: torso, fill: shirt, ...ink }, body);
+  el("rect", { x: -32, y: -46, width: 64, height: 56, fill: skin, ...ink }, body);
+  if (sup) {
+    el("path", { d: "M-40,4 L0,48 L-60,58 Z M40,4 L0,48 L60,58 Z", fill: "#fff", ...ink, "stroke-width": 5 }, body);
+    el("path", { d: "M-6,44 L10,44 L22,180 L2,206 L-16,180 Z", fill: C.gold, ...ink, "stroke-width": 5, transform: "rotate(-8 0 44)" }, body);
+    el("rect", { x: 62, y: 110, width: 62, height: 34, rx: 6, fill: "#fff", ...ink, "stroke-width": 4 }, body);
+    el("rect", { x: 70, y: 120, width: 40, height: 6, fill: C.palm }, body);
+  } else {
+    el("path", { d: "M-46,-2 L0,52 L46,-2 L30,-6 L0,30 L-30,-6 Z", fill: C.gold, ...ink, "stroke-width": 5 }, body);
+    [80, 130].forEach(y => el("circle", { cx: 0, cy: y, r: 7, fill: C.cream, ...ink, "stroke-width": 3 }, body));
+    el("path", { d: "M70,70 l40,0", stroke: C.gold, "stroke-width": 6 }, body);
+  }
+
+  // head
+  const head = el("g", {}, root);
+  el("ellipse", { cx: -116, cy: -140, rx: 22, ry: 32, fill: skin, ...ink }, head);
+  el("ellipse", { cx: 116, cy: -140, rx: 22, ry: 32, fill: skin, ...ink }, head);
+  el("ellipse", { cx: 0, cy: -150, rx: sup ? 118 : 126, ry: sup ? 134 : 128, fill: skin, ...ink }, head);
+  if (sup) {
+    el("path", { d: "M-122,-160 Q-138,-262 -64,-288 Q-40,-318 0,-296 Q34,-326 66,-288 Q138,-268 124,-162 Q104,-226 62,-238 Q42,-210 10,-244 Q-22,-212 -52,-242 Q-86,-216 -122,-160 Z", fill: "#2a211d", ...ink }, head);
+    c.strand = el("path", { d: "M8,-294 Q22,-340 50,-332", fill: "none", ...ink, "stroke-width": 7 }, head);
+    const pencil = el("g", { transform: "translate(122 -196) rotate(62)" }, head);
+    el("rect", { x: -8, y: -40, width: 16, height: 70, fill: C.gold, ...ink, "stroke-width": 4 }, pencil);
+    el("rect", { x: -8, y: -52, width: 16, height: 14, fill: "#e98a8a", ...ink, "stroke-width": 4 }, pencil);
+    el("path", { d: "M-8,30 L0,48 L8,30 Z", fill: "#f3d2a0", ...ink, "stroke-width": 4 }, pencil);
+  } else {
+    el("path", { d: "M-126,-120 Q-134,-190 -100,-214 Q-96,-160 -112,-110 Z M126,-120 Q134,-190 100,-214 Q96,-160 112,-110 Z", fill: "#3b3533", ...ink, "stroke-width": 5 }, head);
+    el("ellipse", { cx: -40, cy: -248, rx: 34, ry: 14, fill: "#fff", opacity: .35, transform: "rotate(-18 -40 -248)" }, head);
+  }
+  // eyes
+  const eyes = [], browG = [];
+  [-1, 1].forEach(side => {
+    const ex = side * (sup ? 46 : 48), ey = sup ? -156 : -160, r = sup ? 24 : 22;
+    const clipId = `eye-${kind}-${side}-${Math.random().toString(36).slice(2, 7)}`;
+    const cp = el("clipPath", { id: clipId }, head); el("circle", { cx: ex, cy: ey, r }, cp);
+    el("circle", { cx: ex, cy: ey, r, fill: "#fff" }, head);
+    const pupil = el("circle", { cx: ex, cy: ey, r: sup ? 10 : 11, fill: C.ink }, head);
+    const lidWrap = el("g", { "clip-path": `url(#${clipId})` }, head);
+    const lid = el("rect", { x: ex - r - 2, y: ey - r - 2, width: 2 * r + 4, height: 0, fill: skin }, lidWrap);
+    const lidLine = el("line", { x1: ex - r, x2: ex + r, y1: ey - r, y2: ey - r, ...ink, "stroke-width": 5 }, lidWrap);
+    el("circle", { cx: ex, cy: ey, r, fill: "none", ...ink, "stroke-width": 4 }, head);
+    if (sup) el("path", { d: `M${ex - 18},${ey + 30} Q${ex},${ey + 40} ${ex + 18},${ey + 30}`, fill: "none", stroke: skinDark, "stroke-width": 4, "stroke-linecap": "round" }, head);
+    eyes.push({ ex, ey, r, pupil, lid, lidLine });
+    const bg = el("g", {}, head);
+    el("path", { d: sup ? "M-30,6 Q0,-10 30,4 Q0,-2 -30,14 Z" : "M-38,8 Q0,-16 38,6 Q0,0 -38,18 Z", fill: sup ? "#2a211d" : "#3b3533", ...ink, "stroke-width": 5 }, bg);
+    browG.push({ g: bg, x: ex, y: ey - (sup ? 52 : 48), side });
+  });
+  if (sup) { // glasses over the eyes
+    [-46, 46].forEach(x => el("circle", { cx: x, cy: -156, r: 38, fill: "#e8f3f8", "fill-opacity": .18, ...ink }, head));
+    el("path", { d: "M-8,-160 Q0,-168 8,-160 M-84,-160 L-114,-150 M84,-160 L114,-150", fill: "none", ...ink }, head);
+  }
+  el("path", { d: sup ? "M-4,-132 Q-20,-100 0,-94 Q14,-96 10,-104" : "M-10,-140 Q-34,-96 0,-92 Q30,-94 16,-120", fill: sup ? "none" : skinDark, ...ink, "stroke-width": 5 }, head);
+  if (!sup) {
+    [-70, 70].forEach(x => el("ellipse", { cx: x, cy: -104, rx: 22, ry: 14, fill: "#e27d6a", opacity: .45 }, head));
+  }
+  const mouthPath = el("path", { fill: "#6b2521", ...ink, "stroke-width": 5 }, head);
+  if (!sup) el("path", { d: "M-78,-84 Q-46,-112 0,-100 Q46,-112 78,-84 Q66,-66 38,-74 Q16,-80 0,-76 Q-16,-80 -38,-74 Q-66,-66 -78,-84 Z", fill: "#2f2826", ...ink, "stroke-width": 5 }, head);
+
+  // effects: sweat, stress marks
+  const fx = el("g", {}, head);
+  const drops = [[-122, -210], [128, -230], [104, -120]].map(([x, y]) =>
+    el("path", { d: "M0,-18 Q14,4 0,12 Q-14,4 0,-18 Z", fill: "#7cc3ef", ...ink, "stroke-width": 4, transform: `translate(${x} ${y})` }, fx));
+  const stress = el("g", { fill: "none", ...ink, "stroke-width": 7 }, fx);
+  el("path", { d: "M-150,-270 l-30,-30 M-120,-300 l-14,-40 M150,-270 l30,-30 M120,-300 l14,-40" }, stress);
+
+  // arms, drawn last so a hand can reach the face
+  const arms = [-1, 1].map(side => {
+    const g = el("g", {}, root);
+    const inkP = el("path", { fill: "none", stroke: C.ink, "stroke-width": 54, "stroke-linecap": "round", "stroke-linejoin": "round" }, g);
+    const upper = el("path", { fill: "none", stroke: shirt, "stroke-width": 42, "stroke-linecap": "round" }, g);
+    const fore = el("path", { fill: "none", stroke: sup ? shirt : skin, "stroke-width": 42, "stroke-linecap": "round" }, g);
+    const hand = el("g", {}, g);
+    const finger = el("rect", { x: 0, y: -10, width: 62, height: 20, rx: 10, fill: skin, ...ink, "stroke-width": 5 }, hand);
+    const thumb = el("rect", { x: -10, y: -64, width: 22, height: 50, rx: 11, fill: skin, ...ink, "stroke-width": 5 }, hand);
+    el("circle", { cx: 0, cy: 0, r: 30, fill: skin, ...ink }, hand);
+    const cup = el("g", {}, hand);
+    el("path", { d: "M-6,-40 L66,-40 L58,20 Q30,32 2,20 Z", fill: "#fff", ...ink, "stroke-width": 5 }, cup);
+    el("rect", { x: 0, y: -26, width: 60, height: 10, fill: C.gold }, cup);
+    el("path", { d: "M18,-58 q10,-12 0,-24 M38,-58 q10,-12 0,-24", fill: "none", stroke: "#fff", "stroke-width": 5, "stroke-linecap": "round", opacity: .8 }, cup);
+    const phone = el("g", {}, hand);
+    el("rect", { x: -30, y: -96, width: 64, height: 116, rx: 12, fill: C.ink, ...ink }, phone);
+    el("rect", { x: -22, y: -86, width: 48, height: 92, rx: 6, fill: C.sage }, phone);
+    return { side, g, inkP, upper, fore, hand, finger, thumb, cup, phone };
+  });
+
+  c.set = p => {
+    const t = p.t || 0;
+    at(root, p.x, p.y + (p.bob || 0) * Math.sin(t * 2.4), p.s || 1);
+    at(head, (p.lean || 0) * .6, (p.headY || 0), 1, p.tilt || 0);
+    head.setAttribute("transform", `translate(${(p.lean || 0) * .6} ${(p.headY || 0)}) rotate(${p.tilt || 0} 0 -20)`);
+    body.setAttribute("transform", `rotate(${(p.lean || 0) * .05} 0 300)`);
+    const open = clamp((p.open ?? 1) * blink(t, sup ? 0 : 1));
+    const look = p.look || [0, 0];
+    eyes.forEach(e => {
+      e.pupil.setAttribute("cx", e.ex + look[0] * e.r * .45); e.pupil.setAttribute("cy", e.ey + look[1] * e.r * .45);
+      const h = (2 * e.r + 4) * (1 - open);
+      e.lid.setAttribute("height", h);
+      const y = e.ey - e.r - 2 + h; e.lidLine.setAttribute("y1", y); e.lidLine.setAttribute("y2", y);
+      e.lidLine.style.opacity = open < .98 ? 1 : 0;
+    });
+    browG.forEach(b => b.g.setAttribute("transform", `translate(${b.x} ${b.y + (p.browY || 0)}) rotate(${-b.side * (p.worry || 0)})`));
+    // mouth: corners rise with a smile, opens with the voice
+    const w = sup ? 60 : 70, cy = sup ? -76 : -62, sm = p.smile || 0, o = clamp(p.talk || 0);
+    const yc = cy - sm * 10;
+    if (o < .04) mouthPath.setAttribute("d", `M${-w / 2},${yc} Q0,${yc + sm * 26 + 2} ${w / 2},${yc}`), mouthPath.style.fill = "none";
+    else mouthPath.setAttribute("d", `M${-w / 2},${yc} Q0,${yc + sm * 16} ${w / 2},${yc} Q0,${yc + sm * 16 + 14 + o * 66} ${-w / 2},${yc} Z`), mouthPath.style.fill = "#6b2521";
+    // effects
+    drops.forEach((d, i) => {
+      const k = ((t * .9 + i * .37) % 1);
+      d.style.opacity = clamp((p.sweat || 0) * (1 - k) * 1.4);
+      const [x, y] = [[-122, -210], [128, -230], [104, -120]][i];
+      d.setAttribute("transform", `translate(${x} ${y + k * 60})`);
+    });
+    stress.style.opacity = p.stress || 0;
+    stress.setAttribute("transform", `scale(${1 + .06 * Math.sin(t * 30)})`);
+    if (c.strand) c.strand.setAttribute("transform", `rotate(${(p.stress || 0) * 18 * Math.sin(t * 14)} 8 -294)`);
+    // arms
+    arms.forEach(a => {
+      const tgt = a.side < 0 ? p.lh : p.rh, shape = (a.side < 0 ? p.lShape : p.rShape) || "fist";
+      const sx = a.side * (sup ? 138 : 150), sy = sup ? 46 : 40;
+      const lean = (p.lean || 0) * .05 * Math.PI / 180;
+      const k = ik(sx, sy, tgt[0], tgt[1], sup ? 140 : 150, sup ? 130 : 140, a.side < 0 ? 1 : -1);
+      a.inkP.setAttribute("d", `M${sx},${sy} L${k.ex},${k.ey} L${k.hx},${k.hy}`);
+      a.upper.setAttribute("d", `M${sx},${sy} L${k.ex},${k.ey}`);
+      a.fore.setAttribute("d", `M${k.ex},${k.ey} L${k.hx},${k.hy}`);
+      const deg = k.hb * 180 / Math.PI;
+      a.hand.setAttribute("transform", `translate(${k.hx} ${k.hy})`);
+      a.finger.style.display = shape === "point" ? "" : "none";
+      a.finger.setAttribute("transform", `rotate(${deg})`);
+      a.thumb.style.display = shape === "thumb" ? "" : "none";
+      a.cup.style.display = shape === "cup" ? "" : "none";
+      a.phone.style.display = shape === "phone" ? "" : "none";
+    });
+  };
+  return c;
+}
+
+// ---------- props ----------
+function invoiceIcon(parent, w = 120, h = 150) {
+  const g = el("g", {}, parent);
+  el("rect", { x: -w / 2, y: -h / 2, width: w, height: h, rx: 8, fill: "#fff", ...ink, "stroke-width": 5 }, g);
+  for (let i = 0; i < 5; i++) el("rect", { x: -w / 2 + 14, y: -h / 2 + 22 + i * 20, width: (w - 28) * [0.9, .7, .8, .6, .75][i], height: 7, rx: 3, fill: "#d9dedb" }, g);
+  el("rect", { x: -w / 2 + 14, y: h / 2 - 24, width: w - 28, height: 8, rx: 3, fill: C.ink }, g);
+  return g;
+}
+function clock(parent, x, y, r) {
+  const g = el("g", { transform: `translate(${x} ${y})` }, parent);
+  el("circle", { cx: 0, cy: 0, r, fill: C.cream, ...ink, "stroke-width": 9 }, g);
+  for (let i = 0; i < 12; i++) el("line", { x1: 0, y1: -r + 12, x2: 0, y2: -r + (i % 3 ? 22 : 30), stroke: C.ink, "stroke-width": i % 3 ? 4 : 7, transform: `rotate(${i * 30})` }, g);
+  const hour = el("line", { x1: 0, y1: 8, x2: 0, y2: -r * .5, stroke: C.ink, "stroke-width": 9, "stroke-linecap": "round" }, g);
+  const min = el("line", { x1: 0, y1: 10, x2: 0, y2: -r * .75, stroke: C.red, "stroke-width": 6, "stroke-linecap": "round" }, g);
+  el("circle", { cx: 0, cy: 0, r: 8, fill: C.ink }, g);
+  return { g, set: (mins) => { min.setAttribute("transform", `rotate(${mins * 6})`); hour.setAttribute("transform", `rotate(${mins * .5})`); } };
+}
+function menuBoard(parent, x, y, s) {
+  const g = el("g", { transform: `translate(${x} ${y}) scale(${s})` }, parent);
+  el("rect", { x: 0, y: 0, width: 780, height: 660, rx: 22, fill: C.wood, ...ink }, g);
+  el("rect", { x: 22, y: 22, width: 736, height: 616, rx: 12, fill: "#173c34", ...ink, "stroke-width": 4 }, g);
+  text(g, "MENU", 390, 108, 64, C.gold, 800, "middle");
+  const items = [["Karak chai", "1.50", 67, true], ["Cheese paratha", "5.50", 64, true], ["Chicken 65 Dry", "14.00", 38, false],
+    ["Falafel wrap", "7.00", 58, true], ["Fresh lime", "6.00", 71, true], ["Zaatar manakish", "5.00", 41, false]];
+  const rows = items.map(([name, price, kept, good], i) => {
+    const ry = 180 + i * 76;
+    text(g, name, 56, ry, 36, C.cream, 700);
+    text(g, price, 470, ry, 32, C.sage, 600, "end", "Inter");
+    const chip = el("g", { transform: `translate(620 ${ry - 12})` }, g);
+    const bg = el("rect", { x: -110, y: -28, width: 220, height: 56, rx: 28, fill: C.stone, ...ink, "stroke-width": 4 }, chip);
+    const q = text(chip, "?", 0, 16, 42, "#fff", 800, "middle");
+    const lab = text(chip, "", 0, 11, 26, "#fff", 800, "middle");
+    return { chip, bg, q, lab, kept, good, ry };
+  });
+  return { g, rows };
+}
+
+// ---------- build the scenes ----------
+const svg = document.getElementById("svg");
+const G = id => document.getElementById(id);
+
+// night: the supervisor at the desk
+const N = {};
+{
+  const g = G("night");
+  N.cam = el("g", {}, g);
+  const c = N.cam;
+  el("rect", { x: -100, y: -100, width: 2120, height: 1280, fill: "#1c3a35" }, c);
+  el("rect", { x: -100, y: 560, width: 2120, height: 300, fill: "#17322d" }, c);
+  // window
+  el("rect", { x: 110, y: 100, width: 420, height: 380, rx: 10, fill: "url(#nightSky)", ...ink, "stroke-width": 16 }, c);
+  el("circle", { cx: 430, cy: 190, r: 44, fill: C.cream }, c); el("circle", { cx: 448, cy: 178, r: 36, fill: "#16324f" }, c);
+  [[180, 160], [250, 220], [330, 150], [200, 280], [470, 300]].forEach(([x, y]) => el("circle", { cx: x, cy: y, r: 3, fill: "#fff" }, c));
+  el("path", { d: "M118,472 L118,380 L170,380 L170,340 L230,340 L230,400 L290,400 L290,320 L350,320 L350,390 L420,390 L420,360 L522,360 L522,472 Z", fill: "#0b1726" }, c);
+  [[185, 360], [250, 360], [300, 350], [310, 410], [440, 380], [480, 410], [200, 420]].forEach(([x, y]) => el("rect", { x, y, width: 12, height: 12, fill: C.gold, opacity: .8 }, c));
+  el("line", { x1: 320, y1: 100, x2: 320, y2: 480, stroke: C.ink, "stroke-width": 10 }, c);
+  N.clock = clock(c, 1560, 180, 88);
+  el("ellipse", { cx: 800, cy: 640, rx: 720, ry: 420, fill: "url(#lamp)" }, c);
+  N.sup = Character(c, "sup");
+  // monitor
+  const m = el("g", {}, c);
+  el("rect", { x: 1400, y: 700, width: 60, height: 80, fill: "#0b1f1b", ...ink }, m);
+  el("rect", { x: 1310, y: 760, width: 240, height: 24, rx: 8, fill: "#0b1f1b", ...ink }, m);
+  el("rect", { x: 1090, y: 250, width: 680, height: 470, rx: 22, fill: "#0b1f1b", ...ink, "stroke-width": 8 }, m);
+  el("rect", { x: 1114, y: 274, width: 632, height: 422, rx: 8, fill: "#fff" }, m);
+  el("rect", { x: 1114, y: 274, width: 632, height: 54, fill: C.goldSoft }, m);
+  const COLX = [1134, 1430, 1575, 1728], ANCH = ["start", "end", "end", "end"];
+  N.colx = COLX; N.anch = ANCH;
+  ["Item", "Qty", "Price", "Total"].forEach((h, i) => text(m, h, COLX[i], 310, 26, C.stone, 700, ANCH[i]));
+  N.rows = [["Evap milk", "24", "3.25", "78.00"], ["Tea dust", "6", "28.50", "171.00"], ["Sugar 10kg", "2", "62.00", "124.00"], ["Milk powder", "4", "4700", "18,800.00"]]
+    .map((r, i) => {
+      const y = 372 + i * 58;
+      el("line", { x1: 1114, x2: 1746, y1: y + 20, y2: y + 20, stroke: "#e3e7e4", "stroke-width": 2 }, m);
+      const hi = el("rect", { x: 1478, y: y - 34, width: 108, height: 48, rx: 6, fill: C.red, opacity: 0 }, m);
+      return { cells: r.map((v, j) => text(m, "", COLX[j], y, 28, C.ink, 600, ANCH[j], "Inter")), vals: r, hi };
+    });
+  el("line", { x1: 1114, x2: 1746, y1: 612, y2: 612, stroke: C.ink, "stroke-width": 3 }, m);
+  text(m, "Sheet total", 1134, 650, 26, C.stone, 700);
+  N.total = text(m, "", 1728, 650, 28, C.ink, 800, "end", "Inter");
+  N.invTotal = text(m, "Invoice says  716.89", 1134, 684, 22, C.stone, 600, "start", "Inter");
+  N.cursor = el("rect", { x: 0, y: 0, width: 3, height: 32, fill: C.ink }, m);
+  N.err = el("g", { transform: "translate(1500 250)", opacity: 0 }, m);
+  el("rect", { x: -190, y: -46, width: 380, height: 84, rx: 42, fill: C.red, ...ink }, N.err);
+  text(N.err, "✕  Doesn't add up", 0, 14, 36, "#fff", 800, "middle");
+  // desk, papers, mugs in front
+  el("rect", { x: -100, y: 770, width: 2120, height: 400, fill: C.wood }, c);
+  el("rect", { x: -100, y: 760, width: 2120, height: 30, fill: C.woodTop, ...ink }, c);
+  N.stack = el("g", {}, c);
+  N.papers = Array.from({ length: 30 }, (_, i) => el("rect", { x: 200 + ((i * 37) % 17) - 8, y: 744 - i * 15, width: 250, height: 15, rx: 3, fill: i % 4 ? "#fff" : "#f3ecdc", ...ink, "stroke-width": 3 }, N.stack));
+  N.mugs = [0, 1, 2, 3].map(i => {
+    const g2 = el("g", { transform: `translate(${560 + i * 70} ${714})` }, c);
+    el("path", { d: "M-24,-40 L24,-40 L20,40 L-20,40 Z", fill: [C.cream, C.gold, C.sage, "#e98a8a"][i], ...ink, "stroke-width": 5 }, g2);
+    el("path", { d: "M24,-24 q24,4 0,34", fill: "none", ...ink, "stroke-width": 6 }, g2);
+    return g2;
+  });
+  el("rect", { x: 610, y: 776, width: 440, height: 40, rx: 8, fill: "#2d3a36", ...ink }, c); // keyboard edge
+}
+
+// owner: the menu with no answers
+const O = {};
+{
+  const g = G("owner");
+  O.cam = el("g", {}, g);
+  const c = O.cam;
+  el("rect", { x: -100, y: -100, width: 2120, height: 1280, fill: "#f3e7d1" }, c);
+  for (let x = -100; x < 2020; x += 120) el("line", { x1: x, y1: -100, x2: x, y2: 1180, stroke: "#eadcc2", "stroke-width": 3 }, c);
+  el("rect", { x: -100, y: 860, width: 2120, height: 320, fill: "#dcc6a0" }, c);
+  O.board = menuBoard(c, 90, 90, 1);
+  // the chart nobody likes
+  const ch = el("g", {}, c);
+  el("rect", { x: 1440, y: 100, width: 420, height: 380, rx: 16, fill: "#fff", ...ink }, ch);
+  text(ch, "This year", 1470, 150, 28, C.stone, 700);
+  el("path", { d: "M1480,440 L1830,440 M1480,440 L1480,180", fill: "none", ...ink, "stroke-width": 4 }, ch);
+  O.cost = el("path", { d: "M1490,390 L1560,370 L1630,350 L1700,300 L1770,260 L1825,200", fill: "none", stroke: C.red, "stroke-width": 10, "stroke-linecap": "round", "stroke-linejoin": "round" }, ch);
+  O.profit = el("path", { d: "M1490,220 L1560,240 L1630,270 L1700,320 L1770,360 L1825,410", fill: "none", stroke: C.green, "stroke-width": 10, "stroke-linecap": "round", "stroke-linejoin": "round" }, ch);
+  O.costL = text(ch, "Costs ▲", 1740, 188, 28, C.red, 800, "end");
+  O.profitL = text(ch, "Profit ▼", 1740, 470 - 6, 28, C.green, 800, "end");
+  [O.cost, O.profit].forEach(p => { const L0 = p.getTotalLength(); p.dataset.len = L0; p.style.strokeDasharray = L0; });
+  O.own = Character(c, "own");
+  O.qs = [0, 1, 2].map(i => text(c, "?", 0, 0, [110, 80, 96][i], C.gold, 800, "middle"));
+  O.qs.forEach(q => q.setAttribute("stroke", C.ink), O.qs.forEach(q => q.setAttribute("stroke-width", 4)));
+}
+
+// faida: the reveal
+const F = {};
+{
+  const g = G("faida");
+  el("rect", { x: 0, y: 0, width: 1920, height: 1080, fill: C.cream }, g);
+  F.rays = el("g", { transform: "translate(960 470)" }, g);
+  for (let i = 0; i < 16; i++) el("path", { d: "M-40,-900 L40,-900 L0,0 Z", fill: i % 2 ? C.goldSoft : "#f4e6c6", transform: `rotate(${i * 22.5})` }, F.rays);
+  F.mark = el("g", { transform: "translate(610 360) scale(2.6)" }, g);
+  F.tiles = [["M8 61c0-8 4-14 11-18l27-16v30L20 72c-6 4-12 0-12-7z", C.palm], ["M37 47c0-8 4-14 11-18l26-15v30L48 59c-6 4-11 0-11-7z", C.gold],
+    ["M66 32c0-8 4-14 11-18L104 0v70L78 85c-6 4-12 0-12-7z", C.palm]].map(([d, f]) => el("path", { d, fill: f }, F.mark));
+  F.word = text(g, "faida", 960, 590, 240, C.ink, 600, "start");
+  F.word.setAttribute("letter-spacing", "-10");
+  F.tag = text(g, "Profit, in plain sight.", 960, 760, 64, C.palm, 700, "middle");
+}
+
+// fixed: both of them, sorted
+const X = {};
+{
+  const g = G("fixed");
+  X.cam = el("g", {}, g);
+  const c = X.cam;
+  el("rect", { x: -100, y: -100, width: 1060, height: 1280, fill: "#dcebe4" }, c);
+  el("rect", { x: 960, y: -100, width: 1060, height: 1280, fill: "#f3e7d1" }, c);
+  el("rect", { x: 90, y: 110, width: 300, height: 260, rx: 10, fill: "url(#daySky)", ...ink, "stroke-width": 12 }, c);
+  el("circle", { cx: 310, cy: 180, r: 40, fill: C.gold }, c);
+  X.clock = clock(c, 760, 170, 70);
+  X.sup = Character(c, "sup");
+  el("rect", { x: -100, y: 800, width: 1060, height: 400, fill: C.wood }, c);
+  el("rect", { x: -100, y: 790, width: 1060, height: 28, fill: C.woodTop, ...ink }, c);
+  X.papers = Array.from({ length: 12 }, (_, i) => el("rect", { x: 90 + ((i * 37) % 17) - 8, y: 775 - i * 15, width: 220, height: 15, rx: 3, fill: "#fff", ...ink, "stroke-width": 3 }, c));
+  el("rect", { x: -100, y: 860, width: 20, height: 1 }, c);
+  el("rect", { x: 960, y: 880, width: 1060, height: 300, fill: "#dcc6a0" }, c);
+  X.board = menuBoard(c, 1095, 150, .62);
+  X.own = Character(c, "own");
+  el("line", { x1: 960, y1: -100, x2: 960, y2: 1180, stroke: C.ink, "stroke-width": 8 }, c);
+  // the phone between them
+  X.phone = el("g", {}, c);
+  el("rect", { x: -150, y: -290, width: 300, height: 580, rx: 44, fill: "#0b1f1b", ...ink, "stroke-width": 8 }, X.phone);
+  el("rect", { x: -134, y: -274, width: 268, height: 548, rx: 32, fill: "#f1ede4" }, X.phone);
+  el("rect", { x: -134, y: -274, width: 268, height: 86, rx: 32, fill: C.palm }, X.phone);
+  el("rect", { x: -134, y: -222, width: 268, height: 34, fill: C.palm }, X.phone);
+  const av = el("g", { transform: "translate(-96 -228) scale(.36)" }, X.phone);
+  el("circle", { cx: 56, cy: 42, r: 60, fill: C.cream }, av);
+  F.tiles.forEach(tl => el("path", { d: tl.getAttribute("d"), fill: tl.getAttribute("fill"), transform: "translate(0 0)" }, av));
+  text(X.phone, "Faida", -58, -220, 30, C.cream, 800);
+  X.msgs = ["Al Madina Foodstuff", "Gulf Dairy Trading", "Emirates Poultry", "Fresh Bake Supplies", "Al Ain Farms"].map((n, i) => {
+    const m = el("g", { transform: `translate(0 ${-150 + i * 84})` }, X.phone);
+    el("rect", { x: -120, y: -32, width: 240, height: 70, rx: 14, fill: "#fff", ...ink, "stroke-width": 3 }, m);
+    el("circle", { cx: -90, cy: 2, r: 16, fill: "#1d6d50" }, m);
+    el("path", { d: "M-98,2 l6,7 l12,-14", fill: "none", stroke: "#fff", "stroke-width": 5, "stroke-linecap": "round", "stroke-linejoin": "round" }, m);
+    text(m, n, -64, -2, 17, C.ink, 700, "start", "Inter");
+    text(m, "Read it · costed", -64, 22, 14, C.stone, 600, "start", "Inter");
+    return m;
+  });
+  X.flyers = [0, 1, 2, 3, 4].map(() => invoiceIcon(c, 90, 112));
+  X.confetti = Array.from({ length: 70 }, (_, i) => el("rect", { width: 14, height: 22, rx: 3, fill: [C.gold, C.palm, C.sage, C.green, C.red][i % 5] }, c));
+}
+
+// end card
+const D = {};
+{
+  const g = G("end");
+  el("rect", { x: 0, y: 0, width: 1920, height: 1080, fill: C.palmDeep }, g);
+  D.mark = el("g", { transform: "translate(640 250) scale(2.2)" }, g);
+  D.tiles = [["M8 61c0-8 4-14 11-18l27-16v30L20 72c-6 4-12 0-12-7z", C.sage], ["M37 47c0-8 4-14 11-18l26-15v30L48 59c-6 4-11 0-11-7z", C.gold],
+    ["M66 32c0-8 4-14 11-18L104 0v70L78 85c-6 4-12 0-12-7z", C.cream]].map(([d, f]) => el("path", { d, fill: f }, D.mark));
+  D.word = text(g, "faida", 920, 450, 200, C.cream, 600); D.word.setAttribute("letter-spacing", "-8");
+  D.tag = text(g, "Profit, in plain sight.", 960, 600, 56, C.sage, 700, "middle");
+  D.cta = el("g", { transform: "translate(960 700)" }, g);
+  el("rect", { x: -390, y: -44, width: 780, height: 88, rx: 44, fill: "none", stroke: C.gold, "stroke-width": 4 }, D.cta);
+  text(D.cta, "Private pilot now open for GCC cafeterias", 0, 12, 32, C.cream, 600, "middle", "Inter");
+  D.fine = text(g, "Figures shown are illustrative.", 960, 1050, 18, C.sage, 500, "middle", "Inter");
+  D.sup = Character(g, "sup");
+  D.own = Character(g, "own");
+}
+
+// speech bubbles and the narrator's caption
+const BUBBLES = {
+  s_typo: { x: 80, y: 150, tx: 470, anchor: "left" }, s_mistake: { x: 90, y: 150, tx: 470 },
+  o_which: { x: 1330, y: 60, tx: 60 }, o_money: { x: 1330, y: 60, tx: 60 }, o_sigh: { x: 1380, y: 540, tx: 40, top: true },
+  s_thatsit: { x: 480, y: 170, tx: 60 }, o_push: { x: 1150, y: 40, tx: 520 },
+};
+const bubbleEls = {};
+for (const id in BUBBLES) {
+  const b = document.createElement("div"); b.className = "bubble" + (BUBBLES[id].top ? " top" : "");
+  b.textContent = L(id).text; b.style.left = BUBBLES[id].x + "px"; b.style.top = BUBBLES[id].y + "px";
+  b.style.setProperty("--tx", BUBBLES[id].tx + "px"); b.style.setProperty("--ox", BUBBLES[id].tx + 20 + "px");
+  if (BUBBLES[id].top) b.style.setProperty("--oy", "0%");
+  document.getElementById("bubbles").appendChild(b); bubbleEls[id] = b;
+}
+const caption = document.getElementById("caption");
+
+// ---------- the frame ----------
+const SC = T.scenes.map((s, i) => ({ ...s, end: i < T.scenes.length - 1 ? T.scenes[i + 1].start : T.duration + 1 }));
+function renderFrame(t) {
+  for (const s of SC) G(s.id).style.display = t >= s.start && t < s.end ? "" : "none";
+  // wipes across every cut
+  let wa = 120, wb = 120;
+  for (const s of SC.slice(1)) {
+    const ka = prog(t, s.start - .3, .58), kb = prog(t, s.start - .24, .58);
+    if (ka > 0 && ka < 1) wa = lerp(120, -140, E.inOut(ka));
+    if (kb > 0 && kb < 1) wb = lerp(120, -140, E.inOut(kb));
+  }
+  G("wipeA").style.transform = `translateX(${wa}%) skewX(-12deg)`;
+  G("wipeB").style.transform = `translateX(${wb}%) skewX(-12deg)`;
+
+  // bubbles pop while their line is spoken
+  for (const id in bubbleEls) {
+    const l = L(id), k = E.back(prog(t, l.start - .1, .3)) * (1 - E.in(prog(t, l.end + .35, .2)));
+    bubbleEls[id].style.display = k > .01 ? "" : "none";
+    bubbleEls[id].style.transform = `scale(${k})`;
+  }
+  // narrator caption
+  const nl = Object.values(T.lines).find(l => l.speaker === "narrator" && t >= l.start - .1 && t <= l.end + .3);
+  caption.style.display = nl ? "" : "none";
+  if (nl) { caption.textContent = nl.text; caption.style.opacity = clamp(prog(t, nl.start - .1, .15) * (1 - prog(t, nl.end + .15, .15))); }
+
+  if (t < S("owner")) night(t); else if (t < S("faida")) owner(t); else if (t < S("fixed")) faida(t); else if (t < S("end")) fixed(t); else end(t);
+  G("fade").setAttribute("opacity", E.inOut(prog(t, T.duration - .8, .8)));
+}
+
+function night(t) {
+  const typo = L("s_typo"), oops = L("s_mistake"), buzz = typo.end + .1;
+  // camera: a slow push, a shake on the buzzer
+  const shake = prog(t, buzz, .5) > 0 && prog(t, buzz, .5) < 1 ? Math.sin(t * 90) * 10 * (1 - prog(t, buzz, .5)) : 0;
+  const z = 1 + .06 * E.inOut(prog(t, 0, typo.start));
+  N.cam.setAttribute("transform", `translate(${960 + shake} 600) scale(${z}) translate(-960 -600)`);
+  // clock races through the night
+  const speed = t < L("n_typing").start ? t * 2 : L("n_typing").start * 2 + (t - L("n_typing").start) * 40;
+  N.clock.set(23 * 60 + 5 + speed);
+  // the stack grows, the mugs pile up
+  const n = Math.round(lerp(12, 30, prog(t, 1, typo.start)));
+  N.papers.forEach((p, i) => p.style.display = i < n ? "" : "none");
+  N.papers[n - 1].setAttribute("transform", `rotate(${Math.sin(t * 3) * 2} 325 ${744 - (n - 1) * 15})`);
+  N.mugs.forEach((m, i) => m.style.display = t > [0, 4, 8, 11][i] ? "" : "none");
+  // the spreadsheet fills in, one keystroke at a time
+  const starts = [[5.9, 6.4, 6.7, 7.0], [7.4, 7.9, 8.1, 8.5], [8.9, 9.4, 9.6, 10.0], [10.4, 11.3, typo.start + .9, typo.end - .2]];
+  let cx = 1134, cy = 372;
+  N.rows.forEach((r, i) => r.cells.forEach((cell, j) => {
+    const s0 = starts[i][j], v = r.vals[j];
+    const nch = Math.floor(clamp((t - s0) * 14, 0, v.length));
+    cell.textContent = v.slice(0, nch);
+    if (t >= s0 && nch <= v.length && t < s0 + v.length / 14 + .3) { cx = N.colx[j] + (N.anch[j] === "end" ? 3 : cell.getComputedTextLength() + 3); cy = 372 + i * 58; }
+  }));
+  const bad = t >= buzz;
+  const flash = bad ? (Math.floor((t - buzz) * 4) % 2 === 0 ? 1 : .55) : 0;
+  N.rows[3].hi.setAttribute("opacity", bad ? .22 + .2 * flash : 0);
+  N.rows[3].cells[2].setAttribute("fill", bad ? C.red : C.ink);
+  N.rows[3].cells[3].setAttribute("fill", bad ? C.red : C.ink);
+  N.total.textContent = t > 7.2 ? (t > typo.end - .1 ? "19,173.00" : t > 10.1 ? "373.00" : t > 8.7 ? "249.00" : "78.00") : "";
+  N.total.setAttribute("fill", bad ? C.red : C.ink);
+  N.cursor.setAttribute("x", cx); N.cursor.setAttribute("y", cy - 26);
+  N.cursor.style.opacity = Math.floor(t * 3) % 2 ? 1 : .2;
+  const ek = E.spring(prog(t, buzz, .7));
+  N.err.setAttribute("opacity", clamp(prog(t, buzz, .1)));
+  N.err.setAttribute("transform", `translate(1430 250) scale(${ek})`);
+
+  // the supervisor
+  const typing = t < buzz;
+  const fast = t > L("n_typing").start ? 1 : 0;
+  const tap = (ph) => typing ? Math.abs(Math.sin(t * (fast ? 22 : 13) + ph)) * 16 : 0;
+  const yawn = prog(t, 2.2, 1.4) > 0 && prog(t, 2.2, 1.4) < 1 ? Math.sin(Math.PI * prog(t, 2.2, 1.4)) : 0;
+  let p = {
+    t, x: 820, y: 560, s: 1, bob: 3, tilt: 5, look: [.9, .1], open: .55, worry: 10, browY: 4, smile: -.3,
+    lh: [-95, 205 - tap(0)], rh: [105, 205 - tap(1.7)], sweat: fast * .6, stress: 0, talk: yawn * .9,
+  };
+  if (yawn > .1) { p.open = .55 * (1 - yawn); p.tilt = 5 - yawn * 8; }
+  if (talking("s_typo", t) || (t > typo.start && t < buzz)) { p = { ...p, lean: 30, tilt: 10, look: [1, .2], open: .45, worry: -6, talk: mouth("sup", t) }; if (t > typo.end - .6) Object.assign(p, { worry: 14, browY: -8, open: .8 }); }
+  if (t >= buzz) {
+    const shock = 1 - prog(t, buzz + .5, .4);
+    p = { ...p, lean: 0, y: 560 - 18 * E.spring(prog(t, buzz, .6)) * shock, look: [.6, 0], open: 1, worry: 4, browY: -22 * shock, talk: .55 * shock, smile: -.6, sweat: 1, lh: [-95, 205], rh: [105, 205] };
+  }
+  if (t >= oops.start - .2) {
+    const rub = E.inOut(prog(t, oops.start - .2, .4));
+    const w = Math.sin(t * 16);
+    p = { ...p, tilt: -8 + w * 2, open: t < oops.start + .9 ? .08 : .4, worry: 20, browY: 0, look: [0, .6], talk: mouth("sup", t), smile: -.7, sweat: 1, stress: 1,
+      rh: [lerp(105, 70 + w * 22, rub), lerp(205, -268 + Math.cos(t * 16) * 12, rub)], lh: [-95, 205] };
+  }
+  N.sup.set(p);
+}
+
+function owner(t) {
+  const s0 = S("owner"), which = L("o_which"), money = L("o_money"), costs = L("n_costs"), sigh = L("o_sigh");
+  const guess = costs.end - .8;
+  const shake = prog(t, guess, .5) > 0 && prog(t, guess, .5) < 1 ? Math.sin(t * 80) * 8 * (1 - prog(t, guess, .5)) : 0;
+  O.cam.setAttribute("transform", `translate(${960 + shake} 540) scale(${1 + .04 * prog(t, s0, 20)}) translate(-960 -540)`);
+  // no idea which dish earns: the chips flicker between red and green
+  const rate = talking("o_which", t) ? 9 : 3.5;
+  O.board.rows.forEach((r, i) => {
+    const on = Math.floor(t * rate + i * 1.7) % 2 === 0;
+    r.bg.setAttribute("fill", on ? C.red : C.green);
+    r.chip.setAttribute("transform", `translate(620 ${r.ry - 12}) scale(${1 + .06 * Math.sin(t * 9 + i)})`);
+    r.q.textContent = "?"; r.lab.textContent = "";
+  });
+  // the chart: costs up, profit down
+  O.cost.style.strokeDashoffset = O.cost.dataset.len * (1 - E.inOut(prog(t, costs.start + .1, 1.4)));
+  O.profit.style.strokeDashoffset = O.profit.dataset.len * (1 - E.inOut(prog(t, costs.start + 1.5, 1.4)));
+  O.costL.style.opacity = prog(t, costs.start + 1.2, .3);
+  O.profitL.style.opacity = prog(t, costs.start + 2.6, .3);
+
+  const rows = O.board.rows;
+  let p = { t, x: 1170, y: 430, s: 1, bob: 4, tilt: -3, look: [-.9, -.2], open: .9, worry: 4, browY: 0, smile: 0, lh: [-185, 300], rh: [185, 300], lShape: "fist", rShape: "fist" };
+  if (t >= which.start - .3 && t < money.start) {
+    // pointing along the rows he names
+    const k = clamp((t - which.start) / (which.end - which.start));
+    const row = k < .33 ? 0 : k < .66 ? 1 : 2;
+    const ty = rows[row].ry + 90 - 12 - 430;
+    const reach = E.out(prog(t, which.start - .3, .35));
+    p = { ...p, lh: [lerp(-185, -330, reach), lerp(300, ty + 40, reach)], lShape: "point", look: [-1, (ty - (-160)) / 400], talk: mouth("owner", t), worry: 10, browY: -6 };
+  }
+  if (t >= money.start - .2 && t < costs.start) {
+    const r = E.inOut(prog(t, money.start - .2, .4));
+    p = { ...p, rh: [lerp(185, 90 + Math.sin(t * 14) * 16, r), lerp(300, -270, r)], look: [-.3, -.6], worry: 18, browY: -4, talk: mouth("owner", t), smile: -.3, tilt: 6 };
+  }
+  if (t >= costs.start) {
+    p = { ...p, look: [1, -.6], open: 1, worry: 14, browY: -10 * prog(t, costs.start, 1), smile: -.5, tilt: -2 };
+  }
+  if (t >= guess - .15) { // facepalm
+    const f = E.out(prog(t, guess - .15, .3));
+    p = { ...p, rh: [lerp(185, 40, f), lerp(300, -150, f)], open: .1, worry: 20, tilt: 10 * f, smile: -.8 };
+  }
+  if (t >= sigh.start - .2) {
+    const sh = E.out(prog(t, sigh.start - .2, .4)), slump = E.inOut(prog(t, sigh.end + .1, .8));
+    p = { ...p, rh: [lerp(40, 250, sh), lerp(-150, 120 + slump * 170, sh)], lh: [lerp(-185, -250, sh), 120 + slump * 170], rShape: "fist",
+      open: .75 - slump * .3, look: [0, .3 + slump * .5], worry: 22, browY: 0, tilt: lerp(0, 12, slump), headY: slump * 10, talk: mouth("owner", t), smile: -.6 };
+  }
+  O.own.set(p);
+  // question marks drift up while he wonders
+  O.qs.forEach((q, i) => {
+    const st = money.start + i * .35, k = prog(t, st, 2.4);
+    const vis = t > st && t < costs.start + .5;
+    q.style.display = vis ? "" : "none";
+    q.setAttribute("x", 1170 + [-150, 40, 180][i] + Math.sin(t * 3 + i) * 12);
+    q.setAttribute("y", 150 - k * 90 + [0, -40, 10][i]);
+    q.setAttribute("opacity", clamp(k * 4) * (1 - prog(t, costs.start, .5)));
+  });
+}
+
+function faida(t) {
+  const s0 = S("faida");
+  F.rays.setAttribute("transform", `translate(960 470) rotate(${t * 12}) scale(${E.out(prog(t, s0, .6))})`);
+  F.tiles.forEach((tl, i) => {
+    const k = E.back(prog(t, s0 + .1 + i * .16, .5));
+    tl.setAttribute("transform", `translate(${[27, 55, 85][i]} ${[50, 36, 42][i]}) scale(${k}) translate(${-[27, 55, 85][i]} ${-[50, 36, 42][i]})`);
+  });
+  const w = E.out(prog(t, s0 + .6, .5));
+  F.word.setAttribute("opacity", w); F.word.setAttribute("x", 900 + (1 - w) * -60);
+  F.tag.setAttribute("opacity", E.out(prog(t, s0 + 1.1, .5)));
+}
+
+function fixed(t) {
+  const fwd = L("n_forward"), reads = L("n_reads"), that = L("s_thatsit"), menu = L("n_menu"), push = L("o_push");
+  X.cam.setAttribute("transform", "");
+  X.clock.set(9 * 60 + 5 + (t - S("fixed")) * 2);
+  // the supervisor forwards the photos and leans back
+  const snap = fwd.start + 1.0;
+  G("flash").setAttribute("opacity", .7 * (1 - prog(t, snap, .25)) * (t > snap ? 1 : 0));
+  let sp = { t, x: 470, y: 600, s: .78, bob: 3, tilt: 0, look: [.4, 0], open: .85, worry: 6, browY: 0, smile: .1, lh: [-95, 205], rh: [105, 205], rShape: "fist" };
+  if (t >= fwd.start - .2 && t < reads.start + .4) {
+    const up = E.out(prog(t, fwd.start - .2, .4));
+    sp = { ...sp, rh: [lerp(105, 170, up), lerp(205, -40, up)], rShape: "phone", look: [.7, -.2], open: .95, smile: .2 };
+  }
+  const n = X.flyers.length;
+  X.flyers.forEach((f, i) => {
+    const st = reads.start + .2 + i * .55, k = E.inOut(prog(t, st, .45));
+    const x0 = 200, y0 = 700 - i * 16, x1 = 960, y1 = 560 + (-150 + i * 84) * .82;
+    const x = lerp(x0, x1, k), y = lerp(y0, y1, k) - Math.sin(Math.PI * k) * 260;
+    f.style.display = k > 0 && k < 1 ? "" : "none";
+    f.setAttribute("transform", `translate(${x} ${y}) rotate(${k * 360}) scale(${lerp(1, .5, k)})`);
+  });
+  X.papers.forEach((p, i) => p.style.display = i < 12 - Math.round(12 * prog(t, reads.start + .2, n * .55)) ? "" : "none");
+  if (t >= reads.start + 1) {
+    const relax = E.inOut(prog(t, reads.start + 1, .8));
+    // relief: leans back, eyes shut happily, hands down on the desk
+    sp = { ...sp, lean: -24 * relax, tilt: -7 * relax, open: lerp(.9, .25, relax), smile: .8 * relax, worry: -6 * relax, browY: -6 * relax, look: [0, -.4],
+      lh: [-95, 205], rh: [lerp(105, 150, relax), 205] };
+  }
+  if (t >= that.start - .5) {
+    const sip = E.out(prog(t, that.start - .5, .4));
+    sp = { ...sp, open: .9, lh: [-95, 205], rh: [lerp(150, 70, sip), lerp(205, -40, sip)], rShape: "cup", look: [.9, 0], smile: .8, talk: mouth("sup", t), worry: -4, browY: -8 };
+  }
+  X.sup.set(sp);
+  // the phone and its confirmations
+  const pk = E.back(prog(t, fwd.start + .6, .5));
+  X.phone.setAttribute("transform", `translate(960 560) scale(${.82 * pk})`);
+  X.msgs.forEach((m, i) => {
+    const k = E.back(prog(t, reads.start + .45 + i * .55, .35));
+    m.style.opacity = clamp(k * 2);
+    m.setAttribute("transform", `translate(0 ${-150 + i * 84}) scale(${k})`);
+  });
+  // the menu finally answers: push the green, fix the red
+  X.board.rows.forEach((r, i) => {
+    const st = menu.start + 1.0 + i * .3, k = E.spring(prog(t, st, .6));
+    const decided = t >= st;
+    if (!decided) {
+      const on = Math.floor(t * 3.5 + i * 1.7) % 2 === 0;
+      r.bg.setAttribute("fill", on ? C.red : C.green); r.q.textContent = "?"; r.lab.textContent = "";
+      r.chip.setAttribute("transform", `translate(620 ${r.ry - 12})`);
+    } else {
+      r.bg.setAttribute("fill", r.good ? C.green : C.redDeep);
+      r.q.textContent = "";
+      r.lab.textContent = r.good ? `▲ PUSH · ${r.kept}%` : `▼ FIX · ${r.kept}%`;
+      r.chip.setAttribute("transform", `translate(620 ${r.ry - 12}) scale(${k})`);
+    }
+  });
+  let op = { t, x: 1765, y: 480, s: .7, bob: 4, tilt: -3, look: [-.9, -.2], open: .85, worry: 10, browY: 0, smile: -.3, lh: [-185, 300], rh: [185, 300] };
+  if (t >= menu.start + 1) op = { ...op, open: 1, worry: 0, browY: -12, smile: .5, look: [-1, 0] };
+  if (t >= push.start - .3) {
+    const up = E.back(prog(t, push.start - .3, .45));
+    op = { ...op, rh: [lerp(185, 165, up), lerp(300, -135, up)], rShape: "thumb", lh: [lerp(-185, -340, up), lerp(300, -60, up)], lShape: "point",
+      smile: .9, talk: mouth("owner", t), open: .95, browY: -10, look: [-1, -.1] };
+  }
+  if (t >= push.end) {
+    const j = Math.abs(Math.sin((t - push.end) * 7)) * 30 * (1 - prog(t, push.end + 1.5, .6));
+    op = { ...op, y: 470 - j, talk: 0, smile: 1, open: .9 };
+  }
+  X.own.set(op);
+  // confetti over the good news
+  X.confetti.forEach((c, i) => {
+    const st = push.end - .1, k = t - st;
+    if (k < 0) { c.style.display = "none"; return; }
+    c.style.display = "";
+    const vx = ((i * 73) % 100 - 50) * 9, vy = -600 - (i * 37) % 400;
+    const x = 1600 + vx * k * .8, y = 420 + vy * k + 900 * k * k;
+    c.setAttribute("transform", `translate(${x} ${y}) rotate(${i * 40 + k * 400})`);
+  });
+}
+
+function end(t) {
+  const s0 = S("end");
+  D.tiles.forEach((tl, i) => {
+    const k = E.back(prog(t, s0 + .15 + i * .15, .5));
+    tl.setAttribute("transform", `translate(${[27, 55, 85][i]} ${[50, 36, 42][i]}) scale(${k}) translate(${-[27, 55, 85][i]} ${-[50, 36, 42][i]})`);
+  });
+  const w = E.out(prog(t, s0 + .6, .5));
+  D.word.setAttribute("opacity", w); D.word.setAttribute("x", 900 + (1 - w) * -50);
+  D.tag.setAttribute("opacity", E.out(prog(t, s0 + 1.0, .5)));
+  D.cta.setAttribute("opacity", E.out(prog(t, s0 + 1.5, .5)));
+  D.fine.setAttribute("opacity", .6 * prog(t, s0 + 1.8, .5));
+  // the two of them pop up and wave
+  const up = E.back(prog(t, s0 + 2.0, .6));
+  const wave = Math.sin(t * 9);
+  D.sup.set({ t, x: 250, y: lerp(1500, 930, up), s: .62, look: [.4, -.3], open: .95, smile: .9, worry: -4, browY: -6, lh: [-150, 200], rh: [200 + wave * 30, -200] });
+  D.own.set({ t, x: 1640, y: lerp(1500, 900, up), s: .58, look: [-.4, -.3], open: .95, smile: 1, worry: 0, browY: -8, rh: [180, 200], lh: [-200 + wave * 30, -210], lShape: "fist" });
+}
+
+window.DURATION = T.duration;
+window.renderFrame = renderFrame;
+window.ready = document.fonts.ready.then(() => renderFrame(0));
+const q = new URLSearchParams(location.search);
+window.ready.then(() => {
+  if (q.has("t")) renderFrame(parseFloat(q.get("t")));
+  if (q.has("play")) { const t0 = performance.now(); const tick = () => { renderFrame(((performance.now() - t0) / 1000) % T.duration); requestAnimationFrame(tick); }; tick(); }
+});
+</script>
+</body>
+</html>

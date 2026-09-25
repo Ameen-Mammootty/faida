@@ -4,6 +4,7 @@
 //   node render.mjs                       -> out/faida-promo.mp4 (1080p, 60 fps)
 //   node render.mjs --fps 15 --out out/preview.mp4
 //   node render.mjs --stills 2,7.5,12     -> out/frames/still-*.png, no video
+//   node render.mjs --page cartoon/index.html --audio cartoon/build/mix.wav --fps 30 --out out/faida-cartoon.mp4
 import { chromium } from "playwright";
 import { spawn } from "node:child_process";
 import { mkdirSync, existsSync } from "node:fs";
@@ -18,12 +19,13 @@ const arg = (name, fallback) => {
 const fps = Number(arg("fps", 60));
 const out = path.resolve(here, arg("out", "out/faida-promo.mp4"));
 const stills = arg("stills", null);
-const music = path.join(here, "out/music.wav");
+const music = path.resolve(here, arg("audio", "out/music.wav"));
+const pageFile = path.resolve(here, arg("page", "index.html"));
 
 mkdirSync(path.join(here, "out/frames"), { recursive: true });
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
-await page.goto(pathToFileURL(path.join(here, "index.html")).href);
+await page.goto(pathToFileURL(pageFile).href);
 await page.evaluate(() => window.ready);
 const duration = await page.evaluate(() => window.DURATION);
 

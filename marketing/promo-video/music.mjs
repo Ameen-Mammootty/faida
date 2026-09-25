@@ -25,7 +25,9 @@ const add = (i, l, r = l) => { if (i >= 0 && i < N) { L[i] += l; R[i] += r; } };
 const lpA = (fc) => 1 - Math.exp((-2 * Math.PI * fc) / SR);
 
 // section map: what plays where
-const full = (t) => (t >= 0 && t < D1 - 0.5) || (t >= SCORE.halfTime[1] && t < SCORE.breakdown[0]) || (t >= D2 && t < END);
+// calmUntil: no drums or arpeggio before it, only the pad (the cartoon's problem half)
+const calm = (t) => t < (SCORE.calmUntil || 0);
+const full = (t) => !calm(t) && (t >= 0 && t < D1 - 0.5) || (t >= SCORE.halfTime[1] && t < SCORE.breakdown[0]) || (t >= D2 && t < END);
 const halfTime = (t) => t >= SCORE.halfTime[0] && t < SCORE.halfTime[1];
 const breakdown = (t) => t >= SCORE.breakdown[0] && t < SCORE.breakdown[1];
 
