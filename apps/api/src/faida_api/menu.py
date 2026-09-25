@@ -62,7 +62,7 @@ from .api import (
 )
 from .auth import AuthContext, require_context
 from .confirm import _parse_number
-from .db import Database
+from .db import Database, MenuItemArchived
 from .extraction import units
 from .extraction.constants import VAT_RATE_BY_CURRENCY
 
@@ -557,11 +557,17 @@ async def _live_item(db: Database, menu_item_id: uuid.UUID, tenant_id: str) -> a
     if item is None:
         raise HTTPException(status_code=404, detail="menu item not found")
     if item["archived_at"] is not None:
-        raise HTTPException(
-            status_code=409,
-            detail="menu item is archived; bring it back before changing it",
-        )
+        raise _archived()
     return item
+
+
+def _archived() -> HTTPException:
+    """The one answer to a write on an archived item, whether the read before
+    the write saw it archived or the write's own lock did (2026-09-24)."""
+    return HTTPException(
+        status_code=409,
+        detail="menu item is archived; bring it back before changing it",
+    )
 
 
 # --- routes ------------------------------------------------------------------
@@ -643,12 +649,15 @@ async def set_menu_item_price(
     db: Database = request.app.state.db
     await _live_item(db, menu_item_id, ctx.tenant_id)
     price = _positive_number(body.selling_price, what="selling price", example="17.00")
-    await db.set_menu_item_price(
-        str(menu_item_id),
-        tenant_id=ctx.tenant_id,
-        selling_price=price,
-        actor=ctx.actor,
-    )
+    try:
+        await db.set_menu_item_price(
+            str(menu_item_id),
+            tenant_id=ctx.tenant_id,
+            selling_price=price,
+            actor=ctx.actor,
+        )
+    except MenuItemArchived:
+        raise _archived() from None
     return await _menu_item_detail(db, str(menu_item_id), ctx.tenant_id)
 
 
@@ -711,6 +720,8 @@ async def create_recipe_version(
             components=components,
             actor=ctx.actor,
         )
+    except MenuItemArchived:
+        raise _archived() from None
     except asyncpg.UniqueViolationError:
         # Two concurrent saves computed the same max+1; the constraint let
         # exactly one through (D17).
@@ -908,8 +919,9 @@ def price_moves(
     `pairs` is `db.list_price_move_pairs` grouped by ingredient (newest
     first); `rows`, `components_by_item` and `plate_by_item` are
     `costed_menu`'s bundle. Same pack -> a real move, with the delta and
-    the per-plate impact (delta x the recipe's quantity in base units / the
-    batch yield); a different pack -> "price basis changed", both packs
+    the per-plate impact (delta x what the recipe draws off the shelf, in
+    base units and after its usable share, / the batch yield); a different
+    pack -> "price basis changed", both packs
     named, **no delta** - a delta across packs is a pack artifact wearing a
     percent sign (D3, WP-28's rule one layer up). A first purchase is a
     price, not a move; the same price again is not a move; a material no
@@ -969,17 +981,24 @@ def price_moves(
                 continue
             # Two components on the same material (rare, legal) sum before
             # the impact is taken, so the item appears once with its whole
-            # exposure.
-            base_qty = Decimal(0)
+            # exposure. Each weighs what it draws off the shelf, share and
+            # all, because that is the quantity the plate was costed on.
+            bought = Decimal(0)
             for component in components_by_item.get(row["id"], []):
                 if component["ingredient_id"] != ingredient_id:
                     continue
-                converted = plates.to_base_qty(component["qty"], component["unit"])
-                if converted is not None:
-                    base_qty += converted[0]
-            if base_qty == 0:
+                draw = plates.line_draw(
+                    qty=component["qty"],
+                    unit=component["unit"],
+                    usable_share=component["usable_share"],
+                    measured_in=current["base_unit"],
+                    ingredient_name=current["ingredient_name"],
+                )
+                if draw.bought is not None:
+                    bought += draw.bought
+            if bought == 0:
                 continue
-            impact = plates.margin_impact(delta, base_qty, row["yield_portions"])
+            impact = plates.margin_impact(delta, bought, row["yield_portions"])
             if impact == 0:
                 continue
             margin_before = plate.margin + impact

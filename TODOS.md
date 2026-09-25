@@ -12,6 +12,25 @@ correction, in the M6-decomposition commit - and retired from this file.)
 
 ## Backend (apps/api)
 
+### A misread future date wins today's price; `/sales/coverage` costs at today's prices
+
+**What:** Two places where one screen can quote a different price from another over the same
+facts. (1) `/menu`, `/materials` and the dashboard's "today" plates read the newest costed line
+with no date limit, so an invoice misread with a date in the future (nothing refuses one) sets
+the price there, while every period figure passes `as_of` and ignores it. (2) `/sales/coverage`
+(`sales.py:643`) calls `costed_menu(db, tenant_id)` at today's prices, while the dashboard and
+`/sales/branches` cost the same period's plates as of its last day (`period_read`).
+
+**Why:** Found by the 2026-09-24 architecture review and its specs
+(`Docs/ARCH_SPECS_2026-09-24.md` §0.2, the two follow-ups), not fixed in Wave 0 because each
+changes a figure on a screen and deserves its own failing test and decision: (1) is
+`as_of = today` on the today-reads (recommended, with a test that a future-dated paper does not
+move `/menu`), (2) is the coverage screen starting from the period read (the review's
+candidate 5).
+
+**Context:** Neither has been seen live; both follow from reading the code. The price-in-force
+work (spec 3) is the natural home for (1), because it owns the read that decides the price.
+
 ### Catalog pack size and unit are written once and never corrected
 
 **What:** Update `supplier_items.unit` and `supplier_items.pack_size` when a later invoice

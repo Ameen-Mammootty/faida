@@ -269,11 +269,11 @@ def _item_sales_input(row: asyncpg.Record) -> contribution.ItemSales:
 def _menu_items(menu: CostedMenu) -> dict[str, contribution.MenuItem]:
     """The menu as `contribution` reads it: each item's as-of plate, its
     current recipe version, and every component with the invoice line behind
-    the price that costed it (C12.4a). The batch cost is the same
-    multiplication `plates.cost_component` makes - the quantity in base units,
-    divided by the conversion yield when the line has one (M12 WP-119, D13),
-    times the price per base unit - and None when there is no price or the
-    unit does not convert, so a hole is a hole here too.
+    the price that costed it (C12.4a). The batch cost is `plates.line_draw`'s,
+    the one `plates.cost_component` asks too - what the line draws off the
+    shelf, after its conversion yield (M12 WP-119, D13), times the price per
+    base unit - and None when there is no price or the unit does not convert,
+    so a hole is a hole here too.
 
     The share rides along on the component too, so the dish's contribution and
     M12's usage figure divide by the same number this cost did."""
@@ -284,10 +284,15 @@ def _menu_items(menu: CostedMenu) -> dict[str, contribution.MenuItem]:
             price = menu.prices.get(component["ingredient_id"])
             batch_cost = invoice_id = position = purchased_on = None
             if price is not None:
-                converted = plates.to_base_qty(component["qty"], component["unit"])
-                if converted is not None and converted[1] == price["cost_base_unit"]:
-                    bought = plates.bought_base_qty(converted[0], component["usable_share"])
-                    batch_cost = bought * price["cost_per_base_unit"]
+                draw = plates.line_draw(
+                    qty=component["qty"],
+                    unit=component["unit"],
+                    usable_share=component["usable_share"],
+                    measured_in=price["cost_base_unit"],
+                    ingredient_name=component["ingredient_name"],
+                )
+                if draw.bought is not None:
+                    batch_cost = draw.cost(price["cost_per_base_unit"])
                 invoice_id = price["invoice_id"]
                 position = price["position"]
                 purchased_on = price["purchased_on"]

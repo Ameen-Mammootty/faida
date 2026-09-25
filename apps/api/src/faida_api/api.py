@@ -94,7 +94,7 @@ from .confirm import (
     _parse_number,
 )
 from .contracts import InvoiceStatus, JobKind
-from .db import Database, SupplierAliasCollision
+from .db import Database, MaterialMeasuredOtherwise, SupplierAliasCollision
 from .extraction import units
 from .extraction.currency import currency_differs
 from .extraction.filing import file_invoice
@@ -1467,24 +1467,33 @@ async def map_supplier_item(
     # one dimension, and a millilitre pack on a gram material is wrong in a way
     # no later arithmetic can notice. Only refused when the pack positively
     # disagrees - a bare carton says nothing, and WP-55 blocks its cost anyway.
-    if pack_base_unit is not None and pack_base_unit != base_unit:
-        raise HTTPException(
+    def measured_otherwise(pack_unit: str, material: str, material_unit: str) -> HTTPException:
+        return HTTPException(
             status_code=422,
             detail=(
-                f"'{item['canonical_name']}' is measured {MEASURE_WORDS[pack_base_unit]}, "
-                f"but {material_name} is measured {MEASURE_WORDS[base_unit]}"
+                f"'{item['canonical_name']}' is measured {MEASURE_WORDS[pack_unit]}, "
+                f"but {material} is measured {MEASURE_WORDS[material_unit]}"
             ),
         )
 
-    ingredient = await db.map_supplier_item(
-        str(item_id),
-        tenant_id=ctx.tenant_id,
-        ingredient_id=None if body.ingredient_id is None else str(body.ingredient_id),
-        name=None if body.ingredient_id is not None else _clean(body.name),
-        base_unit=base_unit,
-        actor=ctx.actor,
-        previous_ingredient_id=item["ingredient_id"],
-    )
+    if pack_base_unit is not None and pack_base_unit != base_unit:
+        raise measured_otherwise(pack_base_unit, material_name, base_unit)
+
+    try:
+        ingredient = await db.map_supplier_item(
+            str(item_id),
+            tenant_id=ctx.tenant_id,
+            ingredient_id=None if body.ingredient_id is None else str(body.ingredient_id),
+            name=None if body.ingredient_id is not None else _clean(body.name),
+            base_unit=base_unit,
+            actor=ctx.actor,
+        )
+    except MaterialMeasuredOtherwise as clash:
+        # A name that already belongs to a material joins that material, and
+        # its measure is only known inside the mapping's transaction - the
+        # check above compared the pack with the measure the request asked
+        # for, so the same refusal is said again for the one that is real.
+        raise measured_otherwise(base_unit, clash.material_name, clash.base_unit) from None
     return {
         "supplier_item_id": str(item_id),
         "ingredient": {
@@ -1623,25 +1632,35 @@ async def set_pack_size_override(
                 "like '10 kg', '750 ml' or '24 x 400 ml'."
             ),
         )
+
     # The same refusal the approval gate makes, for the same reason: a material
     # has one dimension, and a millilitre conversion feeding a gram material is
     # wrong in a way nothing downstream can see.
-    material_unit = item["ingredient_base_unit"]
-    if material_unit is not None and material_unit != base_unit:
-        raise HTTPException(
+    def measured_otherwise(material: str, material_unit: str) -> HTTPException:
+        return HTTPException(
             status_code=422,
             detail=(
                 f"{printed} is measured {MEASURE_WORDS[base_unit]}, but "
-                f"{item['ingredient_name']} is measured {MEASURE_WORDS[material_unit]}"
+                f"{material} is measured {MEASURE_WORDS[material_unit]}"
             ),
         )
 
-    costed = await db.set_pack_size_override(
-        str(item_id),
-        tenant_id=ctx.tenant_id,
-        pack_size=printed,
-        actor=ctx.actor,
-    )
+    material_unit = item["ingredient_base_unit"]
+    if material_unit is not None and material_unit != base_unit:
+        raise measured_otherwise(item["ingredient_name"], material_unit)
+
+    try:
+        costed = await db.set_pack_size_override(
+            str(item_id),
+            tenant_id=ctx.tenant_id,
+            pack_size=printed,
+            base_unit=base_unit,
+            actor=ctx.actor,
+        )
+    except MaterialMeasuredOtherwise as clash:
+        # Mapped, or remapped, between the read above and the write: the
+        # write's own lock held the answer against the material it has now.
+        raise measured_otherwise(clash.material_name, clash.base_unit) from None
     return {"supplier_item_id": str(item_id), "pack_size": printed, "lines_costed": costed}
 
 

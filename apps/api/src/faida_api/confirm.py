@@ -105,6 +105,7 @@ from .provenance import Origin, line_key, mark
 from .replies import (
     REPLY_CASH_HOLD_OK,
     REPLY_CLARIFY,
+    REPLY_CONFIRM_REFUSED,
     REPLY_CORRECTION_REFUSED,
     REPLY_TEXT_ONBOARDING,
     PendingInvoice,
@@ -773,7 +774,7 @@ async def handle_inbound_text(
         # One call, one transaction: the status flip, the audit row and the
         # price baseline commit together or not at all (WP-50).
         try:
-            await db.confirm_invoice(
+            recorded = await db.confirm_invoice(
                 str(target["id"]), tenant_id=tenant_id, actor=chat_actor(from_phone)
             )
         except SupplierAliasCollision as clash:
@@ -783,7 +784,18 @@ async def handle_inbound_text(
             # sentence the screen shows - a failed job and a silence would be
             # the dead end this flow keeps promising not to be.
             return about(clash.message)
-        return about(_ack(target))
+        # The reply is about the paper as it stands now, never as it was read
+        # before the write: the screen can confirm, hold or correct it in the
+        # gap, and the phone must not be told "recorded" about a paper that
+        # was not, or quoted a total that has since changed (2026-09-24).
+        fresh = await db.get_invoice(str(target["id"]), tenant_id=tenant_id)
+        if recorded or fresh["status"] == InvoiceStatus.CONFIRMED:
+            return about(_ack(fresh))
+        if fresh["status"] == InvoiceStatus.NEEDS_REVIEW and fresh["payment_kind"] == "cash":
+            return about(REPLY_CASH_HOLD_OK)
+        if fresh["status"] == InvoiceStatus.AWAITING_CONFIRM and fresh["total"] is None:
+            return about(await _total_needed(db, str(target["id"]), tenant_id))
+        return about(REPLY_CONFIRM_REFUSED)
     try:
         body = await _apply_correction(
             db,

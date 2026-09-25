@@ -20,7 +20,13 @@ from faida_api.api import UPLOAD_MAX_BYTES
 from faida_api.api import router as api_router
 from faida_api.config import Settings
 from faida_api.confirm import handle_inbound_text
-from faida_api.replies import Reply, compose_cash_approved_notice
+from faida_api.replies import (
+    ICON_DONE,
+    REPLY_CASH_HOLD_OK,
+    REPLY_CONFIRM_REFUSED,
+    Reply,
+    compose_cash_approved_notice,
+)
 from faida_api.storage import Storage
 from faida_api.wa import WhatsAppClient
 from faida_api.webhook import router as webhook_router
@@ -1957,3 +1963,102 @@ async def test_re_pointing_re_asks_whether_the_paper_is_a_copy(api, db):
         )
         is None
     )
+
+
+async def _chat_ok_racing(api, db, monkeypatch, screen, invoice=None) -> tuple[Reply, dict]:
+    """A chat "OK" whose paper the screen changes after the chat read it as
+    pending and before the chat's confirm writes: `screen(client, invoice_id)`
+    runs, through the real API against the real database, exactly in that
+    gap. Returns the reply the phone got and the paper as it now stands."""
+    app, client, *_ = api
+    invoice = invoice or await extracted_invoice(api, db)
+    assert invoice["status"] == "awaiting_confirm"
+    read = db.pending_invoices_for_phone
+
+    async def read_then_screen(phone):
+        rows = await read(phone)
+        await screen(client, str(invoice["id"]))
+        return rows
+
+    monkeypatch.setattr(db, "pending_invoices_for_phone", read_then_screen)
+    reply = await handle_inbound_text(db, DEMO_PHONE, "OK", datetime.datetime.now(datetime.UTC))
+    monkeypatch.undo()
+    fresh = await db.get_invoice(str(invoice["id"]), tenant_id=DEMO_TENANT_ID)
+    return reply, dict(fresh)
+
+
+@requires_db
+async def test_an_ok_that_lost_to_a_cash_mark_on_the_screen_says_it_is_held(api, db, monkeypatch):
+    """The screen marked the paper cash between the chat's read and its write:
+    the confirm refused it (a cash paper waits for the owner), so the phone is
+    told the paper is held - never "recorded" about a paper that was not."""
+
+    async def mark_cash(client, invoice_id):
+        response = await client.patch(
+            f"/api/invoices/{invoice_id}/fields",
+            headers=AUTH,
+            json={"corrections": [{"line_index": None, "field": "payment_kind", "value": "cash"}]},
+        )
+        assert response.status_code == 200, response.text
+
+    reply, fresh = await _chat_ok_racing(api, db, monkeypatch, mark_cash)
+    assert fresh["status"] == "needs_review"
+    assert fresh["confirmed_at"] is None
+    assert reply.body == REPLY_CASH_HOLD_OK
+    assert reply.reply_to == "wamid.in1"
+
+
+@requires_db
+async def test_an_ok_that_lost_to_a_duplicate_hold_on_the_screen_says_it_did_not_record(
+    api, db, monkeypatch
+):
+    """The screen re-pointed the paper at the supplier that already has this
+    invoice number on file, so it is now a held copy (WP-87). The OK cannot
+    record a held copy, and the phone is told plainly that it did not - not
+    acked, and not given the cash note about a paper that is not cash."""
+    app, client, *_ = api
+    await seed_supplier_with_items(db, [{"canonical_name": "Milk Powder 2.5kg"}])
+    abc = await seed_lookalike_supplier(db, "Gulf Foods ABC Trading LLC", "Milk Powder 2.5kg")
+    first = good_invoice()
+    first.supplier_name = "Gulf Foods ABC Trading LLC"
+    original = await extracted_invoice(api, db, first, message_id="wamid.first")
+    assert str(original["supplier_id"]) == str(abc)
+    confirmed = await client.post(f"/api/invoices/{original['id']}/confirm", headers=AUTH)
+    assert confirmed.status_code == 200, confirmed.text
+    copy = await extracted_invoice(api, db, message_id="wamid.copy")
+    assert str(copy["supplier_id"]) != str(abc)
+
+    async def rebook_under_abc(client, invoice_id):
+        response = await client.patch(
+            f"/api/invoices/{invoice_id}/fields",
+            headers=AUTH,
+            json={"corrections": [{"field": "supplier", "value": str(abc)}]},
+        )
+        assert response.status_code == 200, response.text
+
+    reply, fresh = await _chat_ok_racing(api, db, monkeypatch, rebook_under_abc, copy)
+    assert fresh["status"] == "needs_review"
+    assert str(fresh["duplicate_of_invoice_id"]) == str(original["id"])
+    assert reply.body == REPLY_CONFIRM_REFUSED
+    assert reply.reply_to == "wamid.copy"
+
+
+@requires_db
+async def test_an_ok_that_lost_to_a_confirm_on_the_screen_acks_the_paper_as_recorded(
+    api, db, monkeypatch
+):
+    """Both hands meant the same thing and the screen's landed first: the paper
+    is recorded, so the ack is true - and it is the screen's one audit row,
+    not a second confirm."""
+
+    async def confirm(client, invoice_id):
+        response = await client.post(f"/api/invoices/{invoice_id}/confirm", headers=AUTH)
+        assert response.status_code == 200, response.text
+
+    reply, fresh = await _chat_ok_racing(api, db, monkeypatch, confirm)
+    assert fresh["status"] == "confirmed"
+    assert reply.body.startswith(ICON_DONE)
+    events = await db.audit_events_for_subject(
+        "invoice", str(fresh["id"]), tenant_id=DEMO_TENANT_ID
+    )
+    assert [e["actor"] for e in events if e["action"] == "invoice.confirmed"] == [TEST_ACTOR]

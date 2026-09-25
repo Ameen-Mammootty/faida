@@ -325,6 +325,32 @@ async def test_an_archived_menu_item_is_refused_with_a_sentence(api, db):
     assert await _audit(db, "till_item.mapped") == []
 
 
+async def test_a_till_name_mapped_as_its_dish_is_archived_is_refused(api, db, monkeypatch):
+    """The dish was live when the mapping read it and archived before the
+    mapping wrote: sales mapped onto a dish nobody ranks is value nobody sees,
+    so the refusal holds at the write too."""
+    special = await _menu_item(db, "Old Special")
+    till = await _load(api, ["OLD SPECIAL"])
+    read = db.get_menu_item
+
+    async def read_then_archive(menu_item_id, *, tenant_id):
+        row = await read(menu_item_id, tenant_id=tenant_id)
+        assert await db.archive_menu_item(menu_item_id, tenant_id=tenant_id, actor=TEST_ACTOR)
+        return row
+
+    monkeypatch.setattr(db, "get_menu_item", read_then_archive)
+    response = await api.post(
+        f"/api/till-items/{till['OLD SPECIAL']}/menu-item",
+        json={"menu_item_id": special},
+        headers=AUTH,
+    )
+    assert response.status_code == 409, response.text
+    assert "archived" in response.json()["detail"]
+    assert await _audit(db, "till_item.mapped") == []
+    stored = await db.get_till_item(till["OLD SPECIAL"], tenant_id=TENANT)
+    assert stored["menu_item_id"] is None
+
+
 async def test_another_tenants_rows_do_not_exist_here_and_postgres_refuses_the_link(api, db):
     await db.pool.execute(
         "insert into tenants (id, name, currency) values ($1, 'Other Chain', 'AED')", TENANT_B

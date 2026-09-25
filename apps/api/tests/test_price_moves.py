@@ -238,3 +238,51 @@ async def test_two_moves_on_one_day_are_ranked_by_what_they_cost_a_plate(api, db
     ]
     assert moves[0]["items"][0]["impact_per_portion"] == "0.024"
     assert moves[1]["items"][0]["impact_per_portion"] == "0.006"
+
+
+@requires_db
+async def test_a_trimmed_line_moves_the_plate_by_what_was_bought_not_what_was_used(api, db):
+    """A recipe line with a usable share (0021, D13) draws more off the shelf
+    than it puts in the cup: 60 ml used at 0.8 usable is 75 ml bought. The
+    plate costs the 75 ml, so a price move must weigh the 75 ml too - and
+    the margin it calls "before" is the margin the Menu screen showed before
+    the delivery, to the fils."""
+    scenario = await _karak(db, api)
+    special = await _menu_item(api, "Karak Special", "10.00")
+    await _recipe(
+        api,
+        special,
+        [
+            {"ingredient_id": scenario["tea"], "qty": "4", "unit": "g"},
+            {
+                "ingredient_id": scenario["milk"],
+                "qty": "60",
+                "unit": "ml",
+                "usable_share": "0.8",
+            },
+            {"ingredient_id": scenario["cup"], "qty": "1", "unit": "pc"},
+        ],
+    )
+    before = (await _detail(api, special))["plate"]
+    # 4 g x 0.018 + 75 ml x 0.008 + 1 x 0.20 = 0.872; 9.524 - 0.872 = 8.652.
+    assert before["margin"] == "8.652"
+
+    await _delivery(
+        db,
+        scenario["milk_pack"],
+        supplier_id=scenario["supplier_id"],
+        pack_size="1l",
+        unit_price=Decimal("9.00"),
+        invoice_date="2026-08-15",
+        raw_name="EVAP MILK 1L",
+    )
+    after = (await _detail(api, special))["plate"]
+
+    (move,) = await _moves(api)
+    item = next(item for item in move["items"] if item["name"] == "Karak Special")
+    # 75 ml x 0.001/ml = 0.075 a cup, not the 60 ml actually poured.
+    assert item["impact_per_portion"] == "0.075"
+    assert item["margin_after"] == after["margin"] == "8.577"
+    assert item["margin_before"] == before["margin"]
+    assert item["margin_pct_before"] == before["margin_pct"] == "90.8"
+    assert item["margin_pct_after"] == "90.1"

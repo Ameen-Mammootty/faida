@@ -202,6 +202,14 @@ def compose_cash_approved_notice(supplier_name: str | None, invoice_no: str | No
 REPLY_CORRECTION_REFUSED = (
     f"{ICON_CHECK} This one is already {{status}}, so I can't change it any more."
 )
+# An "OK" that arrived after the screen changed the paper under it - dismissed
+# it, or otherwise moved it where an OK cannot record it (2026-09-24, D3). The
+# confirm did not happen, and the sender is told rather than acked. A paper
+# the screen confirmed or held in the same gap gets the ack or the hold note
+# instead, because those are true.
+REPLY_CONFIRM_REFUSED = (
+    f"{ICON_CHECK} This one was changed on the review screen, so this OK didn't record it."
+)
 # WP-26: with no total there is nothing to confirm. A missing line quantity is
 # a small hole; the total is the invoice's headline number, and M5 divides it
 # into plate costs where no photograph can catch a null. So the closing does

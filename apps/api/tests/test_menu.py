@@ -452,6 +452,57 @@ async def test_archive_and_unarchive_round_trip_with_audit_rows(api, db):
     assert actions == ["menu_item.created", "menu_item.archived", "menu_item.unarchived"]
 
 
+def _archived_in_the_gap(db, monkeypatch) -> None:
+    """The next write to a menu item finds it live on its first read, and the
+    item is archived - through the archive door itself - between that read
+    and the write: the moment an owner archives a dish in one tab while
+    another tab saves a change to it."""
+    read = db.get_menu_item
+
+    async def read_then_archive(menu_item_id, *, tenant_id):
+        row = await read(menu_item_id, tenant_id=tenant_id)
+        monkeypatch.setattr(db, "get_menu_item", read)
+        assert await db.archive_menu_item(menu_item_id, tenant_id=tenant_id, actor=TEST_ACTOR)
+        return row
+
+    monkeypatch.setattr(db, "get_menu_item", read_then_archive)
+
+
+@requires_db
+async def test_a_price_saved_as_the_item_is_archived_is_refused(api, db, monkeypatch):
+    """Archived is read-only, and the rule holds at the write, not only at the
+    read before it: the price does not move and no history row is written."""
+    item = await _item(api)
+    _archived_in_the_gap(db, monkeypatch)
+    response = await api.patch(
+        f"/api/menu-items/{item['id']}/price", json={"selling_price": "6.00"}, headers=AUTH
+    )
+    assert response.status_code == 409, response.text
+    assert "archived" in response.json()["detail"]
+    stored = await db.pool.fetchval(
+        "select selling_price from menu_items where id = $1", item["id"]
+    )
+    assert str(stored) == "5.000"
+    actions = [row["action"] for row in await _audit(db, item["id"])]
+    assert actions == ["menu_item.created", "menu_item.archived"]
+
+
+@requires_db
+async def test_a_recipe_saved_as_the_item_is_archived_is_refused(api, db, monkeypatch):
+    item = await _item(api)
+    tea = await _ingredient(db, "Tea Dust")
+    _archived_in_the_gap(db, monkeypatch)
+    response = await api.post(
+        f"/api/menu-items/{item['id']}/recipe", json=_recipe_body(tea), headers=AUTH
+    )
+    assert response.status_code == 409, response.text
+    assert "archived" in response.json()["detail"]
+    assert (
+        await db.pool.fetchval("select count(*) from recipes where menu_item_id = $1", item["id"])
+        == 0
+    )
+
+
 @requires_db
 async def test_archiving_frees_the_name_and_unarchiving_into_it_is_refused(api):
     """The 0015 partial index: one live 'Karak Tea' at a time, but an archived

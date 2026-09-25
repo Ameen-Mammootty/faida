@@ -190,3 +190,30 @@ describe("what confirm teaches", () => {
     expect(lookalike?.aliases).toEqual(["AL MADINA TRADING"]);
   });
 });
+
+describe("the mock's mapping door", () => {
+  async function freshMaterials() {
+    vi.resetModules();
+    return import("../mock/materials");
+  }
+
+  it("refuses a pack named onto a material measured another way, and keeps nothing", async () => {
+    const materials = await freshMaterials();
+    // Milk Powder 2.5kg makes "Milk", measured by weight.
+    await materials.mockMapSupplierItem("sitem-1", { name: "Milk" });
+    await expect(
+      materials.mockMapSupplierItem("sitem-3", { name: "Milk" }),
+    ).rejects.toMatchObject({ status: 422 });
+    const milk = (await materials.mockListIngredients()).find((row) => row.name === "Milk");
+    expect(milk?.pack_count).toBe(1);
+  });
+
+  it("leaves no new material behind when the mapping is refused", async () => {
+    const materials = await freshMaterials();
+    await expect(
+      materials.mockMapSupplierItem("sitem-3", { name: "Condensed Base", base_unit: "g" }),
+    ).rejects.toMatchObject({ status: 422 });
+    const names = (await materials.mockListIngredients()).map((row) => row.name);
+    expect(names).not.toContain("Condensed Base");
+  });
+});

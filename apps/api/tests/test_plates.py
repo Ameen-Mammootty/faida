@@ -38,12 +38,39 @@ def test_a_ten_dirham_menu_price_margins_against_9_524():
     assert plates.net_of_vat(Decimal("10.00"), Decimal("0")) == Decimal("10.000")
 
 
-def test_quantities_convert_to_base_units_and_vessels_do_not():
-    assert plates.to_base_qty(Decimal("2"), "kg") == (Decimal("2000"), "g")
-    assert plates.to_base_qty(Decimal("55"), "ml") == (Decimal("55"), "ml")
-    assert plates.to_base_qty(Decimal("1"), "pc") == (Decimal("1"), "pc")
-    assert plates.to_base_qty(Decimal("2"), "cups") is None  # a serving vessel
-    assert plates.to_base_qty(Decimal("1"), "ctn") is None  # a container
+def test_a_recipe_line_draws_base_units_and_a_vessel_or_container_is_a_hole():
+    def draw(qty: str, unit: str, measured_in: str) -> plates.LineDraw:
+        return plates.line_draw(
+            qty=Decimal(qty),
+            unit=unit,
+            usable_share=None,
+            measured_in=measured_in,
+            ingredient_name="Tea",
+        )
+
+    assert draw("2", "kg", "g") == plates.LineDraw(bought=Decimal("2000"))
+    assert draw("55", "ml", "ml") == plates.LineDraw(bought=Decimal("55"))
+    assert draw("1", "pc", "pc") == plates.LineDraw(bought=Decimal("1"))
+    hole = "'cups' does not convert to how Tea is measured"
+    assert draw("2", "cups", "g") == plates.LineDraw(missing=hole)  # a serving vessel
+    assert draw("1", "ctn", "g").bought is None  # a container
+
+
+def test_a_line_measured_in_another_dimension_is_a_hole_never_a_number():
+    """A remap can leave a recipe line in millilitres on a material now
+    measured by weight; multiplying 60 ml by a price per gram would be a
+    plausible, wrong number on every screen, so there is no number."""
+    draw = plates.line_draw(
+        qty=Decimal("60"),
+        unit="ml",
+        usable_share=None,
+        measured_in="g",
+        ingredient_name="Milk Powder",
+    )
+    assert draw.bought is None
+    assert draw.missing == "'ml' does not convert to how Milk Powder is measured"
+    with pytest.raises(ValueError):
+        draw.cost(Decimal("0.02"))
 
 
 def test_no_plate_vocabulary_can_say_verified():
@@ -128,17 +155,22 @@ def test_a_usable_share_costs_what_the_storeroom_issued():
         usable_share=Decimal("0.85"),
     )
     assert trimmed.cost.quantize(Decimal("0.0001")) == Decimal("11.7647")
-    # The divisor and nothing else: exactly 1/0.85 of the as-purchased cost.
-    assert plates.bought_base_qty(Decimal("500"), Decimal("0.85")) == Decimal("500") / Decimal(
-        "0.85"
+    # The divisor and nothing else: exactly 1/0.85 of the as-purchased quantity.
+    drawn = plates.line_draw(
+        qty=Decimal("500"),
+        unit="g",
+        usable_share=Decimal("0.85"),
+        measured_in="g",
+        ingredient_name="Chicken",
     )
+    assert drawn.bought == Decimal("500") / Decimal("0.85")
 
 
 def test_a_component_with_no_share_costs_exactly_what_it_costed_before():
     """Every recipe on file predates 0021 and must be byte-identical: the same
     ComponentCost, whether the share arrives as None or never arrives at all.
     A manufactured 1.0 divisor would be arithmetically the same and is still
-    not what this does - `bought_base_qty` returns the quantity untouched."""
+    not what this does - `line_draw` returns the quantity untouched."""
     price = plates.Priced(cost_per_base_unit=Decimal("0.02"), base_unit="g", quality=None)
     args = dict(
         position=0,
@@ -152,7 +184,10 @@ def test_a_component_with_no_share_costs_exactly_what_it_costed_before():
     explicit_none = plates.cost_component(**args, usable_share=None)
     assert omitted == explicit_none
     assert omitted == plates.ComponentCost(0, cost=Decimal("10.00"), quality=Quality.RELIABLE)
-    assert plates.bought_base_qty(Decimal("500"), None) == Decimal("500")
+    drawn = plates.line_draw(
+        qty=Decimal("500"), unit="g", usable_share=None, measured_in="g", ingredient_name="Chicken"
+    )
+    assert drawn == plates.LineDraw(bought=Decimal("500"))
 
 
 def test_the_component_words_name_the_typed_amount_the_share_and_the_bought_one():
@@ -554,7 +589,7 @@ async def test_an_estimated_material_cost_makes_the_plate_estimated(api, db):
     )
     flour = await _material(db, flour_pack, "Refined Flour", "g")
     costed = await db.set_pack_size_override(
-        flour_pack, tenant_id=DEMO_TENANT_ID, pack_size="25 kg", actor="console"
+        flour_pack, tenant_id=DEMO_TENANT_ID, pack_size="25 kg", base_unit="g", actor="console"
     )
     assert costed == 1
 

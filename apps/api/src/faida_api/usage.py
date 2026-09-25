@@ -18,7 +18,7 @@ accusation appears in any sentence it can compose.
 Pure module: no I/O, no database, `Decimal` everywhere, every sentence
 composed here and none composed anywhere else (C14.6 - the screen shows the
 words and divides nothing). One implementation (C14.11): the pack factor is
-`costing.resolve_pack`'s, the unit conversion is `plates.to_base_qty`'s, the
+`costing.resolve_pack`'s, what a recipe line draws is `plates.line_draw`'s, the
 portions are `contribution.item_rows`', the windows and the sales half of
 every label are `ratio.period_row`'s, the display unit is
 `costing.DISPLAY_UNITS`. A second copy of any of those is a contract breach.
@@ -729,26 +729,6 @@ def _material_for(
     )
 
 
-def _no_convert_sentence(*, position: int, qty: Decimal, unit: str, material: Material) -> str:
-    """`plates.cost_component`'s own sentence for a component whose unit does
-    not convert to how its material is measured, taken from the shipped
-    function rather than written again (C14.2, C14.11). The probe price is a
-    stand-in; only the sentence is used."""
-    probe = plates.cost_component(
-        position=position,
-        qty=qty,
-        unit=unit,
-        ingredient_name=material.name,
-        has_packs=True,
-        price=plates.Priced(
-            cost_per_base_unit=Decimal(1),
-            base_unit=material.base_unit,
-            quality=None,
-        ),
-    )
-    return probe.missing or f"'{unit}' does not convert to how {material.name} is measured"
-
-
 def _no_pack_sentence(material: Material) -> str:
     """ "no supplier product is mapped to Atta Flour yet" - `plates`' sentence,
     which names the next action and not the failure."""
@@ -784,8 +764,9 @@ def _used_by_material(
 ) -> dict[str, _UsedSide]:
     """Every material one branch's sold recipes needed, per material.
 
-    used += portions x `plates.to_base_qty(component.qty, component.unit)` /
-    usable share / yield portions, the dish's total quantized once (D5).
+    used += portions x `plates.line_draw` (the typed quantity in base units
+    divided by its usable share) / yield portions, the dish's total quantized
+    once (D5).
     Portions are as the till printed them, before refunds, with the refunded
     portions named on the row: a refunded karak was usually made and poured
     away, and neither answer is knowable from a till line (P9).
@@ -802,27 +783,24 @@ def _used_by_material(
             continue
         draws: dict[str, _Draw] = {}
         holes: dict[str, str] = {}
-        for position, component in enumerate(item.components):
+        for component in item.components:
             material = _material_for(
                 component.ingredient_id, component.ingredient_name, None, materials
             )
             side = out.setdefault(material.ingredient_id, _UsedSide())
-            converted = plates.to_base_qty(component.qty, component.unit)
-            if converted is None or converted[1] != material.base_unit:
-                holes[material.ingredient_id] = _no_convert_sentence(
-                    position=position,
-                    qty=component.qty,
-                    unit=component.unit,
-                    material=material,
-                )
+            line = plates.line_draw(
+                qty=component.qty,
+                unit=component.unit,
+                usable_share=component.usable_share,
+                measured_in=material.base_unit,
+                ingredient_name=material.name,
+            )
+            if line.bought is None:
+                holes[material.ingredient_id] = line.missing
                 continue
-            base_qty, _ = converted
-            share = component.usable_share
-            if share is not None:
-                base_qty = base_qty / share
             draw = draws.setdefault(material.ingredient_id, _Draw())
-            draw.per_portion_base += base_qty / item.yield_portions
-            draw.shares.add(share)
+            draw.per_portion_base += line.bought / item.yield_portions
+            draw.shares.add(component.usable_share)
 
         for ingredient_id, sentence in holes.items():
             side = out[ingredient_id]

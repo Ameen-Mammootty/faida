@@ -39,6 +39,7 @@ from faida_api.replies import (
     READ_IT,
     REPLY_CASH_HOLD_OK,
     REPLY_CLARIFY,
+    REPLY_CONFIRM_REFUSED,
     REPLY_CORRECTION_REFUSED,
     REPLY_EXTRACTION_FAILED,
     REPLY_MEDIA_RECEIVED,
@@ -232,6 +233,7 @@ def test_no_em_or_en_dashes_in_any_message():
         CLOSING_TOTAL_NEEDED,
         CASH_HOLD_NOTE,
         REPLY_CASH_HOLD_OK,
+        REPLY_CONFIRM_REFUSED,
         REPLY_CORRECTION_REFUSED,
         REPLY_CLARIFY,
         DISAMBIGUATION_FOOTER,
@@ -326,6 +328,7 @@ def test_icons_never_stand_alone():
         CHECK_HEADING,
         CASH_HOLD_NOTE,
         REPLY_CASH_HOLD_OK,
+        REPLY_CONFIRM_REFUSED,
         REPLY_CORRECTION_REFUSED.format(status="confirmed"),
         compose_cash_approved_notice("Gulf Foods Trading", "4471"),
         compose_confirmation_ack("Gulf Foods Trading", "AED", Decimal("10")),
@@ -807,6 +810,12 @@ def test_confirmation_ack_fallbacks():
 def test_correction_refused_exact():
     assert REPLY_CORRECTION_REFUSED.format(status="confirmed") == (
         f"{ICON_CHECK} This one is already confirmed, so I can't change it any more."
+    )
+
+
+def test_confirm_refused_exact():
+    assert REPLY_CONFIRM_REFUSED == (
+        f"{ICON_CHECK} This one was changed on the review screen, so this OK didn't record it."
     )
 
 
