@@ -117,62 +117,88 @@ function ik(sx, sy, tx, ty, l1, l2, bend) {
 }
 
 // ---------- the characters ----------
+// Arms are one smooth curve from shoulder to wrist (a quadratic bent toward
+// the elbow the two-bone solve gives), drawn as a single stroke, so
+// an elbow can bend without ever showing a joint.
+const quadPt = (a, c, b, u) => [(1 - u) * (1 - u) * a[0] + 2 * (1 - u) * u * c[0] + u * u * b[0], (1 - u) * (1 - u) * a[1] + 2 * (1 - u) * u * c[1] + u * u * b[1]];
+function quadSub(a, c, b, u0, u1) {
+  // the piece of the curve between u0 and u1, as its own quadratic
+  const p0 = quadPt(a, c, b, u0), p2 = quadPt(a, c, b, u1);
+  const lc = (u) => [lerp(a[0], c[0], u), lerp(a[1], c[1], u)], cb = (u) => [lerp(c[0], b[0], u), lerp(c[1], b[1], u)];
+  const m0 = [lerp(lc(u0)[0], cb(u0)[0], u1), lerp(lc(u0)[1], cb(u0)[1], u1)];
+  return `M${p0[0]},${p0[1]} Q${m0[0]},${m0[1]} ${p2[0]},${p2[1]}`;
+}
+const quadTan = (a, c, b, u) => [2 * (1 - u) * (c[0] - a[0]) + 2 * u * (b[0] - c[0]), 2 * (1 - u) * (c[1] - a[1]) + 2 * u * (b[1] - c[1])];
+
 // Origin at the base of the neck. p holds the pose: x, y, s, lean, tilt, look [x,y],
 // open (eyelids), worry (brows), browY, talk (mouth 0..1), smile (-1..1), lh/rh hand
-// targets, lShape/rShape, sweat, stress, t.
+// targets, lShape/rShape (fist, open, point, thumb, cup, phone), sweat, stress, t.
 function Character(parent, kind) {
   const sup = kind === "sup";
-  const skin = sup ? "#d9a06f" : "#b9794c", skinDark = sup ? "#b47c50" : "#94603a";
-  const shirt = sup ? "#bcd6ea" : "#1f5a4c", shirtDark = sup ? "#9dbfd8" : "#174a3e";
+  const skin = sup ? "#d9a06f" : "#c08a5e", skinDark = sup ? "#b47c50" : "#9a6a44";
+  const shirt = sup ? "#bcd6ea" : "#f8f6f0", fold = sup ? "#9dbfd8" : "#e2ddd1";
+  const hair = sup ? "#2a211d" : "#231c19";
   const root = el("g", {}, parent);
   const body = el("g", {}, root);
   const c = { root, kind };
 
-  if (!sup) { // legs and belt
-    el("path", { d: "M-120,330 L-130,800 L-20,800 L0,420 L20,800 L130,800 L120,330 Z", fill: "#2b3139", ...ink }, body);
-    el("rect", { x: -150, y: 300, width: 300, height: 34, rx: 10, fill: "#5b3a24", ...ink }, body);
-    el("rect", { x: -22, y: 304, width: 44, height: 26, rx: 5, fill: C.gold, ...ink, "stroke-width": 4 }, body);
-  }
-  const torso = sup
-    ? "M-150,30 Q-165,12 -118,2 L118,2 Q165,12 150,30 L178,340 L-178,340 Z"
-    : "M-150,24 Q-170,6 -110,-4 L110,-4 Q170,6 150,24 Q205,160 170,306 L-170,306 Q-205,160 -150,24 Z";
-  el("path", { d: torso, fill: shirt, ...ink }, body);
-  el("rect", { x: -32, y: -46, width: 64, height: 56, fill: skin, ...ink }, body);
   if (sup) {
+    el("path", { d: "M-150,30 Q-165,12 -118,2 L118,2 Q165,12 150,30 L178,340 L-178,340 Z", fill: shirt, ...ink }, body);
+    el("rect", { x: -32, y: -46, width: 64, height: 56, fill: skin, ...ink }, body);
     el("path", { d: "M-40,4 L0,48 L-60,58 Z M40,4 L0,48 L60,58 Z", fill: "#fff", ...ink, "stroke-width": 5 }, body);
     el("path", { d: "M-6,44 L10,44 L22,180 L2,206 L-16,180 Z", fill: C.gold, ...ink, "stroke-width": 5, transform: "rotate(-8 0 44)" }, body);
     el("rect", { x: 62, y: 110, width: 62, height: 34, rx: 6, fill: "#fff", ...ink, "stroke-width": 4 }, body);
     el("rect", { x: 70, y: 120, width: 40, height: 6, fill: C.palm }, body);
   } else {
-    el("path", { d: "M-46,-2 L0,52 L46,-2 L30,-6 L0,30 L-30,-6 Z", fill: C.gold, ...ink, "stroke-width": 5 }, body);
-    [80, 130].forEach(y => el("circle", { cx: 0, cy: y, r: 7, fill: C.cream, ...ink, "stroke-width": 3 }, body));
-    el("path", { d: "M70,70 l40,0", stroke: C.gold, "stroke-width": 6 }, body);
+    // the owner: a crisp white kandura, falling to the floor
+    el("path", { d: "M-150,24 Q-176,8 -108,-6 L108,-6 Q176,8 150,24 Q196,190 188,420 L204,860 L-204,860 L-188,420 Q-196,190 -150,24 Z", fill: shirt, ...ink }, body);
+    el("path", { d: "M120,60 Q160,240 150,520 L170,860 L204,860 L188,420 Q196,190 150,24 Z", fill: fold, opacity: .8 }, body);
+    el("path", { d: "M-60,300 Q-70,560 -64,860 M40,340 Q52,600 46,860 M-120,180 Q-140,420 -130,700", fill: "none", stroke: fold, "stroke-width": 5, "stroke-linecap": "round" }, body);
+    el("rect", { x: -30, y: -44, width: 60, height: 52, fill: skin, ...ink }, body);
+    el("path", { d: "M-40,-6 Q0,26 40,-6", fill: "none", ...ink, "stroke-width": 5 }, body);
+    // the tarboosh: the collar's tassel
+    el("path", { d: "M8,14 Q16,90 6,150", fill: "none", stroke: "#e6dfcf", "stroke-width": 7, "stroke-linecap": "round" }, body);
+    el("path", { d: "M8,14 Q16,90 6,150", fill: "none", stroke: C.ink, "stroke-width": 2, "stroke-dasharray": "2 10", opacity: .5 }, body);
+    el("path", { d: "M-6,146 Q6,138 18,146 L22,196 Q6,206 -10,196 Z", fill: "#efe9dc", ...ink, "stroke-width": 4 }, body);
+    // a pen in the pocket
+    el("path", { d: "M84,80 L128,80 L126,86 L86,86 Z", fill: fold }, body);
+    el("rect", { x: 100, y: 52, width: 10, height: 34, rx: 3, fill: C.palm, ...ink, "stroke-width": 3 }, body);
+    el("rect", { x: 98, y: 50, width: 14, height: 8, rx: 2, fill: C.gold }, body);
   }
 
   // head
   const head = el("g", {}, root);
-  el("ellipse", { cx: -116, cy: -140, rx: 22, ry: 32, fill: skin, ...ink }, head);
-  el("ellipse", { cx: 116, cy: -140, rx: 22, ry: 32, fill: skin, ...ink }, head);
-  el("ellipse", { cx: 0, cy: -150, rx: sup ? 118 : 126, ry: sup ? 134 : 128, fill: skin, ...ink }, head);
   if (sup) {
-    el("path", { d: "M-122,-160 Q-138,-262 -64,-288 Q-40,-318 0,-296 Q34,-326 66,-288 Q138,-268 124,-162 Q104,-226 62,-238 Q42,-210 10,-244 Q-22,-212 -52,-242 Q-86,-216 -122,-160 Z", fill: "#2a211d", ...ink }, head);
+    el("ellipse", { cx: -116, cy: -140, rx: 22, ry: 32, fill: skin, ...ink }, head);
+    el("ellipse", { cx: 116, cy: -140, rx: 22, ry: 32, fill: skin, ...ink }, head);
+    el("ellipse", { cx: 0, cy: -150, rx: 118, ry: 134, fill: skin, ...ink }, head);
+    el("path", { d: "M-122,-160 Q-138,-262 -64,-288 Q-40,-318 0,-296 Q34,-326 66,-288 Q138,-268 124,-162 Q104,-226 62,-238 Q42,-210 10,-244 Q-22,-212 -52,-242 Q-86,-216 -122,-160 Z", fill: hair, ...ink }, head);
     c.strand = el("path", { d: "M8,-294 Q22,-340 50,-332", fill: "none", ...ink, "stroke-width": 7 }, head);
     const pencil = el("g", { transform: "translate(122 -196) rotate(62)" }, head);
     el("rect", { x: -8, y: -40, width: 16, height: 70, fill: C.gold, ...ink, "stroke-width": 4 }, pencil);
     el("rect", { x: -8, y: -52, width: 16, height: 14, fill: "#e98a8a", ...ink, "stroke-width": 4 }, pencil);
     el("path", { d: "M-8,30 L0,48 L8,30 Z", fill: "#f3d2a0", ...ink, "stroke-width": 4 }, pencil);
   } else {
-    el("path", { d: "M-126,-120 Q-134,-190 -100,-214 Q-96,-160 -112,-110 Z M126,-120 Q134,-190 100,-214 Q96,-160 112,-110 Z", fill: "#3b3533", ...ink, "stroke-width": 5 }, head);
-    el("ellipse", { cx: -40, cy: -248, rx: 34, ry: 14, fill: "#fff", opacity: .35, transform: "rotate(-18 -40 -248)" }, head);
+    // the ghutra falls behind the face and over the shoulders
+    el("path", { d: "M-140,-196 Q-150,-316 0,-322 Q150,-316 140,-196 Q150,-60 186,40 Q140,78 96,30 Q104,-40 98,-120 L-98,-120 Q-104,-40 -96,30 Q-140,78 -186,40 Q-150,-60 -140,-196 Z", fill: "#fdfcf8", ...ink }, head);
+    el("path", { d: "M-130,-120 Q-140,-20 -160,34 M130,-120 Q140,-20 160,34 M-118,-60 Q-122,0 -130,40 M118,-60 Q122,0 130,40", fill: "none", stroke: "#dcd6c8", "stroke-width": 5, "stroke-linecap": "round" }, head);
+    el("ellipse", { cx: 0, cy: -150, rx: 104, ry: 122, fill: skin, ...ink }, head);
+    // a neatly kept beard along the jaw, the moustache over it
+    el("path", { d: "M-103,-168 Q-106,-66 -52,-34 Q0,-10 52,-34 Q106,-66 103,-168 Q98,-118 72,-98 Q40,-76 0,-78 Q-40,-76 -72,-98 Q-98,-118 -103,-168 Z", fill: hair, ...ink, "stroke-width": 5 }, head);
+    // the ghutra's edge over the forehead, and the agal on top
+    el("path", { d: "M-124,-178 Q-128,-306 0,-312 Q128,-306 124,-178 Q66,-232 0,-234 Q-66,-232 -124,-178 Z", fill: "#fdfcf8", ...ink }, head);
+    el("path", { d: "M-80,-262 Q0,-292 80,-262", fill: "none", stroke: "#dcd6c8", "stroke-width": 4 }, head);
+    el("ellipse", { cx: 0, cy: -276, rx: 100, ry: 22, fill: "none", stroke: "#141414", "stroke-width": 12 }, head);
+    el("ellipse", { cx: 0, cy: -292, rx: 94, ry: 20, fill: "none", stroke: "#141414", "stroke-width": 11 }, head);
   }
   // eyes
   const eyes = [], browG = [];
   [-1, 1].forEach(side => {
-    const ex = side * (sup ? 46 : 48), ey = sup ? -156 : -160, r = sup ? 24 : 22;
+    const ex = side * (sup ? 46 : 40), ey = sup ? -156 : -168, r = sup ? 24 : 21;
     const clipId = `eye-${kind}-${side}-${Math.random().toString(36).slice(2, 7)}`;
     const cp = el("clipPath", { id: clipId }, head); el("circle", { cx: ex, cy: ey, r }, cp);
     el("circle", { cx: ex, cy: ey, r, fill: "#fff" }, head);
-    const pupil = el("circle", { cx: ex, cy: ey, r: sup ? 10 : 11, fill: C.ink }, head);
+    const pupil = el("circle", { cx: ex, cy: ey, r: sup ? 10 : 10, fill: C.ink }, head);
     const lidWrap = el("g", { "clip-path": `url(#${clipId})` }, head);
     const lid = el("rect", { x: ex - r - 2, y: ey - r - 2, width: 2 * r + 4, height: 0, fill: skin }, lidWrap);
     const lidLine = el("line", { x1: ex - r, x2: ex + r, y1: ey - r, y2: ey - r, ...ink, "stroke-width": 5 }, lidWrap);
@@ -180,51 +206,78 @@ function Character(parent, kind) {
     if (sup) el("path", { d: `M${ex - 18},${ey + 30} Q${ex},${ey + 40} ${ex + 18},${ey + 30}`, fill: "none", stroke: skinDark, "stroke-width": 4, "stroke-linecap": "round" }, head);
     eyes.push({ ex, ey, r, pupil, lid, lidLine });
     const bg = el("g", {}, head);
-    el("path", { d: sup ? "M-30,6 Q0,-10 30,4 Q0,-2 -30,14 Z" : "M-38,8 Q0,-16 38,6 Q0,0 -38,18 Z", fill: sup ? "#2a211d" : "#3b3533", ...ink, "stroke-width": 5 }, bg);
-    browG.push({ g: bg, x: ex, y: ey - (sup ? 52 : 48), side });
+    el("path", { d: sup ? "M-30,6 Q0,-10 30,4 Q0,-2 -30,14 Z" : "M-34,8 Q0,-14 34,4 Q0,-1 -34,17 Z", fill: hair, ...ink, "stroke-width": 5 }, bg);
+    browG.push({ g: bg, x: ex, y: ey - (sup ? 52 : 40), side });
   });
   if (sup) { // glasses over the eyes
     [-46, 46].forEach(x => el("circle", { cx: x, cy: -156, r: 38, fill: "#e8f3f8", "fill-opacity": .18, ...ink }, head));
     el("path", { d: "M-8,-160 Q0,-168 8,-160 M-84,-160 L-114,-150 M84,-160 L114,-150", fill: "none", ...ink }, head);
   }
-  el("path", { d: sup ? "M-4,-132 Q-20,-100 0,-94 Q14,-96 10,-104" : "M-10,-140 Q-34,-96 0,-92 Q30,-94 16,-120", fill: sup ? "none" : skinDark, ...ink, "stroke-width": 5 }, head);
-  if (!sup) {
-    [-70, 70].forEach(x => el("ellipse", { cx: x, cy: -104, rx: 22, ry: 14, fill: "#e27d6a", opacity: .45 }, head));
-  }
+  el("path", { d: sup ? "M-4,-132 Q-20,-100 0,-94 Q14,-96 10,-104" : "M-4,-150 Q-24,-112 -6,-104 Q14,-102 18,-116", fill: sup ? "none" : skinDark, ...ink, "stroke-width": 5 }, head);
   const mouthPath = el("path", { fill: "#6b2521", ...ink, "stroke-width": 5 }, head);
-  if (!sup) el("path", { d: "M-78,-84 Q-46,-112 0,-100 Q46,-112 78,-84 Q66,-66 38,-74 Q16,-80 0,-76 Q-16,-80 -38,-74 Q-66,-66 -78,-84 Z", fill: "#2f2826", ...ink, "stroke-width": 5 }, head);
+  if (!sup) el("path", { d: "M-54,-86 Q-28,-104 0,-94 Q28,-104 54,-86 Q42,-74 22,-79 Q10,-83 0,-80 Q-10,-83 -22,-79 Q-42,-74 -54,-86 Z", fill: hair, ...ink, "stroke-width": 4 }, head);
 
   // effects: sweat, stress marks
   const fx = el("g", {}, head);
-  const drops = [[-122, -210], [128, -230], [104, -120]].map(([x, y]) =>
+  const dropAt = sup ? [[-122, -210], [128, -230], [104, -120]] : [[-100, -214], [104, -226], [92, -128]];
+  const drops = dropAt.map(([x, y]) =>
     el("path", { d: "M0,-18 Q14,4 0,12 Q-14,4 0,-18 Z", fill: "#7cc3ef", ...ink, "stroke-width": 4, transform: `translate(${x} ${y})` }, fx));
   const stress = el("g", { fill: "none", ...ink, "stroke-width": 7 }, fx);
-  el("path", { d: "M-150,-270 l-30,-30 M-120,-300 l-14,-40 M150,-270 l30,-30 M120,-300 l14,-40" }, stress);
+  el("path", { d: "M-160,-280 l-30,-30 M-130,-310 l-14,-40 M160,-280 l30,-30 M130,-310 l14,-40" }, stress);
 
   // arms, drawn last so a hand can reach the face
+  const fingerLine = (g, x1, y1, x2, y2) => {
+    el("path", { d: `M${x1},${y1} L${x2},${y2}`, stroke: C.ink, "stroke-width": 21, "stroke-linecap": "round" }, g);
+    el("path", { d: `M${x1},${y1} L${x2},${y2}`, stroke: skin, "stroke-width": 12, "stroke-linecap": "round" }, g);
+  };
+  const fistShape = (g) => {
+    el("path", { d: "M6,-20 C16,-38 36,-38 38,-24 C32,-16 20,-14 10,-12 Z", fill: skin, ...ink, "stroke-width": 5 }, g);
+    el("path", { d: "M-6,-24 C18,-32 48,-26 52,-4 C56,18 36,30 10,28 C-4,27 -10,16 -10,2 C-10,-10 -10,-19 -6,-24 Z", fill: skin, ...ink, "stroke-width": 5 }, g);
+    el("path", { d: "M34,-14 Q42,-8 40,2 M38,6 Q44,12 38,20", fill: "none", ...ink, "stroke-width": 3 }, g);
+  };
+  const blockFist = (g) => {
+    el("path", { d: "M-28,-12 C-30,-32 24,-34 30,-12 C36,10 28,32 0,32 C-26,32 -32,12 -28,-12 Z", fill: skin, ...ink, "stroke-width": 5 }, g);
+    el("path", { d: "M-18,-2 L18,-2 M-18,10 L18,10 M-16,21 L16,21", fill: "none", stroke: skinDark, "stroke-width": 3, "stroke-linecap": "round" }, g);
+  };
   const arms = [-1, 1].map(side => {
     const g = el("g", {}, root);
-    const inkP = el("path", { fill: "none", stroke: C.ink, "stroke-width": 54, "stroke-linecap": "round", "stroke-linejoin": "round" }, g);
-    const upper = el("path", { fill: "none", stroke: shirt, "stroke-width": 42, "stroke-linecap": "round" }, g);
-    const fore = el("path", { fill: "none", stroke: sup ? shirt : skin, "stroke-width": 42, "stroke-linecap": "round" }, g);
+    const inkP = el("path", { fill: "none", stroke: C.ink, "stroke-width": 52, "stroke-linecap": "round" }, g);
+    const skinP = el("path", { fill: "none", stroke: skin, "stroke-width": 40, "stroke-linecap": "round" }, g);
+    const sleeve = el("path", { fill: "none", stroke: shirt, "stroke-width": 40, "stroke-linecap": "butt" }, g);
+    const sleeveCap = el("circle", { r: 20, fill: shirt }, g);
+    const cuff = el("path", { fill: "none", ...ink, "stroke-width": 5 }, g);
+    const watch = !sup && side < 0 ? el("path", { fill: "none", stroke: C.gold, "stroke-width": 42, "stroke-linecap": "butt" }, g) : null;
+    const watchFace = watch ? el("circle", { r: 11, fill: "#fdfcf8", stroke: "#8a6420", "stroke-width": 4 }, g) : null;
+    const shoulder = el("ellipse", { rx: 30, ry: 26, fill: shirt }, g); // hides the arm's start inside the torso
     const hand = el("g", {}, g);
-    const finger = el("rect", { x: 0, y: -10, width: 62, height: 20, rx: 10, fill: skin, ...ink, "stroke-width": 5 }, hand);
-    const thumb = el("rect", { x: -10, y: -64, width: 22, height: 50, rx: 11, fill: skin, ...ink, "stroke-width": 5 }, hand);
-    el("circle", { cx: 0, cy: 0, r: 30, fill: skin, ...ink }, hand);
-    const cup = el("g", {}, hand);
-    el("path", { d: "M-6,-40 L66,-40 L58,20 Q30,32 2,20 Z", fill: "#fff", ...ink, "stroke-width": 5 }, cup);
-    el("rect", { x: 0, y: -26, width: 60, height: 10, fill: C.gold }, cup);
-    el("path", { d: "M18,-58 q10,-12 0,-24 M38,-58 q10,-12 0,-24", fill: "none", stroke: "#fff", "stroke-width": 5, "stroke-linecap": "round", opacity: .8 }, cup);
-    const phone = el("g", {}, hand);
-    el("rect", { x: -30, y: -96, width: 64, height: 116, rx: 12, fill: C.ink, ...ink }, phone);
-    el("rect", { x: -22, y: -86, width: 48, height: 92, rx: 6, fill: C.sage }, phone);
-    return { side, g, inkP, upper, fore, hand, finger, thumb, cup, phone };
+    const oriented = el("g", {}, hand), upright = el("g", {}, hand);
+    const shapes = {};
+    shapes.fist = el("g", {}, oriented); fistShape(shapes.fist);
+    shapes.point = el("g", {}, oriented); fingerLine(shapes.point, 40, -12, 88, -16); fistShape(shapes.point);
+    shapes.open = el("g", {}, oriented);
+    [[-30, 58], [-10, 64], [10, 62], [30, 54]].forEach(([a, len]) => {
+      const r = a * Math.PI / 180; fingerLine(shapes.open, 24, 0, 24 + len * Math.cos(r), len * Math.sin(r));
+    });
+    fingerLine(shapes.open, 6, -14, 12, -50);
+    el("path", { d: "M-6,-24 C20,-30 42,-22 44,-2 C46,20 24,30 -6,24 C-12,12 -12,-12 -6,-24 Z", fill: skin, ...ink, "stroke-width": 5 }, shapes.open);
+    shapes.thumb = el("g", {}, upright);
+    el("path", { d: "M-10,-26 C-16,-66 10,-74 16,-54 L14,-24 Z", fill: skin, ...ink, "stroke-width": 5 }, shapes.thumb);
+    blockFist(shapes.thumb);
+    shapes.cup = el("g", {}, upright);
+    el("path", { d: "M-6,-44 L70,-44 L62,22 Q32,34 2,22 Z", fill: "#fff", ...ink, "stroke-width": 5 }, shapes.cup);
+    el("rect", { x: 0, y: -30, width: 64, height: 10, fill: C.gold }, shapes.cup);
+    el("path", { d: "M20,-62 q10,-12 0,-24 M42,-62 q10,-12 0,-24", fill: "none", stroke: "#fff", "stroke-width": 5, "stroke-linecap": "round", opacity: .85 }, shapes.cup);
+    const cupHand = el("g", { transform: "translate(-6 0)" }, shapes.cup); blockFist(cupHand);
+    shapes.phone = el("g", {}, upright);
+    el("rect", { x: -32, y: -104, width: 66, height: 120, rx: 12, fill: C.ink, ...ink }, shapes.phone);
+    el("rect", { x: -24, y: -94, width: 50, height: 94, rx: 6, fill: C.sage }, shapes.phone);
+    blockFist(shapes.phone);
+    return { side, g, inkP, skinP, sleeve, sleeveCap, cuff, watch, watchFace, shoulder, hand, oriented, upright, shapes };
   });
 
   c.set = p => {
     const t = p.t || 0;
     at(root, p.x, p.y + (p.bob || 0) * Math.sin(t * 2.4), p.s || 1);
-    at(head, (p.lean || 0) * .6, (p.headY || 0), 1, p.tilt || 0);
     head.setAttribute("transform", `translate(${(p.lean || 0) * .6} ${(p.headY || 0)}) rotate(${p.tilt || 0} 0 -20)`);
     body.setAttribute("transform", `rotate(${(p.lean || 0) * .05} 0 300)`);
     const open = clamp((p.open ?? 1) * blink(t, sup ? 0 : 1));
@@ -238,15 +291,17 @@ function Character(parent, kind) {
     });
     browG.forEach(b => b.g.setAttribute("transform", `translate(${b.x} ${b.y + (p.browY || 0)}) rotate(${-b.side * (p.worry || 0)})`));
     // mouth: corners rise with a smile, opens with the voice
-    const w = sup ? 60 : 70, cy = sup ? -76 : -62, sm = p.smile || 0, o = clamp(p.talk || 0);
-    const yc = cy - sm * 10;
-    if (o < .04) mouthPath.setAttribute("d", `M${-w / 2},${yc} Q0,${yc + sm * 26 + 2} ${w / 2},${yc}`), mouthPath.style.fill = "none";
-    else mouthPath.setAttribute("d", `M${-w / 2},${yc} Q0,${yc + sm * 16} ${w / 2},${yc} Q0,${yc + sm * 16 + 14 + o * 66} ${-w / 2},${yc} Z`), mouthPath.style.fill = "#6b2521";
+    const w = sup ? 60 : 48, cy = sup ? -76 : -58, sm = p.smile || 0, o = clamp(p.talk || 0);
+    const yc = cy - sm * (sup ? 10 : 7);
+    const depth = sup ? 66 : 44;
+    if (o < .04) mouthPath.setAttribute("d", `M${-w / 2},${yc} Q0,${yc + sm * (sup ? 26 : 18) + 2} ${w / 2},${yc}`), mouthPath.style.fill = "none";
+    else mouthPath.setAttribute("d", `M${-w / 2},${yc} Q0,${yc + sm * 12} ${w / 2},${yc} Q0,${yc + sm * 12 + 12 + o * depth} ${-w / 2},${yc} Z`), mouthPath.style.fill = "#6b2521";
+    if (!sup) mouthPath.setAttribute("stroke", o < .04 ? "#e8c9b5" : C.ink);
     // effects
     drops.forEach((d, i) => {
       const k = ((t * .9 + i * .37) % 1);
       d.style.opacity = clamp((p.sweat || 0) * (1 - k) * 1.4);
-      const [x, y] = [[-122, -210], [128, -230], [104, -120]][i];
+      const [x, y] = dropAt[i];
       d.setAttribute("transform", `translate(${x} ${y + k * 60})`);
     });
     stress.style.opacity = p.stress || 0;
@@ -255,19 +310,33 @@ function Character(parent, kind) {
     // arms
     arms.forEach(a => {
       const tgt = a.side < 0 ? p.lh : p.rh, shape = (a.side < 0 ? p.lShape : p.rShape) || "fist";
-      const sx = a.side * (sup ? 138 : 150), sy = sup ? 46 : 40;
-      const lean = (p.lean || 0) * .05 * Math.PI / 180;
+      const sx = a.side * (sup ? 132 : 142), sy = sup ? 50 : 46;
       const k = ik(sx, sy, tgt[0], tgt[1], sup ? 140 : 150, sup ? 130 : 140, a.side < 0 ? 1 : -1);
-      a.inkP.setAttribute("d", `M${sx},${sy} L${k.ex},${k.ey} L${k.hx},${k.hy}`);
-      a.upper.setAttribute("d", `M${sx},${sy} L${k.ex},${k.ey}`);
-      a.fore.setAttribute("d", `M${k.ex},${k.ey} L${k.hx},${k.hy}`);
-      const deg = k.hb * 180 / Math.PI;
+      const A = [sx, sy], B = [k.hx, k.hy];
+      // bent toward the elbow but not through it: through it, a sharp bend overshoots into a loop
+      const Cc = [k.ex + .4 * (k.ex - (sx + k.hx) / 2), k.ey + .4 * (k.ey - (sy + k.hy) / 2)];
+      const full = `M${sx},${sy} Q${Cc[0]},${Cc[1]} ${k.hx},${k.hy}`;
+      const cuffU = sup ? .92 : .84;
+      a.inkP.setAttribute("d", full);
+      a.skinP.setAttribute("d", full);
+      a.sleeve.setAttribute("d", quadSub(A, Cc, B, 0, cuffU));
+      a.sleeveCap.setAttribute("cx", sx); a.sleeveCap.setAttribute("cy", sy);
+      const cp = quadPt(A, Cc, B, cuffU), tg = quadTan(A, Cc, B, cuffU), n = Math.hypot(tg[0], tg[1]) || 1;
+      const nx = -tg[1] / n * 22, ny = tg[0] / n * 22;
+      a.cuff.setAttribute("d", `M${cp[0] - nx},${cp[1] - ny} L${cp[0] + nx},${cp[1] + ny}`);
+      if (a.watch) {
+        a.watch.setAttribute("d", quadSub(A, Cc, B, .88, .93));
+        const wp = quadPt(A, Cc, B, .905);
+        a.watchFace.setAttribute("cx", wp[0]); a.watchFace.setAttribute("cy", wp[1]);
+      }
+      a.shoulder.setAttribute("cx", sx - a.side * 10); a.shoulder.setAttribute("cy", sy + 6);
+      const et = quadTan(A, Cc, B, 1), deg = Math.atan2(et[1], et[0]) * 180 / Math.PI;
       a.hand.setAttribute("transform", `translate(${k.hx} ${k.hy})`);
-      a.finger.style.display = shape === "point" ? "" : "none";
-      a.finger.setAttribute("transform", `rotate(${deg})`);
-      a.thumb.style.display = shape === "thumb" ? "" : "none";
-      a.cup.style.display = shape === "cup" ? "" : "none";
-      a.phone.style.display = shape === "phone" ? "" : "none";
+      // thumb on top whichever way the hand points
+      const flip = Math.abs(deg) > 90 ? -1 : 1;
+      a.oriented.setAttribute("transform", `rotate(${deg}) scale(1 ${flip})`);
+      a.upright.setAttribute("transform", `scale(${-a.side} 1)`);
+      for (const s in a.shapes) a.shapes[s].style.display = s === shape ? "" : "none";
     });
   };
   return c;
@@ -572,7 +641,7 @@ function night(t) {
     const rub = E.inOut(prog(t, oops.start - .2, .4));
     const w = Math.sin(t * 16);
     p = { ...p, tilt: -8 + w * 2, open: t < oops.start + .9 ? .08 : .4, worry: 20, browY: 0, look: [0, .6], talk: mouth("sup", t), smile: -.7, sweat: 1, stress: 1,
-      rh: [lerp(105, 70 + w * 22, rub), lerp(205, -268 + Math.cos(t * 16) * 12, rub)], lh: [-95, 205] };
+      rh: [lerp(105, 40 + w * 26, rub), lerp(205, -236 + Math.cos(t * 16) * 10, rub)], rShape: "open", lh: [-95, 205] };
   }
   N.sup.set(p);
 }
@@ -608,18 +677,18 @@ function owner(t) {
   }
   if (t >= money.start - .2 && t < costs.start) {
     const r = E.inOut(prog(t, money.start - .2, .4));
-    p = { ...p, rh: [lerp(185, 90 + Math.sin(t * 14) * 16, r), lerp(300, -270, r)], look: [-.3, -.6], worry: 18, browY: -4, talk: mouth("owner", t), smile: -.3, tilt: 6 };
+    p = { ...p, rh: [lerp(185, 90 + Math.sin(t * 14) * 16, r), lerp(300, -270, r)], rShape: "open", look: [-.3, -.6], worry: 18, browY: -4, talk: mouth("owner", t), smile: -.3, tilt: 6 };
   }
   if (t >= costs.start) {
     p = { ...p, look: [1, -.6], open: 1, worry: 14, browY: -10 * prog(t, costs.start, 1), smile: -.5, tilt: -2 };
   }
   if (t >= guess - .15) { // facepalm
     const f = E.out(prog(t, guess - .15, .3));
-    p = { ...p, rh: [lerp(185, 40, f), lerp(300, -150, f)], open: .1, worry: 20, tilt: 10 * f, smile: -.8 };
+    p = { ...p, rh: [lerp(185, 40, f), lerp(300, -150, f)], rShape: "open", open: .1, worry: 20, tilt: 10 * f, smile: -.8 };
   }
   if (t >= sigh.start - .2) {
     const sh = E.out(prog(t, sigh.start - .2, .4)), slump = E.inOut(prog(t, sigh.end + .1, .8));
-    p = { ...p, rh: [lerp(40, 250, sh), lerp(-150, 120 + slump * 170, sh)], lh: [lerp(-185, -250, sh), 120 + slump * 170], rShape: "fist",
+    p = { ...p, rh: [lerp(40, 250, sh), lerp(-150, 120 + slump * 170, sh)], lh: [lerp(-185, -250, sh), 120 + slump * 170], rShape: "open", lShape: "open",
       open: .75 - slump * .3, look: [0, .3 + slump * .5], worry: 22, browY: 0, tilt: lerp(0, 12, slump), headY: slump * 10, talk: mouth("owner", t), smile: -.6 };
   }
   O.own.set(p);
@@ -701,11 +770,11 @@ function fixed(t) {
       r.chip.setAttribute("transform", `translate(620 ${r.ry - 12}) scale(${k})`);
     }
   });
-  let op = { t, x: 1765, y: 480, s: .7, bob: 4, tilt: -3, look: [-.9, -.2], open: .85, worry: 10, browY: 0, smile: -.3, lh: [-185, 300], rh: [185, 300] };
+  let op = { t, x: 1725, y: 480, s: .7, bob: 4, tilt: -3, look: [-.9, -.2], open: .85, worry: 10, browY: 0, smile: -.3, lh: [-185, 300], rh: [185, 300] };
   if (t >= menu.start + 1) op = { ...op, open: 1, worry: 0, browY: -12, smile: .5, look: [-1, 0] };
   if (t >= push.start - .3) {
     const up = E.back(prog(t, push.start - .3, .45));
-    op = { ...op, rh: [lerp(185, 165, up), lerp(300, -135, up)], rShape: "thumb", lh: [lerp(-185, -340, up), lerp(300, -60, up)], lShape: "point",
+    op = { ...op, rh: [lerp(185, 225, up), lerp(300, -95, up)], rShape: "thumb", lh: [lerp(-185, -340, up), lerp(300, -60, up)], lShape: "point",
       smile: .9, talk: mouth("owner", t), open: .95, browY: -10, look: [-1, -.1] };
   }
   if (t >= push.end) {
@@ -738,8 +807,8 @@ function end(t) {
   // the two of them pop up and wave
   const up = E.back(prog(t, s0 + 2.0, .6));
   const wave = Math.sin(t * 9);
-  D.sup.set({ t, x: 250, y: lerp(1500, 930, up), s: .62, look: [.4, -.3], open: .95, smile: .9, worry: -4, browY: -6, lh: [-150, 200], rh: [200 + wave * 30, -200] });
-  D.own.set({ t, x: 1640, y: lerp(1500, 900, up), s: .58, look: [-.4, -.3], open: .95, smile: 1, worry: 0, browY: -8, rh: [180, 200], lh: [-200 + wave * 30, -210], lShape: "fist" });
+  D.sup.set({ t, x: 250, y: lerp(1500, 930, up), s: .62, look: [.4, -.3], open: .95, smile: .9, worry: -4, browY: -6, lh: [-150, 200], rh: [200 + wave * 30, -200], rShape: "open" });
+  D.own.set({ t, x: 1640, y: lerp(1500, 900, up), s: .58, look: [-.4, -.3], open: .95, smile: 1, worry: 0, browY: -8, rh: [180, 200], lh: [-200 + wave * 30, -210], lShape: "open" });
 }
 
 window.DURATION = T.duration;
