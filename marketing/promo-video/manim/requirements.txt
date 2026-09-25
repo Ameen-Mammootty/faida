@@ -1,0 +1,6 @@
+# Narrated cut: visuals in Manim, voice from Kokoro-82M (ONNX build), compiled with ffmpeg.
+# System packages: ffmpeg, libcairo2-dev, libpango1.0-dev, pkg-config.
+manim==0.21.0
+kokoro-onnx==0.6.1
+soundfile
+numpy

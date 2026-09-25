@@ -43,3 +43,39 @@ npm run preview                               # 15 fps draft
 
 To change a line, edit it in `index.html`; timings live in each scene's function (`s1` to `s8`)
 and the scene table at the top of the script. If a cut moves, move it in `music.mjs`'s `CUTS` too.
+
+## The narrated cut (Manim + Kokoro)
+
+`out/faida-promo-narrated.mp4`: 66 seconds, 1080p60, a voiceover over the same story, with the
+pictures drawn in Manim and the voice read by Kokoro-82M. Everything lives in `manim/`:
+
+- `narration.py` holds the script, one list of sentences per scene. Kokoro reads it a sentence at a
+  time with the `af_heart` voice, so the film knows when each sentence starts. Each scene is
+  rounded up to whole bars of the music so every cut lands on a downbeat. Names the phonemiser gets
+  wrong are corrected in `PHONEME_FIXES`; Faida is said "FAH-ee-dah", not "FAY-da". It writes
+  `build/voice.wav`, `build/timings.json` and `build/score.json`.
+- `film.py` is the Manim film. Each scene starts its beats when the sentence it illustrates starts
+  (`self.until(self.said(i))`), and every animation is rounded to whole frames, so the picture
+  cannot drift from the voice.
+- `../music.mjs build/score.json` scores the same timeline: a hit on the logo and on the close, a
+  breakdown under the morning brief, and no melody over the voice.
+- `build.sh` runs all of the above and mixes the result with ffmpeg: the voice leads, and the music
+  sits under it and ducks further whenever the voice speaks.
+
+```bash
+cd marketing/promo-video/manim
+apt-get install ffmpeg libcairo2-dev libpango1.0-dev pkg-config   # once
+pip install -r requirements.txt
+# Manim reads the brand fonts from the system: install apps/api/src/faida_api/fonts/*.ttf
+mkdir -p models && curl -sSL -o models/kokoro-v1.0.onnx \
+  https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx
+curl -sSL -o models/voices-v1.0.bin \
+  https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin
+./build.sh -ql     # draft, about a minute
+./build.sh         # 1080p60
+```
+
+To change a line, edit `SCRIPT` in `narration.py`; scene lengths and cuts follow on their own. To
+try another voice, set `VOICE` (`am_michael`, `bf_emma` and `bm_george` are the other good
+English ones). The model files are the ONNX export of Kokoro-82M v1.0 (Apache 2.0) from the
+kokoro-onnx releases, not Hugging Face, which this build environment cannot reach.

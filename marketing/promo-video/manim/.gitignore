@@ -1,0 +1,4 @@
+build/
+models/
+media/
+__pycache__/

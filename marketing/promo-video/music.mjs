@@ -1,13 +1,22 @@
-// A 48-second soundtrack synthesised from scratch, so the film carries no
-// licensed audio: 120 bpm, one bar per two seconds, so every scene cut in
-// index.html lands on a downbeat. Writes out/music.wav (44.1 kHz, 16-bit stereo).
-import { writeFileSync, mkdirSync } from "node:fs";
+// A soundtrack synthesised from scratch, so the film carries no licensed audio:
+// 120 bpm, one bar per two seconds, so every scene cut lands on a downbeat.
+// With no argument it scores index.html's 48-second cut and writes
+// out/music.wav (44.1 kHz, 16-bit stereo); `node music.mjs score.json` scores
+// another cut (the narrated one: manim/score.json) from its own timeline.
+import { writeFileSync, mkdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
-const SR = 44100, DUR = 48, N = SR * DUR, BEAT = 0.5, BAR = 2;
+const here = path.dirname(fileURLToPath(import.meta.url));
+// drops: the two hits (the logo, the close); halfTime follows the first, breakdown
+// precedes the second; product is where the arpeggio and melody take over.
+const SCORE = process.argv[2] ? JSON.parse(readFileSync(process.argv[2], "utf8")) : {
+  duration: 48, cuts: [4, 10, 14, 22, 29, 37, 41], drops: [10, 41], halfTime: [10, 14], breakdown: [37, 41],
+  product: 14, end: 46, finalChord: 44, melody: true, out: "out/music.wav",
+};
+const SR = 44100, DUR = SCORE.duration, N = SR * DUR, BEAT = 0.5, BAR = 2;
 const L = new Float32Array(N), R = new Float32Array(N);
-const CUTS = [4, 10, 14, 22, 29, 37, 41];
+const CUTS = SCORE.cuts, [D1, D2] = SCORE.drops, END = SCORE.end;
 
 // deterministic noise so every render sounds identical
 let seed = 7;
@@ -16,9 +25,9 @@ const add = (i, l, r = l) => { if (i >= 0 && i < N) { L[i] += l; R[i] += r; } };
 const lpA = (fc) => 1 - Math.exp((-2 * Math.PI * fc) / SR);
 
 // section map: what plays where
-const full = (t) => (t >= 0 && t < 9.5) || (t >= 14 && t < 37) || (t >= 41 && t < 46);
-const halfTime = (t) => t >= 10 && t < 14;
-const breakdown = (t) => t >= 37 && t < 41;
+const full = (t) => (t >= 0 && t < D1 - 0.5) || (t >= SCORE.halfTime[1] && t < SCORE.breakdown[0]) || (t >= D2 && t < END);
+const halfTime = (t) => t >= SCORE.halfTime[0] && t < SCORE.halfTime[1];
+const breakdown = (t) => t >= SCORE.breakdown[0] && t < SCORE.breakdown[1];
 
 // Am  F  C  G, one chord per bar
 const CHORDS = [
@@ -31,7 +40,7 @@ const chordAt = (t) => CHORDS[Math.floor(t / BAR) % 4];
 
 // kick envelope, used again to duck the pad and bass
 const kickTimes = [];
-for (let t = 0; t < 46; t += BEAT) {
+for (let t = 0; t < END; t += BEAT) {
   const b = Math.round(t / BEAT) % 4;
   if (full(t) || (halfTime(t) && (b === 0 || b === 2))) kickTimes.push(t);
 }
@@ -135,7 +144,7 @@ function impact(t0, gain = 0.9) {
 
 // ---------- arrange ----------
 kickTimes.forEach((t) => kick(t));
-for (let t = 0; t < 46; t += BEAT) {
+for (let t = 0; t < END; t += BEAT) {
   const b = Math.round(t / BEAT) % 4;
   if (full(t) || breakdown(t)) hat(t + BEAT / 2, breakdown(t) ? 0.13 : 0.22);
   if (full(t)) { hat(t + BEAT / 4, 0.08, 0.03, -0.3); hat(t + (3 * BEAT) / 4, 0.08, 0.03, -0.3); }
@@ -143,11 +152,11 @@ for (let t = 0; t < 46; t += BEAT) {
   if (halfTime(t) && b === 2) clap(t, 0.4);
 }
 // sixteenth-note arpeggio over the chord, from the product scenes on
-for (let t = 0; t < 46; t += BEAT / 4) {
+for (let t = 0; t < END; t += BEAT / 4) {
   if (!full(t) && !breakdown(t)) continue;
   const i = Math.round(t / (BEAT / 4)), c = chordAt(t).pad;
   const f = c[[0, 1, 2, 1, 2, 0, 1, 2][i % 8]] * 2;
-  pluck(t, f, breakdown(t) ? 0.14 : t < 14 ? 0.1 : 0.12, i % 2 ? 0.35 : -0.35);
+  pluck(t, f, breakdown(t) ? 0.14 : t < SCORE.product ? 0.1 : 0.12, i % 2 ? 0.35 : -0.35);
 }
 // the hook: an eighth-note bell melody over each chord, from the product scenes on (0 = rest)
 const MELODY = [
@@ -156,21 +165,21 @@ const MELODY = [
   [783.99, 0, 659.25, 783.99, 880.0, 0, 783.99, 659.25],
   [587.33, 0, 493.88, 587.33, 659.25, 0, 587.33, 0],
 ];
-for (let t = 14; t < 46; t += BEAT / 2) {
+for (let t = SCORE.product; t < END && SCORE.melody; t += BEAT / 2) {
   if (!full(t) && !breakdown(t)) continue;
   const f = MELODY[Math.floor(t / BAR) % 4][Math.round((t % BAR) / (BEAT / 2)) % 8];
   if (f) bell(t, f, breakdown(t) ? 0.18 : 0.16, 0.5, 0.1);
 }
 // the logo and the close ring out as a chord
-[[10.0, [440.0, 523.25, 659.25, 880.0]], [41.0, [349.23, 440.0, 523.25, 698.46]], [44.0, [440.0, 523.25, 659.25, 880.0]]].forEach(([t, ch]) =>
+[[D1, [440.0, 523.25, 659.25, 880.0]], [D2, [349.23, 440.0, 523.25, 698.46]], [SCORE.finalChord, [440.0, 523.25, 659.25, 880.0]]].forEach(([t, ch]) =>
   ch.forEach((f, j) => bell(t + j * 0.04, f, 0.09, 2.4, (j - 1.5) * 0.2)));
 CUTS.forEach((c) => whoosh(c));
-riser(8.0, 9.95, 0.24);
-riser(39.0, 40.95, 0.22);
-impact(10.0);
-impact(41.0, 0.8);
-kick(10.0, 1.0);
-kick(41.0, 1.0);
+riser(D1 - 2, D1 - 0.05, 0.24);
+riser(D2 - 2, D2 - 0.05, 0.22);
+impact(D1);
+impact(D2, 0.8);
+kick(D1, 1.0);
+kick(D2, 1.0);
 
 // pad and sub bass, ducked under the kick
 {
@@ -178,8 +187,8 @@ kick(41.0, 1.0);
   const phP = new Float64Array(6); let phB = 0, yPL = 0, yPR = 0, yB = 0;
   for (let i = 0; i < N; i++) {
     const t = i / SR, c = chordAt(t);
-    const fadeIn = Math.min(1, t / 1.2), fadeOut = t > 45 ? Math.max(0, 1 - (t - 45) / 3) : 1;
-    const gap = t >= 9.9 && t < 10 ? 0 : 1;
+    const fadeIn = Math.min(1, t / 1.2), fadeOut = t > END - 1 ? Math.max(0, 1 - (t - END + 1) / (DUR - END + 1)) : 1;
+    const gap = t >= D1 - 0.1 && t < D1 ? 0 : 1;
     let l = 0, r = 0;
     c.pad.forEach((f, j) => {
       phP[j] = (phP[j] + (f * 1.003) / SR) % 1; phP[j + 3] = (phP[j + 3] + (f * 0.997) / SR) % 1;
@@ -190,7 +199,7 @@ kick(41.0, 1.0);
     const dk = duck[i];
     L[i] += yPL * padG * dk; R[i] += yPR * padG * dk;
 
-    if (t < 46 && gap) {
+    if (t < END && gap) {
       // eighth-note bass pulse
       const e = (t % (BEAT / 2)) / (BEAT / 2);
       const env = Math.exp(-e * 3.5) * (breakdown(t) ? 0.4 : 1);
@@ -220,7 +229,7 @@ for (let i = 0; i < N; i++) {
   buf.writeInt16LE(Math.round(L[i] * g * 32767), 44 + i * 4);
   buf.writeInt16LE(Math.round(R[i] * g * 32767), 46 + i * 4);
 }
-const here = path.dirname(fileURLToPath(import.meta.url));
-mkdirSync(path.join(here, "out"), { recursive: true });
-writeFileSync(path.join(here, "out/music.wav"), buf);
-console.log("out/music.wav");
+const outPath = path.resolve(here, SCORE.out);
+mkdirSync(path.dirname(outPath), { recursive: true });
+writeFileSync(outPath, buf);
+console.log(path.relative(here, outPath));
