@@ -71,7 +71,7 @@ SCRIPT = [
     ]),
     ("close", [
         "Every item. Every branch. Real margins.",
-        "Faida. Now onboarding cafeterias across the Gulf, for our private pilot.",
+        "Faida. Now onboarding GCC restaurants, for our private pilot.",
     ]),
 ]
 

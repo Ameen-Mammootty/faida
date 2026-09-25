@@ -525,7 +525,7 @@ class Film(Scene):
         lockup = VGroup(m, word).arrange(RIGHT, buff=0.45).shift(UP * 1.1)
         word.align_to(m, DOWN).shift(DOWN * 0.1)
         line = txt("Profit, in plain sight.", 46, SAGE, BOLD, "Manrope", t2c={"plain sight.": GOLD}).next_to(lockup, DOWN, buff=0.6)
-        cta_t = txt("Private pilot now open for GCC cafeterias", 28, CREAM, SEMIBOLD)
+        cta_t = txt("Private pilot · now onboarding GCC restaurants", 28, CREAM, SEMIBOLD)
         cta = VGroup(RoundedRectangle(corner_radius=0.38, width=cta_t.width + 0.9, height=0.8, stroke_color=GOLD, stroke_width=3, fill_opacity=0), cta_t)
         cta.next_to(line, DOWN, buff=0.7)
         fine = txt("Figures shown are illustrative.", 15, SAGE).set_opacity(0.6).to_edge(DOWN, buff=0.35)
