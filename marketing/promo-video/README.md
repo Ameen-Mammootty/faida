@@ -25,7 +25,13 @@ Every figure is illustrative and the close says so. The words follow the display
 - `render.mjs` steps that function frame by frame in headless Chromium with Playwright and pipes
   each screenshot into ffmpeg (H.264, loudness normalised to -14 LUFS for web and WhatsApp).
 - `music.mjs` synthesises the soundtrack from scratch (120 bpm, every cut on a downbeat), so the
-  film carries no licensed audio.
+  film carries no licensed audio. It is mixed for phone and laptop speakers, which play nothing
+  under about 150 Hz: the kick carries a knock and a click, the bass sits an octave up, and a bell
+  melody carries the hook. Check a change with
+  `ffmpeg -i out/faida-promo.mp4 -vn -af "highpass=f=300,highpass=f=300,ebur128" -f null -`,
+  which should read about -18 LUFS; the first cut read -25 and sounded silent on a phone.
+- To swap only the soundtrack, keep the picture and re-mux:
+  `ffmpeg -i out/faida-promo.mp4 -i out/music.wav -map 0:v -map 1:a -c:v copy -af loudnorm=I=-14:TP=-1.5:LRA=11 -c:a aac -b:a 192k -shortest out/remux.mp4`.
 
 ```bash
 cd marketing/promo-video

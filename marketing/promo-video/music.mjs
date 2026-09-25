@@ -41,10 +41,12 @@ function kick(t0, gain = 0.9) {
   const s = Math.floor(t0 * SR);
   let ph = 0;
   for (let i = 0; i < SR * 0.45; i++) {
-    const t = i / SR, f = 45 + 110 * Math.exp(-t * 28);
+    const t = i / SR, f = 52 + 160 * Math.exp(-t * 26);
     ph += (2 * Math.PI * f) / SR;
-    const env = Math.exp(-t * 7.5) * (t < 0.002 ? t / 0.002 : 1);
-    add(s + i, Math.sin(ph) * env * gain + (i < 90 ? rnd() * 0.25 * (1 - i / 90) : 0));
+    const env = Math.exp(-t * 8) * (t < 0.002 ? t / 0.002 : 1);
+    // body, then a short knock around 180-250 Hz and a click: what a phone speaker actually plays
+    const knock = Math.sin(2 * Math.PI * 190 * t) * Math.exp(-t * 30) * 0.55 + Math.sin(ph * 3) * Math.exp(-t * 40) * 0.25;
+    add(s + i, (Math.sin(ph) * env * 0.45 + knock) * gain + (i < 180 ? rnd() * 0.45 * (1 - i / 180) : 0));
   }
   for (let i = 0; i < SR * 0.3; i++) {
     const k = s + i;
@@ -52,7 +54,7 @@ function kick(t0, gain = 0.9) {
   }
 }
 
-function hat(t0, gain = 0.12, len = 0.05, pan = 0.15) {
+function hat(t0, gain = 0.2, len = 0.05, pan = 0.15) {
   const s = Math.floor(t0 * SR);
   let prev = 0;
   for (let i = 0; i < SR * len; i++) {
@@ -62,7 +64,7 @@ function hat(t0, gain = 0.12, len = 0.05, pan = 0.15) {
   }
 }
 
-function clap(t0, gain = 0.32) {
+function clap(t0, gain = 0.5) {
   const s = Math.floor(t0 * SR), a = lpA(2200);
   let y = 0, prev = 0;
   for (let i = 0; i < SR * 0.22; i++) {
@@ -74,8 +76,8 @@ function clap(t0, gain = 0.32) {
   }
 }
 
-function pluck(t0, f, gain = 0.07, pan = 0) {
-  const s = Math.floor(t0 * SR), a = lpA(2600);
+function pluck(t0, f, gain = 0.1, pan = 0) {
+  const s = Math.floor(t0 * SR), a = lpA(4200);
   let ph = 0, y = 0;
   for (let i = 0; i < SR * 0.28; i++) {
     const t = i / SR;
@@ -87,7 +89,18 @@ function pluck(t0, f, gain = 0.07, pan = 0) {
   }
 }
 
-function whoosh(tc, gain = 0.22) {
+// a bell for the melody: a sine with a decaying FM shimmer
+function bell(t0, f, gain = 0.1, len = 0.6, pan = 0) {
+  const s = Math.floor(t0 * SR);
+  for (let i = 0; i < SR * len; i++) {
+    const t = i / SR;
+    const v = Math.sin(2 * Math.PI * f * t + 1.6 * Math.exp(-t * 7) * Math.sin(2 * Math.PI * 2 * f * t))
+      * Math.exp(-t * (5 / len)) * Math.min(1, t / 0.003) * gain;
+    add(s + i, v * (1 - pan), v * (1 + pan));
+  }
+}
+
+function whoosh(tc, gain = 0.3) {
   const s = Math.floor((tc - 0.45) * SR), len = Math.floor(0.6 * SR);
   let y = 0;
   for (let i = 0; i < len; i++) {
@@ -124,18 +137,33 @@ function impact(t0, gain = 0.9) {
 kickTimes.forEach((t) => kick(t));
 for (let t = 0; t < 46; t += BEAT) {
   const b = Math.round(t / BEAT) % 4;
-  if (full(t) || breakdown(t)) hat(t + BEAT / 2, breakdown(t) ? 0.08 : 0.13);
-  if (full(t)) { hat(t + BEAT / 4, 0.05, 0.03, -0.3); hat(t + (3 * BEAT) / 4, 0.05, 0.03, -0.3); }
+  if (full(t) || breakdown(t)) hat(t + BEAT / 2, breakdown(t) ? 0.13 : 0.22);
+  if (full(t)) { hat(t + BEAT / 4, 0.08, 0.03, -0.3); hat(t + (3 * BEAT) / 4, 0.08, 0.03, -0.3); }
   if (full(t) && t >= 4 && (b === 1 || b === 3)) clap(t);
   if (halfTime(t) && b === 2) clap(t, 0.4);
 }
 // sixteenth-note arpeggio over the chord, from the product scenes on
 for (let t = 0; t < 46; t += BEAT / 4) {
-  if (!(t >= 14 && t < 37) && !breakdown(t) && !(t >= 41)) continue;
+  if (!full(t) && !breakdown(t)) continue;
   const i = Math.round(t / (BEAT / 4)), c = chordAt(t).pad;
   const f = c[[0, 1, 2, 1, 2, 0, 1, 2][i % 8]] * 2;
-  pluck(t, f, breakdown(t) ? 0.06 : 0.05, i % 2 ? 0.35 : -0.35);
+  pluck(t, f, breakdown(t) ? 0.14 : t < 14 ? 0.1 : 0.12, i % 2 ? 0.35 : -0.35);
 }
+// the hook: an eighth-note bell melody over each chord, from the product scenes on (0 = rest)
+const MELODY = [
+  [659.25, 0, 523.25, 587.33, 659.25, 0, 783.99, 659.25],
+  [698.46, 0, 659.25, 523.25, 440.0, 0, 523.25, 0],
+  [783.99, 0, 659.25, 783.99, 880.0, 0, 783.99, 659.25],
+  [587.33, 0, 493.88, 587.33, 659.25, 0, 587.33, 0],
+];
+for (let t = 14; t < 46; t += BEAT / 2) {
+  if (!full(t) && !breakdown(t)) continue;
+  const f = MELODY[Math.floor(t / BAR) % 4][Math.round((t % BAR) / (BEAT / 2)) % 8];
+  if (f) bell(t, f, breakdown(t) ? 0.18 : 0.16, 0.5, 0.1);
+}
+// the logo and the close ring out as a chord
+[[10.0, [440.0, 523.25, 659.25, 880.0]], [41.0, [349.23, 440.0, 523.25, 698.46]], [44.0, [440.0, 523.25, 659.25, 880.0]]].forEach(([t, ch]) =>
+  ch.forEach((f, j) => bell(t + j * 0.04, f, 0.09, 2.4, (j - 1.5) * 0.2)));
 CUTS.forEach((c) => whoosh(c));
 riser(8.0, 9.95, 0.24);
 riser(39.0, 40.95, 0.22);
@@ -146,7 +174,7 @@ kick(41.0, 1.0);
 
 // pad and sub bass, ducked under the kick
 {
-  const aP = lpA(1400), aB = lpA(260);
+  const aP = lpA(3000), aB = lpA(1600);
   const phP = new Float64Array(6); let phB = 0, yPL = 0, yPR = 0, yB = 0;
   for (let i = 0; i < N; i++) {
     const t = i / SR, c = chordAt(t);
@@ -158,7 +186,7 @@ kick(41.0, 1.0);
       l += 2 * phP[j] - 1; r += 2 * phP[j + 3] - 1;
     });
     yPL += aP * (l - yPL); yPR += aP * (r - yPR);
-    const padG = (halfTime(t) || breakdown(t) ? 0.075 : 0.05) * fadeIn * fadeOut * gap;
+    const padG = (halfTime(t) || breakdown(t) ? 0.14 : 0.1) * fadeIn * fadeOut * gap;
     const dk = duck[i];
     L[i] += yPL * padG * dk; R[i] += yPR * padG * dk;
 
@@ -166,16 +194,20 @@ kick(41.0, 1.0);
       // eighth-note bass pulse
       const e = (t % (BEAT / 2)) / (BEAT / 2);
       const env = Math.exp(-e * 3.5) * (breakdown(t) ? 0.4 : 1);
-      phB = (phB + c.bass / SR) % 1;
+      phB = (phB + (c.bass * 2) / SR) % 1;
       yB += aB * (2 * phB - 1 - yB);
-      const sub = Math.sin(2 * Math.PI * phB);
-      const v = (yB * 0.5 + sub * 0.6) * env * 0.32 * dk * fadeOut;
+      const sub = Math.sin(Math.PI * phB);
+      const v = (yB * 0.9 + sub * 0.2) * env * 0.3 * dk * fadeOut;
       L[i] += v; R[i] += v;
     }
   }
 }
 
-// ---------- master: soft clip, normalise, write ----------
+// ---------- master: high-pass at 40 Hz, soft clip, normalise, write ----------
+{
+  const a = lpA(40); let lo = 0, ro = 0;
+  for (let i = 0; i < N; i++) { lo += a * (L[i] - lo); ro += a * (R[i] - ro); L[i] -= lo; R[i] -= ro; }
+}
 let peak = 0;
 for (let i = 0; i < N; i++) { L[i] = Math.tanh(L[i] * 1.2); R[i] = Math.tanh(R[i] * 1.2); peak = Math.max(peak, Math.abs(L[i]), Math.abs(R[i])); }
 const g = 0.89 / peak;
