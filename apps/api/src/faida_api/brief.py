@@ -28,9 +28,9 @@ and percentages as strings, dates ISO - and it hands back words. That is what
 makes every line testable without a database and what makes the send job a
 thin wrapper: read, compose, send.
 
-The money words are `contribution._money_words`, the whole-percent words
-`contribution._pct_words`, the branch name `signals._short_branch`, the dates
-`ratio.window_words`, `ratio._short_date` and `dashboard._weekday_date`, and
+The money words are `words.money`, the whole-percent words
+`words.pct`, the branch name `words.short_branch`, the dates
+`ratio.window_words`, `words.short_date` and `words.weekday_date`, and
 the price gate `PRICE_ALERT_MIN_PCT` - imported and called, never copied, so a
 rounding rule can only ever change in one place.
 
@@ -46,12 +46,10 @@ import re
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 
-from .contribution import _money_words, _pct_words
-from .dashboard import _weekday_date
+from . import words
 from .extraction.constants import PRICE_ALERT_MIN_PCT
 from .quality import Quality, word
-from .ratio import PCT_QUANTUM, Window, _short_date, window_words
-from .signals import _short_branch
+from .ratio import PCT_QUANTUM, Window, window_words
 
 #: The template as Meta holds it (C15.11): one template, one language, edited
 #: only through Meta's review. The name and the language travel with the body
@@ -202,16 +200,16 @@ class Brief:
 
 def _whole(amount: Decimal) -> Decimal:
     """Whole dirhams, rounded half up - the display rule the headline figures
-    and `contribution._money_words` share."""
+    and `words.money` share."""
     return amount.quantize(_WHOLE, rounding=ROUND_HALF_UP)
 
 
 def _dirhams(amount: Decimal) -> str:
-    """The figure `_money_words` prints without the currency word, for a table
+    """The figure `words.money` prints without the currency word, for a table
     cell whose column header carries the currency once. The rounding is that
     function's own: it is called and its (empty) currency word stripped, so
     the cell can never round differently from the line above it."""
-    return _money_words(amount, "").lstrip()
+    return words.money(amount, "").lstrip()
 
 
 def _money(value: str | None) -> Decimal | None:
@@ -259,8 +257,8 @@ def _quality_clause(total: dict) -> str:
 def _latest_day_kpi(latest: dict, currency: str) -> Kpi:
     return Kpi(
         label="Latest day",
-        value=_money_words(Decimal(latest["net_sales"]), currency),
-        sub=_weekday_date(_date(latest["date"])),
+        value=words.money(Decimal(latest["net_sales"]), currency),
+        sub=words.weekday_date(_date(latest["date"])),
     )
 
 
@@ -272,7 +270,7 @@ def _month_kpi(total: dict, league: list[dict], currency: str) -> Kpi:
     loaded fewer days, and the line says so without naming it, because a chain
     of twelve would otherwise spend the line on branch names."""
     windows = [_window(row["window"]) for row in league if row.get("net_sales") is not None]
-    value = _money_words(Decimal(total["net_sales"]), currency)
+    value = words.money(Decimal(total["net_sales"]), currency)
     if not windows:
         return Kpi(label="Month to date", value=value, sub="")
     widest = Window(min(w.start for w in windows), max(w.end for w in windows))
@@ -288,7 +286,7 @@ def _materials_used_kpi(total: dict, currency: str) -> Kpi:
         return Kpi(label="Materials used", value="not available", sub=_first_note(total))
     return Kpi(
         label="Materials used",
-        value=_money_words(cost, currency),
+        value=words.money(cost, currency),
         sub="at the latest prices" + _quality_clause(total),
     )
 
@@ -298,11 +296,11 @@ def _materials_share_kpi(total: dict, currency: str) -> Kpi:
     costed = _money(total.get("costed_sales"))
     if share is None or costed is None:
         return Kpi(label="Materials share", value="not available", sub=_first_note(total))
-    covered = _pct_words(Decimal(total["costed_share_pct"]))
+    covered = words.pct(Decimal(total["costed_share_pct"]))
     return Kpi(
         label="Materials share",
         value=f"{share}%",
-        sub=f"of {_money_words(costed, currency)} costed · {covered} of sales"
+        sub=f"of {words.money(costed, currency)} costed · {covered} of sales"
         + _quality_clause(total),
     )
 
@@ -323,7 +321,7 @@ def _rows(month: dict) -> tuple[BranchRow, ...]:
         share = _share_of_sales(row.get("contribution_pct"))
         rows.append(
             BranchRow(
-                name=_short_branch(row.get("branch_name") or ""),
+                name=words.short_branch(row.get("branch_name") or ""),
                 latest_day=None if day_sales is None else _whole(day_sales),
                 month=None if month_sales is None else _whole(month_sales),
                 materials_share=None if share is None else str(share),
@@ -338,7 +336,7 @@ def _rows(month: dict) -> tuple[BranchRow, ...]:
 def _item_line(row: dict, currency: str) -> ItemLine:
     money = Decimal(row["contribution"])
     return ItemLine(
-        name=row["menu_item_name"], money=money, money_words=_money_words(money, currency)
+        name=row["menu_item_name"], money=money, money_words=words.money(money, currency)
     )
 
 
@@ -380,15 +378,15 @@ def _spikes(window: dict, currency: str) -> tuple[tuple[SpikeLine, ...], str | N
     for move in rises[:3]:
         money = _money(move.get("money_at_stake")) or Decimal(0)
         clause = (
-            f"{_money_words(money, currency)} at stake on sales since."
+            f"{words.money(money, currency)} at stake on sales since."
             if money > 0
             else "Nothing sold since."
         )
         spikes.append(SpikeLine(sentence=move["sentence"], money_clause=clause))
     if spikes:
         return tuple(spikes), None
-    gate = _pct_words(PRICE_ALERT_MIN_PCT * 100)
-    since = _short_date(_date(window["period"]["from"]))
+    gate = words.pct(PRICE_ALERT_MIN_PCT * 100)
+    since = words.short_date(_date(window["period"]["from"]))
     return (), f"none of {gate} or more since {since}."
 
 
@@ -478,8 +476,8 @@ def compose(month: dict, window: dict, *, currency: str = "AED") -> Brief:
     if share_kpi.value == "not available":
         share_line = f"{share_kpi.value} ({share_kpi.sub})"
     else:
-        covered = _pct_words(Decimal(total["costed_share_pct"]))
-        costed = _money_words(Decimal(total["costed_sales"]), currency)
+        covered = words.pct(Decimal(total["costed_share_pct"]))
+        costed = words.money(Decimal(total["costed_sales"]), currency)
         share_line = (
             f"{share_kpi.value} of the {costed} costed ({covered} of sales)"
             + _quality_clause(total)

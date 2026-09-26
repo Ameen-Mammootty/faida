@@ -62,21 +62,17 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 
-from . import plates
+from . import plates, words
 
-# `_plural` and `_short_date` come from `ratio.py` rather than being written
-# again here on purpose: "2 of 7 days", "3 deliveries" and "25-31 Aug" are
-# worded by one function, so `/sales` and the dashboard can never say the same
-# thing two ways. The quanta and the vocabulary come from there for the same
-# reason - a percentage is a tenth on both screens or on neither.
+# The quanta come from `ratio.py` rather than being written again here on
+# purpose: a percentage is a tenth on both screens or on neither. The words
+# ("2 of 7 days", "25-31 Aug") are `words`', for the same reason.
 from .quality import Quality, total_of, worst
 from .ratio import (
     FILS,
     PCT_QUANTUM,
     Period,
     Window,
-    _plural,
-    _short_date,
 )
 
 #: Portions, as the till prints them (`sales_lines.qty` is numeric(12,3)).
@@ -315,44 +311,6 @@ class Contribution:
 # --- words ------------------------------------------------------------------
 
 
-def _money_words(amount: Decimal, currency: str) -> str:
-    """A headline figure in words: rounded dirhams, thousands separated
-    (§3's display rule). Exact figures belong in the invoice detail."""
-    return f"{currency} {amount.quantize(Decimal('1'), rounding=ROUND_HALF_UP):,}"
-
-
-def _price_words(amount: Decimal, currency: str) -> str:
-    """A per-plate figure in words: fils-precise, because a plate margin
-    rounded to whole dirhams carries no information at karak prices (the
-    2026-08-30 design review)."""
-    return f"{currency} {amount.quantize(FILS, rounding=ROUND_HALF_UP):,}"
-
-
-def _pct_words(pct: Decimal) -> str:
-    return f"{pct.quantize(WHOLE_PCT, rounding=ROUND_HALF_UP)}%"
-
-
-def _qty_words(qty: Decimal) -> str:
-    """ "2" for 2.000, "2.5" for 2.500 - the till's trailing zeros are its
-    own, not information."""
-    normalized = qty.normalize()
-    if normalized == normalized.to_integral_value():
-        normalized = normalized.to_integral_value()
-    return f"{normalized:f}"
-
-
-def _long_date(day: datetime.date) -> str:
-    """ "31 Aug 2026" - the year included, because a contribution figure is
-    read months after the period it covers."""
-    return f"{day.day} {day.strftime('%b')} {day.year}"
-
-
-def _names_words(names: Sequence[str]) -> str:
-    if len(names) == 1:
-        return names[0]
-    return f"{', '.join(names[:-1])} and {names[-1]}"
-
-
 def _pct(part: Decimal, whole: Decimal) -> Decimal | None:
     """A percentage to a tenth, withheld - None, never 0 - when the
     denominator is not positive (C11.6's rule, one layer up)."""
@@ -526,12 +484,12 @@ def _row(
     notes.extend(plate.missing)
     if not counted:
         notes.append(
-            f"{_plural(no_qty_lines, 'sales line')} "
+            f"{words.count(no_qty_lines, 'sales line')} "
             f"{'has' if no_qty_lines == 1 else 'have'} no quantity"
         )
     if counted and qty_refunded > 0:
         word = "portion" if qty_refunded == 1 else "portions"
-        notes.append(f"{_qty_words(qty_refunded)} {word} refunded")
+        notes.append(f"{words.qty(qty_refunded)} {word} refunded")
     if net_item_sales <= 0:
         notes.append("net sales are not positive for this item this period")
     if contribution is not None and contribution < 0:
@@ -541,18 +499,20 @@ def _row(
         # history, so a menu price raised since a closed period would
         # otherwise read as a discount the branch never gave.
         notes.append(
-            f"sold at an average {_price_words(avg_sold_at, currency)} against "
-            f"today's menu price of {_price_words(net_price, currency)}"
+            f"sold at an average {words.price(avg_sold_at, currency)} against "
+            f"today's menu price of {words.price(net_price, currency)}"
         )
     if cost_per_portion is not None and costed_at is not None:
-        notes.append(f"costed at the prices in force on {_long_date(costed_at)}")
+        notes.append(f"costed at the prices in force on {words.long_date(costed_at)}")
     if today_cost is not None:
-        notes.append(f"today's plate is {_price_words(today_cost, currency)}")
+        notes.append(f"today's plate is {words.price(today_cost, currency)}")
     if item.recipe_version is not None:
         notes.append(f"recipe version {item.recipe_version}")
     if item.archived:
         notes.append(
-            "archived" if item.archived_on is None else f"archived {_short_date(item.archived_on)}"
+            "archived"
+            if item.archived_on is None
+            else f"archived {words.short_date(item.archived_on)}"
         )
     notes.extend(extra_notes)
 
@@ -699,13 +659,13 @@ def chain_item_rows(
             held = sum((r.net_item_sales for r in left_out), Decimal(0))
             known = [names.get(r.branch_id or "") for r in left_out]
             subject = (
-                _names_words([name for name in known if name])
+                words.names([name for name in known if name])
                 if all(known)
-                else _plural(len(left_out), "branch", "branches")
+                else words.count(len(left_out), "branch", "branches")
             )
             extra.append(
                 f"{subject} not included in this row, "
-                f"holding {_money_words(held, currency)} of sales"
+                f"holding {words.money(held, currency)} of sales"
             )
 
         out.append(
@@ -742,12 +702,12 @@ def _left_out_notes(rows: Sequence[ItemRow]) -> list[str]:
     no_quantity = sum(1 for r in rows if not r.costed and r.no_qty_lines)
     if no_quantity:
         notes.append(
-            f"{_plural(no_quantity, 'item')} "
+            f"{words.count(no_quantity, 'item')} "
             f"{'has' if no_quantity == 1 else 'have'} lines with no quantity"
         )
     uncosted = sum(1 for r in rows if not r.costed and not r.no_qty_lines)
     if uncosted:
-        notes.append(f"{_plural(uncosted, 'item')} cannot be costed yet")
+        notes.append(f"{words.count(uncosted, 'item')} cannot be costed yet")
     return notes
 
 
@@ -755,7 +715,7 @@ def _unmapped_note(count: int) -> list[str]:
     if not count:
         return []
     return [
-        f"{_plural(count, 'till name')} with sales "
+        f"{words.count(count, 'till name')} with sales "
         f"{'is' if count == 1 else 'are'} not mapped to a menu item"
     ]
 
@@ -809,7 +769,7 @@ def branch_contribution(
     notes = list(sales_notes)
     if costed_share_pct is not None:
         subject = "this branch's" if branch_id is not None else "the chain's"
-        notes.append(f"covers {_pct_words(costed_share_pct)} of {subject} sales value")
+        notes.append(f"covers {words.pct(costed_share_pct)} of {subject} sales value")
     notes.extend(_left_out_notes(rows))
     notes.extend(_unmapped_note(unmapped_here.names))
 
@@ -881,9 +841,11 @@ def chain_contribution(
     if incomplete:
         notes.append(f"{incomplete} of {len(rows)} branches incomplete")
     if costed_share_pct is not None:
-        notes.append(f"covers {_pct_words(costed_share_pct)} of the chain's sales value")
+        notes.append(f"covers {words.pct(costed_share_pct)} of the chain's sales value")
     if left_out:
-        notes.append(f"{_plural(left_out, 'branch item', 'branch items')} left out of the figure")
+        notes.append(
+            f"{words.count(left_out, 'branch item', 'branch items')} left out of the figure"
+        )
     notes.extend(_unmapped_note(unmapped_here.names))
     if contribution is not None:
         notes.append(OVERHEADS_NOTE)

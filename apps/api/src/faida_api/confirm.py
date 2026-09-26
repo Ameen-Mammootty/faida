@@ -91,6 +91,7 @@ from typing import Literal
 import asyncpg
 from pydantic import BaseModel, ConfigDict
 
+from . import typed
 from .contracts import InvoiceStatus
 from .db import Database, SupplierAliasCollision
 from .extraction.currency import normalize_currency
@@ -377,8 +378,6 @@ _PAYMENT_EDIT_RE = re.compile(
     re.IGNORECASE,
 )
 # Unsigned decimals only: no sign, no NaN, no exponent - anything else clarifies.
-_NUMBER_RE = re.compile(r"\d+(?:\.\d+)?")
-
 # The chat spellings that mean the pack-size cell. Normalized the same way as
 # the numeric field names ("pack_size" and "pack size" both arrive as "pack size").
 _PACK_FIELDS = frozenset({"pack size", "pack", "size"})
@@ -442,7 +441,7 @@ def _parse_edit(segment: str) -> Edit | None:
             # A person clearing a pack ("line 2 pack -") is saying the pack we
             # hold is wrong, which is a real answer and not an empty one.
             return LinePackSizeEdit(line_index=n - 1, pack_size=blank_to_none(value))
-        number = _parse_number(value)
+        number = typed.parse_number(value)
         if number is None:
             return None
         return LineFieldEdit(line_index=n - 1, field=_LINE_FIELD_MAP[field], value=number)
@@ -466,7 +465,7 @@ def _parse_edit(segment: str) -> Edit | None:
     if payment_edit is not None:
         return PaymentKindEdit(value=payment_edit.group(1).casefold())
     # Before the plain totals rule: "total 930 no vat" would otherwise reach
-    # _parse_number as "930 no vat" and clarify.
+    # typed.parse_number as "930 no vat" and clarify.
     reconstructed = _RECONSTRUCTED_TOTAL_RE.fullmatch(segment)
     if reconstructed is not None:
         total = Decimal(reconstructed.group(1))
@@ -483,7 +482,7 @@ def _parse_edit(segment: str) -> Edit | None:
         return ReconstructedTotalEdit(value=total, vat_rate=percent / Decimal("100"))
     totals_edit = _TOTALS_EDIT_RE.fullmatch(segment)
     if totals_edit is not None:
-        number = _parse_number(totals_edit.group(2))
+        number = typed.parse_number(totals_edit.group(2))
         if number is None:
             return None
         return TotalsEdit(field=totals_edit.group(1).casefold(), value=number)
@@ -500,14 +499,6 @@ def _parse_currency(text: str) -> CurrencyEdit | None:
     if code is None or _ISO_CODE_RE.fullmatch(code) is None:
         return None
     return CurrencyEdit(value=code.upper())
-
-
-def _parse_number(text: str) -> Decimal | None:
-    # A sentence-ending "16." or "16!" is still a number; a sign or NaN is not.
-    text = text.strip().rstrip(".!?")
-    if _NUMBER_RE.fullmatch(text) is None:
-        return None
-    return Decimal(text)
 
 
 def edited_field_keys(edits: list[Edit]) -> list[str]:

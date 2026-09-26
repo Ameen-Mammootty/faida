@@ -55,19 +55,17 @@ from dataclasses import dataclass
 from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
 from typing import TYPE_CHECKING
 
-from . import contribution
+from . import contribution, words
 from .contribution import (
     DEFAULT_CURRENCY,
     Contribution,
     ItemRow,
     ItemSales,
     MenuItem,
-    _money_words,
-    _price_words,
 )
 from .extraction.constants import PRICE_ALERT_MIN_PCT
 from .quality import Quality, word, worst
-from .ratio import FILS, PCT_QUANTUM, Period, Window, _short_date, window_words
+from .ratio import FILS, PCT_QUANTUM, Period, Window, window_words
 
 if TYPE_CHECKING:  # pragma: no cover - the type only; `menu.py` is a router
     from .menu import PriceMove
@@ -177,26 +175,8 @@ class Signal:
 # --- words ------------------------------------------------------------------
 
 
-def _short_branch(name: str) -> str:
-    """ "Rolla" from "Rolla Branch": the sentence says the place the way the
-    owner does; the field keeps the branch's full name."""
-    words = name.split()
-    if len(words) > 1 and words[-1].lower() == "branch":
-        return " ".join(words[:-1])
-    return name
-
-
 def _points(value: Decimal) -> Decimal:
     return value.quantize(PCT_QUANTUM, rounding=ROUND_HALF_UP)
-
-
-def _portions_words(qty: Decimal) -> str:
-    """ "1,240" for 1240.000, "2.5" for 2.500 - the till's trailing zeros are
-    its own, and a thousand portions reads with its separator."""
-    normalized = qty.normalize()
-    if normalized == normalized.to_integral_value():
-        return f"{int(normalized):,}"
-    return f"{normalized:,f}"
 
 
 def _estimated(detail: str, quality: Quality) -> str:
@@ -257,12 +237,12 @@ def popular_low_margin(
             Signal(
                 kind=KIND_POPULAR_LOW_MARGIN,
                 sentence=(
-                    f"{row.menu_item_name} sold {_money_words(row.net_item_sales, currency)} "
+                    f"{row.menu_item_name} sold {words.money(row.net_item_sales, currency)} "
                     f"and kept {row.contribution_pct}%; the menu keeps {benchmark}%."
                 ),
                 detail=_estimated(
                     f"At the menu's average it would have contributed "
-                    f"{_money_words(stake, currency)} more.",
+                    f"{words.money(stake, currency)} more.",
                     quality,
                 ),
                 money_at_stake=stake,
@@ -416,21 +396,6 @@ def weigh_move(
     )
 
 
-def _per_unit_words(unit: str) -> str:
-    """ "per kg", "per litre", "each" - the display unit as a price is read
-    aloud, never "per each"."""
-    return "each" if unit == "each" else f"per {unit}"
-
-
-def _plate_words(amount: Decimal, currency: str) -> str:
-    """A per-plate figure exactly as `/menu` prints it (`summaryMoney`): fils,
-    cut and never rounded, because the stored impact carries three decimals
-    and the third is storage precision, not information. Whole dirhams are
-    forbidden here - a plate margin rounded to AED 0 at karak prices says
-    nothing (the 2026-08-30 design review)."""
-    return f"{currency} {amount.quantize(FILS, rounding=ROUND_DOWN)}"
-
-
 def _plate_figure(impact: Decimal) -> str:
     """The bracketed figure beside a named plate: the change in **margin**,
     so a rise reads "-0.07" and a fall "0.07". `impact_per_portion` carries
@@ -478,7 +443,7 @@ def move_plates(move: "PriceMove", *, currency: str = DEFAULT_CURRENCY) -> str |
     top, rest = move.items[0], move.items[1:]
     up = (move.delta_per_base_unit or top.impact_per_portion) > 0
     lead = (
-        f"{top.name} earns {_plate_words(abs(top.impact_per_portion), currency)} "
+        f"{top.name} earns {words.plate_money(abs(top.impact_per_portion), currency)} "
         f"{'less' if up else 'more'} a portion"
     )
     # The lead is the largest impact and always keeps its figure, even when it
@@ -508,16 +473,16 @@ def move_sentence(move: "PriceMove", *, period: Period, currency: str = DEFAULT_
             "no before and after to show"
         )
     up = (move.delta_per_base_unit or Decimal(0)) > 0
-    rise = _price_words(abs(move.delta_per_display_unit or Decimal(0)), currency)
+    rise = words.price(abs(move.delta_per_display_unit or Decimal(0)), currency)
     moved_on = move.current.purchased_on
-    since = "" if moved_on is None else f" since {_short_date(moved_on)}"
+    since = "" if moved_on is None else f" since {words.short_date(moved_on)}"
     sentence = (
         f"{move.ingredient_name} is {'up' if up else 'down'} {rise} "
-        f"{_per_unit_words(move.current.display_unit)}{since}"
+        f"{words.per_unit(move.current.display_unit)}{since}"
     )
     previous_on = move.previous.purchased_on
     if previous_on is not None and previous_on < period.start:
-        sentence += f", against its last purchase on {_short_date(previous_on)}"
+        sentence += f", against its last purchase on {words.short_date(previous_on)}"
     return _stop(sentence)
 
 
@@ -537,17 +502,17 @@ def move_evidence(
             f"was {move.previous.product_name} from {move.previous.supplier_name}"
         )
     was = (
-        f"was {_price_words(move.previous.per_display_unit, currency)} "
-        f"{_per_unit_words(move.previous.display_unit)}"
+        f"was {words.price(move.previous.per_display_unit, currency)} "
+        f"{words.per_unit(move.previous.display_unit)}"
     )
     if weighing is None or weighing.portions <= 0:
         return _stop(f"{was} · no sales of items using it since it landed")
     verb = "saved" if weighing.money_at_stake < 0 else "at stake"
     moved_on = move.current.purchased_on
-    since = "since it landed" if moved_on is None else f"since {_short_date(moved_on)}"
+    since = "since it landed" if moved_on is None else f"since {words.short_date(moved_on)}"
     return _stop(
-        f"{was} · {_money_words(abs(weighing.money_at_stake), currency)} {verb} on the "
-        f"{_portions_words(weighing.portions)} portions sold {since}"
+        f"{was} · {words.money(abs(weighing.money_at_stake), currency)} {verb} on the "
+        f"{words.portions(weighing.portions)} portions sold {since}"
     )
 
 
@@ -625,8 +590,8 @@ def price_spike(
 
         if total_portions > 0:
             detail = (
-                f"{_money_words(stake, currency)} off contribution on the "
-                f"{_portions_words(total_portions)} portions sold since it landed, "
+                f"{words.money(stake, currency)} off contribution on the "
+                f"{words.portions(total_portions)} portions sold since it landed, "
                 f"across {len(weighed)} {'item' if len(weighed) == 1 else 'items'}."
             )
         else:
@@ -710,7 +675,7 @@ def branch_gap(
             Signal(
                 kind=KIND_BRANCH_GAP,
                 sentence=(
-                    f"{_short_branch(name)} keeps {points} points less of every dirham "
+                    f"{words.short_branch(name)} keeps {points} points less of every dirham "
                     f"than the chain."
                 ),
                 detail=_estimated(

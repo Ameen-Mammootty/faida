@@ -30,6 +30,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
+from . import words
 from .extraction.currency import currency_differs
 from .extraction.schema import ExtractedInvoice, ExtractedLine
 from .extraction.validate import CheckStatus, FieldStatus, LineCheck, ValidationResult
@@ -243,8 +244,6 @@ QUESTION_CURRENCY_MISMATCH = (
     "Is that right? I'll record it as printed and keep it out of your price history. "
     "If it's a misread, reply " + code("currency {tenant_currency}") + "."
 )
-
-_MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
 
 class PriceAlert(BaseModel):
@@ -617,7 +616,7 @@ def _signed_pct(pct: Decimal) -> str:
 
 def _date_words(value: datetime.date) -> str:
     """'5 Jul 2026' - words, so there is no digit order to re-litigate."""
-    return f"{value.day} {_MONTHS[value.month - 1]} {value.year}"
+    return words.long_date(value)
 
 
 def _qty(qty: Decimal) -> str:
@@ -724,7 +723,7 @@ def compose_disambiguation_reply(pending: list[PendingInvoice]) -> str:
         else:
             total_part = f"{invoice.currency or DEFAULT_CURRENCY} {_money(invoice.total)}"
         received = invoice.received_at
-        stamp = f"{received.day} {_MONTHS[received.month - 1]} {received:%H:%M}"
+        stamp = f"{words.short_date(received)} {received:%H:%M}"
         rows.append(f"{number}. {supplier}, {total_part}, {stamp}")
     return _join_sections(
         [[f"You have {count} {invoice_word} waiting. Which one?"], rows, [DISAMBIGUATION_FOOTER]]

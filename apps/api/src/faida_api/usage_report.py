@@ -40,14 +40,12 @@ from dataclasses import dataclass
 
 import asyncpg
 
-from . import contribution, ratio, usage
-from .api import _dec, _iso
+from . import contribution, ratio, usage, wire, words
 from .config import get_settings
-from .contribution import _price_words
 from .db import Database
 from .period_read import read_period
 from .quality import word
-from .ratio import _plural, window_words
+from .ratio import window_words
 
 #: The width of a section rule. Wide enough for the figures line and narrow
 #: enough to paste into a WhatsApp message on a phone.
@@ -374,15 +372,15 @@ def _line_json(entry: usage.LineEntry) -> dict:
         "invoice_id": entry.invoice_id,
         "invoice_no": entry.invoice_no,
         "line_position": entry.line_position,
-        "purchased_on": _iso(entry.purchased_on),
+        "purchased_on": wire.iso(entry.purchased_on),
         "supplier_name": entry.supplier_name,
         "product_name": entry.product_name,
-        "qty": _dec(entry.qty),
+        "qty": wire.dec(entry.qty),
         "pack": entry.pack,
         "pack_source": entry.pack_source,
-        "factor": _dec(entry.factor),
+        "factor": wire.dec(entry.factor),
         "factor_source": entry.factor_source,
-        "base_qty": _dec(entry.base_qty),
+        "base_qty": wire.dec(entry.base_qty),
         "base_words": entry.base_words,
         "measured": entry.measured,
         "currency": entry.currency,
@@ -395,10 +393,10 @@ def _dish_json(dish: usage.DishEntry) -> dict:
         "menu_item_id": dish.menu_item_id,
         "menu_item_name": dish.menu_item_name,
         "branch_id": dish.branch_id,
-        "portions": _dec(dish.portions),
-        "per_portion_base": _dec(dish.per_portion_base),
-        "usable_share": _dec(dish.usable_share),
-        "base_qty": _dec(dish.base_qty),
+        "portions": wire.dec(dish.portions),
+        "per_portion_base": wire.dec(dish.per_portion_base),
+        "usable_share": wire.dec(dish.usable_share),
+        "base_qty": wire.dec(dish.base_qty),
     }
 
 
@@ -411,15 +409,15 @@ def _row_json(row: usage.MaterialRow) -> dict:
         "base_unit": row.base_unit,
         "branch_id": row.branch_id,
         "window": {
-            "from": _iso(row.window.start),
-            "to": _iso(row.window.end),
+            "from": wire.iso(row.window.start),
+            "to": wire.iso(row.window.end),
             "days": row.window.days,
         },
-        "used_base": _dec(row.used_base),
-        "bought_base": _dec(row.bought_base),
-        "gap_base": _dec(row.gap_base),
-        "used_measured": _dec(row.used_measured),
-        "bought_measured": _dec(row.bought_measured),
+        "used_base": wire.dec(row.used_base),
+        "bought_base": wire.dec(row.bought_base),
+        "gap_base": wire.dec(row.gap_base),
+        "used_measured": wire.dec(row.used_measured),
+        "bought_measured": wire.dec(row.bought_measured),
         "used_words": row.used_words,
         "bought_words": row.bought_words,
         "gap_words": row.gap_words,
@@ -428,10 +426,10 @@ def _row_json(row: usage.MaterialRow) -> dict:
         "used_hole": row.used_hole,
         "bought_hole": row.bought_hole,
         "direction": row.direction,
-        "money": _dec(row.money),
-        "price_per_display_unit": _dec(row.price_per_display_unit),
+        "money": wire.dec(row.money),
+        "price_per_display_unit": wire.dec(row.price_per_display_unit),
         "display_unit": row.display_unit,
-        "priced_on": _iso(row.priced_on),
+        "priced_on": wire.iso(row.priced_on),
         "price_quality": row.price_quality,
         "purchases": row.purchases,
         "purchase_dates": row.purchase_dates,
@@ -439,7 +437,7 @@ def _row_json(row: usage.MaterialRow) -> dict:
         "foreign_papers": row.foreign_papers,
         "unmeasured_lines": row.unmeasured_lines,
         "dishes_counted": row.dishes_counted,
-        "refunded_portions": _dec(row.refunded_portions),
+        "refunded_portions": wire.dec(row.refunded_portions),
         "recipe_after_period": row.recipe_after_period,
         "quality": row.quality.value,
         "notes": list(row.notes),
@@ -461,9 +459,9 @@ def usage_payload(blocks: UsageBlocks) -> dict:
         "branch_rows": [_row_json(row) for row in blocks.branch_rows],
         "count": blocks.count,
         "coverage": {
-            "recipes_pct": _dec(blocks.coverage.recipes_pct),
-            "covered_value": _dec(blocks.coverage.covered_value),
-            "sales_value": _dec(blocks.coverage.sales_value),
+            "recipes_pct": wire.dec(blocks.coverage.recipes_pct),
+            "covered_value": wire.dec(blocks.coverage.covered_value),
+            "sales_value": wire.dec(blocks.coverage.sales_value),
             "dishes_without_recipe": blocks.coverage.dishes_without_recipe,
             "unmapped_names": blocks.coverage.unmapped_names,
             "sentence": blocks.coverage.sentence,
@@ -474,9 +472,9 @@ def usage_payload(blocks: UsageBlocks) -> dict:
                 "ingredient_name": material.ingredient_name,
                 "base_unit": material.base_unit,
                 "branch_id": material.branch_id,
-                "bought_base": _dec(material.bought_base),
+                "bought_base": wire.dec(material.bought_base),
                 "bought_words": material.bought_words,
-                "money": _dec(material.money),
+                "money": wire.dec(material.money),
                 "purchases": material.purchases,
                 "sentence": material.sentence,
             }
@@ -485,7 +483,7 @@ def usage_payload(blocks: UsageBlocks) -> dict:
         "unmapped_packs": {
             "lines": blocks.unmapped_packs.lines,
             "packs": blocks.unmapped_packs.packs,
-            "spend": _dec(blocks.unmapped_packs.spend),
+            "spend": wire.dec(blocks.unmapped_packs.spend),
             "foreign_lines": blocks.unmapped_packs.foreign_lines,
             "sentence": blocks.unmapped_packs.sentence,
         },
@@ -511,7 +509,7 @@ def usage_payload(blocks: UsageBlocks) -> dict:
                 "ingredient_id": held.ingredient_id,
                 "ingredient_name": held.ingredient_name,
                 "base_unit": held.base_unit,
-                "bought_base": _dec(held.bought_base),
+                "bought_base": wire.dec(held.bought_base),
                 "bought_words": held.bought_words,
                 "papers": held.papers,
                 "lines": [_line_json(entry) for entry in held.lines],
@@ -557,7 +555,7 @@ def _row_lines(row: usage.MaterialRow, *, position: str, currency: str) -> list[
         row.gap_words or "-",
     ]
     if row.money is not None:
-        figures.append(_price_words(row.money, currency))
+        figures.append(words.price(row.money, currency))
     out.append("      " + " | ".join(figures))
     out.extend(f"      - {note}" for note in row.notes)
     return out
@@ -578,13 +576,17 @@ def _left_out_line(left_out: usage.LeftOut) -> str | None:
     """The four counts on one line, and nothing when there were none."""
     parts = []
     if left_out.items_without_quantity:
-        parts.append(_plural(left_out.items_without_quantity, "dish with no quantity on the till"))
+        parts.append(
+            words.count(left_out.items_without_quantity, "dish with no quantity on the till")
+        )
     if left_out.items_without_recipe:
-        parts.append(_plural(left_out.items_without_recipe, "dish sold with no recipe"))
+        parts.append(words.count(left_out.items_without_recipe, "dish sold with no recipe"))
     if left_out.unmeasured_lines:
-        parts.append(_plural(left_out.unmeasured_lines, "purchase line that could not be measured"))
+        parts.append(
+            words.count(left_out.unmeasured_lines, "purchase line that could not be measured")
+        )
     if left_out.branches_without_sales:
-        parts.append(_plural(left_out.branches_without_sales, "branch with no sales loaded"))
+        parts.append(words.count(left_out.branches_without_sales, "branch with no sales loaded"))
     return None if not parts else "Left out: " + ", ".join(parts) + "."
 
 
@@ -597,10 +599,10 @@ def _lists(blocks: UsageBlocks, *, currency: str) -> list[str]:
         out.append("")
         out.append("  Bought, not in any sold recipe")
         for material in blocks.unused_materials:
-            money = "" if material.money is None else f", {_price_words(material.money, currency)}"
+            money = "" if material.money is None else f", {words.price(material.money, currency)}"
             out.append(
                 f"    - {material.ingredient_name}: {material.bought_words}"
-                f" on {_plural(material.purchases, 'paper')}{money}"
+                f" on {words.count(material.purchases, 'paper')}{money}"
             )
     if blocks.unmapped_packs.sentence is not None:
         out.append("")
@@ -614,7 +616,7 @@ def _lists(blocks: UsageBlocks, *, currency: str) -> list[str]:
             named = paper.invoice_no or paper.invoice_id
             out.append(
                 f"      {named}, {paper.supplier_name or 'no supplier named'}"
-                f" ({paper.currency}): {_plural(paper.lines, 'line')}"
+                f" ({paper.currency}): {words.count(paper.lines, 'line')}"
             )
     if blocks.unassigned:
         out.append("")
@@ -622,7 +624,7 @@ def _lists(blocks: UsageBlocks, *, currency: str) -> list[str]:
         for held in blocks.unassigned:
             out.append(
                 f"    - {held.ingredient_name}: {held.bought_words}"
-                f" on {_plural(held.papers, 'paper')}"
+                f" on {words.count(held.papers, 'paper')}"
             )
             for entry in held.lines:
                 named = entry.invoice_no or entry.invoice_id
@@ -781,9 +783,8 @@ async def _print(args: argparse.Namespace, period: ratio.Period) -> int:
         blocks = usage_blocks(inputs)
         scope = names[args.branch] if args.branch is not None else "every branch"
         print(HEADING)
-        print(
-            f"{args.tenant}, {window_words(blocks.window)} ({_plural(period.days, 'day')}), {scope}"
-        )
+        days = words.count(period.days, "day")
+        print(f"{args.tenant}, {window_words(blocks.window)} ({days}), {scope}")
         print(render(blocks, branch_names=names, currency=inputs.currency), end="")
     finally:
         await db.close()

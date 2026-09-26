@@ -61,10 +61,8 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, UploadFile
 from pydantic import BaseModel, ConfigDict
 
-from . import matching, ratio, takings
-from .api import _clean, _dec, _iso
+from . import matching, ratio, takings, typed, wire
 from .auth import AuthContext, require_context
-from .confirm import _parse_number
 from .db import Database, MenuItemArchived
 from .extraction.constants import VAT_RATE_BY_CURRENCY
 from .menu import costed_menu
@@ -157,7 +155,7 @@ def _signed_number(value: str, *, what: str, places: int, example: str) -> Decim
     printed ones and a quantized 490.005 would not be."""
     text = value.strip()
     negative = text.startswith("-")
-    number = _parse_number(text[1:] if negative else text)
+    number = typed.parse_number(text[1:] if negative else text)
     if number is None or _SIGNED_RE.fullmatch(text.rstrip(".!?")) is None:
         raise HTTPException(
             status_code=422,
@@ -182,18 +180,18 @@ def _day_json(row) -> dict:
     return {
         "id": row["id"],
         "branch_id": row["branch_id"],
-        "business_date": _iso(row["business_date"]),
+        "business_date": wire.iso(row["business_date"]),
         "granularity": row["granularity"],
         "amount_basis": row["amount_basis"],
         "vat_rate": _rate(row["vat_rate"]),
-        "takings": _dec(row["takings"]),
-        "net_sales": _dec(row["net_sales"]),
+        "takings": wire.dec(row["takings"]),
+        "net_sales": wire.dec(row["net_sales"]),
         "line_count": row["line_count"],
         "layout_id": row["layout_id"],
         "source_sha256": row["source_sha256"],
         "source_filename": row["source_filename"],
         "loaded_by": row["loaded_by"],
-        "loaded_at": _iso(row["loaded_at"]),
+        "loaded_at": wire.iso(row["loaded_at"]),
     }
 
 
@@ -202,9 +200,9 @@ def _line_json(row) -> dict:
         "position": row["position"],
         "name": row["name"],
         "code": row["code"],
-        "qty": _dec(row["qty"]),
-        "amount": _dec(row["amount"]),
-        "net_amount": _dec(row["net_amount"]),
+        "qty": wire.dec(row["qty"]),
+        "amount": wire.dec(row["amount"]),
+        "net_amount": wire.dec(row["net_amount"]),
         "till_item_id": row["till_item_id"],
     }
 
@@ -217,7 +215,7 @@ def _layout_json(row) -> dict:
         "columns": row["columns"],
         "amount_basis": row["amount_basis"],
         "date_order": row["date_order"],
-        "updated_at": _iso(row["updated_at"]),
+        "updated_at": wire.iso(row["updated_at"]),
     }
 
 
@@ -274,7 +272,7 @@ async def save_branch_alias(
     branch = await db.get_branch(str(branch_id), tenant_id=ctx.tenant_id)
     if branch is None:
         raise HTTPException(status_code=404, detail="branch not found")
-    alias = _clean(body.alias)
+    alias = typed.clean(body.alias)
     alias_key = takings.name_key(alias) if alias is not None else ""
     if not alias_key:
         raise HTTPException(status_code=422, detail="an alias needs some text")
@@ -372,7 +370,7 @@ async def save_sales_layout(
     derived from the mapped header names, sorted, so a reordered export
     still matches."""
     db: Database = request.app.state.db
-    name = _clean(body.name)
+    name = typed.clean(body.name)
     if name is None:
         raise HTTPException(status_code=422, detail="a layout needs a name: the till it belongs to")
     columns: dict[str, str] = {}
@@ -383,7 +381,7 @@ async def save_sales_layout(
                 detail=f"'{logical}' is not a column this loader knows: "
                 f"{', '.join(takings.LAYOUT_COLUMNS)}",
             )
-        header_name = _clean(header)
+        header_name = typed.clean(header)
         if header_name is None:
             raise HTTPException(status_code=422, detail=f"the {logical} column needs a header name")
         columns[logical] = header_name
@@ -470,7 +468,7 @@ def _period_json(read: ResolvedPeriod) -> dict:
         "to": read.period.end.isoformat(),
         "days": read.period.days,
         "default": read.default,
-        "sales_through": _iso(read.newest),
+        "sales_through": wire.iso(read.newest),
         "months": [month.strftime("%Y-%m") for month in read.months],
     }
 
@@ -480,10 +478,10 @@ def _invoice_figure_json(figure: ratio.InvoiceFigure) -> dict:
         "invoice_id": figure.invoice_id,
         "supplier_name": figure.supplier_name,
         "invoice_no": figure.invoice_no,
-        "purchased_on": _iso(figure.purchased_on),
-        "net_purchase": _dec(figure.net_purchase),
-        "total": _dec(figure.total),
-        "tax": _dec(figure.tax),
+        "purchased_on": wire.iso(figure.purchased_on),
+        "net_purchase": wire.dec(figure.net_purchase),
+        "total": wire.dec(figure.total),
+        "tax": wire.dec(figure.tax),
         "quality": figure.quality,
     }
 
@@ -497,23 +495,23 @@ def _branch_row_json(row: ratio.BranchRow) -> dict:
             "to": row.window.end.isoformat(),
             "days": row.window.days,
         },
-        "net_sales": _dec(row.net_sales),
-        "takings": _dec(row.takings),
-        "purchases": _dec(row.purchases),
-        "ratio_pct": _dec(row.ratio_pct),
+        "net_sales": wire.dec(row.net_sales),
+        "takings": wire.dec(row.takings),
+        "purchases": wire.dec(row.purchases),
+        "ratio_pct": wire.dec(row.ratio_pct),
         "quality": row.quality.value,
         "notes": list(row.notes),
         "days_loaded": row.days_loaded,
         "days_missing": row.days_missing,
         "deliveries": row.deliveries,
-        "sales_through": _iso(row.sales_through),
-        "last_purchase_on": _iso(row.last_purchase_on),
+        "sales_through": wire.iso(row.sales_through),
+        "last_purchase_on": wire.iso(row.last_purchase_on),
         "days": [
             {
-                "business_date": _iso(day.business_date),
-                "net_sales": _dec(day.net_sales),
+                "business_date": wire.iso(day.business_date),
+                "net_sales": wire.dec(day.net_sales),
                 "granularity": day.granularity,
-                "purchases": _dec(day.purchases),
+                "purchases": wire.dec(day.purchases),
                 "invoices": [_invoice_figure_json(i) for i in day.invoices],
             }
             for day in row.days
@@ -524,7 +522,7 @@ def _branch_row_json(row: ratio.BranchRow) -> dict:
                 "supplier_name": p.supplier_name,
                 "invoice_no": p.invoice_no,
                 "status": p.status,
-                "placed_on": _iso(p.placed_on),
+                "placed_on": wire.iso(p.placed_on),
                 "undated": p.undated,
             }
             for p in row.pending
@@ -535,7 +533,7 @@ def _branch_row_json(row: ratio.BranchRow) -> dict:
                 "supplier_name": e.supplier_name,
                 "invoice_no": e.invoice_no,
                 "currency": e.currency,
-                "total": _dec(e.total),
+                "total": wire.dec(e.total),
             }
             for e in row.excluded
         ],
@@ -572,13 +570,13 @@ async def sales_by_branch(
         "rows": [_branch_row_json(row) for row in rows],
         "unassigned": {
             "count": unassigned.count,
-            "purchases": _dec(unassigned.purchases),
+            "purchases": wire.dec(unassigned.purchases),
             "invoices": [_invoice_figure_json(i) for i in unassigned.invoices],
         },
         "total": {
-            "net_sales": _dec(total.net_sales),
-            "purchases": _dec(total.purchases),
-            "ratio_pct": _dec(total.ratio_pct),
+            "net_sales": wire.dec(total.net_sales),
+            "purchases": wire.dec(total.purchases),
+            "ratio_pct": wire.dec(total.ratio_pct),
             "quality": total.quality.value,
             "notes": list(total.notes),
         },
@@ -590,7 +588,7 @@ def _coverage_item_json(item: ratio.CoverageItem) -> dict:
         "till_item_id": item.till_item_id,
         "name": item.name,
         "code": item.code,
-        "value": _dec(item.value),
+        "value": wire.dec(item.value),
     }
 
 
@@ -642,17 +640,17 @@ async def sales_coverage(
     result = ratio.coverage(values, plates)
     return {
         "period": _period_json(read),
-        "sales_value": _dec(result.sales_value),
-        "costed_value": _dec(result.costed_value),
-        "costed_pct": _dec(result.costed_pct),
-        "estimated_points": _dec(result.estimated_points),
+        "sales_value": wire.dec(result.sales_value),
+        "costed_value": wire.dec(result.costed_value),
+        "costed_pct": wire.dec(result.costed_pct),
+        "estimated_points": wire.dec(result.estimated_points),
         "uncosted": {
-            "incomplete_plate": _dec(result.uncosted_incomplete_plate),
-            "unmapped": _dec(result.uncosted_unmapped),
+            "incomplete_plate": wire.dec(result.uncosted_incomplete_plate),
+            "unmapped": wire.dec(result.uncosted_unmapped),
         },
         "beside": {
-            "refunds": _dec(result.refunds),
-            "not_menu_items": _dec(result.not_menu_items),
+            "refunds": wire.dec(result.refunds),
+            "not_menu_items": wire.dec(result.not_menu_items),
         },
         "queue": [
             {
@@ -766,7 +764,7 @@ async def load_sales_days(body: SalesDaysIn, request: Request, ctx: Context) -> 
                 if line.position in positions:
                     raise HTTPException(status_code=422, detail=f"{row}: position repeated")
                 positions.add(line.position)
-                name = _clean(line.name)
+                name = typed.clean(line.name)
                 if name is None:
                     raise HTTPException(status_code=422, detail=f"{row}: a line needs a name")
                 line_amount = _signed_number(
@@ -774,14 +772,14 @@ async def load_sales_days(body: SalesDaysIn, request: Request, ctx: Context) -> 
                 )
                 qty = (
                     None
-                    if _clean(line.qty) is None
+                    if typed.clean(line.qty) is None
                     else _signed_number(line.qty, what=f"quantity ({row})", places=3, example="14")
                 )
                 lines.append(
                     {
                         "position": line.position,
                         "name": name,
-                        "code": _clean(line.code),
+                        "code": typed.clean(line.code),
                         "qty": qty,
                         "amount": line_amount,
                         "net_amount": takings.net_amount(
@@ -816,7 +814,7 @@ async def load_sales_days(body: SalesDaysIn, request: Request, ctx: Context) -> 
                 "amount_basis": day.amount_basis,
                 "layout_id": None if day.layout_id is None else str(day.layout_id),
                 "source_sha256": None if day.source is None else day.source.sha256,
-                "source_filename": None if day.source is None else _clean(day.source.filename),
+                "source_filename": None if day.source is None else typed.clean(day.source.filename),
                 "lines": lines,
                 "amount": amount,
                 "net": net,
@@ -862,7 +860,7 @@ def _till_item_json(row) -> dict:
         "code": row["code"],
         "menu_item_id": row["menu_item_id"],
         "menu_item_name": row["menu_item_name"],
-        "excluded_at": _iso(row["excluded_at"]),
+        "excluded_at": wire.iso(row["excluded_at"]),
     }
 
 

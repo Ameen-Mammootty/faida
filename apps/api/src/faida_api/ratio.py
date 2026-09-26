@@ -48,6 +48,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from decimal import ROUND_HALF_UP, Decimal
 
+from . import words
 from .quality import Quality, total_of
 
 #: A ratio on a screen: one decimal place, "30.4".
@@ -272,22 +273,13 @@ def ratio_pct(purchases: Decimal, net_sales: Decimal | None) -> Decimal | None:
     return (purchases / net_sales * 100).quantize(PCT_QUANTUM, rounding=ROUND_HALF_UP)
 
 
-def _plural(count: int, singular: str, plural: str | None = None) -> str:
-    word = singular if count == 1 else (plural or singular + "s")
-    return f"{count} {word}"
-
-
-def _short_date(day: datetime.date) -> str:
-    return f"{day.day} {day.strftime('%b')}"
-
-
 def window_words(window: Window) -> str:
     """ "25-31 Aug", or "28 Aug-3 Sep" across a month end, or "31 Aug" alone."""
     if window.start == window.end:
-        return _short_date(window.start)
+        return words.short_date(window.start)
     if window.start.month == window.end.month and window.start.year == window.end.year:
-        return f"{window.start.day}-{_short_date(window.end)}"
-    return f"{_short_date(window.start)}-{_short_date(window.end)}"
+        return f"{window.start.day}-{words.short_date(window.end)}"
+    return f"{words.short_date(window.start)}-{words.short_date(window.end)}"
 
 
 def _invoice_quality(invoice: Invoice) -> str:
@@ -317,20 +309,20 @@ def _currency_sentences(excluded: list[Invoice]) -> list[str]:
     for invoice in excluded:
         by_currency[invoice.currency] += 1
     return [
-        f"{_plural(count, 'invoice')} in {currency} not counted"
+        f"{words.count(count, 'invoice')} in {currency} not counted"
         for currency, count in sorted(by_currency.items())
     ]
 
 
-def _pending_sentences(pending: list[Invoice]) -> list[str]:
+def pending_sentences(pending: list[Invoice]) -> list[str]:
     counts: dict[tuple[str, bool], int] = defaultdict(int)
     for invoice in pending:
         counts[(invoice.status, invoice.undated)] += 1
-    words = {"awaiting_confirm": "awaiting confirm", "needs_review": "held for review"}
+    states = {"awaiting_confirm": "awaiting confirm", "needs_review": "held for review"}
     sentences = []
     for (status, undated), count in sorted(counts.items()):
         noun = "undated invoice" if undated else "invoice"
-        sentences.append(f"{_plural(count, noun)} {words.get(status, status)}")
+        sentences.append(f"{words.count(count, noun)} {states.get(status, status)}")
     return sentences
 
 
@@ -457,13 +449,15 @@ def period_row(
             quality = Quality.RELIABLE
         if sales_quality is not Quality.UNAVAILABLE and sales_incomplete:
             sales_quality = Quality.INCOMPLETE
-    notes.extend(_pending_sentences(pending))
+    notes.extend(pending_sentences(pending))
     notes.extend(_currency_sentences(excluded))
     asserted_count = sum(1 for i in counted if i.asserted)
     if asserted_count:
-        notes.append(f"{_plural(asserted_count, 'invoice')} with a total or VAT entered by hand")
+        notes.append(
+            f"{words.count(asserted_count, 'invoice')} with a total or VAT entered by hand"
+        )
     if counted:
-        notes.append(f"{_plural(len(counted), 'delivery', 'deliveries')} in this window")
+        notes.append(f"{words.count(len(counted), 'delivery', 'deliveries')} in this window")
 
     ratio = ratio_pct(purchases, net_sales) if own_days and counted else None
 
@@ -586,7 +580,9 @@ def chain_total(rows: list[BranchRow], unassigned: Unassigned) -> Total:
     if incomplete:
         notes.append(f"{incomplete} of {len(rows)} branches incomplete")
     if unassigned.count:
-        notes.append(f"{_plural(unassigned.count, 'invoice')} on no branch, counted in the total")
+        notes.append(
+            f"{words.count(unassigned.count, 'invoice')} on no branch, counted in the total"
+        )
     if with_sales and net_sales <= 0:
         notes.append("net sales are not positive this period")
     return Total(

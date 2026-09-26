@@ -28,8 +28,7 @@ from pathlib import Path
 
 import pytest
 
-from faida_api import brief
-from faida_api.contribution import _money_words, _pct_words
+from faida_api import brief, words
 
 D = Decimal
 MOCK = Path(__file__).resolve().parents[3] / "apps" / "web" / "src" / "lib" / "mock" / "dashboard"
@@ -170,18 +169,18 @@ def test_the_full_fixture_says_every_figure_the_payload_gives():
     assert not made.quiet
     assert made.day == month["freshness"]["sentence"]
     assert made.latest_day == (
-        f"{_money_words(D(month['latest_day']['net_sales']), 'AED')} on Mon 31 Aug"
+        f"{words.money(D(month['latest_day']['net_sales']), 'AED')} on Mon 31 Aug"
     )
     assert made.month_to_date == (
-        f"{_money_words(D(month['total']['net_sales']), 'AED')} (25-31 Aug loaded)"
+        f"{words.money(D(month['total']['net_sales']), 'AED')} (25-31 Aug loaded)"
     )
     assert made.materials_used == (
-        f"{_money_words(D(month['total']['cost']), 'AED')} at the latest prices (estimated)"
+        f"{words.money(D(month['total']['cost']), 'AED')} at the latest prices (estimated)"
     )
     share = D(100) - D(month["total"]["contribution_pct"])
     assert made.materials_share == (
-        f"{share}% of the {_money_words(D(month['total']['costed_sales']), 'AED')} costed "
-        f"({_pct_words(D(month['total']['costed_share_pct']))} of sales) (estimated)"
+        f"{share}% of the {words.money(D(month['total']['costed_sales']), 'AED')} costed "
+        f"({words.pct(D(month['total']['costed_share_pct']))} of sales) (estimated)"
     )
     # The shape the founder was shown, to the character.
     assert made.latest_day == "AED 9,493 on Mon 31 Aug"
@@ -209,16 +208,16 @@ def test_the_four_tiles_carry_the_same_figures_as_the_four_lines():
         "Materials used",
         "Materials share",
     ]
-    assert latest.value == _money_words(D(month["latest_day"]["net_sales"]), "AED")
+    assert latest.value == words.money(D(month["latest_day"]["net_sales"]), "AED")
     assert latest.sub == "Mon 31 Aug"
-    assert mtd.value == _money_words(D(month["total"]["net_sales"]), "AED")
+    assert mtd.value == words.money(D(month["total"]["net_sales"]), "AED")
     assert mtd.sub == "25-31 Aug loaded"
-    assert used.value == _money_words(D(month["total"]["cost"]), "AED")
+    assert used.value == words.money(D(month["total"]["cost"]), "AED")
     assert used.sub == "at the latest prices (estimated)"
     assert share.value == f"{D(100) - D(month['total']['contribution_pct'])}%"
     assert share.sub == (
-        f"of {_money_words(D(month['total']['costed_sales']), 'AED')} costed · "
-        f"{_pct_words(D(month['total']['costed_share_pct']))} of sales (estimated)"
+        f"of {words.money(D(month['total']['costed_sales']), 'AED')} costed · "
+        f"{words.pct(D(month['total']['costed_share_pct']))} of sales (estimated)"
     )
     # Each line is built out of its tile, so the two cannot drift.
     assert made.latest_day == f"{latest.value} on {latest.sub}"
@@ -264,7 +263,7 @@ def test_the_month_line_says_when_branches_loaded_different_days():
     assert {r["window"]["from"] for r in loaded} == {"2026-08-25"}
     assert any(r["window"]["from"] != "2026-08-25" for r in month["league"])
     assert made.month_to_date == (
-        f"{_money_words(D(month['total']['net_sales']), 'AED')} "
+        f"{words.money(D(month['total']['net_sales']), 'AED')} "
         "(25-31 Aug loaded; some branches fewer)"
     )
 
@@ -367,7 +366,7 @@ def test_the_two_lists_are_the_dashboards_own_rows_worst_first_among_the_worst()
     ]
     for line, source in zip(made.earning_most, month["items"]["top"][:3], strict=True):
         assert line.money == D(source["contribution"])
-        assert line.money_words == _money_words(line.money, "AED")
+        assert line.money_words == words.money(line.money, "AED")
     assert [line.money_words for line in made.earning_most] == [
         "AED 11,177",
         "AED 7,821",
@@ -449,7 +448,7 @@ def test_the_spikes_are_the_windows_rises_ranked_by_money():
     assert len(made.spikes) == 3
     assert [s.sentence for s in made.spikes] == [m["sentence"] for m in rises]
     assert made.spikes[0].money_clause == (
-        f"{_money_words(D(rises[0]['money_at_stake']), 'AED')} at stake on sales since."
+        f"{words.money(D(rises[0]['money_at_stake']), 'AED')} at stake on sales since."
     )
     assert made.spikes[0].money_clause == "AED 109 at stake on sales since."
     assert made.no_spikes is None
@@ -507,7 +506,7 @@ def test_the_month_figures_come_from_the_month_read_and_the_spikes_from_the_wind
     made = brief.compose(month, window)
 
     assert made.month_to_date == (
-        f"{_money_words(D(month['total']['net_sales']), 'AED')} (25-31 Aug loaded)"
+        f"{words.money(D(month['total']['net_sales']), 'AED')} (25-31 Aug loaded)"
     )
     assert "67,471" in made.month_to_date and "29,126" not in made.month_to_date
     assert made.spikes == ()

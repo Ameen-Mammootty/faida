@@ -50,20 +50,18 @@ no query and no arithmetic. The screen ignores them.
 
 import datetime
 from collections.abc import Iterable, Sequence
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import Decimal
 from typing import Annotated, NamedTuple
 
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
-from . import contribution, ratio, signals
-from .api import _dec, _iso
+from . import contribution, ratio, signals, wire, words
 from .auth import AuthContext, require_context
 from .db import Database
 from .menu import PriceMove, plates_for, price_moves, pricing
 from .period_read import read_period
 from .quality import Quality, worst
-from .signals import _short_branch
 
 # Declared twice like the other routers: at the router, so no route here can
 # exist without the token check, and per handler, to receive the tenant.
@@ -94,7 +92,6 @@ ITEMS_SLICE = 5
 #: `/menu`'s callout and `/materials` hold the whole list.
 PRICE_MOVES_LISTED = 5
 
-_WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 _NUMBER_WORDS = {
     2: "two",
     3: "three",
@@ -111,10 +108,6 @@ _NUMBER_WORDS = {
 # --- the sentences that are about the whole screen ------------------------------
 
 
-def _weekday_date(day: datetime.date) -> str:
-    return f"{_WEEKDAYS[day.weekday()]} {day.day} {day.strftime('%b')}"
-
-
 def freshness_sentence(newest: datetime.date | None, today: datetime.date) -> str | None:
     """ "Sales loaded to Mon 31 Aug, 5 days ago." - the newest loaded day,
     named and aged (P6), M10's `freshness.sentence`. When the newest day is
@@ -123,7 +116,7 @@ def freshness_sentence(newest: datetime.date | None, today: datetime.date) -> st
         return None
     ago = (today - newest).days
     when = "today" if ago <= 0 else "yesterday" if ago == 1 else f"{ago} days ago"
-    return f"Sales loaded to {_weekday_date(newest)}, {when}."
+    return f"Sales loaded to {words.weekday_date(newest)}, {when}."
 
 
 def branch_answer(
@@ -139,15 +132,15 @@ def branch_answer(
     if not rated:
         return None, None
     top = rated[0]
-    kept = top.contribution_pct.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-    name = _short_branch(top.branch_name or "")
+    kept = words.pct(top.contribution_pct)
+    name = words.short_branch(top.branch_name or "")
     if scope.branch_id is not None:
-        sentence = f"{name}: keeps {kept}%."
+        sentence = f"{name}: keeps {kept}."
     elif len(rated) == 1:
-        sentence = f"Look at {name}: keeps {kept}%, the only branch with a figure."
+        sentence = f"Look at {name}: keeps {kept}, the only branch with a figure."
     else:
         count = _NUMBER_WORDS.get(len(rated), str(len(rated)))
-        sentence = f"Look at {name}: keeps {kept}%, the least of the {count} branches."
+        sentence = f"Look at {name}: keeps {kept}, the least of the {count} branches."
     if top.quality is Quality.INCOMPLETE:
         sentence += " Its figure is incomplete."
     return sentence, top
@@ -170,16 +163,16 @@ def item_answer(
     by_id = {r.menu_item_id: r for r in rows if r.branch_id == scope.branch_id}
     best = max(fired, key=lambda s: by_id[s.menu_item_id].net_item_sales)
     row = by_id[best.menu_item_id]
-    where = "" if scope.branch_name is None else f" at {_short_branch(scope.branch_name)}"
+    where = "" if scope.branch_name is None else f" at {words.short_branch(scope.branch_name)}"
     if row.contribution_pct is not None and row.contribution_pct < 0:
         return f"{best.menu_item_name}: sells well{where} but loses money on every plate.", row
     if row.contribution_pct is None or chain.contribution_pct is None:
         return f"{best.menu_item_name}: sells well{where} but keeps less than the menu.", row
-    kept = row.contribution_pct.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-    menu = chain.contribution_pct.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    kept = words.pct(row.contribution_pct)
+    menu = words.pct(chain.contribution_pct)
     return (
-        f"{best.menu_item_name}: sells well{where} but keeps only {kept}% "
-        f"against the menu's {menu}%.",
+        f"{best.menu_item_name}: sells well{where} but keeps only {kept} "
+        f"against the menu's {menu}.",
         row,
     )
 
@@ -193,16 +186,16 @@ def _item_row_json(row: contribution.ItemRow) -> dict:
         "menu_item_name": row.menu_item_name,
         "category": row.category,
         "branch_id": row.branch_id,
-        "qty_sold": _dec(row.qty_sold),
-        "qty_refunded": _dec(row.qty_refunded),
-        "net_item_sales": _dec(row.net_item_sales),
-        "cost_per_portion": _dec(row.cost_per_portion),
-        "cost": _dec(row.cost),
-        "cost_per_portion_today": _dec(row.cost_per_portion_today),
-        "contribution": _dec(row.contribution),
-        "contribution_pct": _dec(row.contribution_pct),
-        "avg_sold_at": _dec(row.avg_sold_at),
-        "net_price": _dec(row.net_price),
+        "qty_sold": wire.dec(row.qty_sold),
+        "qty_refunded": wire.dec(row.qty_refunded),
+        "net_item_sales": wire.dec(row.net_item_sales),
+        "cost_per_portion": wire.dec(row.cost_per_portion),
+        "cost": wire.dec(row.cost),
+        "cost_per_portion_today": wire.dec(row.cost_per_portion_today),
+        "contribution": wire.dec(row.contribution),
+        "contribution_pct": wire.dec(row.contribution_pct),
+        "avg_sold_at": wire.dec(row.avg_sold_at),
+        "net_price": wire.dec(row.net_price),
         "plate_quality": row.plate_quality,
         "quality": row.quality.value,
         "notes": list(row.notes),
@@ -214,12 +207,12 @@ def _item_row_json(row: contribution.ItemRow) -> dict:
             {
                 "ingredient_id": c.ingredient_id,
                 "ingredient_name": c.ingredient_name,
-                "qty": _dec(c.qty),
+                "qty": wire.dec(c.qty),
                 "unit": c.unit,
-                "cost_per_portion": _dec(c.cost_per_portion),
+                "cost_per_portion": wire.dec(c.cost_per_portion),
                 "invoice_id": c.invoice_id,
                 "line_position": c.line_position,
-                "purchased_on": _iso(c.purchased_on),
+                "purchased_on": wire.iso(c.purchased_on),
             }
             for c in row.components
         ],
@@ -232,22 +225,22 @@ def _league_row_json(row: ratio.BranchRow, figure: contribution.Contribution) ->
         "branch_id": row.branch_id,
         "branch_name": row.branch_name,
         "window": {
-            "from": _iso(row.window.start),
-            "to": _iso(row.window.end),
+            "from": wire.iso(row.window.start),
+            "to": wire.iso(row.window.end),
             "days": row.window.days,
         },
-        "net_sales": _dec(row.net_sales),
-        "takings": _dec(row.takings),
-        "purchases": _dec(row.purchases),
-        "ratio_pct": _dec(row.ratio_pct),
-        "contribution": _dec(figure.contribution),
-        "contribution_pct": _dec(figure.contribution_pct),
-        "costed_share_pct": _dec(figure.costed_share_pct),
+        "net_sales": wire.dec(row.net_sales),
+        "takings": wire.dec(row.takings),
+        "purchases": wire.dec(row.purchases),
+        "ratio_pct": wire.dec(row.ratio_pct),
+        "contribution": wire.dec(figure.contribution),
+        "contribution_pct": wire.dec(figure.contribution_pct),
+        "costed_share_pct": wire.dec(figure.costed_share_pct),
         # C6 extended by two fields (M10): what the plates cost, and the sales
         # those plates were sold for - the denominator of the kept percentage
         # and never the branch's whole net sales (C12.7).
-        "cost": _dec(figure.cost),
-        "costed_sales": _dec(figure.net_item_sales),
+        "cost": wire.dec(figure.cost),
+        "costed_sales": wire.dec(figure.net_item_sales),
         "ratio_quality": row.quality.value,
         "ratio_notes": list(row.notes),
         "contribution_quality": figure.quality.value,
@@ -255,15 +248,15 @@ def _league_row_json(row: ratio.BranchRow, figure: contribution.Contribution) ->
         "days_loaded": row.days_loaded,
         "days_missing": row.days_missing,
         "deliveries": row.deliveries,
-        "sales_through": _iso(row.sales_through),
-        "last_purchase_on": _iso(row.last_purchase_on),
+        "sales_through": wire.iso(row.sales_through),
+        "last_purchase_on": wire.iso(row.last_purchase_on),
     }
 
 
 def _signal_json(signal: signals.Signal) -> dict:
     return {
         "kind": signal.kind,
-        "money_at_stake": _dec(signal.money_at_stake),
+        "money_at_stake": wire.dec(signal.money_at_stake),
         "quality": signal.quality.value,
         "sentence": signal.sentence,
         "detail": signal.detail,
@@ -274,14 +267,14 @@ def _signal_json(signal: signals.Signal) -> dict:
         "ingredient_id": signal.ingredient_id,
         "ingredient_name": signal.ingredient_name,
         "invoice_id": signal.invoice_id,
-        "moved_on": _iso(signal.moved_on),
+        "moved_on": wire.iso(signal.moved_on),
         # The numbers behind the sentence, for the screen to draw.
-        "kept_pct": _dec(signal.kept_pct),
-        "benchmark_pct": _dec(signal.benchmark_pct),
-        "price_before": _dec(signal.price_before),
-        "price_after": _dec(signal.price_after),
+        "kept_pct": wire.dec(signal.kept_pct),
+        "benchmark_pct": wire.dec(signal.benchmark_pct),
+        "price_before": wire.dec(signal.price_before),
+        "price_after": wire.dec(signal.price_after),
         "unit": signal.unit,
-        "change_pct": _dec(signal.change_pct),
+        "change_pct": wire.dec(signal.change_pct),
     }
 
 
@@ -373,25 +366,25 @@ def price_moves_block(
                 "ingredient_name": row.move.ingredient_name,
                 "kind": row.move.kind,
                 "direction": row.direction,
-                "moved_on": _iso(row.moved_on),
+                "moved_on": wire.iso(row.moved_on),
                 # The newest line, for the /invoices/<id>#line-<n> anchor.
                 "invoice_id": row.move.current.invoice_id,
                 "line_position": row.move.current.position,
-                "money_at_stake": _dec(row.money_at_stake),
+                "money_at_stake": wire.dec(row.money_at_stake),
                 "sentence": row.words.sentence,
                 "plates": row.words.plates,
                 "evidence": row.words.evidence,
                 # The two prices the sentence is written from, per display
                 # unit, and the change between them - the track the screen
                 # draws. A basis change has no before and after (D3).
-                "price_before": _dec(row.move.previous.per_display_unit)
+                "price_before": wire.dec(row.move.previous.per_display_unit)
                 if row.move.kind == "moved"
                 else None,
-                "price_after": _dec(row.move.current.per_display_unit)
+                "price_after": wire.dec(row.move.current.per_display_unit)
                 if row.move.kind == "moved"
                 else None,
                 "unit": row.move.current.display_unit if row.move.kind == "moved" else None,
-                "change_pct": _dec(signals.move_change_pct(row.move)),
+                "change_pct": wire.dec(signals.move_change_pct(row.move)),
             }
             for row in listed[:limit]
         ],
@@ -403,8 +396,8 @@ def _paper_json(row: asyncpg.Record) -> dict:
         "invoice_id": str(row["id"]),
         "supplier_name": row["supplier_name"],
         "invoice_no": row["invoice_no"],
-        "total": _dec(row["total"]),
-        "invoice_date": _iso(row["invoice_date"]),
+        "total": wire.dec(row["total"]),
+        "invoice_date": wire.iso(row["invoice_date"]),
         "branch_name": row["branch_name"],
         "status": row["status"],
         "is_duplicate": row["duplicate_of_invoice_id"] is not None,
@@ -548,14 +541,16 @@ async def read_dashboard(
     if newest is not None and period.start <= newest <= period.end:
         on_day = [d for d in days if d.business_date == newest]
         latest_day = {
-            "date": _iso(newest),
-            "net_sales": _dec(sum((d.net_sales for d in on_day), Decimal(0)).quantize(ratio.FILS)),
+            "date": wire.iso(newest),
+            "net_sales": wire.dec(
+                sum((d.net_sales for d in on_day), Decimal(0)).quantize(ratio.FILS)
+            ),
             "branches": [
                 {
                     "branch_id": d.branch_id,
                     "branch_name": names.get(d.branch_id),
-                    "date": _iso(d.business_date),
-                    "net_sales": _dec(d.net_sales),
+                    "date": wire.iso(d.business_date),
+                    "net_sales": wire.dec(d.net_sales),
                 }
                 for d in on_day
             ],
@@ -572,14 +567,14 @@ async def read_dashboard(
 
     return {
         "period": {
-            "from": _iso(period.start),
-            "to": _iso(period.end),
+            "from": wire.iso(period.start),
+            "to": wire.iso(period.end),
             "days": period.days,
             "default": read.default,
-            "sales_through": _iso(newest),
+            "sales_through": wire.iso(newest),
             "sales_age_days": age,
             "months": [month.strftime("%Y-%m") for month in read.months],
-            "costed_at": _iso(period.end),
+            "costed_at": wire.iso(period.end),
         },
         "answer": {
             "branch": branch_sentence,
@@ -588,9 +583,9 @@ async def read_dashboard(
             "notes": answer_notes,
         },
         "freshness": {
-            "sales_through": _iso(newest),
+            "sales_through": wire.iso(newest),
             "sales_age_days": age,
-            "last_purchase_on": _iso(last_purchase),
+            "last_purchase_on": wire.iso(last_purchase),
             "branches_without_sales": sum(
                 1 for row in ratio_rows.values() if row.net_sales is None
             ),
@@ -609,19 +604,19 @@ async def read_dashboard(
             "invoices": [_paper_json(p) for p in held[:PAPERS_LISTED]],
         },
         "league": [_league_row_json(ratio_rows[c.branch_id], c) for c in league],
-        "unassigned": {"count": unassigned.count, "purchases": _dec(unassigned.purchases)},
+        "unassigned": {"count": unassigned.count, "purchases": wire.dec(unassigned.purchases)},
         "scope": {"branch_id": scope.branch_id, "branch_name": scope.branch_name},
         "total": {
-            "net_sales": _dec(ratio_total.net_sales),
-            "purchases": _dec(ratio_total.purchases),
-            "ratio_pct": _dec(ratio_total.ratio_pct),
-            "contribution": _dec(chain.contribution),
-            "contribution_pct": _dec(chain.contribution_pct),
-            "costed_share_pct": _dec(chain.costed_share_pct),
+            "net_sales": wire.dec(ratio_total.net_sales),
+            "purchases": wire.dec(ratio_total.purchases),
+            "ratio_pct": wire.dec(ratio_total.ratio_pct),
+            "contribution": wire.dec(chain.contribution),
+            "contribution_pct": wire.dec(chain.contribution_pct),
+            "costed_share_pct": wire.dec(chain.costed_share_pct),
             # C6 extended by two fields (M10): the same two the league rows
             # carry, for the chain.
-            "cost": _dec(chain.cost),
-            "costed_sales": _dec(chain.net_item_sales),
+            "cost": wire.dec(chain.cost),
+            "costed_sales": wire.dec(chain.net_item_sales),
             "ratio_quality": ratio_total.quality.value,
             "ratio_notes": list(ratio_total.notes),
             "contribution_quality": chain.quality.value,
@@ -645,7 +640,7 @@ async def read_dashboard(
             currency=currency,
             limit=price_moves_limit,
         ),
-        "unmapped": {"names": unmapped.names, "value": _dec(unmapped.value)},
+        "unmapped": {"names": unmapped.names, "value": wire.dec(unmapped.value)},
         "menu": {
             "items": len(live),
             "costed": sum(

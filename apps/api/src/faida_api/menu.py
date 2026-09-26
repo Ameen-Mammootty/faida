@@ -51,17 +51,13 @@ import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
 
-from . import costing, plates, signals
+from . import costing, plates, signals, typed, wire
 from .api import (
     MEASURE_WORDS,
-    _clean,
-    _dec,
-    _iso,
     _material_price,
     blocked_line_reason,
 )
 from .auth import AuthContext, require_context
-from .confirm import _parse_number
 from .db import Database, MenuItemArchived
 from .extraction import units
 from .extraction.constants import VAT_RATE_BY_CURRENCY
@@ -161,7 +157,7 @@ def _positive_number(value: str, *, what: str, example: str) -> "object":
     """The unsigned-decimal-string rule shared with PATCH and chat, plus the
     door's own floor: zero is refused because everything downstream divides
     by these or sums them."""
-    number = _parse_number(value)
+    number = typed.parse_number(value)
     if number is None or number <= 0:
         raise HTTPException(
             status_code=422,
@@ -193,7 +189,7 @@ def _usable_share(value: str | None, ingredient: asyncpg.Record) -> Decimal | No
     text = value.strip()
     if not text:
         return None
-    share = _parse_number(text)
+    share = typed.parse_number(text)
     if share is not None and 0 < share <= 1:
         share = share.quantize(SHARE_QUANTUM, rounding=ROUND_HALF_UP)
         if share > 0:
@@ -279,7 +275,7 @@ async def _validated_components(
                 "qty": qty,
                 "unit": unit,
                 "usable_share": _usable_share(component.usable_share, ingredient),
-                "source_text": _clean(component.source_text),
+                "source_text": typed.clean(component.source_text),
             }
         )
     return validated
@@ -441,11 +437,11 @@ def _plate_payload(result: plates.Plate) -> dict:
     return {
         "quality": result.quality.value,
         "missing": list(result.missing),
-        "cost_per_portion": _dec(result.cost_per_portion),
-        "net_price": _dec(result.net_price),
-        "vat_rate": _dec(result.vat_rate),
-        "margin": _dec(result.margin),
-        "margin_pct": _dec(result.margin_pct),
+        "cost_per_portion": wire.dec(result.cost_per_portion),
+        "net_price": wire.dec(result.net_price),
+        "vat_rate": wire.dec(result.vat_rate),
+        "margin": wire.dec(result.margin),
+        "margin_pct": wire.dec(result.margin_pct),
     }
 
 
@@ -468,7 +464,7 @@ def _component_cost_payload(
     costed."""
     share = row["usable_share"]
     yield_words = {
-        "usable_share": _dec(share),
+        "usable_share": wire.dec(share),
         "usable_words": plates.usable_words(row["qty"], row["unit"], share),
     }
     if costed.cost is None:
@@ -476,7 +472,7 @@ def _component_cost_payload(
     ingredient_id = row["ingredient_id"]
     return {
         "cost": {
-            "amount": _dec(costed.cost.quantize(plates.PLATE_QUANTUM, rounding=ROUND_HALF_UP)),
+            "amount": wire.dec(costed.cost.quantize(plates.PLATE_QUANTUM, rounding=ROUND_HALF_UP)),
             "quality": costed.quality.value,
             "price": _material_price(prices[ingredient_id], stale.get(ingredient_id)),
         },
@@ -519,25 +515,25 @@ async def _menu_item_detail(db: Database, menu_item_id: str, tenant_id: str) -> 
         "id": item["id"],
         "name": item["name"],
         "category": item["category"],
-        "selling_price": _dec(item["selling_price"]),
-        "archived_at": _iso(item["archived_at"]),
-        "created_at": _iso(item["created_at"]),
+        "selling_price": wire.dec(item["selling_price"]),
+        "archived_at": wire.iso(item["archived_at"]),
+        "created_at": wire.iso(item["created_at"]),
         "plate": _plate_payload(result),
         "recipe": None
         if recipe is None
         else {
             "id": recipe["id"],
             "version": recipe["version"],
-            "yield_portions": _dec(recipe["yield_portions"]),
+            "yield_portions": wire.dec(recipe["yield_portions"]),
             "yield_label": recipe["yield_label"],
-            "created_at": _iso(recipe["created_at"]),
+            "created_at": wire.iso(recipe["created_at"]),
             "components": [
                 {
                     "position": component["position"],
                     "ingredient_id": component["ingredient_id"],
                     "ingredient_name": component["ingredient_name"],
                     "base_unit": component["base_unit"],
-                    "qty": _dec(component["qty"]),
+                    "qty": wire.dec(component["qty"]),
                     "unit": component["unit"],
                     "source_text": component["source_text"],
                     **_component_cost_payload(component, cost, prices, stale),
@@ -593,16 +589,16 @@ async def list_menu_items(request: Request, ctx: Context) -> dict:
                 "id": row["id"],
                 "name": row["name"],
                 "category": row["category"],
-                "selling_price": _dec(row["selling_price"]),
-                "archived_at": _iso(row["archived_at"]),
-                "created_at": _iso(row["created_at"]),
+                "selling_price": wire.dec(row["selling_price"]),
+                "archived_at": wire.iso(row["archived_at"]),
+                "created_at": wire.iso(row["created_at"]),
                 "plate": _plate_payload(plate_by_item[row["id"]]),
                 "recipe": None
                 if row["recipe_id"] is None
                 else {
                     "id": row["recipe_id"],
                     "version": row["version"],
-                    "yield_portions": _dec(row["yield_portions"]),
+                    "yield_portions": wire.dec(row["yield_portions"]),
                     "yield_label": row["yield_label"],
                     "component_count": row["component_count"],
                 },
@@ -620,7 +616,7 @@ async def get_menu_item(menu_item_id: uuid.UUID, request: Request, ctx: Context)
 @router.post("/menu-items", status_code=201)
 async def create_menu_item(body: MenuItemCreate, request: Request, ctx: Context) -> dict:
     db: Database = request.app.state.db
-    name = _clean(body.name)
+    name = typed.clean(body.name)
     if name is None:
         raise HTTPException(status_code=422, detail="a menu item needs a name")
     price = _positive_number(body.selling_price, what="selling price", example="17.00")
@@ -630,7 +626,7 @@ async def create_menu_item(body: MenuItemCreate, request: Request, ctx: Context)
             name=name,
             selling_price=price,
             actor=ctx.actor,
-            category=_clean(body.category),
+            category=typed.clean(body.category),
         )
     except asyncpg.UniqueViolationError:
         raise HTTPException(
@@ -716,7 +712,7 @@ async def create_recipe_version(
             str(menu_item_id),
             tenant_id=ctx.tenant_id,
             yield_portions=yield_portions,
-            yield_label=_clean(body.yield_label),
+            yield_label=typed.clean(body.yield_label),
             components=components,
             actor=ctx.actor,
         )
@@ -766,7 +762,7 @@ async def load_menu_item(body: MenuItemLoad, request: Request, ctx: Context) -> 
     reach a shape a person could not type."""
     db: Database = request.app.state.db
     tenant_id = ctx.tenant_id
-    name = _clean(body.name)
+    name = typed.clean(body.name)
     if name is None:
         raise HTTPException(status_code=422, detail="a menu item needs a name")
     selling_price = _positive_number(body.selling_price, what="selling price", example="17.00")
@@ -777,10 +773,10 @@ async def load_menu_item(body: MenuItemLoad, request: Request, ctx: Context) -> 
         result = await db.load_menu_recipe(
             tenant_id=tenant_id,
             name=name,
-            category=_clean(body.category),
+            category=typed.clean(body.category),
             selling_price=selling_price,
             yield_portions=yield_portions,
-            yield_label=_clean(body.yield_label),
+            yield_label=typed.clean(body.yield_label),
             components=components,
             actor=ctx.actor,
         )
@@ -1043,13 +1039,13 @@ def _move_line_payload(line: MoveLine) -> dict:
         "product_name": line.product_name,
         "supplier_name": line.supplier_name,
         "pack_size": line.pack_size,
-        "per_display_unit": _dec(line.per_display_unit),
+        "per_display_unit": wire.dec(line.per_display_unit),
         "display_unit": line.display_unit,
         "invoice_id": line.invoice_id,
         "invoice_line_id": line.invoice_line_id,
         "position": line.position,
-        "purchased_on": _iso(line.purchased_on),
-        "invoice_date": _iso(line.invoice_date),
+        "purchased_on": wire.iso(line.purchased_on),
+        "invoice_date": wire.iso(line.invoice_date),
     }
 
 
@@ -1068,17 +1064,17 @@ def _move_payload(move: PriceMove) -> dict:
         "current": _move_line_payload(move.current),
         "previous": _move_line_payload(move.previous),
         "kind": move.kind,
-        "delta_per_display_unit": _dec(move.delta_per_display_unit),
+        "delta_per_display_unit": wire.dec(move.delta_per_display_unit),
         "plates": signals.move_plates(move),
         "items": [
             {
                 "menu_item_id": item.menu_item_id,
                 "name": item.name,
-                "impact_per_portion": _dec(item.impact_per_portion),
-                "margin_before": _dec(item.margin_before),
-                "margin_after": _dec(item.margin_after),
-                "margin_pct_before": _dec(item.margin_pct_before),
-                "margin_pct_after": _dec(item.margin_pct_after),
+                "impact_per_portion": wire.dec(item.impact_per_portion),
+                "margin_before": wire.dec(item.margin_before),
+                "margin_after": wire.dec(item.margin_after),
+                "margin_pct_before": wire.dec(item.margin_pct_before),
+                "margin_pct_after": wire.dec(item.margin_pct_after),
             }
             for item in move.items
         ],
