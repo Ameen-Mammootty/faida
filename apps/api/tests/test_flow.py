@@ -179,3 +179,44 @@ async def test_failed_job_requeues_then_fails(api, db):
     job = await db.pool.fetchrow("select * from jobs")
     assert job["status"] == "queued" and job["attempts"] == 1
     assert "boom" in job["last_error"] or "500" in job["last_error"]
+
+
+async def test_retry_after_the_original_landed_ingests_and_replies(api, db, monkeypatch):
+    """A storage hiccup must not strand a photo. The first attempt's upload
+    lands and the write after it fails; the retry meets its own object at the
+    immutable key, which storage refuses to overwrite. That refusal is the
+    answer we want - the photo is kept - so the retry records the document,
+    queues the extraction and sends "Got it", instead of failing three times
+    and leaving the paper in `received` with the phone hearing nothing."""
+    app, client, fake_meta, fake_storage = api
+    real_set_path = db.set_document_storage_path
+    calls = 0
+
+    async def fails_once(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise ConnectionError("database dropped the connection")
+        return await real_set_path(*args, **kwargs)
+
+    monkeypatch.setattr(db, "set_document_storage_path", fails_once)
+
+    await post_webhook(client, wa_image_payload())
+    assert await run_one_job(db, app.state.wa, app.state.storage) is True
+    job = await db.pool.fetchrow("select * from jobs")
+    assert job["status"] == "queued" and job["attempts"] == 1
+    assert len(fake_storage.objects) == 1  # the original landed before the failure
+    assert fake_meta.sent == []
+
+    await db.pool.execute("update jobs set run_after = now() where status = 'queued'")
+    assert await run_one_job(db, app.state.wa, app.state.storage) is True
+
+    doc = await db.get_document_by_wa_message("wamid.in1")
+    assert doc["storage_path"] in fake_storage.objects
+    assert fake_storage.objects[doc["storage_path"]] == fake_meta.media_bytes
+    assert [m["text"]["body"] for m in fake_meta.sent] == [REPLY_MEDIA_RECEIVED]
+    kinds = await db.pool.fetch("select kind, status from jobs order by created_at")
+    assert [(r["kind"], r["status"]) for r in kinds] == [
+        ("process_wa_message", "done"),
+        ("extract_document", "queued"),
+    ]

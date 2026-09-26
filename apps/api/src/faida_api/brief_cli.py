@@ -43,7 +43,7 @@ from typing import TextIO
 from . import brief, brief_card
 from .config import get_settings
 from .db import Database
-from .storage import Storage
+from .storage import Storage, brief_card_key
 from .wa import WhatsAppClient
 from .worker import read_brief, send_brief_card
 
@@ -60,7 +60,7 @@ def rehearsal_card_path(tenant_id: str, today: datetime.date, phone: str) -> str
     to the founder's phone at four in the afternoon must not sit where that
     recipient's 07:00 card will go - the objects never overwrite, and the
     morning would then find its own key taken by a different day's figures."""
-    return f"{tenant_id}/briefs/{today.isoformat()}/rehearsal-{phone}.png"
+    return brief_card_key(tenant_id, today, f"rehearsal-{phone}")
 
 
 async def run(

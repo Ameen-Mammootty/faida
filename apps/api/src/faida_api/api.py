@@ -111,6 +111,7 @@ from .matching import (
 from .provenance import Origin, initial
 from .quality import Quality
 from .replies import DEFAULT_CURRENCY, compose_cash_approved_notice
+from .storage import document_original_key
 
 logger = logging.getLogger(__name__)
 
@@ -1055,8 +1056,8 @@ async def upload_document(
     )
     # The immutable path convention, shared with the WhatsApp ingest
     # (worker._ingest_media): never overwritten, never upserted.
-    path = f"{tenant_id}/documents/{document_id}/original"
-    await request.app.state.storage.put(path, data, mime)
+    path = document_original_key(tenant_id, document_id)
+    await request.app.state.storage.put_immutable(path, data, mime)
     await db.set_document_storage_path(document_id, path, tenant_id=tenant_id)
     # C2 as amended (WP-72): the job carries the caller's tenant and the
     # branch validated above, and there is one extract job per document.
