@@ -52,7 +52,6 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
 
 from . import costing, plates, price_in_force, signals, typed, wire, words
-from .api import MEASURE_WORDS
 from .auth import AuthContext, require_context
 from .db import Database, MenuItemArchived
 from .extraction import units
@@ -231,8 +230,8 @@ def _component_unit(unit_text: str, ingredient: asyncpg.Record) -> str:
         raise HTTPException(
             status_code=422,
             detail=(
-                f"'{text}' is measured {MEASURE_WORDS[base]}, but {ingredient['name']} "
-                f"is measured {MEASURE_WORDS[ingredient['base_unit']]}"
+                f"'{text}' is measured {words.MEASURE_WORDS[base]}, but {ingredient['name']} "
+                f"is measured {words.MEASURE_WORDS[ingredient['base_unit']]}"
             ),
         )
     return text

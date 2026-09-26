@@ -62,13 +62,13 @@ from dataclasses import dataclass, field
 from decimal import ROUND_HALF_UP, Decimal
 
 from . import contribution, costing, plates, words
+from .price_in_force import PriceInForce
 
 # The words come from the shipped modules rather than being written again
 # (C14.11): "25-31 Aug", "3 deliveries", "per kg" and the four quality words
 # are composed in one place each (`words`, `ratio.window_words`, `quality`),
 # so `/sales`, the dashboard and this module can never say the same thing two
 # ways.
-from .price_in_force import PriceInForce
 from .quality import Quality, worst
 from .ratio import (
     FILS,
@@ -1000,12 +1000,10 @@ def _row(
         if gap is not None:
             notes.append("no price to value it at")
     else:
-        estimated_price = usable_price.quality is Quality.ESTIMATED
         sentence, per_display, display_unit = _price_sentence(usable_price, currency=currency)
         notes.append(sentence)
-        price_quality = Quality.ESTIMATED.value if estimated_price else Quality.RELIABLE.value
-        if estimated_price:
-            purchase_quality = worst(purchase_quality, Quality.ESTIMATED)
+        price_quality = usable_price.quality.value
+        purchase_quality = worst(purchase_quality, usable_price.quality)
         if gap is not None:
             money = (gap * usable_price.cost_per_base_unit).quantize(FILS, rounding=ROUND_HALF_UP)
 
@@ -1276,12 +1274,10 @@ def chain_material_rows(
             if gap is not None:
                 notes.append("no price to value it at")
         else:
-            estimated_price = usable_price.quality is Quality.ESTIMATED
             sentence, per_display, display_unit = _price_sentence(usable_price, currency=currency)
             notes.append(sentence)
-            price_quality = Quality.ESTIMATED.value if estimated_price else Quality.RELIABLE.value
-            if estimated_price:
-                quality = worst(quality, Quality.ESTIMATED)
+            price_quality = usable_price.quality.value
+            quality = worst(quality, usable_price.quality)
             if gap is not None:
                 money = (gap * usable_price.cost_per_base_unit).quantize(
                     FILS, rounding=ROUND_HALF_UP

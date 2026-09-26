@@ -7,7 +7,8 @@ still shows but reads *estimated*, and the price says why (WP-61 amendment
 3, D11). Before this module that rule was worked out twice and raw database
 rows were unpacked in four more places, and the web wrote the "estimated
 because" sentence three times, three ways; now it is worked out here, once,
-and every screen prints the sentence this module writes.
+with the one sentence every screen is to print (the web half of spec 3
+switches the screens over; until then they still compose their own).
 
 Invariants, pinned by `tests/test_price_in_force.py`:
 - the quality is only ever reliable with limitations or estimated - nothing
@@ -25,33 +26,12 @@ read, so unmapping a wrong merge corrects every figure above it.
 
 import datetime
 from collections.abc import Iterator, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from decimal import Decimal
 
 from . import costing, wire, words
 from .extraction.currency import currency_differs
 from .quality import Quality
-
-#: A C8 field path's plain words, for the sentence naming what a person
-#: supplied (ported from the web's `describeField`, which it replaces).
-FIELD_WORDS: dict[str, str] = {
-    "supplier_name": "the supplier name",
-    "invoice_no": "the invoice number",
-    "invoice_date": "the invoice date",
-    "currency": "the currency",
-    "payment_kind": "the payment terms",
-    "subtotal": "the subtotal",
-    "tax": "the VAT",
-    "total": "the invoice total",
-    "discount_total": "the discount",
-    "rounding_amount": "the rounding",
-    "qty": "quantity",
-    "unit": "unit",
-    "unit_price": "price",
-    "line_total": "total",
-    "pack_size": "pack size",
-    "raw_name": "name",
-}
 
 #: The estimated word with no recorded cause. `costing.cost_line` never
 #: stores one - an estimated cost always has an override or an asserted
@@ -62,24 +42,6 @@ SUPPLIED_BY_A_PERSON = "Estimated: one of its inputs was supplied by a person."
 #: no cost: only a line confirmed before M5 shipped. The next confirm of that
 #: product fixes it.
 NOT_COSTED_YET = "This purchase has not been costed yet."
-
-
-def describe_field(path: str) -> str:
-    """ "total" is "the invoice total"; "lines.2.unit_price" is "line 3's
-    price" - 1-based for a person, 0-based on the wire."""
-    parts = path.split(".")
-    if len(parts) == 3 and parts[0] == "lines":
-        return f"line {int(parts[1]) + 1}'s {FIELD_WORDS.get(parts[2], parts[2])}"
-    return FIELD_WORDS.get(path, path)
-
-
-def describe_fields(paths: Sequence[str]) -> str:
-    """ "the invoice total", "the invoice total and line 3's price", and
-    ", and 2 more" past two."""
-    named = [describe_field(path) for path in paths[:2]]
-    rest = len(paths) - len(named)
-    listed = f"{named[0]} and {named[1]}" if len(named) == 2 else named[0]
-    return f"{listed}, and {rest} more" if rest > 0 else listed
 
 
 def capped(stored: str | None) -> Quality:
@@ -122,26 +84,86 @@ def why_estimated(
     if pack_source == costing.PackSource.OVERRIDE.value:
         return f"Estimated: divided by {pack}, which someone entered for this product."
     if asserted:
-        return f"Estimated: leans on {describe_fields(asserted)}, supplied by a person."
+        return f"Estimated: leans on {words.fields(asserted)}, supplied by a person."
     return SUPPLIED_BY_A_PERSON
 
 
 @dataclass(frozen=True)
-class PriceInForce:
-    """One material's price: the figure per base unit and per the unit a
-    person buys in, how much to trust it and why not more, and the invoice
-    line it came from, down to the photo."""
+class CostFigure:
+    """One costed line's figure, as every screen reads it: per base unit and
+    per the unit a person buys in, the words for that unit, how much to trust
+    it and the sentence saying why not more, and the pack it was divided by.
+    An invoice line's own cost is one of these; a material's price in force
+    is one with the purchase it came from beside it."""
 
-    ingredient_id: str
     cost_per_base_unit: Decimal
     base_unit: str
     per_display_unit: Decimal
     display_unit: str
     unit_words: str
     quality: Quality
+    asserted: tuple[str, ...]
     pack: str | None
     pack_source: str | None
-    asserted: tuple[str, ...]
+    why_estimated: str | None
+
+
+def figure_of(
+    cost: Decimal,
+    base_unit: str,
+    basis: Mapping | None,
+    newer_uncosted: "NewerUncosted | None" = None,
+) -> CostFigure:
+    """A frozen cost and its C9 `cost_basis`, as a figure: the quality capped,
+    and estimated when a newer delivery could not be costed."""
+    basis = basis or {}
+    per_display, display_unit = costing.per_display_unit(cost, base_unit)
+    quality = Quality.ESTIMATED if newer_uncosted is not None else capped(basis.get("quality"))
+    asserted = tuple(basis.get("asserted", []))
+    pack, pack_source = basis.get("pack"), basis.get("pack_source")
+    return CostFigure(
+        cost_per_base_unit=cost,
+        base_unit=base_unit,
+        per_display_unit=per_display,
+        display_unit=display_unit,
+        unit_words=words.per_unit(display_unit),
+        quality=quality,
+        asserted=asserted,
+        pack=pack,
+        pack_source=pack_source,
+        why_estimated=why_estimated(
+            quality,
+            pack=pack,
+            pack_source=pack_source,
+            asserted=asserted,
+            newer_uncosted=newer_uncosted,
+        ),
+    )
+
+
+def figure_payload(figure: CostFigure) -> dict:
+    """A figure's wire shape, shared by an invoice line's cost and a
+    material's price (WP-53, WP-54) so the two cannot drift."""
+    return {
+        "per_base_unit": wire.dec(figure.cost_per_base_unit),
+        "base_unit": figure.base_unit,
+        "per_display_unit": wire.dec(figure.per_display_unit),
+        "display_unit": figure.display_unit,
+        "unit_words": figure.unit_words,
+        "quality": figure.quality.value,
+        "asserted": list(figure.asserted),
+        "pack": figure.pack,
+        "pack_source": figure.pack_source,
+        "why_estimated": figure.why_estimated,
+    }
+
+
+@dataclass(frozen=True)
+class PriceInForce(CostFigure):
+    """One material's price: its figure, and the invoice line it came from,
+    down to the photo."""
+
+    ingredient_id: str
     supplier_name: str
     supplier_item_id: str
     product_name: str
@@ -151,7 +173,6 @@ class PriceInForce:
     purchased_on: datetime.date | None
     invoice_date: datetime.date | None
     newer_uncosted: NewerUncosted | None
-    why_estimated: str | None
 
     @property
     def stale(self) -> bool:
@@ -189,22 +210,12 @@ def price_of(row: Mapping, newer_uncosted: NewerUncosted | None = None) -> Price
     """One costed line (a `db.list_mapped_pack_costs` row) as a price. The
     material's price is its first row; a pack's own newest line, shown beside
     the other packs on the materials screen, is one of these too."""
-    basis = row["cost_basis"] or {}
-    base_unit = row["cost_base_unit"]
-    per_display, display_unit = costing.per_display_unit(row["cost_per_base_unit"], base_unit)
-    quality = Quality.ESTIMATED if newer_uncosted is not None else capped(basis.get("quality"))
-    asserted = tuple(basis.get("asserted", []))
+    figure = figure_of(
+        row["cost_per_base_unit"], row["cost_base_unit"], row["cost_basis"], newer_uncosted
+    )
     return PriceInForce(
+        **{f.name: getattr(figure, f.name) for f in fields(CostFigure)},
         ingredient_id=row["ingredient_id"],
-        cost_per_base_unit=row["cost_per_base_unit"],
-        base_unit=base_unit,
-        per_display_unit=per_display,
-        display_unit=display_unit,
-        unit_words=words.per_unit(display_unit),
-        quality=quality,
-        pack=basis.get("pack"),
-        pack_source=basis.get("pack_source"),
-        asserted=asserted,
         supplier_name=row["supplier_name"],
         supplier_item_id=row["supplier_item_id"],
         product_name=row["canonical_name"],
@@ -214,13 +225,6 @@ def price_of(row: Mapping, newer_uncosted: NewerUncosted | None = None) -> Price
         purchased_on=row["purchased_on"],
         invoice_date=row["invoice_date"],
         newer_uncosted=newer_uncosted,
-        why_estimated=why_estimated(
-            quality,
-            pack=basis.get("pack"),
-            pack_source=basis.get("pack_source"),
-            asserted=asserted,
-            newer_uncosted=newer_uncosted,
-        ),
     )
 
 
@@ -254,8 +258,6 @@ class PricesInForce(Mapping[str, PriceInForce]):
         if not isinstance(other, PricesInForce):
             return NotImplemented
         return self._prices == other._prices and self._blocked == other._blocked
-
-    __hash__ = None  # type: ignore[assignment]
 
     def __repr__(self) -> str:
         return f"PricesInForce({len(self._prices)} prices, {len(self._blocked)} blocked)"
@@ -297,16 +299,7 @@ def payload(price: PriceInForce | None) -> dict | None:
         return None
     newer = price.newer_uncosted
     return {
-        "per_base_unit": wire.dec(price.cost_per_base_unit),
-        "base_unit": price.base_unit,
-        "per_display_unit": wire.dec(price.per_display_unit),
-        "display_unit": price.display_unit,
-        "unit_words": price.unit_words,
-        "quality": price.quality.value,
-        "asserted": list(price.asserted),
-        "pack": price.pack,
-        "pack_source": price.pack_source,
-        "why_estimated": price.why_estimated,
+        **figure_payload(price),
         "supplier_name": price.supplier_name,
         "supplier_item_id": price.supplier_item_id,
         "product_name": price.product_name,

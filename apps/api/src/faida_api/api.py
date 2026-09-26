@@ -291,33 +291,17 @@ def _maybe_str(value) -> str | None:
 
 
 def _cost_figure(row: asyncpg.Record) -> dict:
-    """One frozen cost, serialized: the figure per base unit, the same figure
-    in the unit a person buys in, and the C8 record of how it was made.
-
-    Shared by an invoice line and by a material's price (WP-53, WP-54), because
-    a material's price *is* one of those lines - the newest among the packs
-    mapped to it - and serializing it twice is how the two would drift.
-    """
-    cost = row["cost_per_base_unit"]
-    basis = row["cost_basis"] or {}
-    per_display, display_unit = costing.per_display_unit(cost, row["cost_base_unit"])
-    return {
-        "per_base_unit": wire.dec(cost),
-        "base_unit": row["cost_base_unit"],
-        "per_display_unit": wire.dec(per_display),
-        "display_unit": display_unit,
-        "unit_words": words.per_unit(display_unit),
-        "quality": basis.get("quality"),
-        "asserted": basis.get("asserted", []),
-        "pack": basis.get("pack"),
-        "pack_source": basis.get("pack_source"),
-        "why_estimated": price_in_force.why_estimated(
-            price_in_force.capped(basis.get("quality")),
-            pack=basis.get("pack"),
-            pack_source=basis.get("pack_source"),
-            asserted=basis.get("asserted", []),
-        ),
-    }
+    """One frozen cost on an invoice line, serialized: the figure per base
+    unit, the same figure in the unit a person buys in, and the C9 record of
+    how it was made - through `price_in_force.figure_payload`, the shape a
+    material's price is serialized in too (WP-53, WP-54), because a
+    material's price *is* one of these lines and serializing it twice is how
+    the two would drift."""
+    return price_in_force.figure_payload(
+        price_in_force.figure_of(
+            row["cost_per_base_unit"], row["cost_base_unit"], row["cost_basis"]
+        )
+    )
 
 
 def _line_cost(line: asyncpg.Record, *, costed: bool, foreign_currency: bool) -> dict | None:
@@ -1189,12 +1173,6 @@ def _pack_summary(row: asyncpg.Record, cost: asyncpg.Record | None = None) -> di
     }
 
 
-#: Plain English for a base unit. These strings reach the screen inside refusal
-#: messages, and the no-jargon display rule (plan.md §3) applies there too - a
-#: consultant reading "measured in ml" has to translate; "by volume" they do not.
-MEASURE_WORDS = {"g": "by weight", "ml": "by volume", "pc": "by the piece"}
-
-
 def _item_base_unit(item: asyncpg.Record) -> str | None:
     """Which base unit this pack reduces to, read from the pack column, then
     from the name (a till receipt prints the pack inside the name and has no
@@ -1381,8 +1359,8 @@ async def map_supplier_item(
         return HTTPException(
             status_code=422,
             detail=(
-                f"'{item['canonical_name']}' is measured {MEASURE_WORDS[pack_unit]}, "
-                f"but {material} is measured {MEASURE_WORDS[material_unit]}"
+                f"'{item['canonical_name']}' is measured {words.MEASURE_WORDS[pack_unit]}, "
+                f"but {material} is measured {words.MEASURE_WORDS[material_unit]}"
             ),
         )
 
@@ -1550,8 +1528,8 @@ async def set_pack_size_override(
         return HTTPException(
             status_code=422,
             detail=(
-                f"{printed} is measured {MEASURE_WORDS[base_unit]}, but "
-                f"{material} is measured {MEASURE_WORDS[material_unit]}"
+                f"{printed} is measured {words.MEASURE_WORDS[base_unit]}, but "
+                f"{material} is measured {words.MEASURE_WORDS[material_unit]}"
             ),
         )
 

@@ -9,7 +9,7 @@ own tests, which must come out unchanged.
 import datetime
 from decimal import Decimal
 
-from faida_api import price_in_force
+from faida_api import price_in_force, words
 from faida_api.quality import Quality
 
 MILK = "ing-milk"
@@ -214,15 +214,15 @@ def test_an_estimated_price_always_carries_a_reason():
     assert price.why_estimated == "Estimated: one of its inputs was supplied by a person."
 
 
-def test_describe_fields_matches_the_screens_words():
+def test_field_words_match_the_screens_words():
     """A port of the web's `describeFields`: line numbers 1-based, two named
     and the rest counted."""
-    assert price_in_force.describe_fields(["total"]) == "the invoice total"
-    assert price_in_force.describe_fields(["lines.0.qty"]) == "line 1's quantity"
-    assert price_in_force.describe_fields(["total", "lines.4.pack_size"]) == (
+    assert words.fields(["total"]) == "the invoice total"
+    assert words.fields(["lines.0.qty"]) == "line 1's quantity"
+    assert words.fields(["total", "lines.4.pack_size"]) == (
         "the invoice total and line 5's pack size"
     )
-    assert price_in_force.describe_fields(["unknown_field"]) == "unknown_field"
+    assert words.fields(["unknown_field"]) == "unknown_field"
 
 
 def test_the_prices_iterate_in_read_order():
@@ -230,3 +230,48 @@ def test_the_prices_iterate_in_read_order():
     assert [ingredient_id for ingredient_id, _ in prices.items()] == [MILK, TEA]
     assert MILK in prices
     assert WRAP not in prices
+
+
+class _Reads:
+    """The two reads `price_in_force.read` makes, recorded: which were asked,
+    and with which date limit."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str, datetime.date | None]] = []
+
+    async def list_mapped_pack_costs(self, *, tenant_id, as_of=None):
+        self.calls.append(("list_mapped_pack_costs", tenant_id, as_of))
+        return [_cost()] if as_of is None else []
+
+    async def list_newest_purchases(self, *, tenant_id, as_of=None):
+        self.calls.append(("list_newest_purchases", tenant_id, as_of))
+        return [_purchase()]
+
+
+async def test_the_read_is_two_reads_under_one_date_limit():
+    """`read(as_of=None)` is `read()`, and a date limits both reads: a blocked
+    purchase printed after the date cannot make that date's price stale."""
+    reads = _Reads()
+    today = await price_in_force.read(reads, "t-1")
+    assert today == await price_in_force.read(reads, "t-1", as_of=None)
+    assert today.get(MILK).stale is True
+    day = datetime.date(2026, 7, 31)
+    await price_in_force.read(reads, "t-1", as_of=day)
+    assert reads.calls[-2:] == [
+        ("list_mapped_pack_costs", "t-1", day),
+        ("list_newest_purchases", "t-1", day),
+    ]
+
+
+def test_an_invoice_lines_cost_speaks_as_a_price_does():
+    """An invoice line's own cost and a material's price are one figure
+    (`figure_of`): the same capped quality, unit words and sentence."""
+    basis = {"quality": "estimated", "asserted": [], "pack": "25 kg", "pack_source": "override"}
+    line = price_in_force.figure_of(Decimal("0.00174"), "g", basis)
+    assert line.quality is Quality.ESTIMATED
+    assert line.why_estimated == (
+        "Estimated: divided by 25 kg, which someone entered for this product."
+    )
+    assert price_in_force.figure_of(Decimal("0.02"), "g", {"quality": "verified"}).quality is (
+        Quality.RELIABLE
+    )

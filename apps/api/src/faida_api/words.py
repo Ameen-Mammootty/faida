@@ -134,3 +134,53 @@ def short_branch(name: str) -> str:
     if len(parts) > 1 and parts[-1].lower() == "branch":
         return " ".join(parts[:-1])
     return name
+
+
+# --- units -------------------------------------------------------------------
+
+#: Plain English for a base unit. These strings reach the screen inside refusal
+#: messages, and the no-jargon display rule (plan.md §3) applies there too - a
+#: consultant reading "measured in ml" has to translate; "by volume" they do not.
+MEASURE_WORDS = {"g": "by weight", "ml": "by volume", "pc": "by the piece"}
+
+
+# --- field paths -------------------------------------------------------------
+
+#: A C8 field path's plain words, for the sentence naming what a person
+#: supplied (ported from the web's `describeField`).
+_FIELD_WORDS: dict[str, str] = {
+    "supplier_name": "the supplier name",
+    "invoice_no": "the invoice number",
+    "invoice_date": "the invoice date",
+    "currency": "the currency",
+    "payment_kind": "the payment terms",
+    "subtotal": "the subtotal",
+    "tax": "the VAT",
+    "total": "the invoice total",
+    "discount_total": "the discount",
+    "rounding_amount": "the rounding",
+    "qty": "quantity",
+    "unit": "unit",
+    "unit_price": "price",
+    "line_total": "total",
+    "pack_size": "pack size",
+    "raw_name": "name",
+}
+
+
+def field(path: str) -> str:
+    """ "total" is "the invoice total"; "lines.2.unit_price" is "line 3's
+    price" - 1-based for a person, 0-based on the wire."""
+    parts = path.split(".")
+    if len(parts) == 3 and parts[0] == "lines":
+        return f"line {int(parts[1]) + 1}'s {_FIELD_WORDS.get(parts[2], parts[2])}"
+    return _FIELD_WORDS.get(path, path)
+
+
+def fields(paths: Sequence[str]) -> str:
+    """ "the invoice total", "the invoice total and line 3's price", and
+    ", and 2 more" past two."""
+    named = [field(path) for path in paths[:2]]
+    rest = len(paths) - len(named)
+    listed = f"{named[0]} and {named[1]}" if len(named) == 2 else named[0]
+    return f"{listed}, and {rest} more" if rest > 0 else listed
