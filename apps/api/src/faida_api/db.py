@@ -6,7 +6,7 @@ import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from decimal import Decimal
-from typing import Any
+from typing import Any, NamedTuple
 
 import asyncpg
 
@@ -230,6 +230,29 @@ async def _cost_stock_lines(
                 override=line["pack_size_override"],
             ),
         )
+
+
+class OwedReply(NamedTuple):
+    """The summary a paper's sender is owed, as a quoted reply to the photo."""
+
+    to_phone: str
+    body: str
+    reply_to: str | None
+
+
+def owed_reply_key(document_id: str) -> str:
+    """The `wa_messages` id an owed summary waits under until WhatsApp gives
+    it a real one: one per paper, so a paper is never owed twice."""
+    return f"owed:{document_id}"
+
+
+def _outbound_text_payload(body: str, reply_to: str | None) -> dict:
+    """What an outbound text row keeps: the words, and the message they
+    quote (the invoice photo, WP-125)."""
+    payload: dict = {"text": body}
+    if reply_to is not None:
+        payload["context"] = {"message_id": reply_to}
+    return payload
 
 
 class SupplierAliasCollision(Exception):
@@ -458,9 +481,6 @@ class Database:
     ) -> None:
         """The record of what left the building: the words, and the message
         they were sent as a quoted reply to (the invoice photo, WP-125)."""
-        payload: dict = {"text": body}
-        if reply_to is not None:
-            payload["context"] = {"message_id": reply_to}
         await self.pool.execute(
             """
             insert into wa_messages (message_id, direction, to_phone, msg_type, payload, status)
@@ -469,8 +489,45 @@ class Database:
             """,
             message_id,
             to_phone,
-            payload,
+            _outbound_text_payload(body, reply_to),
         )
+
+    async def get_owed_reply(self, document_id: str) -> asyncpg.Record | None:
+        """The summary still owed for a paper (`insert_draft_invoice`), or
+        None once it has been sent - or when none was ever owed, as for a
+        paper from the screen, which has no phone to answer."""
+        return await self.pool.fetchrow(
+            "select * from wa_messages where message_id = $1 and status = 'owed'",
+            owed_reply_key(document_id),
+        )
+
+    async def settle_owed_reply(self, document_id: str, message_id: str) -> None:
+        """WhatsApp accepted the owed summary as `message_id`: the owed row
+        becomes the record of what was sent, in one transaction. A receipt
+        that beat this write left a stub under that id, which takes the words
+        and keeps the further status it already carries."""
+        async with self.pool.acquire() as conn, conn.transaction():
+            owed = await conn.fetchrow(
+                "delete from wa_messages where message_id = $1 and status = 'owed' "
+                "returning to_phone, payload",
+                owed_reply_key(document_id),
+            )
+            if owed is None:
+                return
+            await conn.execute(
+                """
+                insert into wa_messages (message_id, direction, to_phone, msg_type, payload, status)
+                values ($1, 'out', $2, 'text', $3, 'sent')
+                on conflict (message_id) do update set
+                    to_phone = excluded.to_phone,
+                    msg_type = excluded.msg_type,
+                    payload = excluded.payload
+                where wa_messages.direction = 'out'
+                """,
+                message_id,
+                owed["to_phone"],
+                owed["payload"],
+            )
 
     async def record_outbound_template(
         self,
@@ -814,6 +871,7 @@ class Database:
         document_classification: str | None = "invoice",
         created_by: str | None = None,
         duplicate_of_invoice_id: str | None = None,
+        owed_reply: OwedReply | None = None,
     ) -> str:
         """Draft invoice + lines + the document transition, one transaction:
         C1 says 'extracted' means a draft invoice with checks exists, so the
@@ -831,6 +889,12 @@ class Database:
         `duplicate_of_invoice_id` is WP-44's hold, recorded rather than spent
         on the reply and thrown away: the earlier invoice this paper duplicates.
         Null on every ordinary invoice, and it is what the dismiss door keys on.
+
+        `owed_reply` is the summary the sender is owed for this paper, written
+        in the same transaction so that a paper recorded is a reply owed: if
+        WhatsApp then refuses the send, the retry finds it here and sends it
+        rather than finding the invoice and returning in silence
+        (`get_owed_reply`, `settle_owed_reply`).
 
         `created_by` names a *person* who created this invoice by hand, and
         writes the audit event in the same transaction; the pipeline leaves it
@@ -900,6 +964,17 @@ class Database:
                 document_id,
                 document_classification,
             )
+            if owed_reply is not None:
+                await conn.execute(
+                    """
+                    insert into wa_messages (message_id, direction, to_phone, msg_type,
+                                             payload, status)
+                    values ($1, 'out', $2, 'text', $3, 'owed')
+                    """,
+                    owed_reply_key(document_id),
+                    owed_reply.to_phone,
+                    _outbound_text_payload(owed_reply.body, owed_reply.reply_to),
+                )
             if created_by is not None:
                 await _insert_audit_event(
                     conn,

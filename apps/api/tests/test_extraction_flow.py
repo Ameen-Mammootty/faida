@@ -854,3 +854,40 @@ async def test_two_papers_from_a_new_vendor_read_together_become_one_supplier(ap
     # with two observations.
     assert await db.pool.fetchval("select count(*) from supplier_items") == 2
     assert await db.pool.fetchval("select count(*) from supplier_item_prices") == 4
+
+
+async def test_summary_lost_to_a_whatsapp_outage_is_sent_on_the_retry(api, db):
+    """The paper is read and written, then WhatsApp refuses the summary (a
+    Meta 5xx). The retry must not re-read the paper, and must not stay silent
+    either: it sends the summary the phone is still owed, exactly once."""
+    app, client, fake_meta, _ = api
+    provider = FakeExtraction(result=invoice_result(good_invoice()))
+
+    await post_webhook(client, wa_image_payload())
+    assert await run_one_job(db, app.state.wa, app.state.storage, provider)  # ingest + ack
+    assert [m["text"]["body"] for m in fake_meta.sent] == [REPLY_MEDIA_RECEIVED]
+
+    fake_meta.fail_sends = True
+    assert await run_one_job(db, app.state.wa, app.state.storage, provider)
+    job = await db.pool.fetchrow("select * from jobs where kind = $1", JobKind.EXTRACT_DOCUMENT)
+    assert job["status"] == "queued" and job["attempts"] == 1
+    assert await db.pool.fetchval("select count(*) from invoices") == 1
+
+    fake_meta.fail_sends = False
+    await drain_jobs(db, app, provider, release_backoff=True)
+
+    assert len(provider.extract_calls) == 1  # the retry never re-read the paper
+    bodies = [m["text"]["body"] for m in fake_meta.sent]
+    assert len(bodies) == 2 and bodies[1].startswith(read_it())
+    assert fake_meta.sent[1]["context"] == {"message_id": "wamid.in1"}
+    assert await outbound_bodies(db) == bodies  # recorded once, nothing still owed
+    job = await db.pool.fetchrow("select * from jobs where kind = $1", JobKind.EXTRACT_DOCUMENT)
+    assert job["status"] == "done"
+
+    # A later replay of the finished job owes nothing and sends nothing.
+    await db.pool.execute(
+        "update jobs set status = 'queued', run_after = now() where kind = $1",
+        JobKind.EXTRACT_DOCUMENT,
+    )
+    await drain_jobs(db, app, provider)
+    assert len(fake_meta.sent) == 2
