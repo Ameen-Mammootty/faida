@@ -338,10 +338,12 @@ def _line_cost(line: asyncpg.Record, *, costed: bool, foreign_currency: bool) ->
         "base_unit": None,
         "per_display_unit": None,
         "display_unit": None,
+        "unit_words": None,
         "quality": None,
         "asserted": [],
         "pack": None,
         "pack_source": None,
+        "why_estimated": None,
         "blocked": blocked.value,
         "reason": costing.BLOCKED_REASONS[blocked],
     }

@@ -649,5 +649,9 @@ async def test_the_review_screen_shows_the_cost_and_the_reason_there_is_none(api
 
     assert carton["per_base_unit"] is None
     assert carton["blocked"] == "bare_container"
+    # One shape either way: a cost and its absence carry the same keys.
+    assert carton.keys() == powder.keys()
+    assert carton["unit_words"] is None and carton["why_estimated"] is None
+    assert powder["unit_words"] == "per kg" and powder["why_estimated"] is None
     # Plain English, no unit codes: this sentence lands on a screen.
     assert carton["reason"] == "Nothing on the invoice says how much one of these holds."
