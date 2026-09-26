@@ -25,8 +25,6 @@ import logging
 import time
 import zoneinfo
 
-import httpx
-
 from . import brief, brief_card, dashboard
 from .confirm import handle_inbound_text
 from .contracts import (
@@ -49,7 +47,7 @@ from .replies import (
     REPLY_UNSUPPORTED_TYPE,
     Reply,
 )
-from .storage import Storage
+from .storage import Storage, brief_card_key, document_original_key
 from .wa import WhatsAppClient
 
 logger = logging.getLogger(__name__)
@@ -242,8 +240,10 @@ async def _ingest_media(
     # WP-41: per-stage latency, logged once the document id exists.
     logger.info("latency stage=download document=%s elapsed_ms=%d", document_id, download_ms)
     started = time.monotonic()
-    path = f"{tenant_id}/documents/{document_id}/original"
-    await storage.put(path, data, mime)
+    path = document_original_key(tenant_id, document_id)
+    # A retry meets its own original when the upload landed and a step after
+    # it failed: the photo is kept, so the ingest carries on from here.
+    await storage.put_immutable(path, data, mime)
     await db.set_document_storage_path(document_id, path, tenant_id=tenant_id)
     logger.info(
         "latency stage=store document=%s elapsed_ms=%d",
@@ -295,30 +295,6 @@ async def read_brief(db: Database, tenant_id: str, *, today: datetime.date) -> b
     return brief.compose(month, window, currency=currency)
 
 
-async def _store_card(storage: Storage, card_path: str, png: bytes) -> None:
-    """Put the morning's card in storage, forgiving the one refusal that means
-    it is already there.
-
-    Nothing this product stores is ever overwritten (`x-upsert: false`,
-    storage.py), so a retry of a job that failed after this step meets its own
-    first attempt: Supabase answers 409, or a 400 naming the duplicate. That
-    is not a failure here - `brief_card.render_card` is deterministic for the
-    same `Brief`, so the object already at that key is byte for byte what this
-    attempt would have written, and losing a morning to our own evidence would
-    be absurd. Every other refusal raises: storage that is down must stop the
-    job before a message goes out with no picture behind it."""
-    try:
-        await storage.put(card_path, png, "image/png")
-    except httpx.HTTPStatusError as exc:
-        body = (exc.response.text or "").lower()
-        already_there = exc.response.status_code == 409 or (
-            exc.response.status_code == 400 and ("already exists" in body or "duplicate" in body)
-        )
-        if not already_there:
-            raise
-        logger.info("card already stored at %s; the retry carries on", card_path)
-
-
 async def send_brief_card(
     wa: WhatsAppClient,
     storage: Storage,
@@ -348,7 +324,11 @@ async def send_brief_card(
     png = brief_card.render_card(morning)
     # b. The immutable copy, before anything is sent: what the phone showed
     #    can be opened again (C15.4).
-    await _store_card(storage, card_path, png)
+    #    A retry that meets its own card carries on: `render_card` is
+    #    deterministic for the same `Brief`, so what is there is this picture.
+    #    Storage that is down raises, before a message goes out with no
+    #    picture behind it.
+    await storage.put_immutable(card_path, png, "image/png")
     # c. Meta wants the file itself, not a link; a refusal fails the job here.
     media_id = await wa.upload_media(png, "image/png")
     # d. The header component names that media id and comes first (§3.1).
@@ -409,7 +389,7 @@ async def send_brief(db: Database, wa: WhatsAppClient, storage: Storage, payload
         logger.info("brief already sent to recipient %s for %s", recipient_id, brief_date)
         return
 
-    card_path = f"{tenant_id}/briefs/{brief_date}/{recipient_id}.png"
+    card_path = brief_card_key(tenant_id, brief_date, recipient_id)
     message_id = await send_brief_card(
         wa, storage, morning, phone=recipient["phone_e164"], card_path=card_path
     )

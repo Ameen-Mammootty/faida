@@ -58,7 +58,6 @@ from collections import defaultdict
 from decimal import Decimal
 from typing import Annotated, Literal
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, UploadFile
 from pydantic import BaseModel, ConfigDict
 
@@ -70,6 +69,7 @@ from .db import Database, MenuItemArchived
 from .extraction.constants import VAT_RATE_BY_CURRENCY
 from .menu import costed_menu
 from .period_read import ResolvedPeriod, read_period, resolve
+from .storage import sales_file_key
 
 # Declared twice like api.py: at the router, so no route here can exist
 # without the token check, and per handler, to receive the tenant and actor.
@@ -330,17 +330,6 @@ async def remove_branch_alias(
 # --- the raw file -------------------------------------------------------------
 
 
-def _already_stored(error: httpx.HTTPStatusError) -> bool:
-    """Storage refusing an upsert (`x-upsert: false`) is the answer we want
-    for a file already kept: the mock answers 409, Supabase's own API answers
-    400 with a Duplicate body."""
-    status = error.response.status_code
-    if status == 409:
-        return True
-    text = error.response.text.lower()
-    return status == 400 and ("duplicate" in text or "already exists" in text)
-
-
 @router.post("/sales/files")
 async def store_sales_file(
     request: Request, ctx: Context, file: UploadFile, response: Response
@@ -357,14 +346,10 @@ async def store_sales_file(
     if not data:
         raise HTTPException(status_code=422, detail="empty file")
     sha256 = hashlib.sha256(data).hexdigest()
-    path = f"{ctx.tenant_id}/sales/{sha256}.csv"
-    try:
-        await request.app.state.storage.put(path, data, "text/csv")
-        response.status_code = 201
-    except httpx.HTTPStatusError as error:
-        if not _already_stored(error):
-            raise
-        response.status_code = 200
+    outcome = await request.app.state.storage.put_immutable(
+        sales_file_key(ctx.tenant_id, sha256), data, "text/csv"
+    )
+    response.status_code = 201 if outcome == "stored" else 200
     return {"sha256": sha256, "filename": file.filename, "bytes": len(data)}
 
 

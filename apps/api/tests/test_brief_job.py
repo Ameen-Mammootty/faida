@@ -595,7 +595,7 @@ async def test_the_card_is_stored_then_uploaded_then_sent(rig, db, monkeypatch):
 
         monkeypatch.setattr(target, name, wrapped)
 
-    note(app.state.storage, "put", "store")
+    note(app.state.storage, "put_immutable", "store")
     note(app.state.wa, "upload_media", "upload")
     note(app.state.wa, "send_template", "send")
 
