@@ -63,11 +63,9 @@ def test_dates_spell_the_same_months_under_any_locale():
         locale.setlocale(locale.LC_TIME, before)
 
 
-@pytest.mark.parametrize(
-    ("month", "letters"),
-    enumerate(
-        ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"], 1
-    ),
-)
+MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+
+@pytest.mark.parametrize(("month", "letters"), list(enumerate(MONTHS, 1)))
 def test_every_month_has_its_three_letters(month, letters):
     assert words.short_date(datetime.date(2026, month, 1)) == f"1 {letters}"
