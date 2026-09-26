@@ -1,0 +1,106 @@
+{
+  "about": "The one answer key for how a till export is read, shared by the API and the web loader. The API owns every rule here (matching.normalize for names, takings.day_key for a day's identity, sales._signed_number for a number); the loader carries a copy so its preview is instant, and tests/test_till_keys.py and apps/web/src/lib/__tests__/tillKeys.test.ts both read this file, so a copy that drifts fails a test in both languages before it ships. Add a case here whenever a till prints something new.",
+  "names": [
+    { "name": "AL NAHDA", "key": "al nahda", "why": "case" },
+    { "name": "AL-NAHDA", "key": "al nahda", "why": "a hyphen is punctuation (the 2026-09-26 loop)" },
+    { "name": "BARSHA-01", "key": "barsha 01", "why": "a hyphen between a word and a number" },
+    { "name": "  Al   Nahda\t", "key": "al nahda", "why": "runs of spaces and a tab collapse, the ends trim" },
+    { "name": "Karak Tea - Flask 1L", "key": "karak tea flask 1l", "why": "a spaced dash" },
+    { "name": "KARAK TEA FLASK 1L", "key": "karak tea flask 1l", "why": "the same item with no dash" },
+    { "name": "Chkn 65 (Dry)", "key": "chkn 65 dry", "why": "brackets" },
+    { "name": "Tea/Coffee", "key": "tea coffee", "why": "a slash" },
+    { "name": "PARATHA_PLAIN", "key": "paratha plain", "why": "an underscore is punctuation here, though it is a word character" },
+    { "name": "Qty #", "key": "qty", "why": "a hash sign in a column header" },
+    { "name": "Net Sales (AED)", "key": "net sales aed", "why": "a header with a currency in brackets" },
+    { "name": "Milk Powder 2.5kg", "key": "milk powder 2.5kg", "why": "a dot between two digits is kept - pack sizes tell items apart" },
+    { "name": "Al Madina L.L.C.", "key": "al madina l l c", "why": "a dot not between digits is a space" },
+    { "name": "Size 2.", "key": "size 2", "why": "a trailing dot after a digit goes" },
+    { "name": ".5 L", "key": "5 l", "why": "a leading dot before a digit goes" },
+    { "name": "Café Latte", "key": "café latte", "why": "an accented letter is a letter" },
+    { "name": "STRAßE", "key": "strasse", "why": "casefold, not just lowercase" },
+    { "name": "ﬁlter coffee", "key": "filter coffee", "why": "a ligature casefolds to its letters" },
+    { "name": "كرك شاي", "key": "كرك شاي", "why": "Arabic letters are letters" },
+    { "name": "شاي-كرك", "key": "شاي كرك", "why": "a hyphen between Arabic words" },
+    { "name": "كَرَك", "key": "ك ر ك", "why": "a vowel mark is not a letter, so it splits the word - the server's rule, copied as it is" },
+    { "name": "حليب ١.٥ لتر", "key": "حليب ١.٥ لتر", "why": "Arabic-Indic digits are digits, so their decimal dot is kept" },
+    { "name": "\ufeffOutlet", "key": "outlet", "why": "a byte-order mark at the front of a CSV header" },
+    { "name": "Tea\u00a0Masala", "key": "tea masala", "why": "a non-breaking space from a spreadsheet" },
+    { "name": "Tea\u200bMasala", "key": "tea masala", "why": "a zero-width space is not a letter" },
+    { "name": "---", "key": "", "why": "punctuation alone is no name" },
+    { "name": "", "key": "", "why": "empty" }
+  ],
+  "days": [
+    {
+      "why": "a dish name printed with a dash one day and without it the next is the same day",
+      "same": true,
+      "a": { "granularity": "item", "basis": "inclusive", "amount": null, "lines": [{ "name": "Karak Tea - Flask 1L", "code": null, "qty": "14", "amount": "490.00" }] },
+      "b": { "granularity": "item", "basis": "inclusive", "amount": null, "lines": [{ "name": "KARAK TEA FLASK 1L", "code": null, "qty": "14", "amount": "490.00" }] }
+    },
+    {
+      "why": "trailing zeros and a leading zero are the same number",
+      "same": true,
+      "a": { "granularity": "item", "basis": "inclusive", "amount": null, "lines": [{ "name": "Paratha", "code": "131", "qty": "2.500", "amount": "0490.0" }] },
+      "b": { "granularity": "item", "basis": "inclusive", "amount": null, "lines": [{ "name": "Paratha", "code": "131", "qty": "2.5", "amount": "490" }] }
+    },
+    {
+      "why": "a whole quantity with and without its decimals",
+      "same": true,
+      "a": { "granularity": "item", "basis": "inclusive", "amount": null, "lines": [{ "name": "Paratha", "code": null, "qty": "100", "amount": "300.00" }] },
+      "b": { "granularity": "item", "basis": "inclusive", "amount": null, "lines": [{ "name": "Paratha", "code": null, "qty": "100.000", "amount": "300" }] }
+    },
+    {
+      "why": "the same lines in another order",
+      "same": true,
+      "a": { "granularity": "item", "basis": "inclusive", "amount": null, "lines": [{ "name": "Karak", "code": null, "qty": "1", "amount": "3.00" }, { "name": "Paratha", "code": null, "qty": "2", "amount": "6.00" }] },
+      "b": { "granularity": "item", "basis": "inclusive", "amount": null, "lines": [{ "name": "Paratha", "code": null, "qty": "2", "amount": "6.00" }, { "name": "Karak", "code": null, "qty": "1", "amount": "3.00" }] }
+    },
+    {
+      "why": "a code with spaces round it is the same code",
+      "same": true,
+      "a": { "granularity": "item", "basis": "inclusive", "amount": null, "lines": [{ "name": "Karak", "code": " 52a ", "qty": "1", "amount": "3.00" }] },
+      "b": { "granularity": "item", "basis": "inclusive", "amount": null, "lines": [{ "name": "Karak", "code": "52a", "qty": "1", "amount": "3.00" }] }
+    },
+    {
+      "why": "a refund row makes a different day",
+      "same": false,
+      "a": { "granularity": "item", "basis": "inclusive", "amount": null, "lines": [{ "name": "Karak", "code": null, "qty": "1", "amount": "3.00" }] },
+      "b": { "granularity": "item", "basis": "inclusive", "amount": null, "lines": [{ "name": "Karak", "code": null, "qty": "1", "amount": "3.00" }, { "name": "Karak", "code": null, "qty": "-1", "amount": "-3.00" }] }
+    },
+    {
+      "why": "a changed quantity makes a different day",
+      "same": false,
+      "a": { "granularity": "item", "basis": "inclusive", "amount": null, "lines": [{ "name": "Karak", "code": null, "qty": "14", "amount": "490.00" }] },
+      "b": { "granularity": "item", "basis": "inclusive", "amount": null, "lines": [{ "name": "Karak", "code": null, "qty": "15", "amount": "490.00" }] }
+    },
+    {
+      "why": "no quantity is not a quantity of zero",
+      "same": false,
+      "a": { "granularity": "item", "basis": "inclusive", "amount": null, "lines": [{ "name": "Karak", "code": null, "qty": null, "amount": "3.00" }] },
+      "b": { "granularity": "item", "basis": "inclusive", "amount": null, "lines": [{ "name": "Karak", "code": null, "qty": "0", "amount": "3.00" }] }
+    },
+    {
+      "why": "a different VAT basis makes a different day",
+      "same": false,
+      "a": { "granularity": "item", "basis": "inclusive", "amount": null, "lines": [{ "name": "Karak", "code": null, "qty": "1", "amount": "3.00" }] },
+      "b": { "granularity": "item", "basis": "exclusive", "amount": null, "lines": [{ "name": "Karak", "code": null, "qty": "1", "amount": "3.00" }] }
+    },
+    {
+      "why": "two closed days are the same day",
+      "same": true,
+      "a": { "granularity": "summary", "basis": "inclusive", "amount": "0", "lines": [] },
+      "b": { "granularity": "summary", "basis": "inclusive", "amount": "0.00", "lines": [] }
+    }
+  ],
+  "numbers": [
+    { "value": "490.00", "what": "amount", "accepted": true },
+    { "value": "-35.00", "what": "amount", "accepted": true, "why": "a refund" },
+    { "value": "490", "what": "amount", "accepted": true },
+    { "value": "490.005", "what": "amount", "accepted": false, "why": "an amount is stored to the fil, two places" },
+    { "value": "1,490.00", "what": "amount", "accepted": false, "why": "a thousands separator" },
+    { "value": "AED 5", "what": "amount", "accepted": false },
+    { "value": "2.5", "what": "quantity", "accepted": true },
+    { "value": "0.125", "what": "quantity", "accepted": true, "why": "a quantity is stored to three places" },
+    { "value": "0.1255", "what": "quantity", "accepted": false, "why": "four places is one too many for a quantity" },
+    { "value": "-1", "what": "quantity", "accepted": true, "why": "a refund" }
+  ]
+}
