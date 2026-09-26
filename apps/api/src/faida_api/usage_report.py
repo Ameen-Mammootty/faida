@@ -44,6 +44,7 @@ from . import contribution, ratio, usage, wire, words
 from .config import get_settings
 from .db import Database
 from .period_read import read_period
+from .price_in_force import PricesInForce
 from .quality import word
 from .ratio import window_words
 
@@ -75,8 +76,7 @@ class UsageInputs:
     lines: tuple[usage.PurchaseLine, ...]
     windows: tuple[usage.BranchWindow, ...]
     materials: dict[str, usage.Material]
-    prices: dict[str, usage.MaterialPrice]
-    stale_ingredient_ids: frozenset[str]
+    prices: PricesInForce
 
 
 def _purchase_line(row: asyncpg.Record) -> usage.PurchaseLine:
@@ -106,7 +106,7 @@ def _purchase_line(row: asyncpg.Record) -> usage.PurchaseLine:
 
 def _materials(
     components_by_item: Mapping[str, Sequence[asyncpg.Record]],
-    prices: Mapping[str, asyncpg.Record],
+    prices: PricesInForce,
 ) -> dict[str, usage.Material]:
     """Every material this read can name, with how it is measured and whether
     any supplier product is mapped to it.
@@ -121,7 +121,7 @@ def _materials(
     apart, out of the ranking. Nothing the dashboard read holds carries its
     ingredient name, so it is named the way `usage.py` names one it has never
     heard of - by the catalog product the lines were booked under - and the
-    one fact taken from the price row is how it is measured, without which
+    one fact taken from the price is how it is measured, without which
     "2,000" would print with no unit beside it and its money could not be
     computed at all. Giving these rows the material's own name is one column
     on `db.list_mapped_pack_costs`, and it is WP-121's call whether to add it.
@@ -138,37 +138,17 @@ def _materials(
                     has_packs=row["has_packs"],
                 ),
             )
-    for ingredient_id, row in prices.items():
+    for ingredient_id, price in prices.items():
         materials.setdefault(
             ingredient_id,
             usage.Material(
                 ingredient_id=ingredient_id,
-                name=row["canonical_name"],
-                base_unit=row["cost_base_unit"],
+                name=price.product_name,
+                base_unit=price.base_unit,
                 has_packs=True,
             ),
         )
     return materials
-
-
-def _material_prices(prices: Mapping[str, asyncpg.Record]) -> dict[str, usage.MaterialPrice]:
-    """Each material's price in force on the period's last day, as
-    `costed_menu` read it (C14.7): the newest costed line among its packs,
-    with the day it was bought and the quality its cost basis recorded, so a
-    money figure valued at an estimated price says so."""
-    out: dict[str, usage.MaterialPrice] = {}
-    for ingredient_id, row in prices.items():
-        basis = row["cost_basis"] or {}
-        out[ingredient_id] = usage.MaterialPrice(
-            ingredient_id=ingredient_id,
-            cost_per_base_unit=row["cost_per_base_unit"],
-            cost_base_unit=row["cost_base_unit"],
-            priced_on=row["purchased_on"],
-            quality=basis.get("quality"),
-            invoice_id=row["invoice_id"],
-            line_position=row["position"],
-        )
-    return out
 
 
 def _branch_window(row: ratio.BranchRow) -> usage.BranchWindow:
@@ -213,11 +193,7 @@ async def usage_inputs(
     """
     read = await read_period(db, tenant_id, today=date_to, date_from=date_from, date_to=date_to)
     period, names = read.period, read.names
-    components_by_item, prices, stale = (
-        read.menu.components_by_item,
-        read.menu.prices,
-        read.menu.stale,
-    )
+    components_by_item, prices = read.menu.components_by_item, read.menu.prices
     sales = read.sales
     lines = [
         _purchase_line(row)
@@ -242,8 +218,7 @@ async def usage_inputs(
         lines=tuple(lines),
         windows=tuple(_branch_window(read.ratio_rows[branch["id"]]) for branch in read.branches),
         materials=_materials(components_by_item, prices),
-        prices=_material_prices(prices),
-        stale_ingredient_ids=frozenset(stale),
+        prices=prices,
     )
 
 
@@ -290,8 +265,7 @@ def usage_blocks(inputs: UsageInputs) -> UsageBlocks:
     """
     period = inputs.period
     branch_id = inputs.branch_id
-    materials, prices = inputs.materials, inputs.prices
-    stale, currency = inputs.stale_ingredient_ids, inputs.currency
+    materials, prices, currency = inputs.materials, inputs.prices, inputs.currency
 
     branch_rows = usage.material_rows(
         inputs.item_rows,
@@ -300,7 +274,6 @@ def usage_blocks(inputs: UsageInputs) -> UsageBlocks:
         inputs.windows,
         materials=materials,
         prices=prices,
-        stale_ingredient_ids=stale,
         date_from=period.start,
         date_to=period.end,
         currency=currency,
@@ -314,7 +287,6 @@ def usage_blocks(inputs: UsageInputs) -> UsageBlocks:
             prices=prices,
             branch_names=inputs.branch_names,
             unassigned=unassigned,
-            stale_ingredient_ids=stale,
             date_from=period.start,
             date_to=period.end,
             currency=currency,

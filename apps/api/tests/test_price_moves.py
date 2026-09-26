@@ -75,6 +75,7 @@ async def test_milk_up_names_each_plate_and_its_exact_aed_drop(api, db):
     assert move["delta_per_display_unit"] == "1.00"  # per litre
     assert move["current"]["per_display_unit"] == "9.00"
     assert move["previous"]["per_display_unit"] == "8.00"
+    assert move["current"]["unit_words"] == move["previous"]["unit_words"] == "per litre"
     # Both sides drill to their own invoice - the move is checkable.
     assert move["current"]["invoice_id"] == newer
     assert move["previous"]["invoice_id"] != newer

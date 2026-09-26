@@ -36,6 +36,7 @@ from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 
 from .extraction import units
+from .price_in_force import PriceInForce
 from .quality import Quality
 
 #: A plate cost and a margin are money at fils precision, quantized **once,
@@ -56,15 +57,6 @@ NO_RECIPE = "no recipe yet"
 EMPTY_RECIPE = "the recipe has no components"
 
 
-def component_quality(price_quality: str | None) -> Quality:
-    """Clamp a line's stored quality onto the two words a plate may use.
-
-    *Estimated* passes through; everything else - including a hypothetical
-    'verified' written by some future bug - reads *reliable with limitations*
-    at best, because no arithmetic anywhere supports more."""
-    return Quality.ESTIMATED if price_quality == Quality.ESTIMATED.value else Quality.RELIABLE
-
-
 def _to_base_qty(qty: Decimal, unit: str) -> tuple[Decimal, str] | None:
     """A typed quantity in its ingredient's base units: (2, "kg") -> (2000,
     "g"). None when the unit is not a measure or has no base (a container) -
@@ -77,21 +69,6 @@ def _to_base_qty(qty: Decimal, unit: str) -> tuple[Decimal, str] | None:
     if base is None:
         return None
     return qty * units.UNITS[canonical].to_base, base
-
-
-@dataclass(frozen=True)
-class Priced:
-    """A material's current price, as WP-54 derives it: the newest costed
-    line among the packs mapped to it right now.
-
-    `stale` is amendment 3 (D11): the material's newest confirmed *purchase*
-    is not this line - it could not be costed - so the figure is real but not
-    current, and everything built on it caps at *estimated*."""
-
-    cost_per_base_unit: Decimal
-    base_unit: str
-    quality: str | None
-    stale: bool = False
 
 
 @dataclass(frozen=True)
@@ -170,11 +147,13 @@ def cost_component(
     unit: str,
     ingredient_name: str,
     has_packs: bool,
-    price: Priced | None,
+    price: PriceInForce | None,
     no_price_reason: str | None = None,
     usable_share: Decimal | None = None,
 ) -> ComponentCost:
-    """One component costed against its material's current price.
+    """One component costed against its material's price in force
+    (`price_in_force`), whose quality is already capped and already
+    estimated when a newer delivery could not be costed.
 
     The missing sentences name the *next action*, not the failure: an
     unmapped material sends the consultant to the mapping screen, an uncosted
@@ -205,10 +184,7 @@ def cost_component(
     )
     if draw.missing is not None:
         return ComponentCost(position, missing=draw.missing)
-    quality = component_quality(price.quality)
-    if price.stale:
-        quality = Quality.ESTIMATED
-    return ComponentCost(position, cost=draw.cost(price.cost_per_base_unit), quality=quality)
+    return ComponentCost(position, cost=draw.cost(price.cost_per_base_unit), quality=price.quality)
 
 
 def _plain_number(value: Decimal) -> str:

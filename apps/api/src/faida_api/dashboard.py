@@ -274,6 +274,7 @@ def _signal_json(signal: signals.Signal) -> dict:
         "price_before": wire.dec(signal.price_before),
         "price_after": wire.dec(signal.price_after),
         "unit": signal.unit,
+        "unit_words": None if signal.unit is None else words.per_unit(signal.unit),
         "change_pct": wire.dec(signal.change_pct),
     }
 
@@ -384,6 +385,9 @@ def price_moves_block(
                 if row.move.kind == "moved"
                 else None,
                 "unit": row.move.current.display_unit if row.move.kind == "moved" else None,
+                "unit_words": words.per_unit(row.move.current.display_unit)
+                if row.move.kind == "moved"
+                else None,
                 "change_pct": wire.dec(signals.move_change_pct(row.move)),
             }
             for row in listed[:limit]
@@ -465,10 +469,8 @@ async def read_dashboard(
 
     # The menu a second time from the same rows: today's plates (D20).
     menu_rows, components_by_item = read.menu.rows, read.menu.components_by_item
-    prices_today, stale_today, _ = await pricing(db, tenant_id)
-    plates_today = plates_for(
-        menu_rows, components_by_item, prices_today, stale_today, read.menu.vat_rate
-    )
+    prices_today, _ = await pricing(db, tenant_id)
+    plates_today = plates_for(menu_rows, components_by_item, prices_today, read.menu.vat_rate)
 
     pairs = _group_pairs(await db.list_price_move_pairs(tenant_id=tenant_id, as_of=period.end))
     moves = price_moves(pairs, menu_rows, components_by_item, read.menu.plate_by_item)

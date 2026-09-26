@@ -77,7 +77,7 @@ import asyncpg
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from . import costing, typed, wire
+from . import costing, price_in_force, typed, wire, words
 from .auth import AuthContext, require_context
 from .confirm import (
     CorrectionRefused,
@@ -108,7 +108,6 @@ from .matching import (
     propose_ingredients,
 )
 from .provenance import Origin, initial
-from .quality import Quality
 from .replies import DEFAULT_CURRENCY, compose_cash_approved_notice
 from .storage import document_original_key
 
@@ -307,10 +306,17 @@ def _cost_figure(row: asyncpg.Record) -> dict:
         "base_unit": row["cost_base_unit"],
         "per_display_unit": wire.dec(per_display),
         "display_unit": display_unit,
+        "unit_words": words.per_unit(display_unit),
         "quality": basis.get("quality"),
         "asserted": basis.get("asserted", []),
         "pack": basis.get("pack"),
         "pack_source": basis.get("pack_source"),
+        "why_estimated": price_in_force.why_estimated(
+            price_in_force.capped(basis.get("quality")),
+            pack=basis.get("pack"),
+            pack_source=basis.get("pack_source"),
+            asserted=basis.get("asserted", []),
+        ),
     }
 
 
@@ -1179,79 +1185,8 @@ def _pack_summary(row: asyncpg.Record, cost: asyncpg.Record | None = None) -> di
         # What this particular pack most recently worked out at per kilo, which
         # is what makes two suppliers' packs comparable at all - the reason the
         # merge above it is worth making (WP-54).
-        "cost": None if cost is None else _material_price(cost),
+        "cost": None if cost is None else price_in_force.payload(price_in_force.price_of(cost)),
     }
-
-
-def blocked_line_reason(line: asyncpg.Record) -> str:
-    """Why a confirmed purchase line has no cost, in the WP-55 sentence the
-    blocked-cost queue uses - one vocabulary, wherever the line surfaces."""
-    blocked = costing.blocked_reason_for(
-        qty=line["qty"],
-        unit_price=line["unit_price"],
-        pack_size=line["pack_size"],
-        raw_name=line["raw_name"],
-        unit=line["unit"],
-        override=line["pack_size_override"],
-        foreign_currency=currency_differs(line["currency"], line["tenant_currency"]),
-    )
-    # Costable on today's inputs but not costed: only a line confirmed before
-    # M5 shipped. The next confirm of that product fixes it.
-    if blocked is None:
-        return "This purchase has not been costed yet."
-    return costing.BLOCKED_REASONS[blocked]
-
-
-def newer_uncosted_summary(line: asyncpg.Record) -> dict:
-    """The blocked newer purchase, named (WP-61 amendment 3, D11): which line,
-    on which invoice, bought when, and the WP-55 reason it has no cost."""
-    return {
-        "invoice_line_id": line["invoice_line_id"],
-        "invoice_id": line["invoice_id"],
-        "position": line["position"],
-        "raw_name": line["raw_name"],
-        "purchased_on": wire.iso(line["purchased_on"]),
-        "reason": blocked_line_reason(line),
-    }
-
-
-def _material_price(row: asyncpg.Record, stale_line: asyncpg.Record | None = None) -> dict:
-    """A material's price per kilo, and the purchase it came from (WP-54).
-
-    Not a stored number: it is the newest costed line among the packs mapped to
-    this material **right now**, so unmapping a wrong merge corrects it with
-    nothing to rebuild. It carries the invoice line it came from rather than a
-    summary-table row, which is a more precise thing for M6 to name as a
-    plate's cost snapshot - and it is what lets the screen put the photo one
-    click away from the figure.
-
-    `stale_line` is the D11 flag (WP-61 amendment 3): the material's newest
-    confirmed purchase could not be costed, so this price is real but not
-    current. The figure stays visible with its date; the quality caps at
-    *estimated* and the blocked line is named, so the screen can say "the
-    newer delivery is the question to answer" instead of showing an old
-    number wearing a good label.
-    """
-    payload = {
-        **_cost_figure(row),
-        "supplier_name": row["supplier_name"],
-        "supplier_item_id": row["supplier_item_id"],
-        "product_name": row["canonical_name"],
-        "invoice_id": row["invoice_id"],
-        "invoice_line_id": row["invoice_line_id"],
-        # The printed line position, for the /invoices/<id>#line-<position>
-        # anchor contract (design review): the drill lands on the row itself.
-        "position": row["position"],
-        # The date we ranked by, and separately whether the invoice printed one:
-        # "bought on 6 July" and "recorded on 29 August" are different claims.
-        "purchased_on": wire.iso(row["purchased_on"]),
-        "invoice_date": wire.iso(row["invoice_date"]),
-        "newer_uncosted": None,
-    }
-    if stale_line is not None:
-        payload["quality"] = Quality.ESTIMATED.value
-        payload["newer_uncosted"] = newer_uncosted_summary(stale_line)
-    return payload
 
 
 #: Plain English for a base unit. These strings reach the screen inside refusal
@@ -1289,22 +1224,14 @@ async def list_ingredients(request: Request, ctx: Context) -> dict:
     tenant_id = ctx.tenant_id
     rows = await db.list_ingredients(tenant_id=tenant_id)
 
-    # One query for the whole page. The rows arrive grouped by material with
-    # that material's current price first, so the winner is `[0]` rather than a
-    # second pass sorting in Python.
-    costs: dict[str, list[asyncpg.Record]] = {}
-    for cost in await db.list_mapped_pack_costs(tenant_id=tenant_id):
-        costs.setdefault(cost["ingredient_id"], []).append(cost)
-    by_pack = {cost["supplier_item_id"]: cost for rows_ in costs.values() for cost in rows_}
-
-    # D11 (WP-61 amendment 3): a material whose newest confirmed purchase
-    # could not be costed keeps its price visible but capped at *estimated*,
-    # with the blocked line named - never an old number wearing a good label.
-    stale: dict[str, asyncpg.Record] = {
-        line["ingredient_id"]: line
-        for line in await db.list_newest_purchases(tenant_id=tenant_id)
-        if not line["costed"]
-    }
+    # The two price reads, made here rather than through `price_in_force.read`
+    # because the page also shows every pack's own newest line from the first
+    # one. The rows arrive grouped by material with that material's current
+    # price first; D11 (WP-61 amendment 3) caps a material whose newest
+    # confirmed purchase could not be costed at *estimated*, naming the line.
+    costs = await db.list_mapped_pack_costs(tenant_id=tenant_id)
+    prices = price_in_force.from_rows(costs, await db.list_newest_purchases(tenant_id=tenant_id))
+    by_pack = {cost["supplier_item_id"]: cost for cost in costs}
 
     packs: dict[str, list[dict]] = {}
     for pack in await db.list_mapped_packs(tenant_id=tenant_id):
@@ -1318,9 +1245,7 @@ async def list_ingredients(request: Request, ctx: Context) -> dict:
                 "name": row["name"],
                 "base_unit": row["base_unit"],
                 "pack_count": row["pack_count"],
-                "price": _material_price(costs[row["id"]][0], stale.get(row["id"]))
-                if costs.get(row["id"])
-                else None,
+                "price": price_in_force.payload(prices.get(row["id"])),
                 "packs": packs.get(row["id"], []),
             }
             for row in rows

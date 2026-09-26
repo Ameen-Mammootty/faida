@@ -18,7 +18,7 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
-from faida_api import plates
+from faida_api import plates, price_in_force
 from faida_api.api import router as api_router
 from faida_api.menu import router as menu_router
 from faida_api.quality import Quality
@@ -26,6 +26,26 @@ from faida_api.quality import Quality
 from .conftest import AUTH, DEMO_TENANT_ID, requires_db, wire_auth
 
 # -- the pure module (no DB) ---------------------------------------------------
+
+
+def _price_per_gram(cost: str) -> price_in_force.PriceInForce:
+    """A reliable price per gram, built through the one constructor."""
+    return price_in_force.price_of(
+        {
+            "ingredient_id": "ing-chicken",
+            "cost_per_base_unit": Decimal(cost),
+            "cost_base_unit": "g",
+            "cost_basis": {"quality": "reliable_with_limitations"},
+            "supplier_name": "Al Madina",
+            "supplier_item_id": "pack-1",
+            "canonical_name": "CHICKEN 1KG",
+            "invoice_id": "inv-1",
+            "invoice_line_id": "line-1",
+            "position": 0,
+            "purchased_on": datetime.date(2026, 7, 6),
+            "invoice_date": datetime.date(2026, 7, 6),
+        }
+    )
 
 
 def test_a_ten_dirham_menu_price_margins_against_9_524():
@@ -78,13 +98,13 @@ def test_no_plate_vocabulary_can_say_verified():
     claimed 'verified' - which no write path produces - reads *reliable with
     limitations* at best, because nothing corroborates a pack size."""
     assert "verified" not in [q.value for q in Quality]
-    assert plates.component_quality("verified") is Quality.RELIABLE
+    assert price_in_force.capped("verified") is Quality.RELIABLE
     # A plate is never unavailable either: that is a fact about a branch's
     # sales, and the clamp lets only *estimated* through from a stored word.
-    assert plates.component_quality("unavailable") is Quality.RELIABLE
-    assert plates.component_quality("incomplete") is Quality.RELIABLE
-    assert plates.component_quality(None) is Quality.RELIABLE
-    assert plates.component_quality("estimated") is Quality.ESTIMATED
+    assert price_in_force.capped("unavailable") is Quality.RELIABLE
+    assert price_in_force.capped("incomplete") is Quality.RELIABLE
+    assert price_in_force.capped(None) is Quality.RELIABLE
+    assert price_in_force.capped("estimated") is Quality.ESTIMATED
 
 
 def test_plate_arithmetic_by_hand_quantized_once():
@@ -144,7 +164,7 @@ def test_a_usable_share_costs_what_the_storeroom_issued():
     """D13, the whole point of the column: a recipe says what goes in the pot,
     so 500 g of chicken at 85% usable cost 588.24 g off the shelf and the
     plate must cost the shelf. Hand-checked: 500 / 0.85 x 0.02 = 11.7647."""
-    price = plates.Priced(cost_per_base_unit=Decimal("0.02"), base_unit="g", quality=None)
+    price = _price_per_gram("0.02")
     trimmed = plates.cost_component(
         position=0,
         qty=Decimal("500"),
@@ -171,7 +191,7 @@ def test_a_component_with_no_share_costs_exactly_what_it_costed_before():
     ComponentCost, whether the share arrives as None or never arrives at all.
     A manufactured 1.0 divisor would be arithmetically the same and is still
     not what this does - `line_draw` returns the quantity untouched."""
-    price = plates.Priced(cost_per_base_unit=Decimal("0.02"), base_unit="g", quality=None)
+    price = _price_per_gram("0.02")
     args = dict(
         position=0,
         qty=Decimal("500"),
@@ -635,6 +655,16 @@ async def test_a_newer_uncosted_purchase_caps_the_material_and_its_plates(api, d
     )
     assert milk_component["cost"]["quality"] == "estimated"
     assert milk_component["cost"]["price"]["newer_uncosted"]["invoice_id"] == blocked_invoice
+
+    # The two screens agree by test (spec 3): the Menu screen and the
+    # Materials screen print one sentence, byte for byte, reason included.
+    assert milk["price"]["why_estimated"] == (
+        "Estimated: a newer delivery on 1 Aug 2026 has no cost yet - "
+        "Nothing on the invoice says how much one of these holds."
+    )
+    assert milk_component["cost"]["price"]["why_estimated"] == milk["price"]["why_estimated"]
+    assert milk_component["cost"]["price"]["unit_words"] == milk["price"]["unit_words"]
+    assert milk["price"]["unit_words"] == "per litre"
 
 
 @requires_db

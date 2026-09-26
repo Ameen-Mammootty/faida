@@ -493,7 +493,6 @@ async def test_the_rows_behind_the_printout_are_usage_material_rows_on_the_same_
         inputs.windows,
         materials=inputs.materials,
         prices=inputs.prices,
-        stale_ingredient_ids=inputs.stale_ingredient_ids,
         date_from=inputs.period.start,
         date_to=inputs.period.end,
         currency=inputs.currency,

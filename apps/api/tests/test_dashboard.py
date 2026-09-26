@@ -556,6 +556,7 @@ async def test_a_fall_of_five_percent_is_in_the_panel_with_its_money_and_not_a_s
     assert Decimal(move["price_before"]) == Decimal("8.00")
     assert Decimal(move["price_after"]) == Decimal("7.00")
     assert move["unit"] == "litre"
+    assert move["unit_words"] == "per litre"
     assert move["change_pct"] == "-12.5"
     assert move["sentence"] == (
         f"Evaporated Milk is down AED 1.00 per litre since {_short(0)}, "
@@ -639,6 +640,7 @@ async def test_the_same_rise_is_in_both_panels_with_the_same_money_at_every_scop
         assert move["direction"] == "up"
         assert move["money_at_stake"] == spike["money_at_stake"] == expected
         assert move["sentence"] == spike["sentence"]
+        assert move["unit_words"] == spike["unit_words"] == "per kg"
         assert move["ingredient_id"] == spike["ingredient_id"]
         assert move["invoice_id"] == spike["invoice_id"]
         assert move["moved_on"] == spike["moved_on"] == _iso(1)

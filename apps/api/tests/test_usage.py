@@ -19,7 +19,7 @@ from decimal import Decimal
 
 import pytest
 
-from faida_api import contribution, costing, plates, ratio, usage
+from faida_api import contribution, costing, plates, price_in_force, ratio, usage
 from faida_api.quality import Quality
 
 D = Decimal
@@ -58,18 +58,64 @@ MATERIALS = {
     GLOVES: usage.Material(GLOVES, "Nitrile Gloves", "pc"),
 }
 
+
+def _price(
+    ingredient_id: str, cost: str, base_unit: str, *, stale: bool = False
+) -> price_in_force.PriceInForce:
+    """A price in force built through the one constructor, bought on the
+    period's last day; `stale` names a newer delivery nothing could cost."""
+    row = {
+        "ingredient_id": ingredient_id,
+        "cost_per_base_unit": D(cost),
+        "cost_base_unit": base_unit,
+        "cost_basis": {"quality": "reliable_with_limitations"},
+        "supplier_name": "Al Madina",
+        "supplier_item_id": f"pack-{ingredient_id}",
+        "canonical_name": ingredient_id,
+        "invoice_id": f"inv-{ingredient_id}",
+        "invoice_line_id": f"line-{ingredient_id}",
+        "position": 0,
+        "purchased_on": DELIVERY,
+        "invoice_date": DELIVERY,
+    }
+    newer = (
+        price_in_force.NewerUncosted(
+            invoice_line_id="line-carton",
+            invoice_id="inv-carton",
+            position=0,
+            raw_name="CARTON",
+            purchased_on=DELIVERY,
+            reason="Nothing on the invoice says how much one of these holds.",
+        )
+        if stale
+        else None
+    )
+    return price_in_force.price_of(row, newer)
+
+
 #: The prices in force on the period's last day, as `costed_menu` holds
 #: them: the newest costed line among each material's packs.
 PRICES = {
-    SUGAR: usage.MaterialPrice(SUGAR, D("0.00230000"), "g", DELIVERY, "reliable_with_limitations"),
-    DUST: usage.MaterialPrice(DUST, D("0.05500000"), "g", DELIVERY, "reliable_with_limitations"),
-    MILK: usage.MaterialPrice(MILK, D("0.02020000"), "g", DELIVERY, "reliable_with_limitations"),
-    CARDAMOM: usage.MaterialPrice(
-        CARDAMOM, D("0.04800000"), "g", DELIVERY, "reliable_with_limitations"
-    ),
-    EVAP: usage.MaterialPrice(EVAP, D("0.00468750"), "ml", DELIVERY, "reliable_with_limitations"),
-    GLOVES: usage.MaterialPrice(GLOVES, D("0.09"), "pc", DELIVERY, "reliable_with_limitations"),
+    SUGAR: _price(SUGAR, "0.00230000", "g"),
+    DUST: _price(DUST, "0.05500000", "g"),
+    MILK: _price(MILK, "0.02020000", "g"),
+    CARDAMOM: _price(CARDAMOM, "0.04800000", "g"),
+    EVAP: _price(EVAP, "0.00468750", "ml"),
+    GLOVES: _price(GLOVES, "0.09", "pc"),
 }
+
+
+def _stale(*ingredient_ids: str) -> dict[str, price_in_force.PriceInForce]:
+    """`PRICES` with these materials' newest delivery uncosted."""
+    return {
+        ingredient_id: _price(
+            ingredient_id,
+            str(price.cost_per_base_unit),
+            price.base_unit,
+            stale=ingredient_id in ingredient_ids,
+        )
+        for ingredient_id, price in PRICES.items()
+    }
 
 
 # --- the stage --------------------------------------------------------------
@@ -323,9 +369,8 @@ def _rows(
     lines: list[usage.PurchaseLine],
     windows: list[usage.BranchWindow],
     *,
-    prices: dict[str, usage.MaterialPrice] | None = None,
+    prices: dict[str, price_in_force.PriceInForce] | None = None,
     materials: dict[str, usage.Material] | None = None,
-    stale: frozenset[str] = frozenset(),
 ) -> list[usage.MaterialRow]:
     return usage.material_rows(
         contribution.item_rows(sales, menu),
@@ -334,7 +379,6 @@ def _rows(
         windows,
         materials=materials or MATERIALS,
         prices=PRICES if prices is None else prices,
-        stale_ingredient_ids=stale,
         date_from=PERIOD_FROM,
         date_to=PERIOD_TO,
     )
@@ -1107,7 +1151,7 @@ def test_a_stale_price_makes_the_money_estimated_and_says_so():
     """D17: the material's newest purchase could not be costed, so the figure
     is real and not current."""
     sales, menu, lines = _karak_week()
-    rows = _rows(sales, menu, lines, [_window()], stale=frozenset({SUGAR}))
+    rows = _rows(sales, menu, lines, [_window()], prices=_stale(SUGAR))
     row = _by(rows, SUGAR)
     assert row.money == D("216.87")
     assert row.price_quality == Quality.ESTIMATED.value
@@ -1142,7 +1186,7 @@ def test_the_three_halves_take_the_worst_word_and_never_verified():
         sales_quality=Quality.INCOMPLETE.value,
         sales_notes=("2 of 7 days have no sales",),
     )
-    rows = _rows(sales, menu, lines, [incomplete_sales], stale=frozenset({SUGAR}))
+    rows = _rows(sales, menu, lines, [incomplete_sales], prices=_stale(SUGAR))
     row = _by(rows, SUGAR)
     # incomplete (sales) is worse than estimated (the stale price)
     assert row.quality is Quality.INCOMPLETE
@@ -1507,15 +1551,14 @@ def _every_sentence() -> list[str]:
             sales_notes=("no sales loaded and no confirmed purchases 25-31 Aug",),
         ),
     ]
-    rows = _rows(sales, menu, lines, windows, stale=frozenset({EVAP}))
+    rows = _rows(sales, menu, lines, windows, prices=_stale(EVAP))
     held = usage.unassigned_rows(lines, materials=MATERIALS)
     chain = usage.chain_material_rows(
         rows,
         materials=MATERIALS,
-        prices=PRICES,
+        prices=_stale(EVAP),
         branch_names=BRANCH_NAMES,
         unassigned=held,
-        stale_ingredient_ids=frozenset({EVAP}),
         date_from=PERIOD_FROM,
         date_to=PERIOD_TO,
     )

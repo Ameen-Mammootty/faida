@@ -1044,7 +1044,9 @@ async def test_clearing_the_block_gives_the_material_a_price_that_reads_estimate
     that does not move the number it was blocking is worse than none."""
     gulf = await _supplier(db, "Gulf Foods Trading L.L.C.")
     carton = await _item(db, gulf, "Chicken Carton", "1 ctn")
-    await _delivery(db, carton, supplier_id=gulf, pack_size="1 ctn", unit_price=Decimal("148.00"))
+    invoice_id = await _delivery(
+        db, carton, supplier_id=gulf, pack_size="1 ctn", unit_price=Decimal("148.00")
+    )
     await api.post(
         f"/api/supplier-items/{carton}/ingredient",
         json={"name": "Chicken", "base_unit": "g"},
@@ -1061,6 +1063,15 @@ async def test_clearing_the_block_gives_the_material_a_price_that_reads_estimate
     assert price["per_display_unit"] == "14.80"
     assert price["quality"] == "estimated"
     assert price["pack_source"] == "override"
+    # One sentence for why, and the invoice line behind the price says it in
+    # the same words (spec 3): the screens print it, never compose it.
+    assert price["why_estimated"] == (
+        "Estimated: divided by 10 kg, which someone entered for this product."
+    )
+    assert price["unit_words"] == "per kg"
+    [line] = (await api.get(f"/api/invoices/{invoice_id}", headers=AUTH)).json()["lines"]
+    assert line["cost"]["why_estimated"] == price["why_estimated"]
+    assert line["cost"]["unit_words"] == "per kg"
 
 
 @requires_db

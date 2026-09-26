@@ -288,14 +288,14 @@ def _menu_items(menu: CostedMenu) -> dict[str, contribution.MenuItem]:
                     qty=component["qty"],
                     unit=component["unit"],
                     usable_share=component["usable_share"],
-                    measured_in=price["cost_base_unit"],
+                    measured_in=price.base_unit,
                     ingredient_name=component["ingredient_name"],
                 )
                 if draw.bought is not None:
-                    batch_cost = draw.cost(price["cost_per_base_unit"])
-                invoice_id = price["invoice_id"]
-                position = price["position"]
-                purchased_on = price["purchased_on"]
+                    batch_cost = draw.cost(price.cost_per_base_unit)
+                invoice_id = price.invoice_id
+                position = price.position
+                purchased_on = price.purchased_on
             components.append(
                 contribution.RecipeComponent(
                     ingredient_id=component["ingredient_id"],

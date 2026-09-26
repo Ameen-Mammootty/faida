@@ -22,7 +22,7 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
-from faida_api import costing, plates, takings
+from faida_api import costing, plates, price_in_force, takings
 from faida_api.extraction.filing import price_alerts
 from faida_api.extraction.schema import ExtractedInvoice, ExtractedLine
 from faida_api.matching import match_supplier, snap_item
@@ -366,9 +366,9 @@ async def _plate(db, name: str) -> plates.Plate:
     )
     recipe = await db.get_current_recipe(item["id"], tenant_id=CHAIN_TENANT_ID)
     components = await db.get_recipe_components(recipe["id"], tenant_id=CHAIN_TENANT_ID)
-    prices = {}
-    for row in await db.list_mapped_pack_costs(tenant_id=CHAIN_TENANT_ID):
-        prices.setdefault(row["ingredient_id"], row)
+    prices = price_in_force.from_rows(
+        await db.list_mapped_pack_costs(tenant_id=CHAIN_TENANT_ID), []
+    )
     costed = [
         plates.cost_component(
             position=c["position"],
@@ -376,14 +376,7 @@ async def _plate(db, name: str) -> plates.Plate:
             unit=c["unit"],
             ingredient_name=c["ingredient_name"],
             has_packs=c["has_packs"],
-            price=None
-            if c["ingredient_id"] not in prices
-            else plates.Priced(
-                cost_per_base_unit=prices[c["ingredient_id"]]["cost_per_base_unit"],
-                base_unit=prices[c["ingredient_id"]]["cost_base_unit"],
-                quality=(prices[c["ingredient_id"]]["cost_basis"] or {}).get("quality"),
-                stale=False,
-            ),
+            price=prices.get(c["ingredient_id"]),
         )
         for c in components
     ]

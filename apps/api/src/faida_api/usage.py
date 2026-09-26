@@ -68,6 +68,7 @@ from . import contribution, costing, plates, words
 # are composed in one place each (`words`, `ratio.window_words`, `quality`),
 # so `/sales`, the dashboard and this module can never say the same thing two
 # ways.
+from .price_in_force import PriceInForce
 from .quality import Quality, worst
 from .ratio import (
     FILS,
@@ -172,26 +173,6 @@ class PurchaseLine:
     ingredient_id: str | None = None
     pack_size_override: str | None = None
     canonical_name: str | None = None
-
-
-@dataclass(frozen=True)
-class MaterialPrice:
-    """The price a material's gap is valued at: what `menu.costed_menu`
-    holds for the ingredient, costed as of the **period's end** for every
-    branch (C14.7, C12.4's rule).
-
-    That is a stated limit, not an oversight: a delivery dated between a
-    branch's window end and the period's end reprices that branch's gap, and
-    the row's own words name the date it was priced on so a reader can see it.
-    """
-
-    ingredient_id: str
-    cost_per_base_unit: Decimal
-    cost_base_unit: str
-    priced_on: datetime.date | None = None
-    quality: str | None = None
-    invoice_id: str | None = None
-    line_position: int | None = None
 
 
 @dataclass(frozen=True)
@@ -510,22 +491,20 @@ def _direction_sentence(gap: Decimal, base_unit: str) -> str:
     return "bought exactly what its sales needed"
 
 
-def _price_sentence(
-    price: MaterialPrice, *, estimated: bool, currency: str
-) -> tuple[str, Decimal, str]:
+def _price_sentence(price: PriceInForce, *, currency: str) -> tuple[str, Decimal, str]:
     """ "at AED 2.30 per kg on 7 Aug 2026", and "at an estimated AED 2.30 per
-    kg on 7 Aug 2026" when the price is estimated or the material's newest
-    purchase could not be costed (C14.7, D17). The date is always named: it is
-    the period's end for every branch, which is a stated limit."""
-    per_display, display_unit = costing.per_display_unit(
-        price.cost_per_base_unit, price.cost_base_unit
-    )
-    figure = words.price(per_display, currency)
-    lead = "at an estimated" if estimated else "at"
-    sentence = f"{lead} {figure} {words.per_unit(display_unit)}"
-    if price.priced_on is not None:
-        sentence = f"{sentence} on {words.long_date(price.priced_on)}"
-    return sentence, per_display, display_unit
+    kg on 7 Aug 2026" when the price is estimated, which includes a material
+    whose newest purchase could not be costed (C14.7, D17). The price is the
+    one `menu.costed_menu` holds, in force on the **period's end** for every
+    branch - a stated limit, so the date is always named: a delivery dated
+    between a branch's window end and the period's end reprices that
+    branch's gap, and the reader can see it."""
+    figure = words.price(price.per_display_unit, currency)
+    lead = "at an estimated" if price.quality is Quality.ESTIMATED else "at"
+    sentence = f"{lead} {figure} {price.unit_words}"
+    if price.purchased_on is not None:
+        sentence = f"{sentence} on {words.long_date(price.purchased_on)}"
+    return sentence, price.per_display_unit, price.display_unit
 
 
 def _recipe_sentence(versions: set[int | None]) -> str:
@@ -930,8 +909,7 @@ def _row(
     window: Window,
     used: _UsedSide | None,
     bought: _BoughtSide | None,
-    price: MaterialPrice | None,
-    stale: bool,
+    price: PriceInForce | None,
     currency: str,
     branch_id: str | None,
 ) -> MaterialRow:
@@ -1017,17 +995,13 @@ def _row(
         notes.append(_direction_sentence(gap, material.base_unit))
     if purchase_dates == 1:
         notes.append("1 purchase date in this window; a single delivery is not a rate")
-    usable_price = (
-        price if price is not None and price.cost_base_unit == material.base_unit else None
-    )
+    usable_price = price if price is not None and price.base_unit == material.base_unit else None
     if usable_price is None:
         if gap is not None:
             notes.append("no price to value it at")
     else:
-        estimated_price = stale or usable_price.quality == Quality.ESTIMATED.value
-        sentence, per_display, display_unit = _price_sentence(
-            usable_price, estimated=estimated_price, currency=currency
-        )
+        estimated_price = usable_price.quality is Quality.ESTIMATED
+        sentence, per_display, display_unit = _price_sentence(usable_price, currency=currency)
         notes.append(sentence)
         price_quality = Quality.ESTIMATED.value if estimated_price else Quality.RELIABLE.value
         if estimated_price:
@@ -1091,7 +1065,7 @@ def _row(
         money=money,
         price_per_display_unit=per_display,
         display_unit=display_unit,
-        priced_on=None if usable_price is None else usable_price.priced_on,
+        priced_on=None if usable_price is None else usable_price.purchased_on,
         price_quality=price_quality,
         purchases=purchases,
         purchase_dates=purchase_dates,
@@ -1140,8 +1114,7 @@ def material_rows(
     windows: Iterable[BranchWindow],
     *,
     materials: Mapping[str, Material],
-    prices: Mapping[str, MaterialPrice],
-    stale_ingredient_ids: frozenset[str] = frozenset(),
+    prices: Mapping[str, PriceInForce],
     date_from: datetime.date,
     date_to: datetime.date,
     currency: str = contribution.DEFAULT_CURRENCY,
@@ -1189,7 +1162,6 @@ def material_rows(
                     used=used.get(ingredient_id),
                     bought=bought.get(ingredient_id),
                     price=prices.get(ingredient_id),
-                    stale=ingredient_id in stale_ingredient_ids,
                     currency=currency,
                     branch_id=branch.branch_id,
                 )
@@ -1219,10 +1191,9 @@ def chain_material_rows(
     rows: Iterable[MaterialRow],
     *,
     materials: Mapping[str, Material],
-    prices: Mapping[str, MaterialPrice],
+    prices: Mapping[str, PriceInForce],
     branch_names: Mapping[str, str] | None = None,
     unassigned: Iterable[UnassignedRow] = (),
-    stale_ingredient_ids: frozenset[str] = frozenset(),
     date_from: datetime.date,
     date_to: datetime.date,
     currency: str = contribution.DEFAULT_CURRENCY,
@@ -1299,19 +1270,14 @@ def chain_material_rows(
             notes.append("1 purchase date in this window; a single delivery is not a rate")
         price = prices.get(ingredient_id)
         usable_price = (
-            price if price is not None and price.cost_base_unit == material.base_unit else None
+            price if price is not None and price.base_unit == material.base_unit else None
         )
         if usable_price is None:
             if gap is not None:
                 notes.append("no price to value it at")
         else:
-            estimated_price = (
-                ingredient_id in stale_ingredient_ids
-                or usable_price.quality == Quality.ESTIMATED.value
-            )
-            sentence, per_display, display_unit = _price_sentence(
-                usable_price, estimated=estimated_price, currency=currency
-            )
+            estimated_price = usable_price.quality is Quality.ESTIMATED
+            sentence, per_display, display_unit = _price_sentence(usable_price, currency=currency)
             notes.append(sentence)
             price_quality = Quality.ESTIMATED.value if estimated_price else Quality.RELIABLE.value
             if estimated_price:
@@ -1365,7 +1331,7 @@ def chain_material_rows(
                 money=money,
                 price_per_display_unit=per_display,
                 display_unit=display_unit,
-                priced_on=None if usable_price is None else usable_price.priced_on,
+                priced_on=None if usable_price is None else usable_price.purchased_on,
                 price_quality=price_quality,
                 purchases=sum(r.purchases for r in group),
                 purchase_dates=purchase_dates,
@@ -1440,7 +1406,7 @@ def unused_materials(
     named_ingredient_ids: Iterable[str],
     *,
     materials: Mapping[str, Material],
-    prices: Mapping[str, MaterialPrice],
+    prices: Mapping[str, PriceInForce],
     windows: Iterable[BranchWindow] = (),
     branch_id: str | None = None,
     date_from: datetime.date,
@@ -1484,7 +1450,7 @@ def unused_materials(
         price = prices.get(ingredient_id)
         money = (
             (total * price.cost_per_base_unit).quantize(FILS, rounding=ROUND_HALF_UP)
-            if price is not None and price.cost_base_unit == material.base_unit
+            if price is not None and price.base_unit == material.base_unit
             else None
         )
         out.append(
