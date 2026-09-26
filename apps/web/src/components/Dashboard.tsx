@@ -81,7 +81,7 @@ import {
   type Tile,
   type Track,
 } from "@/lib/dashboardScreen";
-import { roundedAed } from "@/lib/format";
+import { plateMoney, roundedAed } from "@/lib/format";
 import type {
   Branch,
   DashboardItemRow,
@@ -405,9 +405,9 @@ function ItemDrill({ row }: { row: DashboardItemRow }) {
         <div>
           <dt className="text-[12px] font-medium text-stone">Costed</dt>
           <dd className="text-ink tabular-nums">
-            {row.cost_per_portion === null ? "-" : `AED ${row.cost_per_portion} a plate`}
+            {row.cost_per_portion === null ? "-" : `AED ${plateMoney(row.cost_per_portion)} a plate`}
             {row.cost_per_portion_today !== null ? (
-              <span className="text-stone"> · today AED {row.cost_per_portion_today}</span>
+              <span className="text-stone"> · today AED {plateMoney(row.cost_per_portion_today)}</span>
             ) : null}
           </dd>
         </div>

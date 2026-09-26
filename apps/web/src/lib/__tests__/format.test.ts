@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groupedMoney, money, roundedAed } from "../format";
+import { groupedMoney, money, plateMoney, roundedAed } from "../format";
 
 /**
  * M9 WP-98 (D7): the headline rounding. `roundedAed` truncated until the
@@ -42,5 +42,23 @@ describe("roundedAed", () => {
   it("leaves the exact renderers alone", () => {
     expect(money("411.50")).toBe("411.50");
     expect(groupedMoney("67471.135")).toBe("67,471.135");
+  });
+});
+
+/**
+ * D9/D10 (2026-09-24): a plate is cut to the fils on every screen, the way
+ * the API writes it in a sentence - so the dashboard's dish row stops reading
+ * "AED 6.410 a plate" and never reads a fil above `/menu`.
+ */
+describe("plateMoney", () => {
+  it("cuts at the fils and never rounds up", () => {
+    expect(plateMoney("6.410")).toBe("6.41");
+    expect(plateMoney("6.415")).toBe("6.41");
+    expect(plateMoney("42.857")).toBe("42.85");
+  });
+
+  it("pads what has fewer than two decimals", () => {
+    expect(plateMoney("6.4")).toBe("6.40");
+    expect(plateMoney("6")).toBe("6.00");
   });
 });

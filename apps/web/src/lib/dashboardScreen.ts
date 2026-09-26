@@ -1177,9 +1177,12 @@ export function componentWords(component: ItemComponent): string {
   return `${component.ingredient_name} · ${quantity(component.qty)} ${component.unit}`;
 }
 
+/** "AED 15.30 a plate", as `/menu` prints an ingredient's share: the storage
+ * zeros dropped ("15.300" read like a figure nobody printed), a real third
+ * decimal kept, because a pinch of salt at AED 0.004 must not read as nothing. */
 export function componentCost(component: ItemComponent): string {
   if (component.cost_per_portion === null) return "no price yet";
-  return `AED ${component.cost_per_portion} a plate`;
+  return `AED ${money(component.cost_per_portion)} a plate`;
 }
 
 /** The invoice line behind the as-of price, in the shipped anchor shape. */

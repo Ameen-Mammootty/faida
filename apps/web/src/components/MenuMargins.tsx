@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { menuAnchor, menuGroupKey, type MenuAnchor } from "@/lib/anchor";
 import { getMenuItem, listMenuItems, listPriceMoves } from "@/lib/api";
-import { formatDate, groupedMoney, money, quantity } from "@/lib/format";
+import { formatDate, groupedMoney, money, plateMoney, quantity } from "@/lib/format";
 import type {
   MaterialPrice,
   MenuComponent,
@@ -46,15 +46,6 @@ import LossFigure from "./LossFigure";
  * from there is the invoice line behind any ingredient's price.
  */
 
-/**
- * Summary money shows fils, not thirds of a fils: cut to two decimals by
- * string operations (a stored margin has three). Exact figures live in the
- * drill. Fils-precise everywhere - 1.28, never "AED 1" (D10).
- */
-function summaryMoney(value: string): string {
-  const padded = money(value);
-  return padded.slice(0, padded.indexOf(".") + 3);
-}
 
 /** "AED 20.20 per kg", "AED 4.69 per litre", "AED 0.35 each". */
 function pricePerUnit(price: MaterialPrice): string {
@@ -116,7 +107,7 @@ function EstimatedChip() {
 function MarginLoss({ margin }: { margin: string }) {
   return (
     <LossFigure
-      figure={`-AED ${summaryMoney(margin.replace("-", ""))}`}
+      figure={`-AED ${plateMoney(margin.replace("-", ""))}`}
       noun="this plate"
       align="end"
     />
@@ -137,7 +128,7 @@ function TopEarnerCallout({ item }: { item: MenuItemSummary }) {
         Top earner
       </p>
       <p className="mt-1.5 font-medium text-ink">
-        Earns the most per plate: {item.name}, AED {summaryMoney(item.plate.margin ?? "0")} of{" "}
+        Earns the most per plate: {item.name}, AED {plateMoney(item.plate.margin ?? "0")} of{" "}
         {money(item.selling_price)}.
       </p>
       <p className="mt-0.5 text-sm text-stone">
@@ -195,7 +186,7 @@ function FixCallout({ loss, move }: { loss: MenuItemSummary | null; move: PriceM
           Losing money
         </p>
         <p className="mt-1.5 font-medium text-ink">
-          {loss.name} loses AED {summaryMoney((loss.plate.margin ?? "0").replace("-", ""))} on
+          {loss.name} loses AED {plateMoney((loss.plate.margin ?? "0").replace("-", ""))} on
           every plate sold.
         </p>
         <p className="mt-0.5 text-sm text-stone">
@@ -261,7 +252,7 @@ function FixCallout({ loss, move }: { loss: MenuItemSummary | null; move: PriceM
       </p>
       {top ? (
         <p className="mt-0.5 text-sm text-stone">
-          {top.name} earns AED {summaryMoney(top.impact_per_portion.replace("-", ""))}{" "}
+          {top.name} earns AED {plateMoney(top.impact_per_portion.replace("-", ""))}{" "}
           {up ? "less" : "more"} a portion - check the price or the recipe.
         </p>
       ) : (
@@ -277,7 +268,7 @@ function FixCallout({ loss, move }: { loss: MenuItemSummary | null; move: PriceM
           {rest.slice(0, ALSO_NAMED).map((item, index) => (
             <span key={item.menu_item_id}>
               {index > 0 ? ", " : ""}
-              {item.name} (AED {summaryMoney(item.impact_per_portion.replace("-", ""))})
+              {item.name} (AED {plateMoney(item.impact_per_portion.replace("-", ""))})
             </span>
           ))}
           {rest.length > ALSO_NAMED ? `, and ${rest.length - ALSO_NAMED} more items` : ""}.
@@ -377,7 +368,7 @@ function DrillContent({
               }`
             : ""}
           {detail.plate.net_price
-            ? ` · earns from AED ${money(detail.plate.net_price)} once the ${
+            ? ` · earns from AED ${plateMoney(detail.plate.net_price)} once the ${
                 detail.plate.vat_rate === "0.05" ? "5% " : ""
               }VAT inside the menu price is set aside`
             : ""}
@@ -405,7 +396,7 @@ function MarginFigure({ item }: { item: MenuItemSummary }) {
   return (
     <span className="tabular-nums">
       <span className="font-display font-semibold text-ink">
-        AED {summaryMoney(item.plate.margin ?? "0")}
+        AED {plateMoney(item.plate.margin ?? "0")}
       </span>
       <span className="ml-1.5 text-xs text-stone">{item.plate.margin_pct}%</span>
     </span>
@@ -913,7 +904,7 @@ function MenuRow({
         </td>
         <td className="px-4 py-1.5 text-right tabular-nums">AED {money(item.selling_price)}</td>
         <td className="px-4 py-1.5 text-right tabular-nums">
-          AED {summaryMoney(item.plate.cost_per_portion ?? "0")}
+          AED {plateMoney(item.plate.cost_per_portion ?? "0")}
         </td>
         <td className="px-4 py-1.5 text-right">
           <MarginFigure item={item} />
@@ -989,7 +980,7 @@ function MenuCard({
       </div>
       <p className="mt-0.5 text-xs text-stone">
         sells at AED {money(item.selling_price)} · costs AED{" "}
-        {summaryMoney(item.plate.cost_per_portion ?? "0")}
+        {plateMoney(item.plate.cost_per_portion ?? "0")}
       </p>
       {open ? (
         <div

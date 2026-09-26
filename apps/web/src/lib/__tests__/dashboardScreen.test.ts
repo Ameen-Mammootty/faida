@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ANSWER_EMPTY,
+  componentCost,
   ANSWER_NO_MENU,
   BEST_HEADING,
   COST_COVERS,
@@ -91,6 +92,7 @@ import type {
   DashboardPriceMove,
   DashboardResult,
   DashboardSignal,
+  ItemComponent,
   LeagueRow,
 } from "../types";
 
@@ -887,7 +889,7 @@ describe("the dishes", () => {
     const chicken = full.items.all.find((r) => r.menu_item_name === "Chicken 65 Dry");
     expect(chicken?.quality).toBe("estimated");
     expect(chicken?.cost_per_portion_today).toBe("25.400");
-    expect(chicken?.notes.join(" ")).toMatch(/sold at an average AED 40\.15 against today's menu price of AED 42\.86/);
+    expect(chicken?.notes.join(" ")).toMatch(/sold at an average AED 40\.15 against today's menu price of AED 42\.85/);
   });
 });
 
@@ -1181,5 +1183,15 @@ describe("the formatter", () => {
     expect(points("1.0")).toBe("1.0 point");
     expect(points("12.1")).toBe("12.1 points");
     expect(daysInclusive("2026-08-25", "2026-08-31")).toBe(7);
+  });
+});
+
+describe("an ingredient's cost in the dish drill", () => {
+  it("drops the storage zeros and keeps a real third decimal, as /menu does", () => {
+    const at = (cost: string | null) =>
+      componentCost({ cost_per_portion: cost } as unknown as ItemComponent);
+    expect(at("15.300")).toBe("AED 15.30 a plate");
+    expect(at("0.004")).toBe("AED 0.004 a plate");
+    expect(at(null)).toBe("no price yet");
   });
 });

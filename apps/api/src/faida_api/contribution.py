@@ -499,13 +499,13 @@ def _row(
         # history, so a menu price raised since a closed period would
         # otherwise read as a discount the branch never gave.
         notes.append(
-            f"sold at an average {words.price(avg_sold_at, currency)} against "
-            f"today's menu price of {words.price(net_price, currency)}"
+            f"sold at an average {words.plate_money(avg_sold_at, currency)} against "
+            f"today's menu price of {words.plate_money(net_price, currency)}"
         )
     if cost_per_portion is not None and costed_at is not None:
         notes.append(f"costed at the prices in force on {words.long_date(costed_at)}")
     if today_cost is not None:
-        notes.append(f"today's plate is {words.price(today_cost, currency)}")
+        notes.append(f"today's plate is {words.plate_money(today_cost, currency)}")
     if item.recipe_version is not None:
         notes.append(f"recipe version {item.recipe_version}")
     if item.archived:
