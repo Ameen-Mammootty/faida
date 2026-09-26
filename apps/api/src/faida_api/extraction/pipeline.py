@@ -16,7 +16,7 @@ import time
 import asyncpg
 
 from ..contracts import DocumentStatus, InvoiceStatus, JobKind, JobRefused, job_tenant_id
-from ..db import RETRY_LIMIT, Database
+from ..db import RETRY_LIMIT, Database, OwedReply
 from ..matching import (
     Row,
     filed_under,
@@ -104,7 +104,11 @@ async def extract_document(
             "which has no such document; refusing rather than guessing"
         )
     if await db.get_invoice_by_document(document_id, tenant_id=tenant_id) is not None:
-        return  # a previous attempt completed; invoices_document_uidx is the hard guard
+        # A previous attempt read and recorded the paper (invoices_document_uidx
+        # is the hard guard). If WhatsApp refused its summary, the summary is
+        # still owed: send it now rather than leave the phone in silence.
+        await _send_owed_reply(db, wa, document_id)
+        return
 
     # WhatsApp documents reply to their sender; upload/manual (M3) have none.
     # The inbound message row also carries the webhook receipt time the WP-41
@@ -116,6 +120,9 @@ async def extract_document(
     # WP-41: per-stage elapsed ms, provider stages taken from the usage the
     # provider already timed (never re-timed here).
     stage_ms: dict[str, int] = {}
+    # Only a recorded paper owes its reply across attempts; a z-report or a
+    # non-invoice writes no invoice, so its retry reads the paper again anyway.
+    reply_owed = False
     try:
         if provider is None:
             raise RuntimeError(
@@ -134,8 +141,9 @@ async def extract_document(
             if result.invoice is None:
                 raise ValueError("provider returned classification 'invoice' with no invoice")
             reply = await _persist_extracted(
-                db, provider, doc, image, result.invoice, usage, stage_ms
+                db, provider, doc, image, result.invoice, usage, stage_ms, from_phone=from_phone
             )
+            reply_owed = True
         elif result.classification is Classification.Z_REPORT:
             await db.set_document_status(
                 document_id, DocumentStatus.FAILED, Classification.Z_REPORT, tenant_id=tenant_id
@@ -159,7 +167,10 @@ async def extract_document(
 
     if from_phone:
         started = time.monotonic()
-        await _reply(db, wa, from_phone, reply, photo=doc["wa_message_id"])
+        if reply_owed:
+            await _send_owed_reply(db, wa, document_id)
+        else:
+            await _reply(db, wa, from_phone, reply, photo=doc["wa_message_id"])
         stage_ms["reply"] = int((time.monotonic() - started) * 1000)
         logger.info("latency stage=reply document=%s elapsed_ms=%d", document_id, stage_ms["reply"])
 
@@ -193,12 +204,18 @@ async def _persist_extracted(
     extracted: ExtractedInvoice,
     extract_usage: ProviderUsage,
     stage_ms: dict[str, int] | None = None,
+    *,
+    from_phone: str | None = None,
 ) -> str:
     """Layers 2-4, then persistence: validate, one scoped repair round when
     anything failed, supplier memory + price alerts, then draft invoice +
     lines + document transition in one transaction. Money stays Decimal end
     to end (C4). Returns the composed extraction reply. `stage_ms` (WP-41)
-    collects repair/persist elapsed ms for the caller's summary line."""
+    collects repair/persist elapsed ms for the caller's summary line.
+
+    With a `from_phone`, the reply is also written as owed in the same
+    transaction as the invoice, and the caller sends it through
+    `_send_owed_reply`, so a send WhatsApp refuses is made by the retry."""
     if stage_ms is None:
         stage_ms = {}
     # The model copies printed facts (C3); the derivations from them - ISO
@@ -348,6 +365,9 @@ async def _persist_extracted(
         # the dismiss door keys on - so the original, which carries none, can
         # never be dismissed.
         duplicate_of_invoice_id=str(duplicate["id"]) if duplicate is not None else None,
+        owed_reply=(
+            OwedReply(from_phone, reply, doc["wa_message_id"]) if from_phone is not None else None
+        ),
     )
     await _record_run(
         db,
@@ -458,3 +478,18 @@ async def _reply(
     quoted reply to that paper's photo (WP-125)."""
     out_id = await wa.send_text(to_phone, body, reply_to=photo)
     await db.record_outbound_message(out_id, to_phone, body, reply_to=photo)
+
+
+async def _send_owed_reply(db: Database, wa: WhatsAppClient, document_id: str) -> None:
+    """Send the summary still owed for a paper, if one is, and record it as
+    sent. A refusal raises and leaves it owed for the next attempt. If
+    WhatsApp accepts and the record write then fails, the retry sends it once
+    more - a repeated summary is the better failure than a lost one, the same
+    trade the morning brief makes (C15.3)."""
+    owed = await db.get_owed_reply(document_id)
+    if owed is None:
+        return
+    body = owed["payload"]["text"]
+    photo = (owed["payload"].get("context") or {}).get("message_id")
+    out_id = await wa.send_text(owed["to_phone"], body, reply_to=photo)
+    await db.settle_owed_reply(document_id, out_id)
