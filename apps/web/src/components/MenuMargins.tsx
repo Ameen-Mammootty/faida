@@ -46,10 +46,10 @@ import LossFigure from "./LossFigure";
  * from there is the invoice line behind any ingredient's price.
  */
 
-/** "AED 20.20 per kg", "AED 4.69 per litre", "AED 0.35 each". */
+/** "AED 20.20 per kg", "AED 4.69 per litre", "AED 0.35 each" - the unit
+ * in the API's words. */
 function pricePerUnit(price: MaterialPrice): string {
-  const figure = `AED ${groupedMoney(price.per_display_unit ?? "0")}`;
-  return price.display_unit === "each" ? `${figure} each` : `${figure} per ${price.display_unit}`;
+  return `AED ${groupedMoney(price.per_display_unit ?? "0")} ${price.unit_words}`;
 }
 
 /** Where a component's price came from: supplier and purchase date. */
@@ -62,25 +62,9 @@ function priceSource(price: MaterialPrice): string {
   return `${price.supplier_name} · ${when}`;
 }
 
-/** Why a figure reads *estimated*, named - a bare label is a warning people
- * learn to scroll past. */
-function estimatedBecause(price: MaterialPrice): string {
-  if (price.newer_uncosted) {
-    const when = price.newer_uncosted.purchased_on
-      ? ` from ${formatDate(price.newer_uncosted.purchased_on)}`
-      : "";
-    return `a newer delivery${when} has no cost yet`;
-  }
-  if (price.pack_source === "override") {
-    return `the pack (${price.pack}) was entered by a person, not read off an invoice`;
-  }
-  return "one of its inputs was supplied by a person";
-}
-
 /** "AED 4.69 per litre" for one side of a price move. */
 function movePrice(line: PriceMoveLine): string {
-  const figure = `AED ${money(line.per_display_unit)}`;
-  return line.display_unit === "each" ? `${figure} each` : `${figure} per ${line.display_unit}`;
+  return `AED ${money(line.per_display_unit)} ${line.unit_words}`;
 }
 
 function boughtOn(line: PriceMoveLine): string {
@@ -233,8 +217,6 @@ function FixCallout({ loss, move }: { loss: MenuItemSummary | null; move: PriceM
 
   const up = !(move.delta_per_display_unit ?? "").startsWith("-");
   const deltaAbs = money((move.delta_per_display_unit ?? "0").replace("-", ""));
-  const perUnit =
-    move.current.display_unit === "each" ? "each" : `per ${move.current.display_unit}`;
   const top = move.items[0];
   const rest = move.items.slice(1);
   const also = alsoPlates(move.plates);
@@ -246,7 +228,7 @@ function FixCallout({ loss, move }: { loss: MenuItemSummary | null; move: PriceM
         Price moved
       </p>
       <p className="mt-1.5 font-medium text-ink">
-        {move.ingredient_name} is {up ? "up" : "down"} AED {deltaAbs} {perUnit}{" "}
+        {move.ingredient_name} is {up ? "up" : "down"} AED {deltaAbs} {move.current.unit_words}{" "}
         {boughtOn(move.current)}.
       </p>
       {top ? (
@@ -326,14 +308,14 @@ function ComponentRow({ component }: { component: MenuComponent }) {
           <p className="text-xs text-stone">
             {pricePerUnit(component.cost.price)} · {priceSource(component.cost.price)}
           </p>
-          {component.cost.quality === "estimated" ? (
+          {component.cost.price.why_estimated ? (
             // In Attention Amber, not the same grey as the supplier-and-date
             // caption above it: the line saying this figure may be out of date
             // was the quietest of four grey lines stacked in one corner, while
-            // the far less useful *label* upstairs wore a chip.
-            <p className="text-xs text-caution">
-              Estimated: {estimatedBecause(component.cost.price)}.
-            </p>
+            // the far less useful *label* upstairs wore a chip. The sentence is
+            // the API's, the one the materials screen prints (D8: always with
+            // its reason).
+            <p className="text-xs text-caution">{component.cost.price.why_estimated}</p>
           ) : null}
           <Link
             href={`/invoices/${component.cost.price.invoice_id}#line-${component.cost.price.position}`}

@@ -96,53 +96,6 @@ function addOneDirham(whole: string): string {
   return digits.join("");
 }
 
-/** Plain English for the header fields C8 keys provenance by. */
-const FIELD_WORDS: Record<string, string> = {
-  supplier_name: "the supplier name",
-  invoice_no: "the invoice number",
-  invoice_date: "the invoice date",
-  currency: "the currency",
-  payment_kind: "the payment terms",
-  subtotal: "the subtotal",
-  tax: "the VAT",
-  total: "the invoice total",
-  discount_total: "the discount",
-  rounding_amount: "the rounding",
-  qty: "quantity",
-  unit: "unit",
-  unit_price: "price",
-  line_total: "total",
-  pack_size: "pack size",
-  raw_name: "name",
-};
-
-/**
- * A C8 field path as something a person reads: "total" becomes "the invoice
- * total", "lines.2.unit_price" becomes "line 3's price".
- *
- * These strings exist because C9 has to *name* what dragged a derived number
- * down. "This cost is estimated" with nothing after it is the kind of warning
- * people learn to scroll past; "it leans on the invoice total, which someone
- * supplied" is a thing to go and check. Line numbers are 1-based here and
- * 0-based on the wire, exactly as they are everywhere else on this screen.
- */
-export function describeField(path: string): string {
-  const parts = path.split(".");
-  if (parts.length === 3 && parts[0] === "lines") {
-    const field = FIELD_WORDS[parts[2]] ?? parts[2];
-    return `line ${Number(parts[1]) + 1}'s ${field}`;
-  }
-  return FIELD_WORDS[path] ?? path;
-}
-
-/** "the invoice total", "the invoice total and line 3's price", "..., and 2 more". */
-export function describeFields(paths: string[]): string {
-  const named = paths.slice(0, 2).map(describeField);
-  const rest = paths.length - named.length;
-  const listed = named.length === 2 ? `${named[0]} and ${named[1]}` : named[0];
-  return rest > 0 ? `${listed}, and ${rest} more` : listed;
-}
-
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /** "2026-08-21" renders "21 Aug 2026". String ops only - no timezone drift. */

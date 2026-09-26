@@ -200,6 +200,7 @@ function signal(overrides: Partial<DashboardSignal> = {}): DashboardSignal {
     price_before: null,
     price_after: null,
     unit: null,
+    unit_words: null,
     change_pct: null,
     ...overrides,
   };
@@ -228,6 +229,7 @@ function priceMove(overrides: Partial<DashboardPriceMove> = {}): DashboardPriceM
     price_before: "58.00",
     price_after: "61.40",
     unit: "kg",
+    unit_words: "per kg",
     change_pct: "5.9",
     ...overrides,
   };
@@ -618,9 +620,10 @@ describe("the signals", () => {
       price_before: "58.00",
       price_after: "61.40",
       unit: "kg",
+      unit_words: "per kg",
       change_pct: "5.9",
     });
-    expect(signalTrack(spike)?.left).toEqual({ figure: "AED 61.40", words: "/kg" });
+    expect(signalTrack(spike)?.left).toEqual({ figure: "AED 61.40", words: "per kg" });
     expect(signalName(spike)).toBe("Milk Powder");
     expect(signalName(signal())).toBe("Chicken 65 Dry");
     expect(signalName(signal({ menu_item_name: null, branch_name: "Deira Branch" }))).toBe("Deira");
@@ -671,17 +674,17 @@ describe("the supplier price moves", () => {
       tick: expect.closeTo(94.46, 1),
       loss: false,
       fell: false,
-      left: { figure: "AED 61.40", words: "/kg" },
+      left: { figure: "AED 61.40", words: "per kg" },
       right: "was 58.00",
       change: "+6%",
     });
     const fall = moveTrack(
-      priceMove({ direction: "down", price_before: "16.50", price_after: "15.00", unit: "litre", change_pct: "-9.1" }),
+      priceMove({ direction: "down", price_before: "16.50", price_after: "15.00", unit: "litre", unit_words: "per litre", change_pct: "-9.1" }),
     );
     expect(fall?.fell).toBe(true);
     expect(fall?.tick).toBe(100);
     expect(fall?.fill).toBeCloseTo(90.9, 0);
-    expect(fall?.left).toEqual({ figure: "AED 15.00", words: "/litre" });
+    expect(fall?.left).toEqual({ figure: "AED 15.00", words: "per litre" });
     expect(fall?.right).toBe("was 16.50");
     expect(fall?.change).toBe("-9%");
     // A basis change has no before and after: the row prints the sentence.
@@ -757,7 +760,7 @@ describe("the supplier price moves", () => {
     // Every real move draws a track from the API's two prices; the basis
     // change draws nothing and prints its sentence.
     expect(moves.map((move) => moveTrack(move) !== null)).toEqual([true, true, true, true, false]);
-    expect(moveTrack(moves[0])?.left).toEqual({ figure: "AED 61.40", words: "/kg" });
+    expect(moveTrack(moves[0])?.left).toEqual({ figure: "AED 61.40", words: "per kg" });
     expect(moveTrack(moves[1])?.fell).toBe(true);
     // Ranked by the money it moved whichever way, with the moneyless last.
     const weighed = moves

@@ -992,7 +992,7 @@ export interface Track {
   loss: boolean;
   /** A price that fell: the fill in the confirmed green, the chip too. */
   fell: boolean;
-  /** Under the track, left: the figure and its word - "38%" "kept", "AED 61.40" "/kg". */
+  /** Under the track, left: the figure and its word - "38%" "kept", "AED 61.40" "per kg". */
   left: { figure: string; words: string };
   /** Under the track, right, the tick's label: "menu 67%", "chain 67%", "was 58.00". */
   right: string;
@@ -1018,11 +1018,6 @@ export function shareTrack(
   };
 }
 
-/** "/kg", "/litre", "each" - the unit the price is per. */
-function perUnit(unit: string): string {
-  return unit === "each" ? "each" : `/${unit}`;
-}
-
 /** "+6%" from "5.9", "-9%" from "-9.1": the change the API judged the gate
  * on, as a whole number with its sign. */
 export function wholeChange(pct: string): string {
@@ -1030,9 +1025,15 @@ export function wholeChange(pct: string): string {
   return `${value > 0 ? "+" : ""}${value}%`;
 }
 
-/** A price before and after, per display unit, on one track. The larger of
- * the two is the full width; both widths are geometry only. */
-export function priceTrack(before: string, after: string, unit: string, change: string): Track {
+/** A price before and after, per display unit, on one track, the unit in
+ * the API's words ("per kg", "each" - D7, never "/kg"). The larger of the
+ * two is the full width; both widths are geometry only. */
+export function priceTrack(
+  before: string,
+  after: string,
+  unitWords: string,
+  change: string,
+): Track {
   const was = Number(before);
   const now = Number(after);
   const base = Math.max(was, now, 0);
@@ -1042,7 +1043,7 @@ export function priceTrack(before: string, after: string, unit: string, change: 
     tick: width(was),
     loss: false,
     fell: change.startsWith("-"),
-    left: { figure: `AED ${money(after)}`, words: perUnit(unit) },
+    left: { figure: `AED ${money(after)}`, words: unitWords },
     right: `was ${money(before)}`,
     change: wholeChange(change),
   };
@@ -1062,10 +1063,15 @@ export function signalTrack(signal: DashboardSignal): Track | null {
   if (
     signal.price_before !== null &&
     signal.price_after !== null &&
-    signal.unit !== null &&
+    signal.unit_words !== null &&
     signal.change_pct !== null
   ) {
-    return priceTrack(signal.price_before, signal.price_after, signal.unit, signal.change_pct);
+    return priceTrack(
+      signal.price_before,
+      signal.price_after,
+      signal.unit_words,
+      signal.change_pct,
+    );
   }
   return null;
 }
@@ -1077,12 +1083,12 @@ export function moveTrack(move: DashboardPriceMove): Track | null {
     move.kind !== "moved" ||
     move.price_before === null ||
     move.price_after === null ||
-    move.unit === null ||
+    move.unit_words === null ||
     move.change_pct === null
   ) {
     return null;
   }
-  return priceTrack(move.price_before, move.price_after, move.unit, move.change_pct);
+  return priceTrack(move.price_before, move.price_after, move.unit_words, move.change_pct);
 }
 
 /** The panel's chip: the estimated word said once in the heading when every

@@ -7,8 +7,7 @@ still shows but reads *estimated*, and the price says why (WP-61 amendment
 3, D11). Before this module that rule was worked out twice and raw database
 rows were unpacked in four more places, and the web wrote the "estimated
 because" sentence three times, three ways; now it is worked out here, once,
-with the one sentence every screen is to print (the web half of spec 3
-switches the screens over; until then they still compose their own).
+with the one sentence every screen prints as it arrives.
 
 Invariants, pinned by `tests/test_price_in_force.py`:
 - the quality is only ever reliable with limitations or estimated - nothing

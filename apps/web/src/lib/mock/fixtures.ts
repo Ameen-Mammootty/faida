@@ -38,6 +38,19 @@ import type {
   PriceHistory,
 } from "../types";
 
+/** The API's words for a display unit (`words.per_unit`), restated for the
+ * mock only: "per kg", "per litre", "each". A screen never composes these;
+ * it prints the field. */
+export function mockUnitWords(displayUnit: string): string {
+  return displayUnit === "each" ? "each" : `per ${displayUnit}`;
+}
+
+/** The API's sentence for a pack a person entered (`price_in_force`),
+ * restated for the mock only, the one estimated cause the mock demos. */
+export function mockOverrideWords(pack: string): string {
+  return `Estimated: divided by ${pack}, which someone entered for this product.`;
+}
+
 export interface FixtureLine {
   raw_name: string;
   qty: string | null;
@@ -86,10 +99,12 @@ function costs(
     base_unit: baseUnit,
     per_display_unit: perDisplayUnit,
     display_unit: displayUnit,
+    unit_words: mockUnitWords(displayUnit),
     quality: "reliable_with_limitations",
     asserted: [],
     pack,
     pack_source: "pack_size",
+    why_estimated: null,
     blocked: null,
     reason: null,
   };
@@ -101,10 +116,12 @@ function cannotCost(blocked: CostBlocker): LineCost {
     base_unit: null,
     per_display_unit: null,
     display_unit: null,
+    unit_words: null,
     quality: null,
     asserted: [],
     pack: null,
     pack_source: null,
+    why_estimated: null,
     blocked,
     reason: BLOCKED_REASONS[blocked],
   };

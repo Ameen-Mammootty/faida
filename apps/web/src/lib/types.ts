@@ -215,12 +215,16 @@ export interface LineCost {
   /** The same cost per kilo / per litre / each, two decimals. Money string. */
   per_display_unit: string | null;
   display_unit: string | null;
+  /** "per kg", "per litre", "each" - the API's words for the unit. */
+  unit_words: string | null;
   quality: CostQuality | null;
   /** C8 field paths a person asserted that this cost leans on (C9). */
   asserted: string[];
   /** The pack size divided by, exactly as the invoice printed it. */
   pack: string | null;
   pack_source: CostPackSource | null;
+  /** Why this cost reads estimated, composed by the API; null when it does not. */
+  why_estimated: string | null;
   blocked: CostBlocker | null;
   /** Plain English for `blocked`, straight from the API. */
   reason: string | null;
@@ -434,10 +438,16 @@ export interface MaterialPrice {
   /** Per kilo / per litre / each, two decimals. Money string. */
   per_display_unit: string | null;
   display_unit: string | null;
+  /** "per kg", "per litre", "each" - the API's words for the unit. */
+  unit_words: string;
   quality: CostQuality | null;
   asserted: string[];
   pack: string | null;
   pack_source: CostPackSource | null;
+  /** Why this price reads estimated, in the one sentence every screen prints
+   * (the stale delivery, a pack a person entered, or fields a person
+   * supplied); null exactly when the price is not estimated. */
+  why_estimated: string | null;
   supplier_name: string;
   supplier_item_id: string;
   product_name: string;
@@ -791,6 +801,8 @@ export interface PriceMoveLine {
   /** Per kilo / litre / each, two decimals. Money string. */
   per_display_unit: string;
   display_unit: string;
+  /** "per kg", "per litre", "each" - the API's words for the unit. */
+  unit_words: string;
   invoice_id: string;
   invoice_line_id: string;
   /** For the /invoices/<id>#line-<position> anchor. */
@@ -1393,6 +1405,8 @@ export interface DashboardSignal {
   price_before: string | null;
   price_after: string | null;
   unit: string | null;
+  /** "per kg", "per litre", "each"; null where `unit` is. */
+  unit_words: string | null;
   change_pct: string | null;
 }
 
@@ -1441,6 +1455,8 @@ export interface DashboardPriceMove {
   price_before: string | null;
   price_after: string | null;
   unit: string | null;
+  /** "per kg", "per litre", "each"; null where `unit` is. */
+  unit_words: string | null;
   change_pct: string | null;
 }
 

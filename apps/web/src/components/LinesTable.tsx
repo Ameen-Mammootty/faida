@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ApiError } from "@/lib/errors";
-import { describeFields, groupedMoney, money, quantity } from "@/lib/format";
+import { groupedMoney, money, quantity } from "@/lib/format";
 import { blankToNone } from "@/lib/placeholders";
 import type { Correction, InvoiceLine } from "@/lib/types";
 import FieldBadge from "./FieldBadge";
@@ -71,15 +71,10 @@ function costNote(line: InvoiceLine, amber: boolean): string | null {
     const alreadySaid = cost.blocked === "missing_quantity" || cost.blocked === "missing_unit_price";
     return amber && alreadySaid ? null : cost.reason;
   }
-  if (cost.pack_source === "override") {
-    return `Estimated: divided by ${cost.pack}, which someone entered for this product. The invoice itself does not say.`;
-  }
-  if (cost.quality === "estimated" && cost.asserted.length > 0) {
-    return `Estimated: this cost leans on ${describeFields(
-      cost.asserted,
-    )}, supplied by a person rather than read off the photo.`;
-  }
-  return null;
+  // The API's sentence (spec 3), the one the materials and menu screens
+  // print for the same line: a pack a person entered, or fields a person
+  // supplied. Null when the cost is not estimated.
+  return cost.why_estimated;
 }
 
 /** The Cost cell: the figure and how much to trust it, or why there is none. */
@@ -97,7 +92,7 @@ function CostCell({ line }: { line: InvoiceLine }) {
       <span className="tabular-nums">
         {groupedMoney(cost.per_display_unit)}
         <span className="ml-1 text-xs text-stone">
-          {cost.display_unit === "each" ? "each" : `/${cost.display_unit}`}
+          {cost.unit_words}
         </span>
       </span>
       {/* Only the exception is labelled. Every cost here carries the same

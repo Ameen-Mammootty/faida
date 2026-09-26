@@ -13,6 +13,7 @@
  */
 
 import { ApiError } from "../errors";
+import { mockOverrideWords, mockUnitWords } from "./fixtures";
 import type {
   BaseUnit,
   BlockedCost,
@@ -353,9 +354,11 @@ function toPrice(pack: MockPack): MaterialPrice | null {
   if (!pack.cost) return null;
   return {
     ...pack.cost,
+    unit_words: mockUnitWords(pack.cost.display_unit),
     quality: pack.cost.quality ?? RELIABLE,
     asserted: [],
     pack_source: pack.cost.pack_source ?? "pack_size",
+    why_estimated: pack.cost.pack_source === "override" ? mockOverrideWords(pack.cost.pack) : null,
     supplier_name: pack.supplier_name,
     supplier_item_id: pack.id,
     product_name: pack.canonical_name,

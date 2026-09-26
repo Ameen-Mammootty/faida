@@ -12,7 +12,7 @@ import {
   setPackSizeOverride,
   unmapSupplierItem,
 } from "@/lib/api";
-import { describeFields, formatDate, groupedMoney, roundedAed } from "@/lib/format";
+import { formatDate, groupedMoney, roundedAed } from "@/lib/format";
 import type {
   BaseUnit,
   BlockedCost,
@@ -45,10 +45,10 @@ const BASE_UNIT_LABEL: Record<BaseUnit, string> = {
 
 const BASE_UNIT_PER: Record<BaseUnit, string> = { g: "per kg", ml: "per litre", pc: "each" };
 
-/** "AED 23.50 per kg", "AED 4.69 per litre", "AED 0.35 each". */
+/** "AED 23.50 per kg", "AED 4.69 per litre", "AED 0.35 each" - the unit
+ * in the API's words. */
 function pricePerUnit(price: MaterialPrice): string {
-  const figure = `AED ${groupedMoney(price.per_display_unit ?? "0")}`;
-  return price.display_unit === "each" ? `${figure} each` : `${figure} per ${price.display_unit}`;
+  return `AED ${groupedMoney(price.per_display_unit ?? "0")} ${price.unit_words}`;
 }
 
 /**
@@ -78,23 +78,11 @@ function priceSource(price: MaterialPrice): string {
  * but nothing anywhere cross-checks the pack size it was divided by.
  */
 function priceQuality(price: MaterialPrice): string {
-  // D11 (M6 WP-61): the newest delivery could not be costed, so this figure
-  // is real but not current - and the unanswered delivery is named, because
-  // "estimated" with nothing after it is a warning people learn to scroll
-  // past.
-  if (price.newer_uncosted) {
-    const when = price.newer_uncosted.purchased_on
-      ? ` on ${formatDate(price.newer_uncosted.purchased_on)}`
-      : "";
-    return `Estimated: a newer delivery${when} has no cost yet - ${price.newer_uncosted.reason}`;
-  }
-  if (price.pack_source === "override") {
-    return `Estimated: divided by ${price.pack}, which someone entered for this product.`;
-  }
-  if (price.quality === "estimated" && price.asserted.length > 0) {
-    return `Estimated: leans on ${describeFields(price.asserted)}, supplied by a person.`;
-  }
-  return `From ${price.pack} on the invoice, which nothing cross-checks.`;
+  // Estimated, named by the API (spec 3): a newer delivery with no cost, a
+  // pack a person entered, or fields a person supplied - the same sentence
+  // the Menu screen prints, because "estimated" with nothing after it is a
+  // warning people learn to scroll past.
+  return price.why_estimated ?? `From ${price.pack} on the invoice, which nothing cross-checks.`;
 }
 
 type Feedback = { kind: "error" | "done"; text: string } | null;
