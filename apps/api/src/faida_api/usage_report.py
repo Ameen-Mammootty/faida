@@ -528,11 +528,11 @@ def usage_payload(blocks: UsageBlocks) -> dict:
 # --- layer three: the printout ----------------------------------------------
 
 
-def _figure(words: str | None, hole: str | None) -> str:
+def _figure(figure: str | None, hole: str | None) -> str:
     """A figure, or its reason in the hole and no number - never a dash on its
     own where a reader could take it for zero (§3.1)."""
-    if words is not None:
-        return words
+    if figure is not None:
+        return figure
     return f"- ({hole})" if hole else "-"
 
 

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   ANSWER_EMPTY,
-  componentCost,
   ANSWER_NO_MENU,
   BEST_HEADING,
   COST_COVERS,
@@ -25,6 +24,7 @@ import {
   branchOptions,
   branchParam,
   cardLine,
+  componentCost,
   componentLink,
   daysInclusive,
   everyHundred,

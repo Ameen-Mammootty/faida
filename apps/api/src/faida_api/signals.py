@@ -458,8 +458,7 @@ def move_plates(move: "PriceMove", *, currency: str = DEFAULT_CURRENCY) -> str |
         named.append(f"{counted} more")
     if not named:
         return _stop(lead)
-    listed = named[0] if len(named) == 1 else f"{', '.join(named[:-1])} and {named[-1]}"
-    return _stop(f"{lead}; also {listed}")
+    return _stop(f"{lead}; also {words.names(named)}")
 
 
 def move_sentence(move: "PriceMove", *, period: Period, currency: str = DEFAULT_CURRENCY) -> str:

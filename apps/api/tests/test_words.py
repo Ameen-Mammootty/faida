@@ -14,6 +14,7 @@ def test_a_headline_rounds_half_up_to_whole_dirhams_with_separators():
     assert words.money(D("1240.50"), "AED") == "AED 1,241"
     assert words.money(D("-1240.50"), "AED") == "AED -1,241"
     assert words.money(D("0.49"), "AED") == "AED 0"
+    assert words.dirhams(D("1240.50")) == "1,241"
 
 
 def test_a_plate_figure_is_cut_at_the_fils_and_never_rounded_up():
@@ -21,6 +22,8 @@ def test_a_plate_figure_is_cut_at_the_fils_and_never_rounded_up():
     assert words.plate_money(D("6.415"), "AED") == "AED 6.41"
     assert words.plate_money(D("6.419"), "AED") == "AED 6.41"
     assert words.plate_money(D("-0.079"), "AED") == "AED -0.07"
+    # As the web's `plateMoney` writes it: no separator, whatever the size.
+    assert words.plate_money(D("1234.567"), "AED") == "AED 1234.56"
 
 
 def test_a_price_per_unit_rounds_half_up_to_the_fils():
@@ -43,6 +46,7 @@ def test_counts_and_names_read_as_a_person_says_them():
     assert words.count(2, "dish", "dishes") == "2 dishes"
     assert words.names(["Deira"]) == "Deira"
     assert words.names(["Deira", "Rolla", "Karama"]) == "Deira, Rolla and Karama"
+    assert words.names([]) == ""
     assert words.short_branch("Rolla Branch") == "Rolla"
     assert words.short_branch("Branch") == "Branch"
 
@@ -51,7 +55,9 @@ def test_dates_spell_the_same_months_under_any_locale():
     day = datetime.date(2026, 8, 31)
     before = locale.setlocale(locale.LC_TIME)
     try:
-        for name in ("fr_FR.UTF-8", "ar_AE.UTF-8", "de_DE.UTF-8"):
+        # The host's own locale first, so the test asserts even on an image
+        # with no other locale installed.
+        for name in ("", "fr_FR.UTF-8", "ar_AE.UTF-8", "de_DE.UTF-8"):
             try:
                 locale.setlocale(locale.LC_TIME, name)
             except locale.Error:

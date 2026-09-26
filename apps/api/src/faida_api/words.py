@@ -29,7 +29,14 @@ def money(amount: Decimal, currency: str) -> str:
     """A headline figure: whole dirhams rounded half up, thousands separated
     (the display rule, `roundedAed` on the web, decided 2026-09-05). Exact
     figures belong in the invoice detail."""
-    return f"{currency} {amount.quantize(_WHOLE, rounding=ROUND_HALF_UP):,}"
+    return f"{currency} {dirhams(amount)}"
+
+
+def dirhams(amount: Decimal) -> str:
+    """`money` without the currency word, for a table cell whose column header
+    carries it once - the same rounding, so the cell and the line above it
+    can never disagree."""
+    return f"{amount.quantize(_WHOLE, rounding=ROUND_HALF_UP):,}"
 
 
 def plate_money(amount: Decimal, currency: str) -> str:
@@ -38,12 +45,15 @@ def plate_money(amount: Decimal, currency: str) -> str:
     carries three decimals and the third is storage precision, not
     information. Never whole dirhams: a plate margin rounded to AED 0 at karak
     prices says nothing (the 2026-08-30 design review)."""
-    return f"{currency} {amount.quantize(_FILS, rounding=ROUND_DOWN):,}"
+    # No thousands separator: the web's `plateMoney` has none, and a plate
+    # is one figure on a screen and in a sentence.
+    return f"{currency} {amount.quantize(_FILS, rounding=ROUND_DOWN)}"
 
 
 def price(amount: Decimal, currency: str) -> str:
-    """A price per unit of a material - per kg, per litre, each: fils,
-    rounded half up."""
+    """An exact figure in fils, rounded half up, thousands separated: a price
+    per unit of a material (per kg, per litre, each), or a total the usage
+    printout shows to the fils."""
     return f"{currency} {amount.quantize(_FILS, rounding=ROUND_HALF_UP):,}"
 
 
@@ -64,19 +74,22 @@ def pct(value: Decimal) -> str:
 def qty(value: Decimal) -> str:
     """ "2" for 2.000, "2.5" for 2.500 - the till's trailing zeros are its
     own, not information."""
-    normalized = value.normalize()
-    if normalized == normalized.to_integral_value():
-        normalized = normalized.to_integral_value()
-    return f"{normalized:f}"
+    return f"{_trimmed(value):f}"
 
 
 def portions(value: Decimal) -> str:
     """ "1,240" for 1240.000, "2.5" for 2.500 - `qty` with the separator a
     thousand portions reads with."""
+    return f"{_trimmed(value):,f}"
+
+
+def _trimmed(value: Decimal) -> Decimal:
+    """The value without its trailing zeros, and never in exponent form
+    (1240.000 normalizes to 1.24E+3)."""
     normalized = value.normalize()
     if normalized == normalized.to_integral_value():
-        return f"{int(normalized):,}"
-    return f"{normalized:,f}"
+        return normalized.to_integral_value()
+    return normalized
 
 
 def count(n: int, singular: str, plural: str | None = None) -> str:
@@ -86,9 +99,9 @@ def count(n: int, singular: str, plural: str | None = None) -> str:
 
 
 def names(items: Sequence[str]) -> str:
-    """ "A", "A and B", "A, B and C"."""
-    if len(items) == 1:
-        return items[0]
+    """ "A", "A and B", "A, B and C"; nothing for no names."""
+    if len(items) <= 1:
+        return "".join(items)
     return f"{', '.join(items[:-1])} and {items[-1]}"
 
 

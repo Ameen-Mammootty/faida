@@ -204,14 +204,6 @@ def _whole(amount: Decimal) -> Decimal:
     return amount.quantize(_WHOLE, rounding=ROUND_HALF_UP)
 
 
-def _dirhams(amount: Decimal) -> str:
-    """The figure `words.money` prints without the currency word, for a table
-    cell whose column header carries the currency once. The rounding is that
-    function's own: it is called and its (empty) currency word stripped, so
-    the cell can never round differently from the line above it."""
-    return words.money(amount, "").lstrip()
-
-
 def _money(value: str | None) -> Decimal | None:
     return None if value is None else Decimal(value)
 
@@ -325,8 +317,8 @@ def _rows(month: dict) -> tuple[BranchRow, ...]:
                 latest_day=None if day_sales is None else _whole(day_sales),
                 month=None if month_sales is None else _whole(month_sales),
                 materials_share=None if share is None else str(share),
-                latest_day_words=HOLE if day_sales is None else _dirhams(day_sales),
-                month_words=HOLE if month_sales is None else _dirhams(month_sales),
+                latest_day_words=HOLE if day_sales is None else words.dirhams(day_sales),
+                month_words=HOLE if month_sales is None else words.dirhams(month_sales),
                 materials_share_words=HOLE if share is None else f"{share}%",
             )
         )

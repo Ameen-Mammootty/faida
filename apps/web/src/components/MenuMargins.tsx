@@ -46,7 +46,6 @@ import LossFigure from "./LossFigure";
  * from there is the invoice line behind any ingredient's price.
  */
 
-
 /** "AED 20.20 per kg", "AED 4.69 per litre", "AED 0.35 each". */
 function pricePerUnit(price: MaterialPrice): string {
   const figure = `AED ${groupedMoney(price.per_display_unit ?? "0")}`;

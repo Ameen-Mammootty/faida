@@ -152,7 +152,7 @@ Exception, pinned by the 2026-08-30 design review: per-plate costs and margins a
 everywhere (a plate margin rounded to whole dirhams carries no information at karak prices);
 the rounding rule applies to totals and aggregates.
 A plate figure is cut to the fils, never rounded up (D9 of 2026-09-24): `words.plate_money` in the API and `plateMoney` on the web, so a sentence and a screen quote one figure.
-Every English rule for a figure - money, a price per unit, a percentage, a quantity, a count, a date, a branch - lives once in `words.py`; the JSON helpers are `wire.py` and reading typed input is `typed.py`.
+The shared English rules for a figure - money, a price per unit, a percentage, a quantity, a count, a list of names, a date, a branch - live once in `words.py` (a period's date range is `ratio.window_words`); the JSON helpers are `wire.py` and reading typed input is `typed.py`.
 No jargon; colour never carries meaning alone.
 Purchases ÷ net sales is never labelled "food cost %", and branch contribution is never labelled net profit.
 The morning brief speaks the same way (M10): the materials figure is "materials share of costed sales" with the covered share beside it, the newest loaded day is named and aged in the first line, and "yesterday" is printed only on a morning when it is true.
