@@ -26,6 +26,18 @@ export function money(value: string): string {
 }
 
 /**
+ * A plate's cost, margin or price: fils, cut and never rounded - 6.415 is
+ * "6.41" - by string operations on `money`'s output (a stored plate carries
+ * three decimals, and the third is storage precision, not information).
+ * The API writes a plate the same way (`words.plate_money`, D9 of
+ * 2026-09-24), so a figure on a screen and in a sentence is one figure.
+ */
+export function plateMoney(value: string): string {
+  const padded = money(value);
+  return padded.slice(0, padded.indexOf(".") + 3);
+}
+
+/**
  * money(), with thousands separators: "52250.00" renders "52,250.00". String
  * operations only, like everything else here. Costs per kilo reach five
  * figures for real ingredients - a gram of saffron is not a rounding error -

@@ -66,6 +66,7 @@ from io import BytesIO
 
 from PIL import Image, ImageDraw, ImageFont
 
+from . import words
 from .brief import HOLE, BranchRow, Brief, ItemLine, Kpi, SpikeLine
 
 #: 4:5, which WhatsApp shows whole in the bubble; a taller picture is cropped
@@ -135,7 +136,7 @@ def _uncosted_words(count: int) -> str:
     """What the card says under the two lists when the menu has sales the read
     could not cost: a short list is short for a reason, and the reason belongs
     beside it (C12.7's habit, in the card's own words)."""
-    return f"{count} item{'' if count == 1 else 's'} cannot be costed yet"
+    return f"{words.count(count, 'item')} cannot be costed yet"
 
 
 def _more_words(count: int) -> str:
@@ -261,15 +262,15 @@ def _wrap(text: str, name: str, size: int, width: int, max_lines: int) -> list[s
         return []
     if max_lines <= 1:
         return [_fit(text, name, size, width)]
-    words = text.split()
+    tokens = text.split()
     lines: list[str] = []
     current = ""
-    for index, word in enumerate(words):
+    for index, word in enumerate(tokens):
         candidate = f"{current} {word}".strip()
         if current and _width(candidate, name, size) > width:
             lines.append(current)
             if len(lines) == max_lines - 1:
-                return lines + [_fit(" ".join(words[index:]), name, size, width)]
+                return lines + [_fit(" ".join(tokens[index:]), name, size, width)]
             current = word
         else:
             current = candidate
@@ -508,12 +509,12 @@ def _table(sheet: _Sheet, rows: tuple[BranchRow, ...], top: int) -> int:
         sheet.text(
             name_x, text_y, _fit(row.name, REGULAR, row_size, name_w), REGULAR, row_size, INK
         )
-        for right, words in (
+        for right, cell in (
             (right_latest, row.latest_day_words),
             (right_month, row.month_words),
             (right_materials, row.materials_share_words),
         ):
-            sheet.right(right, text_y, words, REGULAR, row_size, INK)
+            sheet.right(right, text_y, cell, REGULAR, row_size, INK)
     if rest:
         y = row_top + len(drawn) * row_h
         sheet.add(Rule(MARGIN, y, CONTENT_W, 1, BORDER))

@@ -61,29 +61,21 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from decimal import ROUND_HALF_UP, Decimal
 
-from . import contribution, costing, plates
+from . import contribution, costing, plates, words
 
 # The words come from the shipped modules rather than being written again
 # (C14.11): "25-31 Aug", "3 deliveries", "per kg" and the four quality words
-# are composed in one place each, so `/sales`, the dashboard and this module
-# can never say the same thing two ways.
-from .contribution import (
-    _long_date,
-    _money_words,
-    _names_words,
-    _price_words,
-    _qty_words,
-)
+# are composed in one place each (`words`, `ratio.window_words`, `quality`),
+# so `/sales`, the dashboard and this module can never say the same thing two
+# ways.
 from .quality import Quality, worst
 from .ratio import (
     FILS,
     PendingPaper,
     Window,
-    _pending_sentences,
-    _plural,
+    pending_sentences,
     window_words,
 )
-from .signals import _per_unit_words
 
 #: A dish's and a line's base quantity round here, once, and nothing above
 #: them rounds at all (C14.1, D5). Three decimals of a gram is far below the
@@ -528,11 +520,11 @@ def _price_sentence(
     per_display, display_unit = costing.per_display_unit(
         price.cost_per_base_unit, price.cost_base_unit
     )
-    words = _price_words(per_display, currency)
+    figure = words.price(per_display, currency)
     lead = "at an estimated" if estimated else "at"
-    sentence = f"{lead} {words} {_per_unit_words(display_unit)}"
+    sentence = f"{lead} {figure} {words.per_unit(display_unit)}"
     if price.priced_on is not None:
-        sentence = f"{sentence} on {_long_date(price.priced_on)}"
+        sentence = f"{sentence} on {words.long_date(price.priced_on)}"
     return sentence, per_display, display_unit
 
 
@@ -926,7 +918,7 @@ def _foreign_sentences(placed: Sequence[LineEntry], currency: str) -> list[str]:
         if entry.currency != currency:
             by_currency.setdefault(entry.currency, set()).add(entry.invoice_id)
     return [
-        f"{_plural(len(papers), 'paper')} billed in {code}, counted by quantity"
+        f"{words.count(len(papers), 'paper')} billed in {code}, counted by quantity"
         for code, papers in sorted(by_currency.items())
     ]
 
@@ -1004,7 +996,7 @@ def _row(
         foreign = len(bought.foreign)
         unmeasured = bought.unmeasured
         if unmeasured:
-            bought_hole = f"{_plural(unmeasured, 'line')} could not be measured"
+            bought_hole = f"{words.count(unmeasured, 'line')} could not be measured"
             bought_measured = bought.measured_total
             material_quality = worst(material_quality, Quality.INCOMPLETE)
         else:
@@ -1051,21 +1043,21 @@ def _row(
         notes.append("recipe written after this period")
     if refunded:
         word = "portion" if refunded == 1 else "portions"
-        notes.append(f"{_qty_words(refunded)} {word} refunded, counted as made")
+        notes.append(f"{words.qty(refunded)} {word} refunded, counted as made")
     if returns:
-        notes.append(_plural(returns, "return"))
+        notes.append(words.count(returns, "return"))
     notes.extend(_foreign_sentences(lines, currency))
     if bought is not None and bought.overrides:
-        notes.append(f"a pack size you entered measures {_plural(bought.overrides, 'line')}")
+        notes.append(f"a pack size you entered measures {words.count(bought.overrides, 'line')}")
     if unmeasured:
         notes.append(
-            f"{_plural(unmeasured, 'line')} could not be measured - see Can't be costed yet"
+            f"{words.count(unmeasured, 'line')} could not be measured - see Can't be costed yet"
         )
     if material.has_packs and (bought is None or not bought.entries):
         notes.append(f"no purchases in this window, {window_words(window)}")
     if branch is not None and branch.pending:
         purchase_quality = worst(purchase_quality, Quality.ESTIMATED)
-        notes.extend(_pending_sentences(list(branch.pending)))
+        notes.extend(pending_sentences(list(branch.pending)))
     if used is not None and used.hole_note is not None:
         material_quality = worst(material_quality, Quality.INCOMPLETE)
         notes.append(used.hole_note)
@@ -1332,7 +1324,7 @@ def chain_material_rows(
         counted = with_used or with_bought or group
         distinct = {(r.window.start, r.window.end) for r in counted}
         if len(distinct) > 1:
-            spans = _names_words(
+            spans = words.names(
                 [
                     f"{window_words(r.window)} at {names.get(r.branch_id or '', r.branch_id or '')}"
                     for r in sorted(counted, key=lambda r: (r.window.start, r.branch_id or ""))
@@ -1344,7 +1336,7 @@ def chain_material_rows(
         if holding is not None:
             verb = "holds" if holding.papers == 1 else "hold"
             notes.append(
-                f"{_plural(holding.papers, 'paper')} with no branch "
+                f"{words.count(holding.papers, 'paper')} with no branch "
                 f"{verb} {holding.bought_words} of {material.name}, not counted here"
             )
 
@@ -1544,9 +1536,9 @@ def unmapped_packs(
     foreign = sum(1 for e in group if e.line.currency != currency)
     packs = len({e.line.supplier_item_id for e in group})
     sentence = (
-        f"{_plural(len(group), 'purchase line')} on {_plural(packs, 'product')} "
+        f"{words.count(len(group), 'purchase line')} on {words.count(packs, 'product')} "
         f"{'has' if len(group) == 1 else 'have'} no material yet, "
-        f"{_money_words(spend, currency)} on the printed line totals"
+        f"{words.money(spend, currency)} on the printed line totals"
     )
     if foreign:
         codes = sorted({e.line.currency for e in group if e.line.currency != currency})
@@ -1591,7 +1583,7 @@ def orphans(
         reasons.append(f"{len(no_price)} with no price")
     if unmatched:
         reasons.append(f"{len(unmatched)} not matched to a product")
-    sentence = f"{_plural(len(group), 'line')} reached no product: {', '.join(reasons)}"
+    sentence = f"{words.count(len(group), 'line')} reached no product: {', '.join(reasons)}"
     return Orphans(
         lines=len(group),
         foreign=len(foreign),
@@ -1652,22 +1644,19 @@ def recipe_coverage(
     if pct is None:
         sentence = f"no sales value to measure {scope_words} recipe coverage on"
     else:
-        sentence = (
-            f"recipes cover {pct.quantize(Decimal('1'), rounding=ROUND_HALF_UP)}% "
-            f"of {scope_words} sales value"
-        )
+        sentence = f"recipes cover {words.pct(pct)} of {scope_words} sales value"
         if without_recipe:
             sentence += (
-                f"; {_plural(len(without_recipe), 'dish')} sold "
+                f"; {words.count(len(without_recipe), 'dish')} sold "
                 f"{'has' if len(without_recipe) == 1 else 'have'} no recipe"
             )
         if unmapped:
             sentence += (
-                f"; {_plural(len(unmapped), 'till name')} sold "
+                f"; {words.count(len(unmapped), 'till name')} sold "
                 f"{'is' if len(unmapped) == 1 else 'are'} not mapped to a dish"
             )
     if orphan_lines:
-        sentence += f"; {_plural(orphan_lines, 'purchase line')} reached no product"
+        sentence += f"; {words.count(orphan_lines, 'purchase line')} reached no product"
     return Coverage(
         recipes_pct=pct,
         covered_value=covered.quantize(FILS),

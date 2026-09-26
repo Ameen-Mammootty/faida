@@ -583,6 +583,15 @@ def test_cost_per_portion_today_is_carried_only_when_it_differs():
     assert "today's plate is AED 6.41" in moved[0].notes
 
 
+def test_todays_plate_is_cut_to_the_fils_as_menu_prints_it():
+    """D9 (2026-09-24): a plate is cut to the fils everywhere, so the note
+    and `/menu` quote one figure. 6.415 rounded half up read AED 6.42 here
+    while the Menu screen showed AED 6.41 for the same plate."""
+    menu = _menu(_item())
+    (row,) = _rows([_day()], menu, today_plates={"m-karak": _plate("6.415")})
+    assert "today's plate is AED 6.41" in row.notes
+
+
 def test_a_row_with_no_cost_of_its_own_is_never_given_todays():
     """A hole never renders as a fat margin, and least of all somebody else's
     margin: an uncosted period row shows no cost at all."""

@@ -77,7 +77,7 @@ import asyncpg
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from . import costing
+from . import costing, typed, wire
 from .auth import AuthContext, require_context
 from .confirm import (
     CorrectionRefused,
@@ -91,7 +91,6 @@ from .confirm import (
     SupplierNotFound,
     TotalsEdit,
     _apply_correction,
-    _parse_number,
 )
 from .contracts import InvoiceStatus, JobKind
 from .db import Database, MaterialMeasuredOtherwise, SupplierAliasCollision
@@ -205,14 +204,6 @@ class Approval(BaseModel):
 # --- serialization (money as strings, never floats) -------------------------
 
 
-def _dec(value: Decimal | None) -> str | None:
-    return None if value is None else str(value)
-
-
-def _iso(value) -> str | None:
-    return None if value is None else value.isoformat()
-
-
 def _booked_under(row: asyncpg.Record) -> dict | None:
     """WP-87: the supplier this paper is filed against, as {id, name}, or null
     while it has none.
@@ -262,11 +253,11 @@ def _invoice_summary(row: asyncpg.Record) -> dict:
         "supplier_id": _maybe_str(row["supplier_id"]),
         "booked_under": _booked_under(row),
         "invoice_no": row["invoice_no"],
-        "invoice_date": _iso(row["invoice_date"]),
+        "invoice_date": wire.iso(row["invoice_date"]),
         "currency": row["currency"],
-        "total": _dec(row["total"]),
+        "total": wire.dec(row["total"]),
         "status": row["status"],
-        "created_at": _iso(row["created_at"]),
+        "created_at": wire.iso(row["created_at"]),
         "branch_id": _maybe_str(row["branch_id"]),
         "branch_name": row["branch_name"],
         "document_id": str(row["document_id"]),
@@ -312,9 +303,9 @@ def _cost_figure(row: asyncpg.Record) -> dict:
     basis = row["cost_basis"] or {}
     per_display, display_unit = costing.per_display_unit(cost, row["cost_base_unit"])
     return {
-        "per_base_unit": _dec(cost),
+        "per_base_unit": wire.dec(cost),
         "base_unit": row["cost_base_unit"],
-        "per_display_unit": _dec(per_display),
+        "per_display_unit": wire.dec(per_display),
         "display_unit": display_unit,
         "quality": basis.get("quality"),
         "asserted": basis.get("asserted", []),
@@ -411,8 +402,8 @@ async def _invoice_detail(request: Request, invoice_id: str, ctx: AuthContext) -
                 "supplier_name": original["supplier_name"],
                 "invoice_no": original["invoice_no"],
                 "currency": original["currency"],
-                "total": _dec(original["total"]),
-                "created_at": _iso(original["created_at"]),
+                "total": wire.dec(original["total"]),
+                "created_at": wire.iso(original["created_at"]),
             }
 
     # The detail's booked_under carries one word more than the list's: whether
@@ -428,24 +419,24 @@ async def _invoice_detail(request: Request, invoice_id: str, ctx: AuthContext) -
         **_invoice_summary(invoice),
         "booked_under": booked_under,
         "duplicate_of": duplicate_of,
-        "subtotal": _dec(invoice["subtotal"]),
-        "tax": _dec(invoice["tax"]),
+        "subtotal": wire.dec(invoice["subtotal"]),
+        "tax": wire.dec(invoice["tax"]),
         "payment_kind": invoice["payment_kind"],
         "confidence": invoice["confidence"],
         # C8, sanctioned C6 extension: where each field came from, so the
         # screen can show a reconstructed total as reconstructed.
         "provenance": invoice["provenance"],
-        "confirmed_at": _iso(invoice["confirmed_at"]),
+        "confirmed_at": wire.iso(invoice["confirmed_at"]),
         "lines": [
             {
                 "position": line["position"],
                 "raw_name": line["raw_name"],
                 "supplier_item_id": _maybe_str(line["supplier_item_id"]),
-                "qty": _dec(line["qty"]),
+                "qty": wire.dec(line["qty"]),
                 "unit": line["unit"],
                 "pack_size": line["pack_size"],
-                "unit_price": _dec(line["unit_price"]),
-                "line_total": _dec(line["line_total"]),
+                "unit_price": wire.dec(line["unit_price"]),
+                "line_total": wire.dec(line["line_total"]),
                 "line_kind": line["line_kind"],
                 "checks": line["checks"],
                 "cost": _line_cost(line, costed=costed, foreign_currency=foreign_currency),
@@ -457,7 +448,7 @@ async def _invoice_detail(request: Request, invoice_id: str, ctx: AuthContext) -
             "status": invoice["document_status"],
             "classification": invoice["document_classification"],
             "source": invoice["document_source"],
-            "created_at": _iso(invoice["document_created_at"]),
+            "created_at": wire.iso(invoice["document_created_at"]),
         },
         "image_url": image_url,
     }
@@ -620,7 +611,7 @@ def _to_edit(correction: Correction) -> Edit:
 
 
 def _number(correction: Correction) -> Decimal:
-    value = _parse_number(correction.value)
+    value = typed.parse_number(correction.value)
     if value is None:
         raise HTTPException(
             status_code=422,
@@ -731,7 +722,7 @@ async def approve_invoice(
                 "supplier_name": invoice["supplier_name"],
                 "invoice_no": invoice["invoice_no"],
                 "currency": invoice["currency"],
-                "total": _dec(invoice["total"]),
+                "total": wire.dec(invoice["total"]),
                 "payment_kind": invoice["payment_kind"],
                 "duplicate_of_invoice_id": _maybe_str(invoice["duplicate_of_invoice_id"]),
             },
@@ -875,7 +866,7 @@ def _manual_number(value: str | None, field: str) -> Decimal | None:
     """The unsigned-decimal-string rule, shared with PATCH and chat."""
     if value is None:
         return None
-    number = _parse_number(value)
+    number = typed.parse_number(value)
     if number is None:
         raise HTTPException(
             status_code=422,
@@ -883,13 +874,6 @@ def _manual_number(value: str | None, field: str) -> Decimal | None:
             'send an unsigned decimal string like "16" or "4.50"',
         )
     return number
-
-
-def _clean(value: str | None) -> str | None:
-    """Trim free-text fields; a blank string means the field was not given."""
-    if value is None:
-        return None
-    return value.strip() or None
 
 
 def _to_extracted_invoice(body: ManualInvoice) -> ExtractedInvoice:
@@ -905,8 +889,8 @@ def _to_extracted_invoice(body: ManualInvoice) -> ExtractedInvoice:
             ExtractedLine(
                 raw_name=raw_name,
                 qty=_manual_number(line.qty, f"line {n} qty"),
-                unit=_clean(line.unit),
-                pack_size=_clean(line.pack_size),
+                unit=typed.clean(line.unit),
+                pack_size=typed.clean(line.pack_size),
                 unit_price=_manual_number(line.unit_price, f"line {n} unit_price"),
                 line_total=_manual_number(line.line_total, f"line {n} line_total"),
             )
@@ -916,10 +900,10 @@ def _to_extracted_invoice(body: ManualInvoice) -> ExtractedInvoice:
     # currency still normalizes, so "dirhams" typed by hand becomes AED too.
     return normalize_extracted(
         ExtractedInvoice(
-            supplier_name=_clean(body.supplier_name),
-            invoice_no=_clean(body.invoice_no),
+            supplier_name=typed.clean(body.supplier_name),
+            invoice_no=typed.clean(body.invoice_no),
             invoice_date=body.invoice_date,
-            currency=_clean(body.currency),
+            currency=typed.clean(body.currency),
             payment_kind=body.payment_kind,
             lines=lines,
             subtotal=_manual_number(body.subtotal, "subtotal"),
@@ -1120,12 +1104,12 @@ async def supplier_item_prices(item_id: uuid.UUID, request: Request, ctx: Contex
         "canonical_name": item["canonical_name"],
         "unit": item["unit"],
         "pack_size": item["pack_size"],
-        "last_price": _dec(item["last_price"]),
-        "prev_price": _dec(item["prev_price"]),
+        "last_price": wire.dec(item["last_price"]),
+        "prev_price": wire.dec(item["prev_price"]),
         "prices": [
             {
-                "price": _dec(row["price"]),
-                "observed_at": _iso(row["observed_at"]),
+                "price": wire.dec(row["price"]),
+                "observed_at": wire.iso(row["observed_at"]),
                 "invoice_id": _maybe_str(row["invoice_id"]),
             }
             for row in rows
@@ -1190,8 +1174,8 @@ def _pack_summary(row: asyncpg.Record, cost: asyncpg.Record | None = None) -> di
         # (WP-55). Shown on the pack so the sentence does not disappear the
         # moment it takes effect.
         "pack_size_override": row["pack_size_override"],
-        "last_price": _dec(row["last_price"]),
-        "last_price_at": _iso(row["last_price_at"]),
+        "last_price": wire.dec(row["last_price"]),
+        "last_price_at": wire.iso(row["last_price_at"]),
         # What this particular pack most recently worked out at per kilo, which
         # is what makes two suppliers' packs comparable at all - the reason the
         # merge above it is worth making (WP-54).
@@ -1226,7 +1210,7 @@ def newer_uncosted_summary(line: asyncpg.Record) -> dict:
         "invoice_id": line["invoice_id"],
         "position": line["position"],
         "raw_name": line["raw_name"],
-        "purchased_on": _iso(line["purchased_on"]),
+        "purchased_on": wire.iso(line["purchased_on"]),
         "reason": blocked_line_reason(line),
     }
 
@@ -1260,8 +1244,8 @@ def _material_price(row: asyncpg.Record, stale_line: asyncpg.Record | None = Non
         "position": row["position"],
         # The date we ranked by, and separately whether the invoice printed one:
         # "bought on 6 July" and "recorded on 29 August" are different claims.
-        "purchased_on": _iso(row["purchased_on"]),
-        "invoice_date": _iso(row["invoice_date"]),
+        "purchased_on": wire.iso(row["purchased_on"]),
+        "invoice_date": wire.iso(row["invoice_date"]),
         "newer_uncosted": None,
     }
     if stale_line is not None:
@@ -1359,7 +1343,7 @@ async def create_ingredient(body: IngredientCreate, request: Request, ctx: Conte
     side door (row 64). The screen enforces the click; this endpoint creates
     exactly one and names its actor."""
     db: Database = request.app.state.db
-    name = _clean(body.name)
+    name = typed.clean(body.name)
     if not name:
         raise HTTPException(status_code=422, detail="a raw material needs a name")
     base_unit = units.measure_base_unit(body.unit)
@@ -1408,7 +1392,7 @@ async def list_unmapped_supplier_items(request: Request, ctx: Context) -> dict:
                 "pack_size": item["pack_size"],
                 "supplier_id": item["supplier_id"],
                 "supplier_name": item["supplier_name"],
-                "spend": _dec(item["spend"]),
+                "spend": wire.dec(item["spend"]),
                 "line_count": item["line_count"],
                 "base_unit": _item_base_unit(item),
                 "proposals": [
@@ -1448,7 +1432,7 @@ async def map_supplier_item(
         base_unit = ingredient["base_unit"]
         material_name = ingredient["name"]
     else:
-        name = _clean(body.name)
+        name = typed.clean(body.name)
         if not name:
             raise HTTPException(status_code=422, detail="give an ingredient_id or a name")
         material_name = name
@@ -1485,7 +1469,7 @@ async def map_supplier_item(
             str(item_id),
             tenant_id=ctx.tenant_id,
             ingredient_id=None if body.ingredient_id is None else str(body.ingredient_id),
-            name=None if body.ingredient_id is not None else _clean(body.name),
+            name=None if body.ingredient_id is not None else typed.clean(body.name),
             base_unit=base_unit,
             actor=ctx.actor,
         )
@@ -1588,13 +1572,13 @@ async def list_blocked_costs(request: Request, ctx: Context) -> dict:
                 "invoice_id": line["invoice_id"],
                 "invoice_line_id": line["invoice_line_id"],
                 "position": line["position"],
-                "invoice_date": _iso(line["invoice_date"]),
+                "invoice_date": wire.iso(line["invoice_date"]),
             }
         group["line_count"] += 1
         group["spend"] += line["line_total"] or Decimal(0)
 
     ordered = sorted(groups.values(), key=lambda row: (-row["spend"], row["product_name"]))
-    return {"blocked": [{**row, "spend": _dec(row["spend"])} for row in ordered]}
+    return {"blocked": [{**row, "spend": wire.dec(row["spend"])} for row in ordered]}
 
 
 class PackSizeOverride(BaseModel):
@@ -1622,7 +1606,7 @@ async def set_pack_size_override(
     if item is None:
         raise HTTPException(status_code=404, detail="supplier item not found")
 
-    printed = _clean(body.pack_size)
+    printed = typed.clean(body.pack_size)
     pack = None if printed is None else units.parse(printed)
     base_unit = None if printed is None else units.base_unit_of(printed)
     if pack is None or base_unit is None:
