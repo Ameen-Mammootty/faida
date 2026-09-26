@@ -116,15 +116,11 @@ const ALIASES: Record<SalesColumn, string[]> = {
   ],
 };
 
-/** Lowercased, brackets dropped, every run of spaces, underscores, hyphens
- * and slashes reduced to one space - so "Net Sales (AED)", "net_sales aed"
- * and "NET-SALES AED" are one column name. */
+/** A column name read the way the API keys a layout's header - `nameKey` -
+ * so "Net Sales (AED)", "net_sales aed" and "NET-SALES AED" are one column
+ * name here and in the saved layout's `header_key`. */
 export function normalizeHeader(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[()[\]{}.]/g, " ")
-    .trim()
-    .replace(/[\s\-_/]+/g, " ");
+  return nameKey(name);
 }
 
 /** Column names, normalised, sorted, joined with "|": order-insensitive
@@ -342,6 +338,14 @@ export function amountProblem(value: string, what: "amount" | "quantity"): strin
   if (!/^-?\d+(\.\d+)?$/.test(text)) {
     return `"${text}" is not ${what === "amount" ? "an amount" : "a quantity"}`;
   }
+  // The door stores a figure as printed, to the column's places, and refuses
+  // one with more rather than rounding it - so the row stops here, not the
+  // whole load at the door.
+  const places = what === "amount" ? 2 : 3;
+  if ((text.split(".")[1] ?? "").length > places) {
+    const noun = what === "amount" ? "an amount" : "a quantity";
+    return `"${text}" has more than ${places} decimals - ${noun} is stored as printed, to ${places}`;
+  }
   return null;
 }
 
@@ -358,10 +362,36 @@ export function numberKey(value: string): string {
   return negative && magnitude !== "0" ? `-${magnitude}` : magnitude;
 }
 
-/** Case- and space-insensitive, the way a person reads two names as one -
- * and the way `till_items.name_key` is minted. */
+// A copy of the API's `matching.normalize`, which mints every till name key
+// (`till_items.name_key`, `branch_aliases.alias_key`, a layout's
+// `header_key`, a line's part of the day key). The copy exists because the
+// file is read here before the API sees it; the answer key both test suites
+// read (`apps/api/tests/fixtures/till_keys.json`) keeps it exact. Python's
+// `\s`, `\w` and `\d` are Unicode-wide and JavaScript's are not, so each is
+// spelled out: whitespace is `str.isspace`'s set, a word character is a
+// letter or a number, a digit is any decimal digit (Arabic-Indic included).
+const PY_SPACE =
+  "\\t\\n\\v\\f\\r\\x1c-\\x1f \\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000";
+/** A dot not between two digits: "2.5kg" keeps it, "L.L.C." does not. */
+const LOOSE_DOT = /(?<!\p{Nd})\.|\.(?!\p{Nd})/gu;
+/** Anything that is not a letter, a number, whitespace or a kept dot; and
+ * the underscore, a word character that is still punctuation in a name. */
+const PUNCTUATION = new RegExp(`[^\\p{L}\\p{N}${PY_SPACE}.]|_`, "gu");
+const SPACES = new RegExp(`[${PY_SPACE}]+`, "u");
+
+/** Casefolded, punctuation stripped, whitespace collapsed - the API's own
+ * name key, so "AL NAHDA" and "AL-NAHDA" are one till label on both sides.
+ * Upper-then-lower is casefold for every script a GCC till prints ("ß" to
+ * "ss", "ﬁ" to "fi"); the final sigma is the one lowercase JavaScript keeps
+ * that casefold does not. */
 export function nameKey(name: string): string {
-  return name.trim().toLowerCase().replace(/\s+/g, " ");
+  const folded = name.toUpperCase().toLowerCase().replace(/ς/g, "σ");
+  return folded
+    .replace(LOOSE_DOT, " ")
+    .replace(PUNCTUATION, " ")
+    .split(SPACES)
+    .filter((word) => word !== "")
+    .join(" ");
 }
 
 /** The till's own label for a branch, resolved through the chain's facts:
@@ -976,9 +1006,10 @@ export function readSalesCsv(
 
 // --- what committing would change -------------------------------------------
 
-/** One line's identity for C11.4: normalised name, code, quantity, amount. */
+/** One line's identity for C11.4: normalised name, trimmed code, quantity,
+ * amount - `takings.line_key` on the API. */
 function lineKey(name: string, code: string | null, qty: string | null, amount: string): string {
-  return [nameKey(name), code ?? "", qty === null ? "" : numberKey(qty), numberKey(amount)].join(
+  return [nameKey(name), code?.trim() ?? "", qty === null ? "" : numberKey(qty), numberKey(amount)].join(
     "",
   );
 }

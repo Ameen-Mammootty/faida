@@ -489,6 +489,19 @@ preconditions), which covers the demo stage and not a customer's.
 **Depends on:** nothing. Trigger: fired once, on the demo stage; build it when a pilot's consultant maps a
 till for the first time, or the second time a read-back finds one.
 
+### The menu loader keys names by its own looser rule
+
+**What:** `menuLoad.ts` compares dish and material names by lowercase and collapsed spaces
+(`nameKey`, its own copy), while the API stores a live dish name exactly as typed
+(`menu_items_tenant_name_uidx`) and resolves a material by exact name. The sales loader's copy of
+the API's name key (`salesLoad.nameKey`, pinned by `apps/api/tests/fixtures/till_keys.json`) is
+not used there.
+
+**Why:** Left alone by decision on 2026-09-26 (Q2, Decision Log): the menu loader is stricter
+than the server, not looser, so no name loops the way "AL-NAHDA" did on the sales loader, and
+moving it onto the punctuation-stripping key would change which dish names a menu file merges.
+Pick it up if a recipe sheet ever names one dish two ways and the loader treats them as two.
+
 ### Correcting a wrongly taught branch alias
 
 **What:** A way back for an alias taught to the wrong branch: a delete on `POST /api/branches/{id}/aliases`'s
