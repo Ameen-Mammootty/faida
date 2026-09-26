@@ -19,9 +19,10 @@ Run from apps/api with its venv (the modules are imported from src):
 The answer and freshness sentences here are copies of dashboard.py's; a
 change there is a change here - and so are the two serialisers below, which
 carry `cost` and `costed_sales` on `total` and on every league row from M10
-(C6 extended by two fields, WP-101). The price-moves block is **not** copied: the
-route's own `dashboard.price_moves_block` is imported and called, so the
-panel's gate, ranking and three sentences can never drift from the API's.
+(C6 extended by two fields, WP-101). The price-moves block and each signal
+are **not** copied: the route's own `dashboard.price_moves_block` and
+`dashboard.signal_json` are imported and called, so the panel's gate,
+ranking and sentences and a signal's fields can never drift from the API's.
 """
 
 import datetime
@@ -31,7 +32,7 @@ from decimal import ROUND_HALF_UP, Decimal as D
 
 sys.path.insert(0, sys.argv[2] if len(sys.argv) > 2 else "src")
 from faida_api import contribution as C  # noqa: E402
-from faida_api.dashboard import price_moves_block  # noqa: E402
+from faida_api.dashboard import price_moves_block, signal_json  # noqa: E402
 from faida_api import menu as M  # noqa: E402
 from faida_api import plates as P  # noqa: E402
 from faida_api import ratio as R  # noqa: E402
@@ -535,18 +536,6 @@ def league_row_json(row: R.BranchRow, c: C.Contribution):
         "contribution_quality": c.quality.value, "contribution_notes": list(c.notes),
         "days_loaded": row.days_loaded, "days_missing": row.days_missing, "deliveries": row.deliveries,
         "sales_through": iso(row.sales_through), "last_purchase_on": iso(row.last_purchase_on),
-    }
-
-
-def signal_json(sig: S.Signal):
-    return {
-        "kind": sig.kind, "money_at_stake": s(sig.money_at_stake), "quality": sig.quality.value,
-        "sentence": sig.sentence, "detail": sig.detail, "branch_id": sig.branch_id, "branch_name": sig.branch_name,
-        "menu_item_id": sig.menu_item_id, "menu_item_name": sig.menu_item_name, "ingredient_id": sig.ingredient_id,
-        "ingredient_name": sig.ingredient_name, "invoice_id": sig.invoice_id, "moved_on": iso(sig.moved_on),
-        "kept_pct": s(sig.kept_pct), "benchmark_pct": s(sig.benchmark_pct),
-        "price_before": s(sig.price_before), "price_after": s(sig.price_after), "unit": sig.unit,
-        "change_pct": s(sig.change_pct),
     }
 
 

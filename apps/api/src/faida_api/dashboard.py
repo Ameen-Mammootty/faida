@@ -253,7 +253,9 @@ def _league_row_json(row: ratio.BranchRow, figure: contribution.Contribution) ->
     }
 
 
-def _signal_json(signal: signals.Signal) -> dict:
+def signal_json(signal: signals.Signal) -> dict:
+    """One signal on the wire; the mock's generator calls it too, so the two
+    cannot carry different fields."""
     return {
         "kind": signal.kind,
         "money_at_stake": wire.dec(signal.money_at_stake),
@@ -632,7 +634,7 @@ async def read_dashboard(
             "all": [_item_row_json(r) for r in scope_rows],
             "count": len(costed),
         },
-        "signals": [_signal_json(s) for s in fired],
+        "signals": [signal_json(s) for s in fired],
         "price_moves": price_moves_block(
             moves,
             sales,
